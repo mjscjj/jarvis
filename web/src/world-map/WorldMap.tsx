@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { CompressOutlined, SearchOutlined } from '@ant-design/icons'
-import { Alert, Button, Empty, Input, Segmented, Spin, Tag } from 'antd'
+import { CompressOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons'
+import { Alert, Button, Empty, Input, Popover, Segmented, Spin, Switch, Tag } from 'antd'
 import type { ForceGraphMethods, NodeObject } from 'react-force-graph-2d'
 import ForceGraph2D from 'react-force-graph-2d'
 import { getPage, listPages } from '../api'
@@ -11,13 +11,17 @@ import {
   buildFocusGraph,
   connectedIds,
   filterGraph,
+  filterGraphByDirection,
   graphCounts,
+  graphForNodeIds,
   isPageType,
   linkEndpointId,
   nodeKey,
   pageTypeMeta,
   pageTypes,
   primaryComponentIds,
+  withoutIsolatedNodes,
+  type RelationDirection,
   type WorldGraph,
   type WorldLink,
   type WorldNode,
@@ -25,7 +29,8 @@ import {
 import './world-map.css'
 
 type GraphRef = ForceGraphMethods<WorldNode, WorldLink>
-type ViewMode = 'global' | 'focus'
+type NetworkScope = 'primary' | 'all' | 'focus'
+type LabelDensity = 'auto' | 'all' | 'related' | 'hidden'
 
 const emptyGraph: WorldGraph = { nodes: [], links: [] }
 
@@ -80,7 +85,10 @@ export default function WorldMap() {
   const [focusGraph, setFocusGraph] = useState<WorldGraph>(emptyGraph)
   const [selectedId, setSelectedId] = useState<string>()
   const [selectedPage, setSelectedPage] = useState<PageView>()
-  const [mode, setMode] = useState<ViewMode>('global')
+  const [scope, setScope] = useState<NetworkScope>('primary')
+  const [relationDirection, setRelationDirection] = useState<RelationDirection>('both')
+  const [showIsolated, setShowIsolated] = useState(false)
+  const [labelDensity, setLabelDensity] = useState<LabelDensity>('auto')
   const [visibleTypes, setVisibleTypes] = useState<Set<PageType>>(() => new Set(pageTypes))
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(true)
@@ -106,10 +114,18 @@ export default function WorldMap() {
     return () => controller.abort()
   }, [])
 
-  const rawGraph = mode === 'focus' ? focusGraph : activeGraph
-  const graph = useMemo(() => filterGraph(rawGraph, visibleTypes, selectedId), [rawGraph, selectedId, visibleTypes])
+  const activePrimaryIds = useMemo(() => primaryComponentIds(activeGraph), [activeGraph])
+  const rawGraph = useMemo(() => {
+    if (scope === 'focus') return focusGraph
+    if (scope === 'primary') return graphForNodeIds(activeGraph, activePrimaryIds)
+    return activeGraph
+  }, [activeGraph, activePrimaryIds, focusGraph, scope])
+  const graph = useMemo(() => {
+    const byType = filterGraph(rawGraph, visibleTypes, selectedId)
+    const byDirection = scope === 'focus' ? filterGraphByDirection(byType, selectedId, relationDirection) : byType
+    return scope === 'all' && !showIsolated ? withoutIsolatedNodes(byDirection, selectedId) : byDirection
+  }, [rawGraph, relationDirection, scope, selectedId, showIsolated, visibleTypes])
   const connections = useMemo(() => connectedIds(graph, selectedId), [graph, selectedId])
-  const primaryIds = useMemo(() => primaryComponentIds(graph), [graph])
   const counts = useMemo(() => graphCounts(graph), [graph])
 
   const searchResults = useMemo(() => {
@@ -132,7 +148,7 @@ export default function WorldMap() {
       setSelectedId(key)
       setSelectedPage(page)
       setFocusGraph(buildFocusGraph(page, activeIndex, fullIndex, 'relation', 'standard'))
-      if (switchToFocus || !activeGraph.nodes.some((node) => node.id === key)) setMode('focus')
+      if (switchToFocus || !activeGraph.nodes.some((node) => node.id === key)) setScope('focus')
       setQuery('')
       setError(undefined)
     } catch (cause: unknown) {
@@ -150,12 +166,16 @@ export default function WorldMap() {
   const clearSelection = useCallback(() => {
     setSelectedId(undefined)
     setSelectedPage(undefined)
-    setMode('global')
+    setScope((current) => current === 'focus' ? 'primary' : current)
     setQuery('')
   }, [])
 
   const resetView = useCallback(() => {
     setVisibleTypes(new Set(pageTypes))
+    setScope('primary')
+    setRelationDirection('both')
+    setShowIsolated(false)
+    setLabelDensity('auto')
     clearSelection()
   }, [clearSelection])
 
@@ -170,15 +190,14 @@ export default function WorldMap() {
   useEffect(() => {
     if (!graph.nodes.length) return
     framedSignatureRef.current = ''
-    const targetIds = mode === 'global' && primaryIds.size > 1 ? primaryIds : undefined
-    const timer = window.setTimeout(() => frameGraph(targetIds, 520), mode === 'focus' ? 40 : 720)
+    const timer = window.setTimeout(() => frameGraph(undefined, 520), scope === 'focus' ? 40 : 720)
     return () => window.clearTimeout(timer)
-  }, [frameGraph, graph.nodes, mode, primaryIds])
+  }, [frameGraph, graph.nodes, scope])
 
   const configureForces = useCallback(() => {
     const instance = graphRef.current
-    if (!instance || mode === 'focus') return
-    const signature = `${mode}:${graph.nodes.length}`
+    if (!instance || scope === 'focus') return
+    const signature = `${scope}:${graph.nodes.length}`
     if (forceSignatureRef.current === signature) return
     const linkForce = instance.d3Force('link') as { distance?: (value: number) => unknown } | undefined
     const chargeForce = instance.d3Force('charge') as { strength?: (value: number) => unknown } | undefined
@@ -186,15 +205,14 @@ export default function WorldMap() {
     chargeForce?.strength?.(-180)
     instance.d3ReheatSimulation()
     forceSignatureRef.current = signature
-  }, [graph.nodes.length, mode])
+  }, [graph.nodes.length, scope])
 
   const handleEngineStop = useCallback(() => {
-    const signature = `${mode}:${graph.nodes.map((node) => node.id).join('|')}`
+    const signature = `${scope}:${graph.nodes.map((node) => node.id).join('|')}`
     if (framedSignatureRef.current === signature) return
     framedSignatureRef.current = signature
-    const ids = mode === 'global' && primaryIds.size > 1 ? primaryIds : undefined
-    frameGraph(ids, 460)
-  }, [frameGraph, graph.nodes, mode, primaryIds])
+    frameGraph(undefined, 460)
+  }, [frameGraph, graph.nodes, scope])
 
   const drawNode = useCallback((candidate: NodeObject<WorldNode>, context: CanvasRenderingContext2D, scale: number) => {
     const node = candidate as WorldNode
@@ -225,7 +243,9 @@ export default function WorldMap() {
     context.stroke()
 
     const important = node.pageType === 'principal' || node.pageType === 'project'
-    const showLabel = selected || (selectedId ? connected : important || scale > 2.15)
+    const automatic = selected || (selectedId ? connected : important || scale > 2.15)
+    const related = selectedId ? connected : important
+    const showLabel = labelDensity === 'all' || labelDensity === 'auto' && automatic || labelDensity === 'related' && related
     if (showLabel) {
       const fontSize = (selected ? 14 : 12) / scale
       const label = compactLabel(node.name, selected ? 24 : 18)
@@ -236,7 +256,7 @@ export default function WorldMap() {
       context.fillText(label, node.x!, node.y! + radius + 4 / scale)
     }
     context.restore()
-  }, [connections, selectedId])
+  }, [connections, labelDensity, selectedId])
 
   const paintNodeArea = useCallback((candidate: NodeObject<WorldNode>, color: string, context: CanvasRenderingContext2D) => {
     const node = candidate as WorldNode
@@ -258,11 +278,43 @@ export default function WorldMap() {
 
   const selectedRelations = useMemo(() => {
     if (!selectedPage) return []
-    return [
+    const relations = [
       ...selectedPage.outgoing.filter((link) => isPageType(link.type)).map((link) => ({ ...link, type: link.type as PageType, direction: 'outgoing' as const })),
       ...selectedPage.backlinks.filter((link) => isPageType(link.type)).map((link) => ({ ...link, type: link.type as PageType, direction: 'incoming' as const })),
     ]
-  }, [selectedPage])
+    return relationDirection === 'both' ? relations : relations.filter((relation) => relation.direction === relationDirection)
+  }, [relationDirection, selectedPage])
+
+  const viewOptions = (
+    <div className="world-map-options">
+      <div className="world-map-options-head"><strong>视图选项</strong><span>仅影响当前浏览</span></div>
+      <label className={!selectedPage || scope !== 'focus' ? 'is-disabled' : ''}>
+        <span><b>关系方向</b><small>在一跳范围中生效</small></span>
+        <Segmented<RelationDirection>
+          block
+          size="small"
+          disabled={!selectedPage || scope !== 'focus'}
+          value={relationDirection}
+          onChange={setRelationDirection}
+          options={[{ label: '双向', value: 'both' }, { label: '向外', value: 'outgoing' }, { label: '向内', value: 'incoming' }]}
+        />
+      </label>
+      <label>
+        <span><b>孤立节点</b><small>在全局范围中生效</small></span>
+        <Switch checkedChildren="显示" unCheckedChildren="隐藏" checked={showIsolated} onChange={setShowIsolated} />
+      </label>
+      <label>
+        <span><b>标签密度</b><small>减少名称互相遮挡</small></span>
+        <Segmented<LabelDensity>
+          block
+          size="small"
+          value={labelDensity}
+          onChange={setLabelDensity}
+          options={[{ label: '自动', value: 'auto' }, { label: '全部', value: 'all' }, { label: '相关', value: 'related' }, { label: '隐藏', value: 'hidden' }]}
+        />
+      </label>
+    </div>
+  )
 
   return (
     <div className="world-map-shell">
@@ -272,11 +324,12 @@ export default function WorldMap() {
           <span>实体页之间的显式引用</span>
         </div>
         <div className="world-map-actions">
-          <Segmented<ViewMode>
-            value={mode}
-            onChange={setMode}
-            options={[{ label: '全局网络', value: 'global' }, { label: '一跳关系', value: 'focus', disabled: !selectedPage }]}
+          <Segmented<NetworkScope>
+            value={scope}
+            onChange={setScope}
+            options={[{ label: '主网络', value: 'primary' }, { label: '全局', value: 'all' }, { label: '一跳', value: 'focus', disabled: !selectedPage }]}
           />
+          <Popover trigger="click" placement="bottomRight" content={viewOptions}><Button icon={<SettingOutlined />}>视图选项</Button></Popover>
           <Button icon={<CompressOutlined />} onClick={() => frameGraph()}>适应画布</Button>
           <Button onClick={resetView}>重置</Button>
         </div>
@@ -321,7 +374,10 @@ export default function WorldMap() {
             <span><b>{counts.facts.toLocaleString()}</b>事实</span>
           </div>
 
-          {mode === 'focus' && <div className="world-map-direction-guide" aria-hidden="true"><span>反向引用</span><span>向外引用</span></div>}
+          {scope === 'focus' && <div className="world-map-direction-guide" aria-hidden="true">
+            <span>{relationDirection !== 'outgoing' ? '反向引用' : ''}</span>
+            <span>{relationDirection !== 'incoming' ? '向外引用' : ''}</span>
+          </div>}
 
           <div className="world-map-stage" ref={stageRef}>
             {loading ? (
@@ -330,7 +386,7 @@ export default function WorldMap() {
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前筛选没有可显示的实体" />
             ) : (
               <ForceGraph2D<WorldNode, WorldLink>
-                key={mode}
+                key={scope}
                 ref={graphRef}
                 width={size.width}
                 height={size.height}
@@ -346,7 +402,7 @@ export default function WorldMap() {
                 linkDirectionalArrowColor={() => '#68736f'}
                 d3AlphaDecay={0.035}
                 d3VelocityDecay={0.34}
-                cooldownTicks={mode === 'focus' ? 0 : 220}
+                cooldownTicks={scope === 'focus' ? 0 : 220}
                 minZoom={0.22}
                 maxZoom={12}
                 onEngineTick={configureForces}
@@ -378,14 +434,14 @@ export default function WorldMap() {
                 <span><b>{selectedPage.outgoing.length}</b>向外引用</span>
                 <span><b>{selectedPage.backlinks.length}</b>反向引用</span>
               </div>
-              <Button type="primary" block disabled={mode === 'focus'} onClick={() => setMode('focus')}>只看一跳关系</Button>
+              <Button type="primary" block disabled={scope === 'focus'} onClick={() => setScope('focus')}>只看一跳关系</Button>
 
               <div className="world-map-section">
                 <h3>实体摘要</h3>
                 {selectedPage.summary ? <MarkdownReport content={selectedPage.summary} className="world-map-summary" /> : <span className="world-map-muted">暂无摘要</span>}
               </div>
               <div className="world-map-section">
-                <h3>直接关系 <small>{selectedRelations.length}{mode === 'focus' && selectedRelations.length > focusGraph.links.length ? ` · 图中显示 ${focusGraph.links.length}` : ''}</small></h3>
+                <h3>直接关系 <small>{selectedRelations.length}{scope === 'focus' && selectedRelations.length > focusGraph.links.length ? ` · 图中显示 ${focusGraph.links.length}` : ''}</small></h3>
                 <div className="world-map-relations">
                   {selectedRelations.length === 0 && <span className="world-map-muted">暂无显式引用关系</span>}
                   {selectedRelations.map((relation) => (

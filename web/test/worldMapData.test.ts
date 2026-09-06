@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { PageIndexItem, PageView } from '../src/types.ts'
-import { buildActiveGraph, buildFocusGraph, filterGraph, graphCounts, primaryComponentIds, readableSummary } from '../src/world-map/graphData.ts'
+import { buildActiveGraph, buildFocusGraph, filterGraph, filterGraphByDirection, graphCounts, graphForNodeIds, primaryComponentIds, readableSummary, withoutIsolatedNodes } from '../src/world-map/graphData.ts'
 import { boundsForNodes, cameraFrameForBounds } from '../src/world-map/camera.ts'
 import { createBoundingForce } from '../src/world-map/physics.ts'
 import { cameraPaddingValue, defaultWorldMapSettings, labelLengthValue, normalizeWorldMapSettings, spacingValue } from '../src/world-map/settings.ts'
@@ -40,6 +40,25 @@ test('type filters never discard the selected entity', () => {
   const filtered = filterGraph(graph, new Set(['person']), 'project:2')
   assert.deepEqual(filtered.nodes.map((node) => node.id), ['project:2', 'person:3'])
   assert.equal(filtered.links.length, 1)
+})
+
+test('range, direction, and isolated-node filters preserve a coherent subgraph', () => {
+  const graph = buildActiveGraph(pages, index)
+  graph.nodes.push({ ...graph.nodes[2], id: 'person:99', pageId: 99, name: '离群节点' })
+
+  const primary = graphForNodeIds(graph, primaryComponentIds(graph))
+  assert.deepEqual(primary.nodes.map((node) => node.id), ['principal:1', 'project:2', 'person:3'])
+
+  const outgoing = filterGraphByDirection(graph, 'project:2', 'outgoing')
+  assert.deepEqual(outgoing.nodes.map((node) => node.id), ['project:2', 'person:3'])
+  assert.deepEqual(outgoing.links.map((link) => link.id), ['project:2->person:3'])
+
+  const incoming = filterGraphByDirection(graph, 'project:2', 'incoming')
+  assert.deepEqual(incoming.nodes.map((node) => node.id), ['principal:1', 'project:2'])
+  assert.deepEqual(incoming.links.map((link) => link.id), ['principal:1->project:2'])
+
+  const connected = withoutIsolatedNodes(graph)
+  assert.equal(connected.nodes.some((node) => node.id === 'person:99'), false)
 })
 
 test('nested summary payloads unwrap to readable markdown', () => {

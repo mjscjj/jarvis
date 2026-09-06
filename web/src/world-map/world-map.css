@@ -31,6 +31,20 @@
 .world-map-actions .ant-segmented-item-selected { background: #fff; color: #25302c; box-shadow: 0 1px 4px rgb(36 45 41 / 10%); }
 .world-map-actions .ant-btn { border-color: #dfe2df; color: #39433f; box-shadow: none; }
 
+.world-map-options { width: 360px; padding: 4px; }
+.world-map-options-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; padding: 2px 2px 10px; border-bottom: 1px solid #eceeeb; }
+.world-map-options-head strong { color: #2d3733; font-size: 15px; }
+.world-map-options-head span { color: #929a97; font-size: 12px; }
+.world-map-options > label { display: grid; grid-template-columns: 104px minmax(0, 1fr); align-items: center; gap: 12px; min-height: 58px; padding: 8px 2px; border-bottom: 1px solid #f0f1ef; }
+.world-map-options > label:last-child { border-bottom: 0; }
+.world-map-options > label > span { display: flex; flex-direction: column; color: #424c48; font-size: 14px; }
+.world-map-options > label > span b { font-weight: 600; }
+.world-map-options > label > span small { margin-top: 2px; color: #929a97; font-size: 11px; line-height: 1.25; }
+.world-map-options > label.is-disabled > span { opacity: .52; }
+.world-map-options .ant-segmented { width: 100%; background: #f2f3f0; }
+.world-map-options .ant-segmented-item-label { padding-inline: 7px; }
+.world-map-options .ant-switch { justify-self: end; }
+
 .world-map-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 312px;

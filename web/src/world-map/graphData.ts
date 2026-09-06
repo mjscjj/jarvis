@@ -44,6 +44,8 @@ export interface WorldGraph {
   links: WorldLink[]
 }
 
+export type RelationDirection = 'both' | 'outgoing' | 'incoming'
+
 export function nodeKey(type: string, id: number): string {
   return `${type}:${id}`
 }
@@ -206,6 +208,38 @@ export function filterGraph(graph: WorldGraph, visibleTypes: Set<PageType>, sele
     nodes: graph.nodes.filter((node) => keep.has(node.id)),
     links: graph.links.filter((link) => keep.has(linkEndpointId(link.source)) && keep.has(linkEndpointId(link.target))),
   }
+}
+
+export function graphForNodeIds(graph: WorldGraph, nodeIds: Set<string>): WorldGraph {
+  return {
+    nodes: graph.nodes.filter((node) => nodeIds.has(node.id)),
+    links: graph.links.filter((link) => nodeIds.has(linkEndpointId(link.source)) && nodeIds.has(linkEndpointId(link.target))),
+  }
+}
+
+export function filterGraphByDirection(graph: WorldGraph, selectedId: string | undefined, direction: RelationDirection): WorldGraph {
+  if (!selectedId || direction === 'both') return graph
+  const links = graph.links.filter((link) => (
+    direction === 'outgoing'
+      ? linkEndpointId(link.source) === selectedId
+      : linkEndpointId(link.target) === selectedId
+  ))
+  const keep = new Set([selectedId])
+  for (const link of links) {
+    keep.add(linkEndpointId(link.source))
+    keep.add(linkEndpointId(link.target))
+  }
+  return { nodes: graph.nodes.filter((node) => keep.has(node.id)), links }
+}
+
+export function withoutIsolatedNodes(graph: WorldGraph, selectedId?: string): WorldGraph {
+  const connected = new Set<string>()
+  for (const link of graph.links) {
+    connected.add(linkEndpointId(link.source))
+    connected.add(linkEndpointId(link.target))
+  }
+  if (selectedId) connected.add(selectedId)
+  return graphForNodeIds(graph, connected)
 }
 
 export function connectedIds(graph: WorldGraph, selectedId: string | undefined): Set<string> {
