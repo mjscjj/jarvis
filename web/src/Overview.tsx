@@ -17,7 +17,7 @@ import {
   getOverview,
   listTasks,
 } from './api'
-import PageHeader from './components/PageHeader'
+import MergedPageHeader from './components/MergedPageHeader'
 import MorningBriefPanel from './components/MorningBriefPanel'
 import { useAgentIdentity } from './agentIdentity'
 import { usePageContext } from './pageContext'
@@ -268,7 +268,13 @@ export default function Overview() {
 
   return (
     <div className="today-home">
-      <PageHeader title="今日" subtitle={`${dayjs().format('M 月 D 日')} · ${weekdayLabel()}`}>
+      <MergedPageHeader
+        title="工作台"
+        subtitle="聚焦今天，回看过去"
+        activeKey="today"
+        tabs={[{ key: 'today', label: '今日' }, { key: 'review', label: '回顾' }]}
+        onChange={(key) => navigate(key === 'review' ? 'progress' : 'overview')}
+      >
         <Space size={12}>
           <Badge
             status={healthPending ? 'processing' : hasHealthConcern ? 'warning' : 'success'}
@@ -283,7 +289,7 @@ export default function Overview() {
             刷新
           </Button>
         </Space>
-      </PageHeader>
+      </MergedPageHeader>
 
       {issueList.length > 0 && (
         <Alert

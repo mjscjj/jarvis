@@ -27,7 +27,7 @@ import type { TableColumnsType } from 'antd'
 import { DeleteOutlined, EditOutlined, PlusOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
 import { createScheduledTask, deleteScheduledTask, listScheduledTasks, triggerScheduledTask, updateScheduledTask } from './api'
-import PageHeader from './components/PageHeader'
+import MergedPageHeader from './components/MergedPageHeader'
 import { usePageContext } from './pageContext'
 import { useAgentIdentity } from './agentIdentity'
 import type { ScheduledTask, ScheduledTaskInput, ScheduledTaskScheduleType, ScheduledTaskStatus } from './types'
@@ -126,7 +126,7 @@ function lastRunText(task: ScheduledTask): string {
 
 export default function ScheduledTasks() {
   const { name: agentName } = useAgentIdentity()
-  const { context, setViewState } = usePageContext()
+  const { context, navigate, setViewState } = usePageContext()
   const routeView: ScheduleView = context.view_state.view === 'wakeups' ? 'wakeups' : 'automations'
   const routeStatus = context.view_state.status || ''
   const [items, setItems] = useState<ScheduledTask[]>([])
@@ -358,9 +358,15 @@ export default function ScheduledTasks() {
 
   return (
     <div>
-      <PageHeader title="自动化" subtitle="你创建的计划与任务执行产生的系统任务分开管理。">
+      <MergedPageHeader
+        title="任务"
+        subtitle={`管理你与 ${agentName} 正在推进的工作`}
+        activeKey="automations"
+        tabs={[{ key: 'tasks', label: '任务' }, { key: 'automations', label: '自动化' }]}
+        onChange={(key) => navigate(key === 'automations' ? 'scheduled-tasks' : 'tasks')}
+      >
         {view === 'automations' && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建自动化</Button>}
-      </PageHeader>
+      </MergedPageHeader>
 
       <Card className="automation-toolbar" variant="borderless">
         <Flex align="center" justify="space-between" gap={16} wrap>

@@ -312,6 +312,31 @@ body {
   letter-spacing: -0.02em;
 }
 
+/* Merged primary destinations keep the existing page header and tab language. */
+.merged-page-heading .page-header {
+  margin-bottom: var(--space-2);
+}
+
+.merged-page-tabs > .ant-tabs-nav {
+  margin-bottom: var(--space-5);
+}
+
+.merged-page-tabs > .ant-tabs-nav::before {
+  border-bottom-color: var(--color-border);
+}
+
+.merged-page-tabs > .ant-tabs-nav .ant-tabs-tab {
+  min-width: 68px;
+  justify-content: center;
+  padding: 10px 4px;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.merged-page-tabs > .ant-tabs-content-holder {
+  display: none;
+}
+
 .plugin-detail {
   display: flex;
   flex-direction: column;
@@ -454,6 +479,12 @@ body {
     font-size: 22px;
   }
 
+  .merged-page-heading .page-header > .ant-flex {
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
   .mobile-bottom-nav {
     position: fixed;
     z-index: 160;
@@ -462,7 +493,7 @@ body {
     left: 0;
     height: 68px;
     display: grid;
-    grid-template-columns: repeat(6, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     padding: 6px max(8px, env(safe-area-inset-right))
       max(6px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
     border-top: 1px solid var(--color-border);

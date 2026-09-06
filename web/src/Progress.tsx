@@ -15,6 +15,7 @@ import DigestCard from './review/DigestCard'
 import MeetingSummaryView from './review/MeetingSummaryView'
 import MorningBriefCard from './review/MorningBriefCard'
 import { CodeView, DocumentsView } from './review/WorklogViews'
+import MergedPageHeader from './components/MergedPageHeader'
 import { usePageContext } from './pageContext'
 import { isReviewDateStateFresh, reviewDateStateExpiresAt } from './reviewDateState'
 import type { DailyDigest, DailyDigestScope, Group, MorningBrief, ProfileView } from './types'
@@ -23,7 +24,7 @@ import './styles/review-memory.css'
 const DAILY_DIGEST_POLL_MS = 5000
 const DAILY_DIGEST_RETRY_MS = 10000
 const RECENT_DATE_TABS = 14
-const { Text, Title } = Typography
+const { Text } = Typography
 
 type ReviewView = 'daily' | 'morning' | 'meetings' | 'groups' | 'docs' | 'code'
 
@@ -54,7 +55,7 @@ function digestBadge(item?: DailyDigest) {
 }
 
 export default function Progress() {
-  const { context, setViewState } = usePageContext()
+  const { context, navigate, setViewState } = usePageContext()
   const [activeView, setActiveView] = useState<ReviewView>(() => reviewView(context.view_state.view))
   const [selectedDate, setSelectedDate] = useState<Dayjs>(() => {
     const routeDate = dayjs(context.view_state.date)
@@ -384,12 +385,14 @@ export default function Progress() {
 
   return (
     <div className="progress review-page">
-      <header className="review-hero">
-        <div className="review-hero-copy">
-          <Text className="review-eyebrow">WORK REVIEW</Text>
-          <Title level={1}>回顾</Title>
-        </div>
-        <div className="review-date-control">
+      <MergedPageHeader
+        title="工作台"
+        subtitle="聚焦今天，回看过去"
+        activeKey="review"
+        tabs={[{ key: 'today', label: '今日' }, { key: 'review', label: '回顾' }]}
+        onChange={(key) => navigate(key === 'review' ? 'progress' : 'overview')}
+      >
+        <div className="review-date-control is-standalone">
           <span className="review-date-icon"><CalendarOutlined /></span>
           <div className="review-date-picker-wrap">
             <Text>当前日期</Text>
@@ -404,10 +407,10 @@ export default function Progress() {
           </div>
           <Button type="text" onClick={() => selectDate(dayjs())} disabled={selectedDate.isSame(dayjs(), 'day')}>回到今天</Button>
         </div>
-      </header>
+      </MergedPageHeader>
 
       <Tabs
-        className="review-primary-tabs"
+        className="review-primary-tabs review-content-tabs"
         activeKey={activeView}
         onChange={(value) => selectView(value as ReviewView)}
         items={topLevelTabs}

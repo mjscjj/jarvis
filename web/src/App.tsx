@@ -6,13 +6,11 @@ import {
   CheckCircleOutlined,
   PlayCircleOutlined,
   SettingOutlined,
-  ReadOutlined,
   ToolOutlined,
   MessageOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   DatabaseOutlined,
-  CalendarOutlined,
   MoreOutlined,
   PoweroffOutlined,
   RobotOutlined,
@@ -51,13 +49,13 @@ const DEFAULT_KEY = 'overview'
 const SIDER_WIDTH = 184
 const SIDER_COLLAPSED_WIDTH = 64
 const pageLabels: Record<string, string> = {
-  overview: '今日',
+  overview: '工作台',
   tasks: '任务',
-  progress: '回顾',
+  progress: '工作台',
   background: '世界',
   agents: 'Agent 设置',
   todos: '线索',
-  'scheduled-tasks': '自动化',
+  'scheduled-tasks': '任务',
   plugins: '插件',
   settings: '系统设置',
   debug: '运行状态',
@@ -124,11 +122,9 @@ function AppShell() {
     : { key: 'plugins', label: '插件', icon: <ApiOutlined /> }
 
   const menuProps: MenuProps['items'] = [
-    { key: 'overview', label: '今日', icon: <HomeOutlined /> },
+    { key: 'overview', label: '工作台', icon: <HomeOutlined /> },
     { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
-    { key: 'progress', label: '回顾', icon: <ReadOutlined /> },
     { key: 'background', label: '世界', icon: <DatabaseOutlined /> },
-    { key: 'scheduled-tasks', label: '自动化', icon: <CalendarOutlined /> },
     pluginMenu,
     { key: 'agents', label: 'Agent 设置', icon: <RobotOutlined /> },
     { type: 'divider' },
@@ -273,6 +269,11 @@ function AppShell() {
   }
 
   const siderWidth = siderCollapsed ? SIDER_COLLAPSED_WIDTH : SIDER_WIDTH
+  const primaryNavigationKey = context.active_key === 'progress'
+    ? 'overview'
+    : context.active_key === 'scheduled-tasks'
+      ? 'tasks'
+      : context.active_key
 
   return (
     <Layout
@@ -340,7 +341,7 @@ function AppShell() {
           selectedKeys={[
             context.active_key === 'plugins' && context.view_state.plugin
               ? `plugin:${context.view_state.plugin}`
-              : context.active_key,
+              : primaryNavigationKey,
           ]}
           openKeys={siderCollapsed ? [] : [
             ...(managementOpen ? ['management'] : []),
@@ -424,14 +425,12 @@ function AppShell() {
       </Tooltip>
       <nav className="mobile-bottom-nav" aria-label="主要导航">
         {[
-          { key: 'overview', label: '今日', icon: <HomeOutlined /> },
+          { key: 'overview', label: '工作台', icon: <HomeOutlined /> },
           { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
-          { key: 'progress', label: '回顾', icon: <ReadOutlined /> },
           { key: 'background', label: '世界', icon: <DatabaseOutlined /> },
-          { key: 'scheduled-tasks', label: '自动化', icon: <CalendarOutlined /> },
           { key: 'agents', label: 'Agent', icon: <RobotOutlined /> },
         ].map((item) => (
-          <button key={item.key} type="button" className={context.active_key === item.key ? 'is-active' : ''} onClick={() => goTo(item.key)}>
+          <button key={item.key} type="button" className={primaryNavigationKey === item.key ? 'is-active' : ''} onClick={() => goTo(item.key)}>
             {item.icon}<span>{item.label}</span>
           </button>
         ))}
