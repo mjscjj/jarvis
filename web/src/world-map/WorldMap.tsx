@@ -133,7 +133,7 @@ export default function WorldMap() {
   const rawGraph = mode === 'focus' ? focusGraph : activeGraph
   const graph = useMemo(
     () => filterGraph(rawGraph, visibleTypes, selectedId),
-    [rawGraph, selectedId, visibleTypes],
+    [rawGraph, selectedId, settings.layoutMode, settings.spacingMode, visibleTypes],
   )
   const connections = useMemo(() => connectedIds(graph, selectedId), [graph, selectedId])
   const counts = useMemo(() => graphCounts(graph), [graph])
@@ -236,15 +236,14 @@ export default function WorldMap() {
     controls.autoRotateSpeed = 0.38
   }, [graph, settings.autoRotate])
 
-  useEffect(() => {
+  const configureForces = useCallback(() => {
     if (!graphRef.current || settings.layoutMode === 'relation' && mode === 'focus') return
     const spacing = spacingValue(settings.spacingMode)
     const linkForce = graphRef.current.d3Force('link') as { distance?: (value: number) => unknown } | undefined
     const chargeForce = graphRef.current.d3Force('charge') as { strength?: (value: number) => unknown } | undefined
     linkForce?.distance?.(48 * spacing)
     chargeForce?.strength?.(-72 * spacing)
-    graphRef.current.d3ReheatSimulation()
-  }, [graph.nodes.length, mode, settings.layoutMode, settings.spacingMode])
+  }, [mode, settings.layoutMode, settings.spacingMode])
 
   const cameraTargetIds = useMemo(() => {
     if (!selectedId || settings.focusScope === 'visible') return undefined
@@ -408,6 +407,7 @@ export default function WorldMap() {
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前筛选没有可显示的实体" />
             ) : (
               <ForceGraph3D<WorldNode, WorldLink>
+                key={`${mode}:${settings.layoutMode}:${settings.spacingMode}`}
                 ref={graphRef}
                 width={size.width}
                 height={size.height}
@@ -431,6 +431,7 @@ export default function WorldMap() {
                 numDimensions={settings.layoutMode === 'flat2d' ? 2 : 3}
                 warmupTicks={mode === 'focus' && settings.layoutMode === 'relation' ? 0 : 60}
                 cooldownTicks={mode === 'focus' && settings.layoutMode === 'relation' ? 0 : 160}
+                onEngineTick={configureForces}
                 showNavInfo={false}
                 onNodeClick={(node) => void selectEntity(node.pageType, node.pageId)}
                 onBackgroundClick={clearEntity}
