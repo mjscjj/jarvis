@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Button, Empty, Input, Segmented, Spin, Switch, Tag, Tooltip } from 'antd'
+import { Alert, Button, Empty, Segmented, Select, Spin, Switch, Tag, Tooltip } from 'antd'
 import type { ForceGraphMethods, NodeObject } from 'react-force-graph-3d'
 import ForceGraph3D from 'react-force-graph-3d'
 import SpriteText from 'three-spritetext'
@@ -7,7 +7,7 @@ import { AdditiveBlending, Group, Mesh, MeshBasicMaterial, MeshLambertMaterial, 
 import { getPage, listPages } from '../api'
 import MarkdownReport from '../components/MarkdownReport'
 import type { PageIndexItem, PageType, PageView } from '../types'
-import { cameraFrameForBounds } from './camera'
+import { boundsForNodes, cameraFrameForBounds } from './camera'
 import {
   buildActiveGraph,
   buildFocusGraph,
@@ -32,6 +32,11 @@ const emptyGraph: WorldGraph = { nodes: [], links: [] }
 
 function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
+}
+
+function compactLabel(value: string, maxLength = 16): string {
+  const characters = Array.from(value)
+  return characters.length > maxLength ? `${characters.slice(0, maxLength).join('')}…` : value
 }
 
 async function loadPages(index: PageIndexItem[], signal: AbortSignal, concurrency = 8): Promise<PageView[]> {
@@ -75,9 +80,9 @@ export default function WorldMap() {
   const [focusGraph, setFocusGraph] = useState<WorldGraph>(emptyGraph)
   const [selectedId, setSelectedId] = useState<string>()
   const [selectedPage, setSelectedPage] = useState<PageView>()
+  const [detailsExpanded, setDetailsExpanded] = useState(false)
   const [mode, setMode] = useState<ViewMode>('global')
   const [visibleTypes, setVisibleTypes] = useState<Set<PageType>>(() => new Set(pageTypes))
-  const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(true)
   const [selecting, setSelecting] = useState(false)
   const [error, setError] = useState<string>()
@@ -110,20 +115,29 @@ export default function WorldMap() {
   const connections = useMemo(() => connectedIds(graph, selectedId), [graph, selectedId])
   const counts = useMemo(() => graphCounts(graph), [graph])
 
-  const searchResults = useMemo(() => {
-    const normalized = query.trim().toLocaleLowerCase()
-    if (!normalized) return []
-    return fullIndex
-      .filter((item) => `${item.name} ${item.index_line || ''}`.toLocaleLowerCase().includes(normalized))
-      .slice(0, 12)
-  }, [fullIndex, query])
+  const entityById = useMemo(() => new Map(fullIndex.map((item) => [nodeKey(item.type, item.id), item])), [fullIndex])
+  const entityOptions = useMemo(() => pageTypes.map((type) => {
+    const items = fullIndex.filter((item) => item.type === type)
+    return {
+      label: `${pageTypeMeta[type].label}（${items.length.toLocaleString()}）`,
+      options: items.map((item) => ({
+        value: nodeKey(item.type, item.id),
+        label: item.name,
+        searchText: `${item.name} ${item.index_line || ''}`,
+      })),
+    }
+  }), [fullIndex])
 
   const frameGraph = useCallback((targetIds?: Set<string>, duration = 760) => {
     const run = ++cameraRunRef.current
     const attempt = (remaining: number) => {
       window.requestAnimationFrame(() => {
         if (run !== cameraRunRef.current || !graphRef.current) return
-        const bounds = graphRef.current.getGraphBbox(targetIds ? (node) => targetIds.has(String(node.id)) : undefined)
+        const deterministicNodes = graph.nodes.filter((node) => !targetIds || targetIds.has(node.id))
+        const bounds = mode === 'focus'
+          ? boundsForNodes(deterministicNodes)
+          : graphRef.current.getGraphBbox(targetIds ? (node) => targetIds.has(String(node.id)) : undefined)
+        if (!bounds) return
         const values = [...bounds.x, ...bounds.y, ...bounds.z]
         const span = Math.max(bounds.x[1] - bounds.x[0], bounds.y[1] - bounds.y[0], bounds.z[1] - bounds.z[0])
         if ((!values.every(Number.isFinite) || (mode === 'global' && graph.nodes.length > 5 && span < 30)) && remaining > 0) {
@@ -131,7 +145,7 @@ export default function WorldMap() {
           return
         }
         if (!values.every(Number.isFinite)) return
-        const frame = cameraFrameForBounds(bounds, size.width, size.height, 50, targetIds ? 1.3 : 1.18)
+        const frame = cameraFrameForBounds(bounds, size.width, size.height, 50, mode === 'focus' ? 1.08 : targetIds ? 1.2 : 1.18)
         const angleX = mode === 'focus' ? 0 : frame.distance * .12
         const angleY = mode === 'focus' ? 0 : frame.distance * .05
         graphRef.current.cameraPosition(
@@ -142,7 +156,7 @@ export default function WorldMap() {
       })
     }
     attempt(8)
-  }, [graph.nodes.length, mode, size.height, size.width])
+  }, [graph.nodes, mode, size.height, size.width])
 
   const selectEntity = useCallback(async (type: PageType, id: number, switchToFocus = false) => {
     const key = nodeKey(type, id)
@@ -155,9 +169,9 @@ export default function WorldMap() {
       }
       setSelectedId(key)
       setSelectedPage(page)
+      setDetailsExpanded(false)
       setFocusGraph(buildFocusGraph(page, activeIndex, fullIndex))
       if (switchToFocus || !activeGraph.nodes.some((node) => node.id === key)) setMode('focus')
-      setQuery('')
       setError(undefined)
     } catch (cause: unknown) {
       setError(errorText(cause))
@@ -171,8 +185,20 @@ export default function WorldMap() {
     setSelectedPage(undefined)
     setMode('global')
     setVisibleTypes(new Set(pageTypes))
-    setQuery('')
+    setDetailsExpanded(false)
   }, [])
+
+  const chooseEntity = (key: string) => {
+    const entity = entityById.get(key)
+    if (entity) void selectEntity(entity.type, entity.id, true)
+  }
+
+  const clearEntity = () => {
+    setSelectedId(undefined)
+    setSelectedPage(undefined)
+    setDetailsExpanded(false)
+    setMode('global')
+  }
 
   useEffect(() => {
     const controls = graphRef.current?.controls() as { autoRotate?: boolean; autoRotateSpeed?: number } | undefined
@@ -208,7 +234,7 @@ export default function WorldMap() {
       )
       group.add(halo)
     }
-    const label = new SpriteText(worldNode.name)
+    const label = new SpriteText(compactLabel(worldNode.name))
     label.color = connected ? '#f8fbff' : '#8090a8'
     label.backgroundColor = selected ? 'rgba(9, 16, 30, .86)' : 'rgba(9, 16, 30, .58)'
     label.padding = [3, 5]
@@ -263,20 +289,24 @@ export default function WorldMap() {
 
       {error && <Alert type="error" showIcon closable title="世界地图加载失败" description={error} onClose={() => setError(undefined)} />}
 
-      <div className="world-map-layout">
+      <div className={`world-map-layout${detailsExpanded ? ' is-detail-expanded' : ''}`}>
         <section className="world-map-canvas-card">
           <div className="world-map-search">
-            <Input.Search allowClear value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`搜索全部 ${fullIndex.length.toLocaleString()} 个实体`} loading={selecting} />
-            {searchResults.length > 0 && (
-              <div className="world-map-search-results">
-                {searchResults.map((item) => (
-                  <button key={nodeKey(item.type, item.id)} type="button" onClick={() => void selectEntity(item.type, item.id, true)}>
-                    <span className="world-map-search-dot" style={{ background: pageTypeMeta[item.type].color }} />
-                    <span><strong>{item.name}</strong><small>{pageTypeMeta[item.type].label} · {item.index_line || '暂无摘要'}</small></span>
-                  </button>
-                ))}
-              </div>
-            )}
+            <Select
+              showSearch
+              allowClear
+              virtual
+              value={selectedId}
+              options={entityOptions}
+              placeholder={`按分类搜索或选择 ${fullIndex.length.toLocaleString()} 个实体`}
+              popupMatchSelectWidth={440}
+              filterOption={(input, option) => {
+                const candidate = option as { searchText?: string; label?: string } | undefined
+                return String(candidate?.searchText || candidate?.label || '').toLocaleLowerCase().includes(input.toLocaleLowerCase())
+              }}
+              onChange={(value) => value ? chooseEntity(value) : clearEntity()}
+              loading={selecting}
+            />
           </div>
 
           <div className="world-map-legend">
@@ -331,11 +361,11 @@ export default function WorldMap() {
                 linkDirectionalParticleColor={() => '#d7e8ff'}
                 d3AlphaDecay={0.035}
                 d3VelocityDecay={0.32}
-                warmupTicks={60}
-                cooldownTicks={160}
+                warmupTicks={mode === 'focus' ? 0 : 60}
+                cooldownTicks={mode === 'focus' ? 0 : 160}
                 showNavInfo={false}
                 onNodeClick={(node) => void selectEntity(node.pageType, node.pageId)}
-                onBackgroundClick={() => { setSelectedId(undefined); setSelectedPage(undefined); setMode('global') }}
+                onBackgroundClick={clearEntity}
               />
             )}
           </div>
@@ -360,23 +390,31 @@ export default function WorldMap() {
                 <span><b>{selectedPage.outgoing.length}</b>向外引用</span>
                 <span><b>{selectedPage.backlinks.length}</b>反向引用</span>
               </div>
-              <Button type="primary" block onClick={() => setMode('focus')}>只看一跳关系</Button>
-              <div className="world-map-section">
-                <h3>长期事实页</h3>
-                {selectedPage.summary ? <MarkdownReport content={selectedPage.summary} className="world-map-summary" /> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无摘要" />}
+              <div className="world-map-detail-actions">
+                <Button type="primary" disabled={mode === 'focus'} onClick={() => setMode('focus')}>只看一跳关系</Button>
+                <Button onClick={() => setDetailsExpanded((current) => !current)}>{detailsExpanded ? '收起实体页面' : '展开实体页面'}</Button>
               </div>
-              <div className="world-map-section">
-                <h3>引用关系 <small>{selectedRelations.length}{mode === 'focus' && selectedRelations.length > focusGraph.links.length ? ` · 图中显示 ${focusGraph.links.length}` : ''}</small></h3>
-                <div className="world-map-relations">
-                  {selectedRelations.length === 0 && <span className="world-map-muted">暂无显式引用关系</span>}
-                  {selectedRelations.map((relation) => (
-                      <button key={`${relation.direction}:${relation.type}:${relation.id}`} type="button" onClick={() => void selectEntity(relation.type, relation.id, true)}>
-                        <i style={{ background: pageTypeMeta[relation.type].color }} />
-                        <span><small>{relation.direction === 'outgoing' ? '引用了 →' : '← 引用于'}</small>{relation.name}</span>
-                      </button>
-                  ))}
-                </div>
-              </div>
+              {!detailsExpanded && <div className="world-map-detail-folded">实体页默认收起，展开后可查看长期事实和全部引用关系。</div>}
+              {detailsExpanded && (
+                <>
+                  <div className="world-map-section">
+                    <h3>长期事实页</h3>
+                    {selectedPage.summary ? <MarkdownReport content={selectedPage.summary} className="world-map-summary" /> : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无摘要" />}
+                  </div>
+                  <div className="world-map-section">
+                    <h3>引用关系 <small>{selectedRelations.length}{mode === 'focus' && selectedRelations.length > focusGraph.links.length ? ` · 图中显示 ${focusGraph.links.length}` : ''}</small></h3>
+                    <div className="world-map-relations">
+                      {selectedRelations.length === 0 && <span className="world-map-muted">暂无显式引用关系</span>}
+                      {selectedRelations.map((relation) => (
+                        <button key={`${relation.direction}:${relation.type}:${relation.id}`} type="button" onClick={() => void selectEntity(relation.type, relation.id, true)}>
+                          <i style={{ background: pageTypeMeta[relation.type].color }} />
+                          <span><small>{relation.direction === 'outgoing' ? '引用了 →' : '← 引用于'}</small>{relation.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
             </>
           )}
         </aside>

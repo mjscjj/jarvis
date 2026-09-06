@@ -44,11 +44,14 @@
 
 .world-map-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) 278px;
   gap: 12px;
   height: min(760px, calc(100vh - 205px));
   min-height: 610px;
+  transition: grid-template-columns .2s ease;
 }
+
+.world-map-layout.is-detail-expanded { grid-template-columns: minmax(0, 1fr) 390px; }
 
 .world-map-canvas-card,
 .world-map-inspector {
@@ -81,6 +84,19 @@
   z-index: 4;
   width: min(380px, calc(100% - 190px));
 }
+
+.world-map-search .ant-select { width: 100%; }
+.world-map-search .ant-select-selector {
+  border-color: var(--world-border) !important;
+  background: rgb(11 23 38 / 90%) !important;
+  color: #e8f1fc !important;
+  box-shadow: none !important;
+  backdrop-filter: blur(12px);
+}
+.world-map-search .ant-select-selection-placeholder { color: #71839b; }
+.world-map-search .ant-select-selection-item { color: #edf5ff; }
+.world-map-search .ant-select-arrow,
+.world-map-search .ant-select-clear { color: #8da2ba; background: transparent; }
 
 .world-map-search .ant-input-affix-wrapper,
 .world-map-search .ant-input-group-addon .ant-btn {
@@ -229,6 +245,8 @@
 .world-map-detail-metrics span { padding: 8px 4px; border: 1px solid var(--world-border); border-radius: 8px; color: #71859d; font-size: 11px; text-align: center; }
 .world-map-detail-metrics b { display: block; margin-bottom: 2px; color: #e8f1fb; font-size: 16px; }
 .world-map-inspector .ant-btn-primary { box-shadow: none; }
+.world-map-detail-actions { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.world-map-detail-folded { margin-top: 14px; padding: 12px; border: 1px dashed var(--world-border); border-radius: 9px; color: #71859d; font-size: 12px; line-height: 1.6; }
 
 .world-map-section { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--world-border); }
 .world-map-section h3 { margin: 0 0 10px; color: #dbe7f5; font-size: 13px; letter-spacing: .06em; }
@@ -247,6 +265,7 @@
 
 @media (max-width: 1120px) {
   .world-map-layout { grid-template-columns: minmax(0, 1fr) 285px; }
+  .world-map-layout.is-detail-expanded { grid-template-columns: minmax(0, 1fr) 350px; }
   .world-map-legend { top: 58px; left: 14px; right: auto; justify-content: flex-start; }
 }
 

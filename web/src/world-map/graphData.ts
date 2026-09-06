@@ -145,7 +145,7 @@ export function buildActiveGraph(pages: PageView[], activeIndex: PageIndexItem[]
 export function buildFocusGraph(page: PageView, activeIndex: PageIndexItem[], fullIndex: PageIndexItem[]): WorldGraph {
   const indexes = indexMap(fullIndex)
   const activeIds = new Set(activeIndex.map((item) => nodeKey(item.type, item.id)))
-  const center = { ...nodeFromPage(page, activeIds, indexes), fx: 0, fy: 0, fz: 0 }
+  const center = { ...nodeFromPage(page, activeIds, indexes), x: 0, y: 0, z: 0, fx: 0, fy: 0, fz: 0 }
   const nodes = new Map<string, WorldNode>([[center.id, center]])
   const links: WorldLink[] = []
   const seen = new Set<string>()
@@ -172,12 +172,15 @@ export function buildFocusGraph(page: PageView, activeIndex: PageIndexItem[], fu
     unique.forEach((reference, index) => {
       const node = nodes.get(nodeKey(reference.type, reference.id))
       if (!node) return
-      const column = Math.floor(index / 8)
-      const row = index % 8
-      const rowsInColumn = Math.min(8, unique.length - column * 8)
-      node.fx = side * (78 + column * 54)
-      node.fy = (row - (rowsInColumn - 1) / 2) * 28
-      node.fz = ((row % 3) - 1) * 7
+      const column = Math.floor(index / 6)
+      const row = index % 6
+      const rowsInColumn = Math.min(6, unique.length - column * 6)
+      node.fx = side * (105 + column * 108)
+      node.fy = (row - (rowsInColumn - 1) / 2) * 50
+      node.fz = ((row % 3) - 1) * 10
+      node.x = node.fx
+      node.y = node.fy
+      node.z = node.fz
     })
   }
   positionSide(backlinks, -1)

@@ -9,6 +9,31 @@ export interface CameraFrame {
   distance: number
 }
 
+export interface PositionedNode {
+  x?: number
+  y?: number
+  z?: number
+  fx?: number
+  fy?: number
+  fz?: number
+}
+
+export function boundsForNodes(nodes: PositionedNode[], margin = 12): GraphBounds | null {
+  const positions = nodes.map((node) => ({
+    x: node.fx ?? node.x,
+    y: node.fy ?? node.y,
+    z: node.fz ?? node.z,
+  })).filter((position): position is { x: number; y: number; z: number } => (
+    Number.isFinite(position.x) && Number.isFinite(position.y) && Number.isFinite(position.z)
+  ))
+  if (!positions.length) return null
+  return {
+    x: [Math.min(...positions.map((position) => position.x)) - margin, Math.max(...positions.map((position) => position.x)) + margin],
+    y: [Math.min(...positions.map((position) => position.y)) - margin, Math.max(...positions.map((position) => position.y)) + margin],
+    z: [Math.min(...positions.map((position) => position.z)) - margin, Math.max(...positions.map((position) => position.z)) + margin],
+  }
+}
+
 export function cameraFrameForBounds(
   bounds: GraphBounds,
   viewportWidth: number,

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { PageIndexItem, PageView } from '../src/types.ts'
 import { buildActiveGraph, buildFocusGraph, filterGraph, graphCounts, readableSummary } from '../src/world-map/graphData.ts'
-import { cameraFrameForBounds } from '../src/world-map/camera.ts'
+import { boundsForNodes, cameraFrameForBounds } from '../src/world-map/camera.ts'
 
 const index: PageIndexItem[] = [
   { type: 'principal', id: 1, name: '我', index_line: '主体', char_count: 100, last_progress_at: null },
@@ -30,6 +30,7 @@ test('focus graph contains exactly the selected page and one-hop references', ()
   assert.equal(graph.nodes.find((node) => node.id === 'project:2')?.fx, 0)
   assert.ok((graph.nodes.find((node) => node.id === 'principal:1')?.fx || 0) < 0)
   assert.ok((graph.nodes.find((node) => node.id === 'person:3')?.fx || 0) > 0)
+  assert.equal(graph.nodes.every((node) => node.x === node.fx && node.y === node.fy && node.z === node.fz), true)
 })
 
 test('type filters never discard the selected entity', () => {
@@ -50,4 +51,9 @@ test('camera frames the selected neighborhood and respects viewport aspect ratio
   assert.deepEqual(landscape.center, { x: 0, y: 0, z: 0 })
   assert.ok(landscape.distance >= 86)
   assert.ok(portrait.distance > landscape.distance)
+})
+
+test('deterministic bounds prefer fixed focus coordinates over stale simulation positions', () => {
+  const bounds = boundsForNodes([{ x: 900, y: 900, z: 900, fx: 0, fy: 0, fz: 0 }, { x: -800, y: -800, z: -800, fx: 100, fy: 50, fz: 10 }], 10)
+  assert.deepEqual(bounds, { x: [-10, 110], y: [-10, 60], z: [-10, 20] })
 })
