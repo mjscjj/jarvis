@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { CompressOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons'
-import { Alert, Button, Empty, Input, Popover, Segmented, Spin, Switch, Tag } from 'antd'
+import { AimOutlined, CompressOutlined, MinusOutlined, PlusOutlined, SearchOutlined, SettingOutlined } from '@ant-design/icons'
+import { Alert, Button, Empty, Input, Popover, Segmented, Space, Spin, Switch, Tag, Tooltip } from 'antd'
 import type { ForceGraphMethods, NodeObject } from 'react-force-graph-2d'
 import ForceGraph2D from 'react-force-graph-2d'
 import { getPage, listPages } from '../api'
@@ -182,17 +182,37 @@ export default function WorldMap() {
   const frameGraph = useCallback((targetIds?: Set<string>, duration = 680) => {
     window.requestAnimationFrame(() => {
       if (!graphRef.current || !graph.nodes.length) return
+      if (targetIds?.size === 1) {
+        const target = graph.nodes.find((node) => targetIds.has(node.id))
+        if (target && Number.isFinite(target.x) && Number.isFinite(target.y)) {
+          graphRef.current.centerAt(target.x, target.y, duration)
+          graphRef.current.zoom(2.4, duration)
+        }
+        return
+      }
       const filter = targetIds?.size ? (candidate: NodeObject<WorldNode>) => targetIds.has(String(candidate.id)) : undefined
       graphRef.current.zoomToFit(duration, targetIds ? 92 : 72, filter)
     })
-  }, [graph.nodes.length])
+  }, [graph.nodes])
+
+  const changeZoom = useCallback((factor: number) => {
+    const instance = graphRef.current
+    if (!instance) return
+    instance.zoom(Math.min(12, Math.max(.22, instance.zoom() * factor)), 220)
+  }, [])
+
+  const focusSelection = useCallback(() => {
+    if (!selectedId) return
+    frameGraph(connections.size > 1 ? connections : new Set([selectedId]), 480)
+  }, [connections, frameGraph, selectedId])
 
   useEffect(() => {
     if (!graph.nodes.length) return
     framedSignatureRef.current = ''
-    const timer = window.setTimeout(() => frameGraph(undefined, 520), scope === 'focus' ? 40 : 720)
+    const targetIds = selectedId && connections.size > 1 ? connections : undefined
+    const timer = window.setTimeout(() => frameGraph(targetIds, 520), scope === 'focus' ? 40 : 720)
     return () => window.clearTimeout(timer)
-  }, [frameGraph, graph.nodes, scope])
+  }, [connections, frameGraph, graph.nodes, scope, selectedId])
 
   const configureForces = useCallback(() => {
     const instance = graphRef.current
@@ -330,7 +350,12 @@ export default function WorldMap() {
             options={[{ label: '主网络', value: 'primary' }, { label: '全局', value: 'all' }, { label: '一跳', value: 'focus', disabled: !selectedPage }]}
           />
           <Popover trigger="click" placement="bottomRight" content={viewOptions}><Button icon={<SettingOutlined />}>视图选项</Button></Popover>
-          <Button icon={<CompressOutlined />} onClick={() => frameGraph()}>适应画布</Button>
+          <Space.Compact className="world-map-zoom-controls">
+            <Tooltip title="缩小"><Button aria-label="缩小关系图" icon={<MinusOutlined />} onClick={() => changeZoom(0.72)} /></Tooltip>
+            <Tooltip title="放大"><Button aria-label="放大关系图" icon={<PlusOutlined />} onClick={() => changeZoom(1.38)} /></Tooltip>
+            <Button icon={<AimOutlined />} disabled={!selectedId} onClick={focusSelection}>聚焦</Button>
+            <Button icon={<CompressOutlined />} onClick={() => frameGraph()}>适应</Button>
+          </Space.Compact>
           <Button onClick={resetView}>重置</Button>
         </div>
       </div>
