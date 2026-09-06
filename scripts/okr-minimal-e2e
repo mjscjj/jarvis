@@ -84,7 +84,16 @@ prepare() {
   require_owner
   require_command jq
   mkdir -p "$CONFIG_DIR" "$RUNTIME_DIR/assets" "$RUNTIME_DIR/runs" "$RUNTIME_DIR/log"
-  ln -sfn "$REPO_ROOT/conf/config.yaml" "$CONFIG_PATH"
+  # sqlite is base-only: the loader refuses it in the runtime overlay, so the
+  # isolated runtime database has to be redirected in a real base config rather
+  # than a symlink to the shared one.
+  rm -f "$CONFIG_PATH"
+  awk '
+    /^[^[:space:]#]/ { in_sqlite = ($0 == "sqlite:") }
+    in_sqlite && /^[[:space:]]+path:/ && !done { print "  path: \"var/okr-e2e/runtime.db\""; done = 1; next }
+    { print }
+    END { if (!done) exit 1 }
+  ' "$REPO_ROOT/conf/config.yaml" >"$CONFIG_PATH" || fail "conf/config.yaml has no sqlite.path to redirect; update prepare"
   ln -sfn "$REPO_ROOT/conf/prompts" "$CONFIG_DIR/prompts"
   ln -sfn "$REPO_ROOT/conf/rules" "$CONFIG_DIR/rules"
   ln -sfn "$REPO_ROOT/conf/modules.yaml" "$CONFIG_DIR/modules.yaml"
@@ -94,6 +103,15 @@ prepare() {
 database_path: "var/okr-e2e/okr.db"
 upload_dir: "var/okr-e2e/assets"
 max_image_bytes: 10485760
+
+# Required by the agency-okr module even though no harness step runs a review.
+# Kept read-only so an accidental invocation cannot touch the isolated data.
+preview_review:
+  bin: "traex"
+  model: "DeepSeek-V4-Pro"
+  reasoning_effort: "high"
+  sandbox: "read-only"
+  timeout_seconds: 300
 
 identity:
   enabled: false
@@ -112,9 +130,6 @@ server:
   log_files:
     - "var/okr-e2e/log/server.log"
     - "var/okr-e2e/log/server.error.log"
-
-sqlite:
-  path: "var/okr-e2e/runtime.db"
 
 factengine:
   enabled: false
@@ -200,8 +215,8 @@ seed() {
 		metric_note:"测试口径：两个拆解点均有周进展即视为当周填写完成。",
     metrics:[{id:($kr_id+"-metric-1"),text:"W36 完成最小周报闭环",light:"green",images:[]}],
     points:[
-      {id:($kr_id+"-strategy"),kind:"strategy",title:"策略：确认本周重点与风险",meego_work_item_id:"",meego_url:""},
-      {id:($kr_id+"-product"),kind:"product",title:"产品：交付一个可回读结果",meego_work_item_id:"",meego_url:""}
+      {id:($kr_id+"-strategy"),kind:"strategy",title:"策略：确认本周重点与风险",meego_work_item_id:"",meego_url:"",tags:[]},
+      {id:($kr_id+"-product"),kind:"product",title:"产品：交付一个可回读结果",meego_work_item_id:"",meego_url:"",tags:[]}
     ],
 		tags:[{type:"business_category",value:"E2E 测试"},{type:"priority",value:"p1"},{type:"scenario",value:"minimal-e2e"}],
     owners:[{open_id:$open_id,name:$name}]
