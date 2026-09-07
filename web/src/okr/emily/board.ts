@@ -43,7 +43,7 @@ export interface BoardApi {
   setPointOwners: (krId: string, pointId: string, owners: KrOwner[]) => void
   setMetricNote: (krId: string, note: string) => void
   patchMetric: (krId: string, metricId: string, patch: Partial<MetricLine>) => void
-  addMetric: (krId: string) => void
+  addMetric: (krId: string, initial?: Partial<Omit<MetricLine, 'id'>>) => string
   removeMetric: (krId: string, metricId: string) => void
   setPointTitle: (objId: string, krId: string, pointId: string, title: string) => void
   setPointMeegoLink: (krId: string, pointId: string, patch: Pick<Point, 'meegoWorkItemId' | 'meegoUrl'>) => void

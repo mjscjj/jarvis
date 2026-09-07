@@ -282,6 +282,68 @@ func TestWeeklyCoreDataIsIsolatedByWeek(t *testing.T) {
 	}
 }
 
+func TestWeeklyCoreCanSeedFirstMetricWithoutChangingDefinitionOrOtherWeeks(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	objective := domain.Objective{ID: "o-weekly-empty-metric", Title: "增长", Quarter: "2026-Q3"}
+	kr := domain.KR{ID: "kr-weekly-empty-metric", ObjectiveID: objective.ID, Title: "提升转化"}
+	for _, value := range []any{&objective, &kr} {
+		if err := db.Create(value).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, week := range []string{"2026-W35", "2026-W36"} {
+		if err := db.Create(&domain.WeeklyReportWeek{Quarter: objective.Quarter, Week: week, OpenedBy: "test"}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	w35, err := service.ReplaceWeeklyKRCore(t.Context(), kr.ID, WeeklyKRCoreInput{
+		Week: "2026-W35", UpdatedBy: "ou_editor",
+		Metrics: []MetricView{{ID: "weekly-metric-1", Light: domain.LightYellow, Images: []domain.ImageRef{{ID: "img-1", Name: "核心数据.png", URL: "/okr-assets/img-1.png"}}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(w35.Metrics) != 1 || w35.Metrics[0].ID != "weekly-metric-1" || len(w35.Metrics[0].Images) != 1 || w35.Metrics[0].Images[0].ID != "img-1" {
+		t.Fatalf("W35 weekly metric = %+v", w35.Metrics)
+	}
+
+	w36Board, err := service.Board(t.Context(), objective.Quarter, "2026-W36")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := w36Board.Objectives[0].KRs[0].Metrics; len(got) != 0 {
+		t.Fatalf("W36 inherited W35-only metric: %+v", got)
+	}
+	coreBoard, err := service.CoreBoard(t.Context(), objective.Quarter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := coreBoard.Objectives[0].KRs[0].Metrics; len(got) != 0 {
+		t.Fatalf("weekly metric changed OKR definition: %+v", got)
+	}
+
+	if _, err := service.ReplaceWeeklyKRCore(t.Context(), kr.ID, WeeklyKRCoreInput{
+		Week: "2026-W36", UpdatedBy: "ou_editor",
+		Metrics: []MetricView{
+			{ID: "weekly-metric-2", Text: "first", Light: domain.LightGreen},
+			{ID: "weekly-metric-3", Text: "second", Light: domain.LightGreen},
+		},
+	}); err == nil {
+		t.Fatal("seeding more than one weekly metric should fail")
+	}
+	if _, err := service.ReplaceWeeklyKRCore(t.Context(), kr.ID, WeeklyKRCoreInput{
+		Week: "2026-W36", UpdatedBy: "ou_editor",
+		Metrics: []MetricView{{ID: "weekly-metric-empty", Light: domain.LightGreen}},
+	}); err == nil {
+		t.Fatal("empty weekly metric should fail")
+	}
+}
+
 func TestWeeklyReportWeekLifecycleDoesNotRequireProgress(t *testing.T) {
 	db := openWorkspaceTestDB(t)
 	objective := domain.Objective{ID: "o-week", Title: "增长", Quarter: "2026-Q3"}

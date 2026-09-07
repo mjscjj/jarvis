@@ -17,6 +17,12 @@ func TestStaticAssetCacheHeadersSeparatesDocumentsAndHashedAssets(t *testing.T) 
 	if err := os.Mkdir(filepath.Join(root, "assets"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.Mkdir(filepath.Join(root, "okr-assets"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "okr-assets", "review.png"), []byte("image"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(root, "assets", "app-hash.js"), []byte("export {}"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -34,6 +40,10 @@ func TestStaticAssetCacheHeadersSeparatesDocumentsAndHashedAssets(t *testing.T) 
 	asset := ut.PerformRequest(h.Engine, "GET", "/assets/app-hash.js", nil).Result()
 	if got := string(asset.Header.Peek("Cache-Control")); got != immutableAssetCacheControl {
 		t.Fatalf("asset Cache-Control = %q, want %q", got, immutableAssetCacheControl)
+	}
+	okrAsset := ut.PerformRequest(h.Engine, "GET", "/okr-assets/review.png", nil).Result()
+	if got := string(okrAsset.Header.Peek("Cache-Control")); got != privateImmutableAssetCacheControl {
+		t.Fatalf("OKR asset Cache-Control = %q, want %q", got, privateImmutableAssetCacheControl)
 	}
 	index := ut.PerformRequest(h.Engine, "GET", "/", nil).Result()
 	if got := string(index.Header.Peek("Cache-Control")); got != webDocumentCacheControl {

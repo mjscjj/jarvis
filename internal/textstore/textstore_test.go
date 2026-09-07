@@ -59,20 +59,30 @@ func TestWeeklyReportDefinitionsAreEditableMarkdown(t *testing.T) {
 	}
 }
 
-func TestRepositoryWeeklyReportReminderTemplateUsesAvailablePreviewFacts(t *testing.T) {
+func TestRepositoryWeeklyReportReminderTemplateListsReviewIssues(t *testing.T) {
 	content, err := os.ReadFile(filepath.Join("..", "..", "conf", "prompts", "weekly-report-reminder-template.md"))
 	if err != nil {
 		t.Fatalf("read reminder template: %v", err)
 	}
 	template := string(content)
-	for _, placeholder := range []string{"{{week}}", "{{owner_name}}", "{{missing_items}}"} {
+	for _, placeholder := range []string{
+		"{{owner_mention}}",
+		"{{missing_progress_section}}",
+		"{{missing_core_section}}",
+		"{{missing_score_section}}",
+		"{{unchanged_section}}",
+		"{{week}}",
+		"{{count}}",
+		"{{kr_title}}",
+		"{{fill_url}}",
+	} {
 		if !strings.Contains(template, placeholder) {
-			t.Errorf("reminder template missing supported placeholder %s", placeholder)
+			t.Errorf("reminder template missing review issue placeholder %s", placeholder)
 		}
 	}
-	for _, unavailable := range []string{"{{due_at}}", "{{fill_url}}"} {
+	for _, unavailable := range []string{"{{owner_name}}", "{{missing_items}}", "{{due_at}}", "\n同步："} {
 		if strings.Contains(template, unavailable) {
-			t.Errorf("reminder template requires unavailable preview fact %s", unavailable)
+			t.Errorf("reminder template contains unsupported content %s", unavailable)
 		}
 	}
 }

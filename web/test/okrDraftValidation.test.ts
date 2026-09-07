@@ -41,3 +41,12 @@ test('完整 KR 不拦截自动保存', () => {
     points: [{ id: 'point-1', kind: 'strategy', title: '完成策略', entries: [] }],
   })), undefined)
 })
+
+test('周度核心数据允许图片独立表达，定义编辑仍要求文本', () => {
+  const imageOnly = kr({
+    metrics: [{ id: 'metric-1', text: '', light: 'green', images: [{ id: 'image-1', name: '截图.png', url: '/okr-assets/image-1.png' }] }],
+  })
+
+  assert.ok(findKrDraftIssue(imageOnly))
+  assert.equal(findKrDraftIssue(imageOnly, { allowImageOnlyMetrics: true }), undefined)
+})

@@ -170,7 +170,7 @@ export function BoardProvider({
     if (!current) return
     const snapshot = clone(current)
     const revision = revisions.current.get(krId) ?? 0
-    const draftIssue = findKrDraftIssue(snapshot)
+    const draftIssue = findKrDraftIssue(snapshot, { allowImageOnlyMetrics: surface === 'weekly-report' })
     if (draftIssue) {
       lastFailedKr.current = krId
       setSyncState({ kind: 'error', ...draftIssue })
@@ -601,9 +601,13 @@ export function BoardProvider({
       const metric = findKr(draft, krId)?.metrics.find((item) => item.id === metricId)
       if (metric) Object.assign(metric, patch)
     }),
-    addMetric: (krId) => mutate(krId, (draft) => {
-      findKr(draft, krId)?.metrics.push({ id: uid('m'), text: '', light: 'green', images: [] })
-    }),
+    addMetric: (krId, initial) => {
+      const id = uid('m')
+      mutate(krId, (draft) => {
+        findKr(draft, krId)?.metrics.push({ text: '', light: 'green', images: [], ...initial, id })
+      })
+      return id
+    },
     removeMetric: (krId, metricId) => mutate(krId, (draft) => {
       const kr = findKr(draft, krId)
       if (kr) kr.metrics = kr.metrics.filter((item) => item.id !== metricId)

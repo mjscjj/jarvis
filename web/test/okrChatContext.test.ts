@@ -23,6 +23,16 @@ test('OKR chat publishes selected stable IDs without a strict page DTO', () => {
   })
 })
 
+test('OKR chat clears a stale item target when navigation selects a broad scope', () => {
+  assert.deepEqual(withOKRTarget(
+    { tab: 'manage', quarter: '2026-Q3', objective_id: 'o-old', kr_id: 'kr-old', point_id: 'point-old' },
+    'okr',
+    '2026-Q3',
+    '',
+    {},
+  ), { tab: 'manage', quarter: '2026-Q3' })
+})
+
 test('OKR chat removes weekly scope and targets on stable definitions', () => {
   assert.deepEqual(withOKRScope({
     tab: 'structure', quarter: '2026-Q2', week: '2026-W15', progress_id: 'progress-1',

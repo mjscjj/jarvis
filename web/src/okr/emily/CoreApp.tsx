@@ -31,7 +31,7 @@ export default function CoreApp() {
       </header>
       <main className="mx-auto max-w-[1580px] px-4 py-3 sm:px-6 sm:py-4 lg:px-8">
         {(syncState.kind === 'error' || syncState.kind === 'conflict') && <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{syncState.message}</div>}
-        <ManagementView />
+        <ManagementView hierarchyNavigation hierarchyScopeKey={quarter} />
       </main>
       <Modal
         title={syncState.kind === 'error' ? syncState.title ?? '暂时无法保存' : '暂时无法保存'}

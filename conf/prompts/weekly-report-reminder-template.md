@@ -1,11 +1,7 @@
-# {{week}} 周报填写提醒
+{{owner_mention}}，你好。
 
-{{owner_name}}，本周 OKR 周报已经开始填写。
+{{missing_progress_section}}{{missing_core_section}}{{missing_score_section}}{{unchanged_section}}请尽快更新。
 
-你还有以下内容需要更新：
+[填写链接]({{fill_url}})
 
-{{missing_items}}
-
-如果本周没有变化，也请填写“本周无变化”，避免会议时重复确认。
-
-> 发送规则：一位负责人一条消息；只包含该负责人真实归属且仍缺失的 KR。不要在模板中填写或猜测收件人 ID。
+> 每个非零区块使用“本周（{{week}}）KR …还有/有 {{count}} 条…”开头，随后逐行列出 `- {{kr_title}}；`；顺序为进展、核心数据、评分、跟上周一样。只真实 @ Owner，不 @ principal，不添加“同步：”或其它话术。

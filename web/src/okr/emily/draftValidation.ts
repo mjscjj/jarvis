@@ -5,8 +5,13 @@ export interface KrDraftIssue {
   message: string
 }
 
-export function findKrDraftIssue(kr: Kr): KrDraftIssue | undefined {
-  const emptyMetrics = kr.metrics.filter((metric) => !metric.text.trim()).length
+export function findKrDraftIssue(
+  kr: Kr,
+  options: { allowImageOnlyMetrics?: boolean } = {},
+): KrDraftIssue | undefined {
+  const emptyMetrics = kr.metrics.filter((metric) => (
+    !metric.text.trim() && !(options.allowImageOnlyMetrics && (metric.images?.length ?? 0) > 0)
+  )).length
   const emptyStrategyPoints = kr.points.filter((point) => point.kind === 'strategy' && !point.title.trim()).length
   const emptyProductPoints = kr.points.filter((point) => point.kind === 'product' && !point.title.trim()).length
   if (emptyMetrics === 0 && emptyStrategyPoints === 0 && emptyProductPoints === 0) return undefined

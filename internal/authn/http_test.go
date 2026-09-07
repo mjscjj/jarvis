@@ -26,6 +26,21 @@ func TestBrowserMiddlewareRequiresSessionForBrowserAPI(t *testing.T) {
 	}
 }
 
+func TestBrowserMiddlewareRequiresSessionForOKRImages(t *testing.T) {
+	service := newTestService(t, fakeRunner{run: func(_ string, _ []string) ([]byte, error) {
+		return nil, nil
+	}})
+	h := server.Default()
+	h.Use(BrowserMiddleware(service))
+	h.GET("/okr-assets/:name", okHandler())
+
+	request := ut.PerformRequest(h.Engine, "GET", "/okr-assets/image.png", nil,
+		ut.Header{Key: "Sec-Fetch-Mode", Value: "no-cors"})
+	if request.Result().StatusCode() != consts.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", request.Result().StatusCode())
+	}
+}
+
 func TestBrowserMiddlewareAllowsAuthenticatedBrowserAndLocalCLI(t *testing.T) {
 	service := newTestService(t, fakeRunner{run: func(_ string, _ []string) ([]byte, error) {
 		return nil, nil
@@ -39,12 +54,19 @@ func TestBrowserMiddlewareAllowsAuthenticatedBrowserAndLocalCLI(t *testing.T) {
 	h := server.Default()
 	h.Use(BrowserMiddleware(service))
 	h.GET("/api/tasks", okHandler())
+	h.GET("/okr-assets/:name", okHandler())
 
 	browser := ut.PerformRequest(h.Engine, "GET", "/api/tasks", nil,
 		ut.Header{Key: "Sec-Fetch-Mode", Value: "cors"},
 		ut.Header{Key: "Cookie", Value: CookieName + "=" + result.SessionToken})
 	if browser.Result().StatusCode() != consts.StatusOK {
 		t.Fatalf("authenticated browser status = %d", browser.Result().StatusCode())
+	}
+	image := ut.PerformRequest(h.Engine, "GET", "/okr-assets/image.png", nil,
+		ut.Header{Key: "Sec-Fetch-Mode", Value: "no-cors"},
+		ut.Header{Key: "Cookie", Value: CookieName + "=" + result.SessionToken})
+	if image.Result().StatusCode() != consts.StatusOK {
+		t.Fatalf("authenticated image status = %d", image.Result().StatusCode())
 	}
 	localCLI := ut.PerformRequest(h.Engine, "GET", "/api/tasks", nil)
 	if localCLI.Result().StatusCode() != consts.StatusOK {

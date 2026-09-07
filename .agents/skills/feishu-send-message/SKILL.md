@@ -123,7 +123,7 @@ lark-cli im +chat-create \
 
 创建后必须再次用 `+chat-members-list --page-all --page-limit 0` 做同样的完整核验。建群是已经发生的独立副作用：成功后在最终结果申报一条 `feishu_chat` effect；即使随后发消息失败，也不能把已建群写成没有发生。重跑时先搜索并复用这个群。
 
-然后用 Bot 在群里发送。按 M5 rules 构造真实 mention：除私聊 principal 本人外，必须真实 `@` principal；面向具体个人时同时真实 `@` 对方。助手群因此同时 `@` 对方和 principal：
+然后用 Bot 在群里发送。按 M5 rules 构造真实 mention：普通助手群消息同时真实 `@` 对方和 principal；Task 或业务 Prompt 明确把消息定义为系统批量通知并指定 mention 对象时，严格使用该对象集合，不额外添加 principal 或“同步”尾注。
 
 ```bash
 lark-cli im +messages-send \
@@ -132,6 +132,8 @@ lark-cli im +messages-send \
   --idempotency-key "<稳定幂等键>" \
   --as bot
 ```
+
+若业务 Prompt 明确只 mention 收件人，则对应命令中的 Markdown 只保留 target 的 `<at>` 标签。
 
 ### 群聊前置：确认 {{AGENT_NAME}} Bot 在这个群里
 

@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getMeegoPreview } from '../api'
 import { useBoard } from '../board'
 import { buildAllBusinessNavigation, buildKRHierarchy, priorityOf } from '../hierarchy'
-import { hasOwner, splitOwnerNames } from '../people'
+import { krHasAnyOwner, krOwnerOptions, ownerIdentityKey, splitOwnerNames } from '../people'
+import { canAddMetric } from '../metricEditing'
 import { collapseAllIds, KINDS } from '../rows'
 import { KIND_LABEL, isDone, statusOf } from '../template'
-import type { Entry, Kr, KrOwner, KrPriority, KrTag, MeegoPreview, Objective, Point, PointKind } from '../types'
+import type { Entry, ImageRef, Kr, KrOwner, KrPriority, KrTag, MeegoPreview, MetricLine, Objective, Point, PointKind } from '../types'
 import { TagEditor } from './TagEditor'
 import { PreviewReviewButton, PreviewReviewPanel } from '../aiReviewContext'
 import { isReviewTemplate } from '../weekCatalog'
@@ -13,7 +14,8 @@ import { FeishuPeoplePicker, PointPeoplePicker } from './FeishuPeoplePicker'
 import { PersonAvatar } from './PersonAvatar'
 import { WeeklyScoreControl } from './WeeklyScoreControl'
 import { HierarchyNav } from './HierarchyNav'
-import { Images, Links, StatusSelect, Text } from './ui'
+import { Images, Links, StatusSelect, Text, usePastedImageUpload } from './ui'
+import { OwnerFilterPicker } from './OwnerFilterPicker'
 
 function Caret({ open, onToggle, label }: { open: boolean; onToggle: () => void; label: string }) {
   return (
@@ -130,8 +132,71 @@ function HistoryPreview({ point }: { point: Point }) {
   )
 }
 
+function MetricRow({ krId, metric, readOnly, structureReadOnly, onRemove }: { krId: string; metric: MetricLine; readOnly: boolean; structureReadOnly: boolean; onRemove: () => void }) {
+  const { patchMetric } = useBoard()
+  const appendImages = useCallback((uploaded: ImageRef[]) => {
+    patchMetric(krId, metric.id, { images: [...(metric.images ?? []), ...uploaded] })
+  }, [krId, metric.id, metric.images, patchMetric])
+  const paste = usePastedImageUpload(appendImages, readOnly)
+
+  return (
+    <div
+      data-okr-metric-id={metric.id}
+      onPaste={readOnly ? undefined : paste.onPaste}
+      tabIndex={readOnly ? -1 : 0}
+      aria-busy={paste.uploading}
+      className="group/metric flex min-h-12 items-start gap-3 border-b border-slate-100 px-4 py-2.5 outline-none last:border-b-0 focus-within:bg-blue-50/30 focus:bg-blue-50/30"
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start gap-3">
+          <Text
+            fit
+            value={metric.text}
+            onChange={(text) => patchMetric(krId, metric.id, { text })}
+            placeholder="例：Q3 累计自然入驻 1,253 家，线索到入驻转化率 16.51%"
+            className="text-[16px] leading-6 tracking-[0.005em] text-slate-800"
+            readOnly={readOnly}
+            commentTarget={{ type: 'metric', id: metric.id, title: metric.text }}
+          />
+        </div>
+        {(!readOnly || (metric.images?.length ?? 0) > 0) && (
+          <div className="mt-2 flex flex-wrap items-start gap-2">
+            <Images value={metric.images ?? []} onChange={(images) => patchMetric(krId, metric.id, { images })} readOnly={readOnly} pasteEnabled={false} />
+            {!readOnly && <span className={`text-[11px] ${paste.uploadError ? 'text-red-500' : 'text-slate-400'}`} title={paste.uploadError}>
+              {paste.uploading ? '图片上传中…' : paste.uploadError || '在本行按 ⌘V / Ctrl+V 粘贴截图'}
+              {paste.canRetry && <button type="button" onClick={paste.retry} className="ml-1 underline">重试</button>}
+            </span>}
+          </div>
+        )}
+      </div>
+      {!structureReadOnly && (
+        <button type="button" onClick={onRemove} title="删除这一条" className="ml-auto text-slate-300 opacity-0 transition-opacity group-hover/metric:opacity-100 hover:text-red-500">×</button>
+      )}
+    </div>
+  )
+}
+
+function EmptyMetric({ disabled, pasteEnabled, onCreate }: { disabled: boolean; pasteEnabled: boolean; onCreate: (images?: ImageRef[]) => void }) {
+  const paste = usePastedImageUpload((uploaded) => onCreate(uploaded), disabled || !pasteEnabled)
+  return (
+    <div onPaste={disabled || !pasteEnabled ? undefined : paste.onPaste} tabIndex={disabled || !pasteEnabled ? -1 : 0} className="outline-none focus:bg-blue-50/30">
+      <button type="button" disabled={disabled || paste.uploading} onClick={() => onCreate()} className="flex min-h-12 w-full items-center gap-3 border-b border-slate-100 px-4 py-2.5 text-left text-[16px] leading-6 tracking-[0.005em] text-slate-400 last:border-b-0 enabled:hover:bg-slate-50 enabled:hover:text-slate-500">
+        <span>{paste.uploading ? '图片上传中…' : pasteEnabled ? '填写核心数据，或在此按 ⌘V / Ctrl+V 粘贴截图' : '例：Q3 累计自然入驻 1,253 家，线索到入驻转化率 16.51%'}</span>
+      </button>
+      {paste.uploadError && <div className="px-4 pb-2 text-[11px] text-red-500" title={paste.uploadError}>
+        {paste.uploadError}{paste.canRetry && <button type="button" onClick={paste.retry} className="ml-1 underline">重试</button>}
+      </div>}
+    </div>
+  )
+}
+
 function MetricBox({ kr, readOnly, structureReadOnly = readOnly }: { kr: Kr; readOnly: boolean; structureReadOnly?: boolean }) {
-  const { setMetricNote, patchMetric, addMetric, removeMetric } = useBoard()
+  const { setMetricNote, addMetric, removeMetric, week } = useBoard()
+  const metricCanBeAdded = canAddMetric(readOnly, structureReadOnly, kr.metrics.length)
+  const createMetric = (images: ImageRef[] = []) => {
+    const metricId = addMetric(kr.id, { images })
+    window.requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(`[data-okr-metric-id="${metricId}"] textarea`)?.focus())
+  }
 
   return (
     <section className="rounded-xl border border-blue-100 bg-blue-50/55 p-2.5">
@@ -145,49 +210,13 @@ function MetricBox({ kr, readOnly, structureReadOnly = readOnly }: { kr: Kr; rea
       </div>
       <div className="group/metrics rounded-lg border border-blue-100 bg-white/90">
         {kr.metrics.map((metric) => (
-          <div key={metric.id} className="group/metric flex min-h-12 items-start gap-3 border-b border-slate-100 px-4 py-2.5 last:border-b-0">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-start gap-3">
-                <Text
-                  fit
-                  value={metric.text}
-                  onChange={(text) => patchMetric(kr.id, metric.id, { text })}
-                  placeholder="例：Q3 累计自然入驻 1,253 家，线索到入驻转化率 16.51%"
-                  className="text-[16px] leading-6 tracking-[0.005em] text-slate-800"
-                  readOnly={readOnly}
-                  commentTarget={{ type: 'metric', id: metric.id, title: metric.text }}
-                />
-              </div>
-              {(!readOnly || (metric.images?.length ?? 0) > 0) && (
-                <div className="mt-2">
-                  <Images value={metric.images ?? []} onChange={(images) => patchMetric(kr.id, metric.id, { images })} readOnly={readOnly} />
-                </div>
-              )}
-            </div>
-            {!structureReadOnly && (
-              <button
-                type="button"
-                onClick={() => removeMetric(kr.id, metric.id)}
-                title="删除这一条"
-                className="ml-auto text-slate-300 opacity-0 transition-opacity group-hover/metric:opacity-100 hover:text-red-500"
-              >
-                ×
-              </button>
-            )}
-          </div>
+          <MetricRow key={metric.id} krId={kr.id} metric={metric} readOnly={readOnly} structureReadOnly={structureReadOnly} onRemove={() => removeMetric(kr.id, metric.id)} />
         ))}
         {kr.metrics.length === 0 && (
-          <button
-            type="button"
-            disabled={structureReadOnly}
-            onClick={() => addMetric(kr.id)}
-            className="flex min-h-12 w-full items-center gap-3 border-b border-slate-100 px-4 py-2.5 text-left text-[16px] leading-6 tracking-[0.005em] text-slate-400 last:border-b-0 enabled:hover:bg-slate-50 enabled:hover:text-slate-500"
-          >
-            <span>例：Q3 累计自然入驻 1,253 家，线索到入驻转化率 16.51%</span>
-          </button>
+          <EmptyMetric disabled={!metricCanBeAdded} pasteEnabled={Boolean(week)} onCreate={createMetric} />
         )}
-        {!structureReadOnly && kr.metrics.length > 0 && (
-          <button type="button" onClick={() => addMetric(kr.id)} className="w-full border-t border-slate-100 px-4 py-2 text-left text-xs text-slate-400 hover:bg-slate-50 hover:text-blue-600">+ 一条核心数据</button>
+        {metricCanBeAdded && kr.metrics.length > 0 && (
+          <button type="button" onClick={() => createMetric()} className="w-full border-t border-slate-100 px-4 py-2 text-left text-xs text-slate-400 hover:bg-slate-50 hover:text-blue-600">+ 一条核心数据</button>
         )}
       </div>
     </section>
@@ -537,12 +566,24 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
 	const { objectives, templateKey } = useBoard()
 	const showReview = showProgress && isReviewTemplate(templateKey)
 	const [closed, setClosed] = useState<Set<string>>(new Set())
-	const [ownerFilter, setOwnerFilter] = useState('')
+	const [ownerFilters, setOwnerFilters] = useState<string[]>([])
 	const [activeBusinessValue, setActiveBusinessValue] = useState<string>()
 	const [activePriorityValue, setActivePriorityValue] = useState<string>()
 	const [activeObjectiveId, setActiveObjectiveId] = useState('')
-  const owners = useMemo(() => [...new Set(objectives.flatMap((objective) => objective.krs.flatMap((kr) => splitOwnerNames(kr.ownerName))))].sort(), [objectives])
-  const visibleObjectives = useMemo(() => objectives.map((objective) => ({ ...objective, krs: objective.krs.filter((kr) => !ownerFilter || hasOwner(kr.ownerName, ownerFilter)) })).filter((objective) => !ownerFilter || objective.krs.length > 0), [objectives, ownerFilter])
+	const owners = useMemo(() => krOwnerOptions(objectives), [objectives])
+	const ownersByKey = useMemo(() => new Map(owners.map((owner) => [ownerIdentityKey(owner), owner])), [owners])
+	const ownerKRCounts = useMemo(() => new Map(owners.map((owner) => [
+		ownerIdentityKey(owner),
+		objectives.reduce((count, objective) => count + objective.krs.filter((kr) => krHasAnyOwner(kr, [owner])).length, 0),
+	])), [objectives, owners])
+	const selectedOwners = useMemo(() => ownerFilters.flatMap((key) => {
+		const owner = ownersByKey.get(key)
+		return owner ? [owner] : []
+	}), [ownerFilters, ownersByKey])
+	const hasOwnerFilter = ownerFilters.length > 0
+	const visibleObjectives = useMemo(() => objectives
+		.map((objective) => ({ ...objective, krs: objective.krs.filter((kr) => krHasAnyOwner(kr, selectedOwners)) }))
+		.filter((objective) => !hasOwnerFilter || objective.krs.length > 0), [hasOwnerFilter, objectives, selectedOwners])
 	const navigation = useMemo(() => buildKRHierarchy(visibleObjectives), [visibleObjectives])
 	const overview = activeBusinessValue === undefined
 	const allBusiness = useMemo(() => buildAllBusinessNavigation(navigation), [navigation])
@@ -552,6 +593,13 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
   const totalKRCount = objectives.reduce((sum, objective) => sum + objective.krs.length, 0)
   const visibleKRCount = visibleObjectives.reduce((sum, objective) => sum + objective.krs.length, 0)
 	const activeKRCount = activeObjective?.krs.length ?? 0
+
+	useEffect(() => {
+		setOwnerFilters((current) => {
+			const valid = current.filter((key) => ownersByKey.has(key))
+			return valid.length === current.length ? current : valid
+		})
+	}, [ownersByKey])
 
   const toggle = (id: string) => setClosed((previous) => {
     const next = new Set(previous)
@@ -573,11 +621,19 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
     <div className={readOnly ? 'kr-table-readonly' : ''}>
       <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
 			{showReview && <PreviewReviewButton target={{ kind: 'all', title: '全部 OKR' }} label="评审全部" className="px-3" />}
-			<span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] text-slate-400">共 {totalKRCount} 条 KR{ownerFilter ? `，负责人筛选后 ${visibleKRCount} 条` : ''}，当前方向 {activeKRCount} 条</span>
-        <span className="ml-auto text-slate-400">负责人</span>
-		<select value={ownerFilter} onChange={(event) => { setOwnerFilter(event.target.value); setActiveBusinessValue(undefined); setActivePriorityValue(undefined); setActiveObjectiveId('') }} className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-slate-600 outline-none focus:border-blue-400">
-          <option value="">全部负责人</option>{owners.map((owner) => <option key={owner} value={owner}>{owner}</option>)}
-        </select>
+			<span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] text-slate-400">共 {totalKRCount} 条 KR{hasOwnerFilter ? `，已选 ${ownerFilters.length} 人后 ${visibleKRCount} 条` : ''}，当前方向 {activeKRCount} 条</span>
+		<span className="ml-auto" />
+		<OwnerFilterPicker
+			options={owners}
+			ownerCounts={ownerKRCounts}
+			selectedKeys={ownerFilters}
+			onChange={(keys) => {
+				setOwnerFilters(keys)
+				setActiveBusinessValue(undefined)
+				setActivePriorityValue(undefined)
+				setActiveObjectiveId('')
+			}}
+		/>
         <span className="font-medium text-slate-500">层级</span>
         <div className="inline-flex overflow-hidden rounded-md border border-slate-200 bg-white">
           <button type="button" onClick={() => setClosed(new Set())} className="px-2.5 py-1 text-slate-500 hover:bg-slate-50 hover:text-slate-700">全部展开</button>

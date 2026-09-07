@@ -12,8 +12,10 @@ import (
 )
 
 // WeeklyKRCoreInput is the reusable OKR write contract for one week's core
-// data shown under one KR. It cannot change the KR title, owners, tags, metric
-// IDs, or decomposition definitions.
+// data shown under one KR. It cannot change the KR title, owners, tags or
+// decomposition definitions. When neither the definition nor this week has a
+// metric yet, the week may seed its own first metric row; later writes preserve
+// that week's metric IDs.
 type WeeklyKRCoreInput struct {
 	ExpectedVersion int32        `json:"expected_version"`
 	Week            string       `json:"week"`
@@ -110,13 +112,34 @@ func (s *Service) weeklyMetricIDs(ctx context.Context, krID string, existing dom
 }
 
 func validateWeeklyMetrics(metrics []MetricView, allowedIDs []string) error {
+	if len(allowedIDs) == 0 {
+		if len(metrics) > 1 {
+			return fmt.Errorf("weekly core data can seed only one metric when the definition has none")
+		}
+		seen := make(map[string]struct{}, len(metrics))
+		for _, metric := range metrics {
+			id := strings.TrimSpace(metric.ID)
+			if id == "" || !domain.ValidLight(metric.Light) || !weeklyMetricHasContent(metric) {
+				return fmt.Errorf("weekly core data metrics require ids, text or images, and a valid light")
+			}
+			if _, exists := seen[id]; exists {
+				return fmt.Errorf("weekly core data metrics require unique ids")
+			}
+			seen[id] = struct{}{}
+		}
+		return nil
+	}
 	if len(metrics) != len(allowedIDs) {
 		return fmt.Errorf("weekly core data must preserve the metric definitions")
 	}
 	for index, metric := range metrics {
-		if strings.TrimSpace(metric.ID) == "" || metric.ID != allowedIDs[index] || !domain.ValidLight(metric.Light) {
-			return fmt.Errorf("weekly core data must preserve metric ids and use a valid light")
+		if strings.TrimSpace(metric.ID) == "" || metric.ID != allowedIDs[index] || !domain.ValidLight(metric.Light) || !weeklyMetricHasContent(metric) {
+			return fmt.Errorf("weekly core data must preserve metric ids and require text or images with a valid light")
 		}
 	}
 	return nil
+}
+
+func weeklyMetricHasContent(metric MetricView) bool {
+	return strings.TrimSpace(metric.Text) != "" || len(metric.Images) > 0
 }

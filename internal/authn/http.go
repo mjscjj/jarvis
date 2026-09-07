@@ -16,7 +16,7 @@ const CookieName = "jarvis_session"
 func BrowserMiddleware(service *Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		path := string(c.Path())
-		if !service.Enabled() || !strings.HasPrefix(path, "/api/") || isPublicPath(path) || !isBrowserRequest(c) {
+		if !service.Enabled() || !isProtectedBrowserPath(path) || isPublicPath(path) || !isBrowserRequest(c) {
 			c.Next(ctx)
 			return
 		}
@@ -29,6 +29,10 @@ func BrowserMiddleware(service *Service) app.HandlerFunc {
 			"msg":  "请先使用字节身份登录",
 		})
 	}
+}
+
+func isProtectedBrowserPath(path string) bool {
+	return strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/okr-assets/")
 }
 
 func isPublicPath(path string) bool {

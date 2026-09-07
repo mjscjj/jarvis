@@ -347,9 +347,13 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
       const metric = findKr(draft, krId)?.metrics.find((item) => item.id === metricId)
       if (metric) Object.assign(metric, patch)
     }),
-    addMetric: (krId) => mutate((draft) => {
-      findKr(draft, krId)?.metrics.push({ id: uid('plan-m'), text: '', light: 'green', images: [] })
-    }),
+    addMetric: (krId, initial) => {
+      const id = uid('plan-m')
+      mutate((draft) => {
+        findKr(draft, krId)?.metrics.push({ text: '', light: 'green', images: [], ...initial, id })
+      })
+      return id
+    },
     removeMetric: (krId, metricId) => mutate((draft) => {
       const kr = findKr(draft, krId)
       if (kr) kr.metrics = kr.metrics.filter((item) => item.id !== metricId)

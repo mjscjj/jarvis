@@ -1,11 +1,12 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useBoard } from '../board'
-import { buildKRHierarchy, businessCategoryOf, businessCategoryOptions, isStructuralTag, priorityOf, withSelectedBusinessCategory } from '../hierarchy'
+import { buildAllBusinessNavigation, buildKRHierarchy, businessCategoryOf, businessCategoryOptions, filterObjectivesByHierarchy, isStructuralTag, objectivesForBusiness, priorityOf, withCompletePriorityNavigation, withSelectedBusinessCategory } from '../hierarchy'
 import { tagLabel } from '../labels'
 import { hasOwner, ownerOptions, splitOwnerNames } from '../people'
 import type { Kr, KrOwner, KrPriority, KrTag, Objective } from '../types'
 import { BusinessCategoryTabs } from './BusinessCategoryTabs'
 import { FeishuPeoplePicker, FeishuPeoplePickerInput } from './FeishuPeoplePicker'
+import { HierarchyNav } from './HierarchyNav'
 import { KrDefinitionDetails } from './Table'
 import { TagEditor } from './TagEditor'
 
@@ -262,7 +263,21 @@ function ObjectiveEditorHeader({
 	)
 }
 
-export function ManagementView({ title = 'OKR 管理', subtitle = '标签可标在整条 KR，也可下钻到策略/产品要点；长标签完整换行展示', showTags = true, deleteKrWarning = '连同各周进展一起删除' }: { title?: string; subtitle?: string; showTags?: boolean; deleteKrWarning?: string }) {
+export function ManagementView({
+	title = 'OKR 管理',
+	subtitle = '标签可标在整条 KR，也可下钻到策略/产品要点；长标签完整换行展示',
+	showTags = true,
+	deleteKrWarning = '连同各周进展一起删除',
+	hierarchyNavigation = false,
+	hierarchyScopeKey = '',
+}: {
+	title?: string
+	subtitle?: string
+	showTags?: boolean
+	deleteKrWarning?: string
+	hierarchyNavigation?: boolean
+	hierarchyScopeKey?: string
+}) {
   const { objectives, quarter, syncState, createObjective, swapObjectives, swapKrs } = useBoard()
   const [query, setQuery] = useState('')
   const [owner, setOwner] = useState('')
@@ -271,6 +286,8 @@ export function ManagementView({ title = 'OKR 管理', subtitle = '标签可标�
   // undefined means every category; '' is the untagged one, which is a real
   // choice here because management is where those KRs get their category.
   const [businessCategory, setBusinessCategory] = useState<string>()
+	const [hierarchyPriority, setHierarchyPriority] = useState<KrPriority | '' | undefined>()
+	const [hierarchyObjectiveId, setHierarchyObjectiveId] = useState('')
   const [creatingObjectiveId, setCreatingObjectiveId] = useState('')
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
   // 「指标与拆解」的展开态放在这里，工具栏的全部展开/折叠才管得到每一行。
@@ -278,7 +295,8 @@ export function ManagementView({ title = 'OKR 管理', subtitle = '标签可标�
   const [creatingObjective, setCreatingObjective] = useState(false)
   const [objectiveTitle, setObjectiveTitle] = useState('')
   const [objectiveQuarter, setObjectiveQuarter] = useState(quarter)
-  const hasFilters = Boolean(query.trim() || owner || priority || (showTags && tag) || businessCategory !== undefined)
+	const toolbarPriority = hierarchyNavigation ? '' : priority
+	const hasFilters = Boolean(query.trim() || owner || toolbarPriority || (showTags && tag) || businessCategory !== undefined || hierarchyPriority !== undefined || hierarchyObjectiveId)
 	const peopleOptions = useMemo(() => ownerOptions(objectives), [objectives])
 	const owners = useMemo(() => peopleOptions.map((person) => person.name), [peopleOptions])
 	const tags = useMemo(() => [...new Map(objectives.flatMap((objective) => objective.krs.flatMap((kr) => allTagsOf(kr).map((item) => [`${item.type}:${item.value}`, item] as const)))).entries()].map(([key, item]) => ({ key, ...item })).sort((left, right) => tagLabel(left.type, left.value).localeCompare(tagLabel(right.type, right.value))), [objectives])
@@ -288,23 +306,62 @@ export function ManagementView({ title = 'OKR 管理', subtitle = '标签可标�
 		totalKrCount: objective.krs.length,
     krs: objective.krs.filter((kr) => {
       const matchesQuery = !query.trim() || `${objective.title} ${kr.title} ${kr.points.map((point) => point.title).join(' ')}`.toLowerCase().includes(query.trim().toLowerCase())
-				return matchesQuery && (!owner || hasOwner(kr.ownerName, owner)) && (!priority || priorityOf(kr) === priority) && (!showTags || !tag || allTagsOf(kr).some((item) => `${item.type}:${item.value}` === tag))
+				return matchesQuery && (!owner || hasOwner(kr.ownerName, owner)) && (!toolbarPriority || priorityOf(kr) === toolbarPriority) && (!showTags || !tag || allTagsOf(kr).some((item) => `${item.type}:${item.value}` === tag))
     }),
-  })), [objectives, owner, priority, query, showTags, tag])
+  })), [objectives, owner, query, showTags, tag, toolbarPriority])
+	const navigation = useMemo(() => buildKRHierarchy(filtered.filter((objective) => objective.krs.length > 0)), [filtered])
   // Counts read every filter except the category itself, so each tab states how
   // many rows picking it would leave. Objectives the other filters emptied
   // contribute nothing rather than an untagged bucket of zero.
   const categoryOptions = useMemo(
-    () => withSelectedBusinessCategory(businessCategoryOptions(buildKRHierarchy(filtered.filter((objective) => objective.krs.length > 0))), businessCategory),
-    [businessCategory, filtered],
+		() => hierarchyNavigation
+			? businessCategoryOptions(navigation)
+			: withSelectedBusinessCategory(businessCategoryOptions(navigation), businessCategory),
+		[businessCategory, hierarchyNavigation, navigation],
   )
-  const categoryTotal = useMemo(() => filtered.reduce((total, objective) => total + objective.krs.length, 0), [filtered])
-  const groups = useMemo(() => filtered
-    .map((objective) => ({ ...objective, krs: objective.krs.filter((kr) => businessCategory === undefined || businessCategoryOf(kr) === businessCategory) }))
-    .filter((objective) => !hasFilters || objective.krs.length > 0), [businessCategory, filtered, hasFilters])
+	const categoryTotal = useMemo(() => filtered.reduce((total, objective) => total + objective.krs.length, 0), [filtered])
+	const allBusiness = useMemo(() => buildAllBusinessNavigation(navigation), [navigation])
+	const activeBusiness = useMemo(
+		() => withCompletePriorityNavigation(businessCategory === undefined ? allBusiness : navigation.find((business) => business.value === businessCategory)),
+		[allBusiness, businessCategory, navigation],
+	)
+	const activePriority = hierarchyPriority === undefined ? undefined : activeBusiness?.priorities.find((item) => item.value === hierarchyPriority)
+	const directionObjectives = useMemo(
+		() => hierarchyPriority === undefined ? objectivesForBusiness(activeBusiness) : activePriority?.objectives ?? [],
+		[activeBusiness, activePriority, hierarchyPriority],
+	)
+	const groups = useMemo(() => {
+		if (hierarchyNavigation) return filterObjectivesByHierarchy(filtered, businessCategory, hierarchyPriority, hierarchyObjectiveId)
+		return filtered
+			.map((objective) => ({ ...objective, krs: objective.krs.filter((kr) => businessCategory === undefined || businessCategoryOf(kr) === businessCategory) }))
+			.filter((objective) => !hasFilters || objective.krs.length > 0)
+	}, [businessCategory, filtered, hasFilters, hierarchyNavigation, hierarchyObjectiveId, hierarchyPriority])
   const resultCount = groups.reduce((total, objective) => total + objective.krs.length, 0)
   const tagCount = objectives.reduce((total, objective) => total + objective.krs.reduce((sum, kr) => sum + allTagsOf(kr).length, 0), 0)
 	const defaultQuarter = quarter || `${new Date().getFullYear()}-Q${Math.floor(new Date().getMonth() / 3) + 1}`
+
+	useEffect(() => {
+		if (!hierarchyNavigation) return
+		setBusinessCategory(undefined)
+		setHierarchyPriority(undefined)
+		setHierarchyObjectiveId('')
+	}, [hierarchyNavigation, hierarchyScopeKey])
+
+	useEffect(() => {
+		if (!hierarchyNavigation) return
+		if (businessCategory !== undefined && !navigation.some((business) => business.value === businessCategory)) {
+			setBusinessCategory(undefined)
+			setHierarchyPriority(undefined)
+			setHierarchyObjectiveId('')
+			return
+		}
+		if (hierarchyPriority !== undefined && !activeBusiness?.priorities.some((item) => item.value === hierarchyPriority)) {
+			setHierarchyPriority(undefined)
+			setHierarchyObjectiveId('')
+			return
+		}
+		if (hierarchyObjectiveId && !directionObjectives.some((objective) => objective.id === hierarchyObjectiveId)) setHierarchyObjectiveId('')
+	}, [activeBusiness, businessCategory, directionObjectives, hierarchyNavigation, hierarchyObjectiveId, hierarchyPriority, navigation])
 
 	const submitObjective = async () => {
 		const title = objectiveTitle.trim()
@@ -354,6 +411,8 @@ export function ManagementView({ title = 'OKR 管理', subtitle = '标签可标�
     setPriority('')
     setTag('')
     setBusinessCategory(undefined)
+		setHierarchyPriority(undefined)
+		setHierarchyObjectiveId('')
   }
 
   return (
@@ -382,7 +441,7 @@ export function ManagementView({ title = 'OKR 管理', subtitle = '标签可标�
           <div className="mt-3 flex flex-wrap gap-1.5 rounded-xl border border-slate-200 bg-slate-50/70 p-2">
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索 O / KR 内容" className="h-8 min-w-48 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-[11px] outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-50 sm:max-w-72" />
             <select value={owner} onChange={(event) => setOwner(event.target.value)} className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] text-slate-600 outline-none focus:border-blue-400"><option value="">全部负责人</option>{owners.map((item) => <option key={item} value={item}>{item}</option>)}</select>
-            <select value={priority} onChange={(event) => setPriority(event.target.value)} className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] text-slate-600 outline-none focus:border-blue-400"><option value="">全部优先级</option><option value="p0">P0</option><option value="p1">P1</option><option value="p2">P2</option></select>
+			{!hierarchyNavigation && <select value={priority} onChange={(event) => setPriority(event.target.value)} className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] text-slate-600 outline-none focus:border-blue-400"><option value="">全部优先级</option><option value="p0">P0</option><option value="p1">P1</option><option value="p2">P2</option></select>}
             {showTags && <select value={tag} onChange={(event) => setTag(event.target.value)} title={tags.find((item) => item.key === tag)?.value ?? '全部标签'} className="h-8 max-w-80 rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] text-slate-600 outline-none focus:border-blue-400"><option value="">全部标签</option>{tags.map((item) => <option key={item.key} value={item.key}>{tagLabel(item.type, item.value)}</option>)}</select>}
             {hasFilters && <button type="button" onClick={clearFilters} className="h-8 rounded-lg px-2.5 text-[10px] font-medium text-slate-500 hover:bg-white hover:text-slate-800">清空筛选</button>}
             <span className="ml-auto self-center text-[10px] text-slate-400">层级</span>
@@ -391,9 +450,25 @@ export function ManagementView({ title = 'OKR 管理', subtitle = '标签可标�
               <button type="button" onClick={collapseToKr} className="h-full border-l border-slate-200 px-2.5 text-slate-500 hover:bg-slate-50 hover:text-slate-700">折叠到 KR</button>
             </div>
           </div>
-          <div className="mt-2 rounded-xl border border-slate-200 bg-gradient-to-b from-slate-50/90 to-slate-100/65 p-2.5">
-            <BusinessCategoryTabs options={categoryOptions} activeValue={businessCategory} total={categoryTotal} showOverview onSelect={setBusinessCategory} />
-          </div>
+			{hierarchyNavigation ? <div className="mt-2">
+				<HierarchyNav
+					navigation={navigation}
+					activeBusiness={activeBusiness}
+					activePriority={activePriority}
+					activeObjectiveId={hierarchyObjectiveId}
+					directionObjectives={directionObjectives}
+					objectiveLabel="具体 O"
+					showEmptyObjectives
+					overview={businessCategory === undefined}
+					showOverview
+					onOverview={() => { setBusinessCategory(undefined); setHierarchyPriority(undefined); setHierarchyObjectiveId('') }}
+					onBusiness={(value) => { setBusinessCategory(value); setHierarchyPriority(undefined); setHierarchyObjectiveId('') }}
+					onPriority={(value) => { setHierarchyPriority(value as KrPriority | ''); setHierarchyObjectiveId('') }}
+					onObjective={setHierarchyObjectiveId}
+				/>
+			</div> : <div className="mt-2 rounded-xl border border-slate-200 bg-gradient-to-b from-slate-50/90 to-slate-100/65 p-2.5">
+				<BusinessCategoryTabs options={categoryOptions} activeValue={businessCategory} total={categoryTotal} showOverview onSelect={setBusinessCategory} />
+			</div>}
         </div>
 
         <div>

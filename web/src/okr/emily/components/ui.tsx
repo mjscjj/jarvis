@@ -3,12 +3,13 @@
  * 这样整页看上去还是一张文档表格，而不是一堆表单。
  */
 
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ClipboardEvent, type ReactNode } from 'react'
 import { uploadImage } from '../api'
 import { uid } from '../board'
 import { useBoard } from '../board'
 import { commentTargetFromThread, commentTargetKey } from '../comments'
 import { useCommentInteraction } from '../commenting'
+import { imageFilesFromClipboard } from '../imagePaste'
 import { DOT_CLASS, TONE_CLASS, TONE_TEXT_CLASS, statusOf } from '../template'
 import type { CommentTarget, DocLink, ImageRef, Status } from '../types'
 
@@ -337,6 +338,57 @@ export function Links({
 
 const DEFAULT_IMAGE_WIDTH = 180
 
+export function usePastedImageUpload(onUploaded: (images: ImageRef[]) => void, disabled = false) {
+  const [uploading, setUploading] = useState(false)
+  const [uploadError, setUploadError] = useState('')
+  const [failedFiles, setFailedFiles] = useState<File[]>([])
+
+  const upload = useCallback(async (files: File[]) => {
+    if (files.length === 0 || disabled || uploading) return
+    setUploading(true)
+    setUploadError('')
+    setFailedFiles([])
+    try {
+      const results = await Promise.allSettled(files.map(uploadImage))
+      const uploaded = results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : [])
+      const failed = files.filter((_, index) => results[index]?.status === 'rejected')
+      if (uploaded.length > 0) onUploaded(uploaded)
+      if (failed.length > 0) {
+        const firstFailure = results.find((result) => result.status === 'rejected')
+        const reason = firstFailure?.status === 'rejected'
+          ? firstFailure.reason instanceof Error ? firstFailure.reason.message : String(firstFailure.reason)
+          : ''
+        setFailedFiles(failed)
+        setUploadError(`${failed.length} 张图片上传失败${reason ? `：${reason}` : ''}`)
+      }
+    } catch (error) {
+      setFailedFiles(files)
+      setUploadError(error instanceof Error ? error.message : '图片上传失败')
+    } finally {
+      setUploading(false)
+    }
+  }, [disabled, onUploaded, uploading])
+
+  const onPaste = useCallback((event: ClipboardEvent<HTMLElement>) => {
+    const files = imageFilesFromClipboard(event.clipboardData.files)
+    if (files.length === 0 || disabled) return
+    event.preventDefault()
+    if (uploading) {
+      setUploadError('已有图片正在上传，请稍候')
+      return
+    }
+    void upload(files)
+  }, [disabled, upload, uploading])
+
+  return {
+    onPaste,
+    uploading,
+    uploadError,
+    canRetry: failedFiles.length > 0 && !uploading,
+    retry: () => void upload(failedFiles),
+  }
+}
+
 /**
  * 一张图。外层用原生 CSS resize，拖右下角就能改大小；
  * 尺寸经 ResizeObserver 回写，所以刷新之后还是你调好的大小。
@@ -428,32 +480,17 @@ export function Images({
   onChange,
   readOnly = false,
   maxDisplayWidth,
+  pasteEnabled = true,
 }: {
   value: ImageRef[]
   onChange: (v: ImageRef[]) => void
   readOnly?: boolean
   maxDisplayWidth?: number
+  pasteEnabled?: boolean
 }) {
   const [zoom, setZoom] = useState<ImageRef | null>(null)
   const [focused, setFocused] = useState(false)
-  const [uploading, setUploading] = useState(false)
-  const [uploadError, setUploadError] = useState('')
-
-  async function onPaste(e: React.ClipboardEvent) {
-    const files = Array.from(e.clipboardData.files).filter((f) => f.type.startsWith('image/'))
-    if (files.length === 0) return
-    e.preventDefault()
-    setUploading(true)
-    setUploadError('')
-    try {
-      const uploaded = await Promise.all(files.map(uploadImage))
-      onChange([...value, ...uploaded])
-    } catch (error) {
-      setUploadError(error instanceof Error ? error.message : '图片上传失败')
-    } finally {
-      setUploading(false)
-    }
-  }
+  const paste = usePastedImageUpload((uploaded) => onChange([...value, ...uploaded]), readOnly || !pasteEnabled)
 
   function move(from: number, to: number) {
     const next = [...value]
@@ -465,10 +502,10 @@ export function Images({
   return (
     <>
       <span
-        onPaste={readOnly ? undefined : onPaste}
+        onPaste={readOnly || !pasteEnabled ? undefined : paste.onPaste}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
-        tabIndex={readOnly ? -1 : 0}
+        tabIndex={readOnly || !pasteEnabled ? -1 : 0}
         className="inline-flex flex-wrap items-start gap-1 rounded align-top outline-none"
       >
         {value.map((img, index) => (
@@ -486,16 +523,18 @@ export function Images({
             maxDisplayWidth={maxDisplayWidth}
           />
         ))}
-        {!readOnly && <span
+        {!readOnly && pasteEnabled && <span
           className={`rounded px-1 text-[11px] transition-opacity ${
             focused
               ? 'bg-blue-50 text-blue-600'
               : 'text-slate-300 opacity-0 group-hover/entry:opacity-100 hover:bg-slate-100 hover:text-slate-600'
           }`}
         >
-          {uploading ? '上传中…' : focused ? '⌘V 粘贴截图' : '+ 图'}
+          {paste.uploading ? '上传中…' : focused ? '⌘V 粘贴截图' : '+ 图'}
         </span>}
-        {!readOnly && uploadError && <span className="text-[11px] text-red-500" title={uploadError}>上传失败</span>}
+        {!readOnly && pasteEnabled && paste.uploadError && <span className="text-[11px] text-red-500" title={paste.uploadError}>
+          上传失败{paste.canRetry && <button type="button" onClick={paste.retry} className="ml-1 underline">重试</button>}
+        </span>}
       </span>
 
       {zoom && (

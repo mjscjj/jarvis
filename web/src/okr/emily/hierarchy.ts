@@ -3,6 +3,19 @@ import type { Kr, KrPriority, KrTag, Objective } from './types'
 export const BUSINESS_CATEGORY_TAG = 'business_category'
 export const PRIORITY_TAG = 'priority'
 
+// These are presentation order and labels for the Biz OKR navigation. The
+// stored tag remains untouched (notably the spaces around "&" in the last
+// value), so adding the navigation never migrates or rewrites OKR data.
+const BUSINESS_CATEGORY_NAV = [
+  { value: '公会业务', label: '公会业务' },
+  { value: '运营效率', label: '运营效率' },
+  { value: 'AI提效', label: 'AI提效' },
+  { value: '优质主播 & 内容专项', label: '优质主播&内容专项' },
+] as const
+
+const BUSINESS_CATEGORY_ORDER = new Map<string, number>(BUSINESS_CATEGORY_NAV.map((item, index) => [item.value, index]))
+const BUSINESS_CATEGORY_LABEL = new Map<string, string>(BUSINESS_CATEGORY_NAV.map((item) => [item.value, item.label]))
+
 export interface PriorityNavigation {
   value: KrPriority | ''
   label: string
@@ -77,13 +90,15 @@ export function buildKRHierarchy(objectives: Objective[]): BusinessNavigation[] 
     if (kr) direction.krs.push(kr)
   }
 
-  for (const objective of objectives) {
-    if (objective.krs.length === 0) add(objective)
-    else for (const kr of objective.krs) add(objective, kr)
-  }
+	for (const objective of objectives) {
+		// A navigation option represents at least one KR. Empty Objectives remain
+		// available in the unfiltered management/Plan list, but must not create a
+		// zero-count "untagged" tab.
+		for (const kr of objective.krs) add(objective, kr)
+	}
 
-  return [...businesses.entries()]
-    .sort(([left], [right]) => left === '' ? 1 : right === '' ? -1 : 0)
+	return [...businesses.entries()]
+		.sort(([left], [right]) => businessCategoryOrder(left) - businessCategoryOrder(right) || left.localeCompare(right))
     .map(([business, priorities]) => ({
       value: business,
       label: businessCategoryLabel(business),
@@ -119,7 +134,51 @@ export function buildGlobalPriorityNavigation(navigation: BusinessNavigation[]):
 }
 
 export function buildAllBusinessNavigation(navigation: BusinessNavigation[]): BusinessNavigation {
-  return { value: '__all__', label: '全部 OKR', priorities: buildGlobalPriorityNavigation(navigation) }
+	return { value: '__all__', label: '全部 OKR', priorities: buildGlobalPriorityNavigation(navigation) }
+}
+
+// Management is also where a missing priority gets assigned, so its navigation
+// keeps the complete business vocabulary visible even when one bucket is empty.
+// Review keeps using the evidence-derived list and is therefore unchanged.
+export function withCompletePriorityNavigation(business?: BusinessNavigation): BusinessNavigation | undefined {
+	if (!business) return undefined
+	const existing = new Map(business.priorities.map((priority) => [priority.value, priority]))
+	const priorities: PriorityNavigation[] = (['p0', 'p1', 'p2'] as const).map((value) =>
+		existing.get(value) ?? { value, label: priorityLabel(value), objectives: [] },
+	)
+	const untagged = existing.get('')
+	if (untagged) priorities.push(untagged)
+	return { ...business, priorities }
+}
+
+export function objectivesForBusiness(business?: BusinessNavigation): Objective[] {
+	const objectives = new Map<string, Objective>()
+	for (const priority of business?.priorities ?? []) {
+		for (const objective of priority.objectives) {
+			const existing = objectives.get(objective.id)
+			if (existing) existing.krs.push(...objective.krs)
+			else objectives.set(objective.id, { ...objective, krs: [...objective.krs] })
+		}
+	}
+	return [...objectives.values()]
+}
+
+export function filterObjectivesByHierarchy<T extends Objective>(
+	objectives: T[],
+	business: string | undefined,
+	priority: KrPriority | '' | undefined,
+	objectiveId: string,
+): T[] {
+	const constrained = business !== undefined || priority !== undefined || Boolean(objectiveId)
+	return objectives
+		.filter((objective) => !objectiveId || objective.id === objectiveId)
+		.map((objective) => ({
+			...objective,
+			krs: objective.krs.filter((kr) =>
+				(business === undefined || businessCategoryOf(kr) === business) &&
+				(priority === undefined || priorityOf(kr) === priority)),
+		} as T))
+		.filter((objective) => !constrained || objective.krs.length > 0)
 }
 
 export interface BusinessCategoryOption {
@@ -129,7 +188,12 @@ export interface BusinessCategoryOption {
 }
 
 export function businessCategoryLabel(value: string): string {
-  return value || '未标注业务'
+	return BUSINESS_CATEGORY_LABEL.get(value) ?? (value || '未标注业务')
+}
+
+function businessCategoryOrder(value: string): number {
+	if (!value) return Number.MAX_SAFE_INTEGER
+	return BUSINESS_CATEGORY_ORDER.get(value) ?? BUSINESS_CATEGORY_NAV.length
 }
 
 // Another filter can empty the category someone is standing in. Keeping its tab

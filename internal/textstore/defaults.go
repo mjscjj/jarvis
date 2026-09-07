@@ -91,7 +91,7 @@ func definitions() []definition {
 		},
 		{
 			key: WeeklyReportReminderTemplateKey, name: "催填消息模板", filename: "weekly-report-reminder-template.md",
-			description: "定义按负责人聚合后的周报催填消息；收件人、缺失项和链接由运行时提供。",
+			description: "定义按负责人聚合的 Review 催填消息；四类问题及具体 KR 标题由 Agent 生成。",
 			kind:        "message_template", stage: "weekly_report",
 		},
 		{
