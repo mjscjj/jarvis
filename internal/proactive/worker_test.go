@@ -82,7 +82,15 @@ func TestWorkerBuildsHeartbeatPromptAndUsesProactiveStage(t *testing.T) {
 	if result != runner.result {
 		t.Fatalf("result = %q", result)
 	}
-	for _, want := range []string{"system mission", "trusted memory", "BEGIN_AVAILABLE_TOOLS", "BEGIN_HEARTBEAT", "2026-08-02T23:04:05+08:00"} {
+	for _, want := range []string{
+		"system mission",
+		"trusted memory",
+		"BEGIN_AVAILABLE_TOOLS",
+		"BEGIN_HEARTBEAT",
+		"当前 UTC 时间（与 Task、ExecutionRun 等工具返回时间比较时只使用此值）：2026-08-02T15:04:05Z",
+		"当前业务本地时间（仅用于判断“今天”的自然日范围）：2026-08-02T23:04:05+08:00",
+		"业务时区：CST",
+	} {
 		if !strings.Contains(runner.prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, runner.prompt)
 		}

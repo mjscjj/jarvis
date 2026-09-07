@@ -129,7 +129,7 @@ func (w *Worker) recordFailure(ctx context.Context, runID uint64, runErr error) 
 	return runErr
 }
 
-func buildPrompt(systemPrompt, sharedMemory, tools string, now time.Time) string {
+func buildPrompt(systemPrompt, sharedMemory, tools string, localNow time.Time) string {
 	parts := []string{strings.TrimSpace(systemPrompt)}
 	if block := sharedmem.RenderBlock(sharedMemory); block != "" {
 		parts = append(parts, block)
@@ -139,8 +139,9 @@ func buildPrompt(systemPrompt, sharedMemory, tools string, now time.Time) string
 	}
 	parts = append(parts,
 		"BEGIN_HEARTBEAT\n"+
-			"当前时间："+now.Format(time.RFC3339)+"\n"+
-			"时区："+now.Location().String()+"\n"+
+			"当前 UTC 时间（与 Task、ExecutionRun 等工具返回时间比较时只使用此值）："+localNow.UTC().Format(time.RFC3339)+"\n"+
+			"当前业务本地时间（仅用于判断“今天”的自然日范围）："+localNow.Format(time.RFC3339)+"\n"+
+			"业务时区："+localNow.Location().String()+"\n"+
 			"现在执行一轮完整主动巡视。不要假设存在必须创建的 Task。\n"+
 			"END_HEARTBEAT",
 	)
