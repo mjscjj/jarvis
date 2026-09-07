@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { CloseOutlined, CopyOutlined, DeleteOutlined, HistoryOutlined, PaperClipOutlined, PlusOutlined, ReloadOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
+import { CloseOutlined, CompressOutlined, CopyOutlined, DeleteOutlined, ExpandOutlined, HistoryOutlined, PaperClipOutlined, PlusOutlined, ReloadOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
 import { Alert, Button, Input, Typography } from 'antd'
 import type { TextAreaRef } from 'antd/es/input/TextArea'
 import { getChatHistory, getChatRuntimeConfig, getSignedInOpenID, isMissingChatHistoryError, listChatThreads, resolveChatBaseURL } from './api'
@@ -217,7 +217,14 @@ function threadSummaryFromTurn(threadId: string, turn: QueuedChatTurn): ChatThre
   }
 }
 
-export default function Chat({ open, onClose }: { open: boolean; onClose: () => void }) {
+interface ChatProps {
+  open: boolean
+  expanded: boolean
+  onToggleExpanded: () => void
+  onClose: () => void
+}
+
+export default function Chat({ open, expanded, onToggleExpanded, onClose }: ChatProps) {
   const { name: agentName, shortName: agentShortName } = useAgentIdentity()
   const { context } = usePageContext()
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -758,6 +765,16 @@ export default function Chat({ open, onClose }: { open: boolean; onClose: () => 
         <div className="chat-header-actions">
           <Button type="text" size="small" className="chat-icon-button" icon={<HistoryOutlined />} aria-label="查看历史对话" title="历史对话" onClick={() => setThreadsOpen((value) => !value)} />
           <Button type="text" size="small" className="chat-icon-button" icon={<PlusOutlined />} disabled={!canSwitchThread} aria-label="新建对话" title="新建对话" onClick={startNewChat} />
+          <Button
+            type="text"
+            size="small"
+            className="chat-expand chat-icon-button"
+            icon={expanded ? <CompressOutlined /> : <ExpandOutlined />}
+            aria-label={expanded ? '缩小对话' : '展开对话'}
+            title={expanded ? '缩小' : '展开'}
+            aria-pressed={expanded}
+            onClick={onToggleExpanded}
+          />
           <Button type="text" size="small" className="chat-close chat-icon-button" icon={<CloseOutlined />} aria-label={`关闭 ${agentName} 对话`} onClick={onClose} />
         </div>
       </div>

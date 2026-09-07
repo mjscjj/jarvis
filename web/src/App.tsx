@@ -87,6 +87,7 @@ function AppShell() {
   const runtimeFailures = useRuntimeFailureCount()
   const [chatOpen, setChatOpen] = useLocalStorage('jarvis.chatOverlayOpen', false)
   const [chatLoaded, setChatLoaded] = useState(chatOpen)
+  const [chatExpanded, setChatExpanded] = useState(false)
   const [siderCollapsed, setSiderCollapsed] = useLocalStorage('jarvis.siderCollapsed', false)
   const [openMenuKeys, setOpenMenuKeys] = useState<string[]>(['management', 'plugin-group'])
   const [mobileSystemOpen, setMobileSystemOpen] = useState(false)
@@ -258,11 +259,16 @@ function AppShell() {
 
   useEffect(() => {
     const onEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setChatOpen(false)
+      if (event.key !== 'Escape') return
+      if (chatExpanded) {
+        setChatExpanded(false)
+      } else {
+        setChatOpen(false)
+      }
     }
     window.addEventListener('keydown', onEscape)
     return () => window.removeEventListener('keydown', onEscape)
-  }, [setChatOpen])
+  }, [chatExpanded, setChatOpen])
 
   useEffect(() => {
     if (chatOpen) {
@@ -406,7 +412,7 @@ function AppShell() {
 
   return (
     <Layout
-      className={`app-shell ${chatOpen ? 'chat-is-open' : ''}`}
+      className={`app-shell ${chatOpen ? 'chat-is-open' : ''} ${chatOpen && chatExpanded ? 'chat-is-expanded' : ''}`}
       style={{ '--sider-width': weeklyShare ? '0px' : `${siderWidth}px` } as React.CSSProperties}
     >
       {modalContext}
@@ -518,16 +524,33 @@ function AppShell() {
               {pages[context.active_key]}
             </Suspense>
           </Content>
+          {chatOpen && chatExpanded && (
+            <button
+              type="button"
+              className="chat-modal-backdrop"
+              tabIndex={-1}
+              aria-label="缩小对话"
+              onClick={() => setChatExpanded(false)}
+            />
+          )}
           <aside
             ref={chatRef}
-            className={`chat-overlay ${chatOpen ? 'is-open' : ''}`}
+            className={`chat-overlay ${chatOpen ? 'is-open' : ''} ${chatOpen && chatExpanded ? 'is-expanded' : ''}`}
             aria-hidden={!chatOpen}
             inert={chatOpen ? undefined : true}
             onKeyDown={handleChatKeyDown}
           >
             {chatLoaded && (
               <Suspense fallback={<div className="page-loading"><Spin size="small" /><span>正在打开对话…</span></div>}>
-                <Chat open={chatOpen} onClose={() => setChatOpen(false)} />
+                <Chat
+                  open={chatOpen}
+                  expanded={chatExpanded}
+                  onToggleExpanded={() => setChatExpanded((expanded) => !expanded)}
+                  onClose={() => {
+                    setChatExpanded(false)
+                    setChatOpen(false)
+                  }}
+                />
               </Suspense>
             )}
           </aside>
@@ -542,7 +565,10 @@ function AppShell() {
           className={`chat-toggle ${chatOpen ? 'chat-open' : ''}`}
           ref={chatToggleRef}
           aria-label={chatOpen ? `关闭 ${agentName} 对话` : `打开 ${agentName} 对话`}
-          onClick={() => setChatOpen((open) => !open)}
+          onClick={() => {
+            if (chatOpen) setChatExpanded(false)
+            setChatOpen((open) => !open)
+          }}
         />
       </Tooltip>
       {!weeklyShare && <nav className="mobile-bottom-nav" aria-label="主要导航">

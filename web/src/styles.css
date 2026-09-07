@@ -490,6 +490,38 @@ body {
   transform: translateX(0);
 }
 
+.chat-modal-backdrop {
+  position: fixed;
+  z-index: 179;
+  inset: 0;
+  padding: 0;
+  border: 0;
+  background: rgba(16, 20, 24, 0.26);
+  cursor: default;
+}
+
+@media (min-width: 768px) {
+  .chat-overlay.is-open.is-expanded {
+    top: 32px;
+    right: 0;
+    bottom: 32px;
+    left: var(--sider-width);
+    width: min(960px, calc(100vw - var(--sider-width) - 64px));
+    max-width: none;
+    margin-inline: auto;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-xl);
+    box-shadow: 0 24px 72px rgba(16, 20, 24, 0.2);
+    transform: none;
+  }
+
+  .app-shell.chat-is-expanded .chat-toggle,
+  .app-shell.chat-is-expanded .okr-help-fab {
+    opacity: 0;
+    pointer-events: none;
+  }
+}
+
 .chat-dock-placeholder {
   height: 100%;
   min-height: 240px;
@@ -525,7 +557,7 @@ body {
   transition: right 0.25s ease;
 }
 
-.app-shell.chat-is-open .okr-help-fab {
+.app-shell.chat-is-open:not(.chat-is-expanded) .okr-help-fab {
   right: calc(var(--chat-width) + var(--space-4));
 }
 
@@ -534,11 +566,11 @@ body {
 }
 
 @media (min-width: 1600px) {
-  .app-shell.chat-is-open .app-content {
+  .app-shell.chat-is-open:not(.chat-is-expanded) .app-content {
     margin-right: var(--chat-width);
   }
 
-  .app-shell.chat-is-open .chat-overlay {
+  .app-shell.chat-is-open:not(.chat-is-expanded) .chat-overlay {
     box-shadow: none;
   }
 }
@@ -671,6 +703,11 @@ body {
 
   .chat-is-open .okr-help-fab {
     display: none;
+  }
+
+  .chat-modal-backdrop,
+  .chat-expand {
+    display: none !important;
   }
 
   .ant-drawer-content-wrapper {
