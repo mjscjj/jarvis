@@ -497,27 +497,6 @@ export interface BoardData {
   objectives: Objective[]
 }
 
-export interface ObjectiveManifestData {
-  quarter: string
-  objectives: Array<{
-    id: string
-    title: string
-    kr_count: number
-    metric_count: number
-    point_count: number
-    kr_owner_count: number
-    point_owner_count: number
-  }>
-  totals: {
-    objectives: number
-    krs: number
-    metrics: number
-    points: number
-    kr_owner_occurrences: number
-    point_owner_occurrences: number
-  }
-}
-
 export interface OpenWeekResult {
   week: WeeklyReportWeek
   created: boolean
@@ -632,12 +611,6 @@ export async function getGenericOKRBoard(quarter = '', signal?: AbortSignal): Pr
     availableWeeks: board.available_weeks,
     objectives: board.objectives.map((objective) => ({ id: objective.id, title: objective.title, krs: objective.krs.map(fromAPIKr) })),
   }
-}
-
-export async function listGenericOKRObjectives(quarter = '', signal?: AbortSignal): Promise<ObjectiveManifestData> {
-  const params = new URLSearchParams()
-  if (quarter) params.set('quarter', quarter)
-  return request<ObjectiveManifestData>(`/api/okr/objectives?${params}`, { signal })
 }
 
 export async function getGenericOKRProgressBoard(quarter: string, week: string): Promise<BoardData> {

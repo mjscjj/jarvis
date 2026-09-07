@@ -538,10 +538,10 @@ Principal 是业务世界的决策中心，不复制成普通 Person。解析 OK
 
 1. Owner 的 open_id/union_id 与当前 Principal 身份一致时，投影到 `principal:1`；
 2. 否则按稳定身份解析到已有 Person；
-3. 结构化 Owner 有 `open_id` 且尚无 Person 时，使用 OKR 中的权威显示名创建 Person，department/title 可空；
-4. 对每个 KR/Point Owner 出现项写入 `owned_by` EntityRelation，evidence 保存 `owner_open_id`。
+3. 尚无 Person 时，仅在这个人对 principal 的长期世界确有独立建模价值、身份也可核实时创建 Person；
+4. 只有存在跨层反查需求和直接证据时才写 `owned_by` EntityRelation，evidence 保存 `owner_open_id`。
 
-Owner 原生字段仍是责任定义真源；`owned_by` 是它到现实 Principal/Person 的可查询投影，不是第二份可编辑 Owner。读取图不得用虚拟 Owner 边掩盖缺失的现实人物或关系。
+Owner 原生字段仍是责任定义真源，可以直接随 OKR 节点展示；`owned_by` 只是可选的现实人物关系，不是第二份可编辑 Owner。没有 Person 或跨层关系是合法状态，读取图不得因此合成虚假的现实人物。
 
 ### 8.2 Jarvis Agent
 
@@ -835,44 +835,45 @@ MVP 不新增监听每一种来源的 Go 分支，也不要求每条 Fact 写入
 
 ## 10. 稳定结构投影
 
-`okr-world-projector` 是 OKR 稳定定义进入 Jarvis 世界层的唯一语义桥。它应保持独立、可重跑和异步，不参与 OKR 保存事务。
+`okr-world-projector` 是 OKR 与 Jarvis 现实世界之间的调查型语义桥。它应保持独立、可重跑和异步，不参与 OKR 保存事务，也不承担把每个 OKR 节点物化成现实实体的职责。
 
 ### 10.1 输入
 
 - 已启用 OKR 模块中的 Objective、KR、Metric、Point、Owner；
 - 负责人 open_id/union_id；
-- Jarvis 中的 Principal、Person、Project、KeyMatter。
+- Jarvis 中已有的 Principal、Person、Project、KeyMatter、Group、Resource、Page、Fact 和关系。
 
-它不读取周进展，不创建常驻 Task 表示 OKR 节点。OKR 定义本身是目标容器、关键事项、拆解点和责任归属存在的权威证据；标题相似不能把它误并到一个语义不同的已有现实实体，无合适承接对象时必须创建新的 Project/KeyMatter/Person。
+它不读取周进展，不创建常驻 Task 表示 OKR 节点。OKR 定义证明目标、拆解和 Owner 存在，但不能单独证明现实 Project、KeyMatter 或 Person 存在；标题相似也不能把它误并到语义不同的已有现实实体。没有合适现实承接时保持未关联。
 
 ### 10.2 处理
 
 ```mermaid
 flowchart TD
-    A["冻结季度 manifest 并逐个读取 Objective"] --> B["Objective 创建或复用 Project"]
-    B --> C["每个 KR 创建或复用 KeyMatter"]
-    C --> D["每个 Point 连接现实 KeyMatter"]
-    D --> E["每个 Owner 解析为 Principal / Person"]
-    E --> F["upsert 已确认跨模块关系"]
-    F --> G["逐项回读并做全覆盖审计"]
+    A["读取指定范围的 OKR Board"] --> B["查询已有现实实体、Page、Fact 和关系"]
+    B --> C["逐项核对直接证据"]
+    C --> D{"现实实体自身满足准入？"}
+    D -->|是| E["创建或复用现实实体"]
+    D -->|否| F["保持未关联或候选"]
+    E --> G["upsert 已确认跨模块关系并回读"]
 ```
 
 投影顺序建议为：
 
-1. 每个 Objective 建立 `maps_to Project`；
-2. 每个 KR 建立 `maps_to KeyMatter`，并用 KeyMatter.ProjectID 表达现实归属；
-3. 每个 Point 默认 `advances` 父 KR KeyMatter，独立长期事项才建立额外 KeyMatter 和 `maps_to`；
-4. 每个结构化 Owner 解析为 Principal/Person，并为每次出现建立 `owned_by`；
-5. 回读所有实体与关系，Objective、KR、Point、Owner occurrence 任一未覆盖都视为未完成。
+1. 读取用户指定范围内的 Objective、KR、Point、Metric 和 Owner；
+2. 从已有关系、稳定 ID/URL、Page、Fact 或外部证据查找现实候选；
+3. 只有现实实体本身需要长期维护时才创建或复用；
+4. 只有对应、推进、依赖或现实人物关系有直接依据时才写 EntityRelation；
+5. 写入后回读；无充分证据的节点保持未关联或候选，不算失败。
 
-### 10.3 完整 Ontology 口径
+### 10.3 稀疏 Ontology 口径
 
 - 删除 `delivered_by`；现实贡献与承接分别使用 `advances` 和 `maps_to`。
-- 不复制 Objective→KR→Point 原生层级，但必须把每个层级投影到现实 Project/KeyMatter。
-- `KROwner`/`PointOwner` 保持原生责任真源，同时用 `owned_by` 投影到现实 Principal/Person。
-- 不允许 `evidence_insufficient`、`no_independent_world_entity` 或动态虚拟 Owner 作为整季度成功结果。
+- Objective→KR→Point 和 Owner 由 OKR 原生结构直接展示，不复制到 EntityRelation。
+- `maps_to`、`advances`、`owned_by` 等只保存有证据、需要跨模块查询的现实关系。
+- 未关联、证据不足或不存在独立现实实体都是可被如实报告的正常结果。
+- 不为视觉完整度创建 Project、KeyMatter、Person，也不合成虚假的现实节点。
 
-不要保留错误投影，再在 World Graph 读取层写过滤器或虚拟边掩盖；应直接修改拥有投影语义的 Skill 和实际关系。
+不要保留错误投影，再在 World Graph 读取层写过滤器掩盖；应直接修改拥有投影语义的 Skill 和实际关系。
 
 ### 10.4 关系变化
 
@@ -1136,12 +1137,12 @@ Objective：提升 Bax AM 的企业市场竞争力
 KR belongs_to Objective                 // OKR 原生字段
 Metric belongs_to KR                    // OKR 原生字段
 Point belongs_to KR                     // OKR 原生字段
-KR owned_by Person                      // EntityRelation，来自 KROwner 定义投影
+KR owned_by Person                      // 可选 EntityRelation，仅在现实人物和跨层关系已确认时
 
 Objective maps_to Project               // EntityRelation
 KR maps_to KeyMatter                    // EntityRelation
 Point advances KeyMatter                // EntityRelation；独立事项可 maps_to
-Point owned_by Person                   // EntityRelation，来自 PointOwner 定义投影
+Point owned_by Person                   // 可选 EntityRelation，仅在现实人物和跨层关系已确认时
 
 KeyMatter belongs_to Project            // Jarvis 原生字段
 Task belongs_to Project                 // Jarvis 原生字段
@@ -1185,8 +1186,8 @@ Task 的 `done` 不会直接把 Point 标成 `done`；只有客户验收这个�
 - 将 OKR 作为顶层插件、周报作为依赖 OKR 的可选子能力；关闭 OKR 时一并停用周报；
 - 把散落在主进程中的 OKR 配置、数据库、迁移、服务、路由和静态资源装配收进 OKR 自己的模块装配边界；首版不抽象动态插件 SDK；
 - 收紧 `okr-agent-principles` 和相关业务 Prompt：当前 OKR 定义、标签和正式 KRProgress 只读，Agent 可以维护 Jarvis WorldProgress，但对 OKR 只输出建议；
-- 修改 `okr-world-projector`：Objective→Project、KR→KeyMatter、Point→KeyMatter 和 Owner→人物必须全覆盖；
-- Owner 关系作为跨域人物投影写入 `owned_by`，但不成为第二份可编辑责任真源；
+- 修改 `okr-world-projector`：只调查并写入有证据的 Objective/KR/Point 到现实实体关系，不以覆盖率创建实体；
+- Owner 由 OKR 原生结构直接展示；只有现实人物和跨层查询需求已经确认时，才写可选的 `owned_by`；
 - 把七组核心关系及使用条件写入 Skill/设计真源；
 - 保留开放 relation token，不加数据库 enum；
 - 旧 `delivered_by` 数据若实际存在，应单独审阅语义后再迁移为 `advances` 或确有归属含义的 `belongs_to`，不能机械改名，也不能由读取层永久兼容。
@@ -1203,16 +1204,15 @@ Task 的 `done` 不会直接把 Point 标成 `done`；只有客户验收这个�
 
 验收：Page 可安全保存并回读 OKR 引用，伪造 ID 被拒绝。
 
-### 阶段 2：稳定结构投影
+### 阶段 2：稀疏现实关系投影
 
-- 每个 Objective 建立 `maps_to Project`；
-- 每个 KR 建立 `maps_to KeyMatter`，KeyMatter 归属 Objective 的 Project；
-- 每个 Point 建立 `advances/maps_to KeyMatter`；
-- 每个结构化 Owner occurrence 建立 `owned_by Principal/Person`；
-- 每条边带 evidence、confidence、confirmed_at；
-- 关系写后回读，任何覆盖缺口进入失败结果并续跑。
+- 世界地图从 OKR Board 完整生成 Objective→KR→Point 原生骨架；
+- Agent 调查 OKR 节点与 Project、KeyMatter、Person、Group、Resource 的现实关系；
+- 现实实体必须满足自身长期建模准入，不能只为补齐 OKR 图创建；
+- 只有已确认关系写入 EntityRelation，并带 evidence、confidence、confirmed_at；
+- 关系写后回读，证据不足、无需映射和未确认候选如实保留。
 
-验收：相同输入重跑幂等；原生层级不重复写入，四类现实投影覆盖率均为 100%。
+验收：相同输入重跑幂等；原生层级不重复写入；新增实体均有独立现实意义；所有新增关系有证据；未关联不会被强行补齐。
 
 ### 阶段 3：WorldProgress 与人工周进展进入世界模型（进行中）
 
@@ -1299,7 +1299,7 @@ Task 的 `done` 不会直接把 Point 标成 `done`；只有客户验收这个�
 - 当前阶段 OKR 定义、标签和正式 KRProgress 仍完全由人维护；
 - World Graph 中的 OKR 节点来自模块只读投影，不要求复制实体；
 - Jarvis 只新增一份有独立语义的 WorldProgress，不复制人工 KRProgress；
-- Objective→KR→Point 原生层级没有重复写入 EntityRelation；Owner 只保留到现实人物的跨域投影；
+- Objective→KR→Point 原生层级和 Owner 没有重复写入 EntityRelation；现实人物关系仅在确有跨层查询需求时保存；
 - World Graph 可全部从领域真源重建；
 - 所有写动作都能追溯到明确领域 API。
 
@@ -1307,7 +1307,7 @@ Task 的 `done` 不会直接把 Point 标成 `done`；只有客户验收这个�
 
 - 数据库只持久化规范方向，反向边只在读取时生成；
 - 所有跨模块边有 evidence，重复写入是 upsert；
-- 标题相似不能把 OKR 误并到不同语义的已有实体；没有合适现实承接时创建新实体；
+- 标题相似不能把 OKR 误并到不同语义的已有实体；没有合适现实承接时保持未关联；
 - Summary 中出现一个引用不会自动产生 EntityRelation；
 - 未识别关系仍可展示原 token，但核心 Agent 默认使用七组关系。
 

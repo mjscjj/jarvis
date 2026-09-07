@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Card, Empty, Flex, Spin, Tag, Typography } from 'antd'
-import { listRelations } from '../api'
+import { listAppModules, listRelations } from '../api'
 import { getGenericOKRBoard } from '../okr/emily/api'
 import type { EntityRelation } from '../types'
 import { usePageContext } from '../pageContext'
 import { relatedOKRsForWorldEntity, type WorldOKREntityType } from './relatedOKR'
+import { isOKRPluginEnabled } from '../world-map/lens'
 
 const { Paragraph, Text } = Typography
 
@@ -24,33 +25,51 @@ export default function RelatedOKRCard({
   const [objectives, setObjectives] = useState<Awaited<ReturnType<typeof getGenericOKRBoard>>['objectives']>([])
   const [relations, setRelations] = useState<EntityRelation[]>([])
   const [loading, setLoading] = useState(true)
+  const [available, setAvailable] = useState<boolean>()
   const [error, setError] = useState<string>()
 
   useEffect(() => {
-    const controller = new AbortController()
-    setLoading(true)
-    setError(undefined)
-    Promise.all([
-      getGenericOKRBoard('', controller.signal),
-      listRelations({ nodeType: type, nodeId: String(id) }, controller.signal),
-    ])
-      .then(([board, neighbors]) => {
+    let controller = new AbortController()
+    const load = async () => {
+      controller.abort()
+      controller = new AbortController()
+      setLoading(true)
+      setAvailable(undefined)
+      setError(undefined)
+      try {
+        const modules = await listAppModules(controller.signal)
+        if (!isOKRPluginEnabled(modules.items)) {
+          setAvailable(false)
+          return
+        }
+        setAvailable(true)
+        const [board, neighbors] = await Promise.all([
+          getGenericOKRBoard('', controller.signal),
+          listRelations({ nodeType: type, nodeId: String(id) }, controller.signal),
+        ])
+        if (controller.signal.aborted) return
         setQuarter(board.quarter)
         setObjectives(board.objectives)
         setRelations(neighbors.items)
-      })
-      .catch((cause: unknown) => {
+      } catch (cause: unknown) {
         if (!controller.signal.aborted) setError(errorText(cause))
-      })
-      .finally(() => {
+      } finally {
         if (!controller.signal.aborted) setLoading(false)
-      })
-    return () => controller.abort()
+      }
+    }
+    void load()
+    window.addEventListener('jarvis:app-modules-changed', load)
+    return () => {
+      controller.abort()
+      window.removeEventListener('jarvis:app-modules-changed', load)
+    }
   }, [id, type])
 
   const rows = useMemo(() => relatedOKRsForWorldEntity(
     relations, objectives, { type, id },
   ), [id, objectives, relations, type])
+
+  if (available === false) return null
 
   return (
     <Card

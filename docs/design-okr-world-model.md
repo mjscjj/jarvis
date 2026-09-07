@@ -16,18 +16,20 @@ Jarvis 世界模型保存跨来源的认知状态：Person、Project、KeyMatter
 
 两者不共享业务表、不互存外键，也不在保存页面时同步写入。需要连接时使用通用 `entity_relation`：模块实体 ID 和世界实体 ID 都以字符串保存，关系类型由 Skill 解释。
 
-## 2. 投影由 Agent 完成
+## 2. OKR 图与现实关系分开生成
 
-`okr-world-projector` Skill 负责把模块层级映射到世界实体：
+世界地图直接从通用 OKR 的 Board 读取并生成完整的 `Objective → KR → Point` 骨架。这个结构属于 OKR 真源，不需要先复制成 Project、KeyMatter 或 EntityRelation 才能展示。
 
-1. 用 `scripts/okr-module-tools list-objectives/get-objective` 冻结并逐项读取完整季度；
-2. 为每个 Objective 创建或复用 Project，为每个 KR 创建或复用归属于该 Project 的 KeyMatter；
-3. 将每个 Point 连接到现实 KeyMatter，并把 Metric 写入 KR KeyMatter Page；
-4. 按 `open_id` 把每个结构化 Owner 解析为 Principal/Person，对每次 Owner 出现写 `owned_by`；
-5. 用 `create-relation` 保存已确认定义投影，并从两端回读；
-6. 用 `projection-audit` 验证 Objective、KR、Point、Owner occurrence 均为全覆盖。
+`okr-world-projector` Skill 只调查 OKR 与现实世界之间已经能够被证据确认的稀疏关系：
 
-OKR 定义本身是目标、拆解和责任归属存在的权威证据；不能以缺少第二份外部材料为由拒绝投影。标题相似仍不能用来把 OKR 误并到一个已有但语义不同的现实对象；若无正确承接实体，则创建新的 Project/KeyMatter。投影只读取稳定的 OKR 定义，不读取周报内容。投影失败不会阻塞周报填写，世界模型失败也不能回滚模块表写入。
+1. 用 `scripts/okr-module-tools board` 读取用户指定的 Objective、KR、Point 或季度范围；
+2. 查询已有 Project、KeyMatter、Person、Group、Resource、Page、Fact 和关系；
+3. 只有现实对象本身满足长期世界实体的准入标准时才创建或复用；
+4. 只有对应、推进、依赖或现实人物关系有直接证据时才写 `entity_relation`；
+5. 写入后从任一端回读，确认关系和 evidence 可查询；
+6. 对没有证据或没有独立现实对象的节点保留“未关联”，不把它视为失败。
+
+OKR 定义证明目标、拆解和正式 Owner 存在，但不能单独证明 Objective 就是 Project、KR/Point 就是 KeyMatter，或 Owner 必须进入长期人物模型。标题相似也不能作为合并依据。投影不读取周报内容，不修改正式 Progress 或 WorldProgress；投影失败不会阻塞周报填写，世界模型失败也不能回滚模块表写入。
 
 ## 3. 周进展闭环
 

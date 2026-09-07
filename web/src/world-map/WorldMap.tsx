@@ -62,8 +62,9 @@ async function loadPages(index: PageIndexItem[], signal: AbortSignal, concurrenc
   return result
 }
 
-async function loadPageRefs(refs: Array<{ type: PageType; id: number }>, cache: Map<string, PageView>, signal: AbortSignal, concurrency = 8): Promise<PageView[]> {
-  const result = new Array<PageView>(refs.length)
+async function loadPageRefs(refs: Array<{ type: PageType; id: number }>, cache: Map<string, PageView>, signal: AbortSignal, concurrency = 8): Promise<{ pages: PageView[]; failed: number }> {
+  const result = new Array<PageView | undefined>(refs.length)
+  let failed = 0
   let cursor = 0
   async function worker() {
     while (!signal.aborted) {
@@ -73,14 +74,20 @@ async function loadPageRefs(refs: Array<{ type: PageType; id: number }>, cache: 
       const key = nodeKey(ref.type, ref.id)
       let page = cache.get(key)
       if (!page) {
-        page = await getPage(ref.type, ref.id, signal)
-        cache.set(key, page)
+        try {
+          page = await getPage(ref.type, ref.id, signal)
+          cache.set(key, page)
+        } catch (cause) {
+          if (signal.aborted) throw cause
+          failed++
+          continue
+        }
       }
       result[current] = page
     }
   }
   await Promise.all(Array.from({ length: Math.min(concurrency, refs.length) }, worker))
-  return result
+  return { pages: result.filter((page): page is PageView => Boolean(page)), failed }
 }
 
 function useElementSize<T extends HTMLElement>() {
@@ -234,21 +241,26 @@ export default function WorldMap() {
     if (lens !== 'okr' || !okrEnabled) return
     const controller = new AbortController()
     setOKRLoading(true)
+    setOKRBoard(undefined)
+    setOKRRelations([])
+    setOKRWorldPages([])
     Promise.all([
       getGenericOKRBoard(okrQuarter, controller.signal),
       listRelations({ nodeTypes: ['okr_objective', 'okr_kr', 'okr_point'] }, controller.signal),
     ]).then(async ([board, relationResult]) => {
-      const pages = await loadPageRefs(okrWorldPageRefs(board.objectives, relationResult.items), pageCache.current, controller.signal)
+      const loaded = await loadPageRefs(okrWorldPageRefs(board.objectives, relationResult.items), pageCache.current, controller.signal)
       if (controller.signal.aborted) return
       setOKRBoard(board)
       setOKRRelations(relationResult.items)
-      setOKRWorldPages(pages)
-      setError(undefined)
+      setOKRWorldPages(loaded.pages)
+      setError(loaded.failed > 0 ? `${loaded.failed} 个关联的现实实体暂时无法读取；OKR 原生结构仍完整展示。` : undefined)
     }).catch((cause: unknown) => {
       if (!controller.signal.aborted) setError(errorText(cause))
     }).finally(() => { if (!controller.signal.aborted) setOKRLoading(false) })
     return () => controller.abort()
   }, [lens, okrEnabled, okrQuarter])
+
+  const currentOKRBoard = !okrQuarter || okrBoard?.quarter === okrQuarter ? okrBoard : undefined
 
   const okrPages = useMemo(() => {
     const pages = new Map(activePages.map((page) => [nodeKey(page.type, page.id), page]))
@@ -264,12 +276,12 @@ export default function WorldMap() {
   }, [fullIndex, okrWorldPages])
 
   const okrGraph = useMemo(() => buildOKRGraph({
-    objectives: okrBoard?.objectives ?? [],
+    objectives: currentOKRBoard?.objectives ?? [],
     relations: okrRelations,
     activePages: okrPages,
     fullIndex: okrIndex,
     objectiveId: objectiveId || undefined,
-  }), [objectiveId, okrBoard, okrIndex, okrPages, okrRelations])
+  }), [currentOKRBoard, objectiveId, okrIndex, okrPages, okrRelations])
   const loading = worldLoading || moduleLoading || lens === 'okr' && okrLoading
 
   const activePrimaryIds = useMemo(() => primaryComponentIds(activeGraph), [activeGraph])
@@ -562,7 +574,7 @@ export default function WorldMap() {
             <>
               <Select
                 aria-label="选择 OKR 季度"
-                value={okrBoard?.quarter}
+                value={okrQuarter || okrBoard?.quarter}
                 loading={loading}
                 options={(okrBoard?.availableQuarters ?? []).map((value) => ({ value, label: value.replace('-', ' ') }))}
                 onChange={changeOKRQuarter}

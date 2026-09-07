@@ -62,7 +62,8 @@ test('OKR lens keeps the complete quarter hierarchy in overview and combines con
   assert.equal(expanded.links.some((link) => link.id === 'relation:9'), false)
 
   const overview = buildOKRGraph({ objectives, relations, activePages: pages, fullIndex: index })
-  assert.deepEqual(new Set(overview.nodes.map((node) => node.id)), new Set(['okr_objective:o-1', 'okr_kr:kr-1', 'okr_point:point-1', 'key_matter:77']))
+  assert.deepEqual(new Set(overview.nodes.map((node) => node.id)), new Set(['okr_objective:o-1', 'okr_kr:kr-1', 'okr_point:point-1']))
+  assert.equal(overview.links.some((link) => link.id === 'relation:7'), false)
 })
 
 test('world map defaults to OKR only when the OKR plugin is active in the runtime', () => {
@@ -87,6 +88,18 @@ test('OKR world pages are loaded from confirmed canonical targets even when abse
     { type: 'project', id: 19 },
     { type: 'person', id: 71 },
   ])
+})
+
+test('OKR lens accepts sparse confirmed relations in either factual direction', () => {
+  const objectives: Objective[] = [{
+    id: 'o-1', title: '稳定交付', krs: [{ id: 'kr-1', title: '完成上线', metricNote: '', metrics: [], points: [] }],
+  }]
+  const relations: EntityRelation[] = [{
+    id: 1, source_type: 'project', source_id: '2', relation_type: 'advances', target_type: 'okr_kr', target_id: 'kr-1',
+    evidence: {}, confidence: 1, confirmed_at: '2026-09-07T00:00:00Z', created_at: '', updated_at: '',
+  }]
+  const graph = buildOKRGraph({ objectives, relations, activePages: pages, fullIndex: index })
+  assert.ok(graph.links.some((link) => link.id === 'relation:1' && link.source === 'project:2' && link.target === 'okr_kr:kr-1'))
 })
 
 test('focus graph contains exactly the selected page and one-hop references', () => {

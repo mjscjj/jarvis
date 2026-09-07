@@ -66,8 +66,6 @@ func RegisterOKRModuleRoutes(h *server.Hertz, deps OKRModuleDependencies) error 
 	h.GET("/api/okr/enums", requireEnabled, Enums())
 	h.GET("/api/okr/scope", requireEnabled, GetOKRWorkspaceScope(deps.Workspace))
 	h.GET("/api/okr/board", requireEnabled, GetCoreBoard(deps.Workspace))
-	h.GET("/api/okr/objectives", requireEnabled, ListCoreObjectives(deps.Workspace))
-	h.GET("/api/okr/objectives/:objective_id", requireEnabled, GetCoreObjective(deps.Workspace))
 	h.GET("/api/okr/krs/:kr_id", requireEnabled, GetCoreKR(deps.Workspace))
 	h.POST("/api/okr/images", requireEnabled, UploadOKRImage(deps.Images))
 	h.POST("/api/okr/objectives", requireEnabled, CreateObjective(deps.Workspace))

@@ -12,18 +12,21 @@ export interface OKRGraphInput {
 
 const okrTypes = new Set(['okr_objective', 'okr_kr', 'okr_point'])
 
-function isCanonicalOKRWorldRelation(relation: EntityRelation): boolean {
+function isSupportedOKRWorldRelation(relation: EntityRelation): boolean {
   if (!relation.confirmed_at) return false
   if (relation.source_type === 'okr_objective') {
     return relation.relation_type === 'maps_to' && relation.target_type === 'project'
   }
   if (relation.source_type === 'okr_kr') {
-    return relation.relation_type === 'maps_to' && relation.target_type === 'key_matter' ||
+    return relation.relation_type === 'maps_to' && (relation.target_type === 'project' || relation.target_type === 'key_matter') ||
       relation.relation_type === 'owned_by' && (relation.target_type === 'person' || relation.target_type === 'principal')
   }
   if (relation.source_type === 'okr_point') {
     return (relation.relation_type === 'maps_to' || relation.relation_type === 'advances') && relation.target_type === 'key_matter' ||
       relation.relation_type === 'owned_by' && (relation.target_type === 'person' || relation.target_type === 'principal')
+  }
+  if ((relation.source_type === 'project' || relation.source_type === 'key_matter') && relation.target_type === 'okr_kr') {
+    return relation.relation_type === 'advances'
   }
   return false
 }
@@ -39,10 +42,15 @@ export function okrWorldPageRefs(objectives: Objective[], relations: EntityRelat
   }
   const refs = new Map<string, { type: PageType; id: number }>()
   for (const relation of relations) {
-    if (!isCanonicalOKRWorldRelation(relation) || !currentRefs.has(nodeKey(relation.source_type, relation.source_id)) || !isPageType(relation.target_type)) continue
-    const id = Number(relation.target_id)
+    if (!isSupportedOKRWorldRelation(relation)) continue
+    const sourceIsOKR = currentRefs.has(nodeKey(relation.source_type, relation.source_id))
+    const targetIsOKR = currentRefs.has(nodeKey(relation.target_type, relation.target_id))
+    const worldType = sourceIsOKR ? relation.target_type : targetIsOKR ? relation.source_type : ''
+    const worldID = sourceIsOKR ? relation.target_id : relation.source_id
+    if (!isPageType(worldType)) continue
+    const id = Number(worldID)
     if (!Number.isSafeInteger(id) || id <= 0) continue
-    refs.set(nodeKey(relation.target_type, id), { type: relation.target_type, id })
+    refs.set(nodeKey(worldType, id), { type: worldType, id })
   }
   return [...refs.values()]
 }
@@ -168,18 +176,19 @@ export function buildOKRGraph(input: OKRGraphInput): WorldGraph {
   const currentOKRRefs = new Set(nodes.keys())
   const seenRelations = new Set<number>()
   for (const relation of input.relations) {
-    if (seenRelations.has(relation.id) || !isCanonicalOKRWorldRelation(relation)) continue
+    if (seenRelations.has(relation.id) || !isSupportedOKRWorldRelation(relation)) continue
     const source = nodeKey(relation.source_type, relation.source_id)
     const target = nodeKey(relation.target_type, relation.target_id)
-    const sourceIsCurrent = currentOKRRefs.has(source)
-    if (!sourceIsCurrent) continue
-    if (okrTypes.has(relation.target_type)) continue
+    if (!currentOKRRefs.has(source) && !currentOKRRefs.has(target)) continue
+    if (okrTypes.has(relation.source_type) && okrTypes.has(relation.target_type)) continue
+    const worldKey = currentOKRRefs.has(source) ? target : source
+    if (!indexes.has(worldKey) && !activePages.has(worldKey)) continue
     seenRelations.add(relation.id)
     for (const [type, id, key] of [[relation.source_type, relation.source_id, source], [relation.target_type, relation.target_id, target]] as const) {
       if (nodes.has(key)) continue
       const item = isPageType(type) ? indexes.get(key) : undefined
       const pageId = Number(id)
-      nodes.set(key, isPageType(type) && Number.isSafeInteger(pageId) && (item || activePages.has(key)) ? pageNode(type, pageId, item, activePages) : externalNode(type, id))
+      nodes.set(key, isPageType(type) && Number.isSafeInteger(pageId) ? pageNode(type, pageId, item, activePages) : externalNode(type, id))
     }
     addLink(links, seenLinks, {
       id: `relation:${relation.id}`,

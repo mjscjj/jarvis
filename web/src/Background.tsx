@@ -396,6 +396,7 @@ interface KeyMatterCreateFields {
 function KeyMattersPanel() {
   const [items, setItems] = useState<KeyMatter[]>([])
   const [total, setTotal] = useState(0)
+  const [maxOpen, setMaxOpen] = useState(10)
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
@@ -415,6 +416,7 @@ function KeyMattersPanel() {
       .then((result) => {
         setItems(result.items)
         setTotal(result.total)
+        setMaxOpen(result.max_open)
         setError(undefined)
       })
       .catch((cause: unknown) => setError(errorText(cause)))
@@ -643,8 +645,8 @@ function KeyMattersPanel() {
 
   return <>
     <Flex justify="space-between" align="center" className="section-heading">
-      <Text type="secondary">未闭环关键事项 {total}</Text>
-      <Flex gap={8}><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={openCreate}>新建关键事项</Button></Flex>
+      <Text type="secondary">未闭环关键事项 {total}/{maxOpen}</Text>
+      <Flex gap={8}><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={openCreate} disabled={total >= maxOpen}>新建关键事项</Button></Flex>
     </Flex>
     {error && <Alert type="error" showIcon title="关键事项操作失败" description={error} closable onClose={() => setError(undefined)} />}
     <Card className="table-card key-matter-list-card" variant="borderless">

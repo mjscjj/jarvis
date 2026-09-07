@@ -193,9 +193,10 @@ key_matter:31    --depends_on / required_by--> resource:19
 `okr-world-projector` 是 OKR 到世界模型的语义桥，它必须：
 
 - 通过 OKR 原子工具读取数据，不直接查询模块数据库；
-- 让每个 Objective、KR、Point 和结构化 Owner 都有现实承接；
-- 将 Objective 映射到 Project、KR 映射到 KeyMatter、Point 连接 KeyMatter、Owner 映射到 Principal/Person；
-- OKR 定义本身是这些定义投影的权威证据；标题相似仍不能把节点误并到语义不同的已有实体；
+- 保留完整的 OKR 原生结构，同时只调查有证据的稀疏现实关系；
+- 不为覆盖率自动创建 Project、KeyMatter 或 Person，未关联是合法状态；
+- 只有现实实体本身满足长期建模准入、关系有直接依据时，才建立 `maps_to`、`advances` 或其它跨模块关系；
+- OKR 定义本身不能单独证明现实对象存在，标题相似也不能把节点误并到语义不同的已有实体；
 - 不复制 Objective→KR→Point 原生层级；Owner 的 `owned_by` 仅是现实人物投影，不是第二份可编辑 Owner；
 - 不读取或同步周报 Progress；
 - 幂等写入并在写后回读。
