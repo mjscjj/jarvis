@@ -4,6 +4,7 @@ import { PlanBoardProvider, usePlanBoard } from './planStore'
 import { QuarterSelect } from './components/QuarterSelect'
 import { ManagementView } from './components/ManagementView'
 import { WeeklyShareNav } from './components/WeeklyShareNav'
+import { ActivityLogButton } from './components/ActivityLogButton'
 import type { WeeklyShareTab } from './share'
 
 function SyncNotice() {
@@ -70,6 +71,7 @@ function PlanCanvas({ shared = false, onShareTabChange }: { shared?: boolean; on
               {plans.length === 0 && <option value="">暂无 Plan</option>}
               {plans.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
             </select>
+            <ActivityLogButton surface="plan" quarter={quarter} planId={plan?.id} disabled={!plan} />
             <button type="button" onClick={() => { setConfirmDelete(false); setCreatingPlan((value) => !value) }} className="h-8 rounded-lg bg-emerald-600 px-3 text-[10px] font-medium text-white hover:bg-emerald-700">新建 Plan</button>
             <button type="button" disabled={!plan || saving} onClick={() => { setCreatingPlan(false); setConfirmDelete(true) }} className="h-8 rounded-lg border border-red-200 bg-red-50 px-3 text-[10px] font-medium text-red-700 hover:bg-red-100 disabled:opacity-40">删除 Plan</button>
           </div>

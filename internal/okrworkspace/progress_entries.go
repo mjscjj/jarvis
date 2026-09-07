@@ -41,6 +41,16 @@ func (s *Service) GetKRByProgress(ctx context.Context, progressID string) (KRVie
 	return s.GetProgressKR(ctx, kr.ID, row.Week)
 }
 
+// ProgressEntryScope resolves the page scope before a progress row is deleted.
+// The activity file does not become a second source of truth for this relation.
+func (s *Service) ProgressEntryScope(ctx context.Context, progressID string) (string, string, error) {
+	row, _, _, objective, err := s.progressEntryOwner(ctx, strings.TrimSpace(progressID))
+	if err != nil {
+		return "", "", err
+	}
+	return objective.Quarter, row.Week, nil
+}
+
 func (s *Service) CreateProgressEntry(ctx context.Context, pointID string, input ProgressEntryInput) (KRView, error) {
 	pointID = strings.TrimSpace(pointID)
 	input.ID = strings.TrimSpace(input.ID)

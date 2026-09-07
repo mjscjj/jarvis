@@ -19,6 +19,7 @@ import (
 type OKRModuleDependencies struct {
 	Workspace *okrworkspace.Service
 	Images    *okrworkspace.ImageStore
+	Activity  *okrworkspace.ActivityStore
 	Enabled   func(context.Context) (bool, error)
 }
 
@@ -27,6 +28,7 @@ type OKRModuleDependencies struct {
 // becoming a second source of truth for objectives, KRs, or formal progress.
 type BizOKRModuleDependencies struct {
 	Workspace *okrworkspace.Service
+	Activity  *okrworkspace.ActivityStore
 	Identity  *okrAuth.Service
 	Documents MarkdownDocumentCreator
 	People    *background.ResolveService
@@ -79,13 +81,13 @@ func RegisterOKRModuleRoutes(h *server.Hertz, deps OKRModuleDependencies) error 
 	h.GET("/api/okr/progress/scope", requireEnabled, GetWeeklyReportScope(deps.Workspace))
 	h.GET("/api/okr/progress/board", requireEnabled, GetProgressBoard(deps.Workspace))
 	h.GET("/api/okr/weeks", requireEnabled, GetWeeklyReportWeeks(deps.Workspace))
-	h.POST("/api/okr/weeks", requireEnabled, OpenWeeklyReportWeek(deps.Workspace))
+	h.POST("/api/okr/weeks", requireEnabled, recordOKRActivity(deps.Activity, okrActivitySpec{Surface: "weekly", Action: "week_opened"}, OpenWeeklyReportWeek(deps.Workspace)))
 	// Deleting a whole week is Biz-owned. See okrworkspace.DeleteWeek.
 	h.GET("/api/okr/krs/:kr_id/weekly", requireEnabled, GetWeeklyReportKR(deps.Workspace))
-	h.PUT("/api/okr/krs/:kr_id/weekly-core", requireEnabled, ReplaceWeeklyKRCore(deps.Workspace))
-	h.POST("/api/okr/points/:point_id/progress", requireEnabled, CreateWeeklyProgressEntry(deps.Workspace))
-	h.PUT("/api/okr/progress/:progress_id", requireEnabled, UpdateWeeklyProgressEntry(deps.Workspace))
-	h.DELETE("/api/okr/progress/:progress_id", requireEnabled, DeleteWeeklyProgressEntry(deps.Workspace))
+	h.PUT("/api/okr/krs/:kr_id/weekly-core", requireEnabled, recordOKRActivity(deps.Activity, okrActivitySpec{Surface: "weekly", Action: "weekly_core_saved", TargetParam: "kr_id"}, ReplaceWeeklyKRCore(deps.Workspace)))
+	h.POST("/api/okr/points/:point_id/progress", requireEnabled, recordOKRActivity(deps.Activity, okrActivitySpec{Surface: "weekly", Action: "progress_created", TargetParam: "point_id"}, CreateWeeklyProgressEntry(deps.Workspace)))
+	h.PUT("/api/okr/progress/:progress_id", requireEnabled, recordOKRActivity(deps.Activity, okrActivitySpec{Surface: "weekly", Action: "progress_updated", TargetParam: "progress_id"}, UpdateWeeklyProgressEntry(deps.Workspace)))
+	h.DELETE("/api/okr/progress/:progress_id", requireEnabled, recordOKRActivity(deps.Activity, progressDeleteActivitySpec(deps.Workspace), DeleteWeeklyProgressEntry(deps.Workspace)))
 	return nil
 }
 
@@ -123,14 +125,15 @@ func RegisterBizOKRModuleRoutes(h *server.Hertz, deps BizOKRModuleDependencies) 
 	}
 	h.GET("/api/biz-okr/people/search", requireEnabled, SearchWorkspacePeople(deps.People))
 	h.GET("/api/biz-okr/people/avatars", requireEnabled, GetWorkspacePeopleAvatars(deps.People))
+	h.GET("/api/biz-okr/activity", requireEnabled, GetOKRActivities(deps.Activity))
 	h.GET("/api/biz-okr/plans", requireEnabled, ListOKRPlans(deps.Workspace))
-	h.POST("/api/biz-okr/plans", requireEnabled, CreateOKRPlan(deps.Workspace))
+	h.POST("/api/biz-okr/plans", requireEnabled, recordOKRActivity(deps.Activity, okrActivitySpec{Surface: "plan", Action: "plan_created"}, CreateOKRPlan(deps.Workspace)))
 	h.GET("/api/biz-okr/plans/:plan_id", requireEnabled, GetOKRPlan(deps.Workspace))
-	h.PUT("/api/biz-okr/plans/:plan_id", requireEnabled, ReplaceOKRPlan(deps.Workspace))
-	h.DELETE("/api/biz-okr/plans/:plan_id", requireEnabled, DeleteOKRPlan(deps.Workspace))
+	h.PUT("/api/biz-okr/plans/:plan_id", requireEnabled, recordOKRActivity(deps.Activity, okrActivitySpec{Surface: "plan", Action: "plan_saved", TargetParam: "plan_id"}, ReplaceOKRPlan(deps.Workspace)))
+	h.DELETE("/api/biz-okr/plans/:plan_id", requireEnabled, recordOKRActivity(deps.Activity, okrActivitySpec{Surface: "plan", Action: "plan_deleted", TargetParam: "plan_id"}, DeleteOKRPlan(deps.Workspace)))
 	h.GET("/api/biz-okr/scope", requireEnabled, GetWeeklyReportScope(deps.Workspace))
 	h.GET("/api/biz-okr/board", requireEnabled, GetBoard(deps.Workspace))
-	h.DELETE("/api/biz-okr/weeks/:week", requireEnabled, DeleteBizOKRWeek(deps.Workspace))
+	h.DELETE("/api/biz-okr/weeks/:week", requireEnabled, recordOKRActivity(deps.Activity, okrActivitySpec{Surface: "weekly", Action: "week_deleted", TargetParam: "week"}, DeleteBizOKRWeek(deps.Workspace)))
 	h.GET("/api/biz-okr/core-board", requireEnabled, GetBizCoreBoard(deps.Workspace))
 	h.GET("/api/biz-okr/krs/:kr_id", requireEnabled, GetBizCoreKR(deps.Workspace))
 	h.GET("/api/biz-okr/krs/:kr_id/weekly", requireEnabled, GetBizWeeklyReportKR(deps.Workspace))
@@ -156,7 +159,7 @@ func RegisterBizOKRModuleRoutes(h *server.Hertz, deps BizOKRModuleDependencies) 
 	h.GET("/api/biz-okr/meego-preview", requireEnabled, GetMeegoBatchPreview(deps.Workspace))
 	h.POST("/api/biz-okr/meego-observations", requireEnabled, StoreMeegoObservation(deps.Workspace))
 	h.POST("/api/biz-okr/points/:point_id/meego-confirm", requireEnabled, ConfirmMeegoProgress(deps.Workspace))
-	h.PUT("/api/biz-okr/scores/:target_kind/:target_id", requireEnabled, ReplaceWeeklyScore(deps.Workspace))
-	h.DELETE("/api/biz-okr/scores/:target_kind/:target_id", requireEnabled, DeleteWeeklyScore(deps.Workspace))
+	h.PUT("/api/biz-okr/scores/:target_kind/:target_id", requireEnabled, recordOKRActivity(deps.Activity, okrActivitySpec{Surface: "weekly", Action: "score_saved", TargetParam: "target_id"}, ReplaceWeeklyScore(deps.Workspace)))
+	h.DELETE("/api/biz-okr/scores/:target_kind/:target_id", requireEnabled, recordOKRActivity(deps.Activity, okrActivitySpec{Surface: "weekly", Action: "score_deleted", TargetParam: "target_id"}, DeleteWeeklyScore(deps.Workspace)))
 	return nil
 }

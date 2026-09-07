@@ -241,6 +241,19 @@ export interface OKRPlanList {
   plans: OKRPlanSummary[]
 }
 
+export interface OKRActivityEntry {
+  at: string
+  actorId: string
+  actorName: string
+  surface: 'plan' | 'weekly'
+  quarter?: string
+  week?: string
+  planId?: string
+  action: string
+  targetId?: string
+  summary: string
+}
+
 export interface PageComment {
   id: string
   parentId?: string

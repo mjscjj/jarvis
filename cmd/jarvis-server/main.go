@@ -502,6 +502,7 @@ func main() {
 	scheduledTaskService.SetModuleGate(appModuleService.Enabled)
 	var okrWorkspaceService *okrworkspace.Service
 	var okrImageStore *okrworkspace.ImageStore
+	var okrActivityStore *okrworkspace.ActivityStore
 	var okrIdentityService *okrAuth.Service
 	var okrTokenStore *okrAuth.TokenStore
 	var okrUserTokens *okrAuth.UserTokens
@@ -513,6 +514,10 @@ func main() {
 		okrImageStore, err = okrworkspace.NewImageStore(okrModuleConfig.UploadDir, okrModuleConfig.MaxImageBytes)
 		if err != nil {
 			fatalf("initialize OKR image store failed: %v", err)
+		}
+		okrActivityStore, err = okrworkspace.NewActivityStore(filepath.Join(filepath.Dir(okrModuleConfig.DatabasePath), "activity"))
+		if err != nil {
+			fatalf("initialize OKR activity store failed: %v", err)
 		}
 	}
 	if bizOKRModuleEnabled {
@@ -1093,7 +1098,7 @@ func main() {
 	var bizOKRModuleDeps *api.BizOKRModuleDependencies
 	if okrModuleEnabled {
 		okrModuleDeps = &api.OKRModuleDependencies{
-			Workspace: okrWorkspaceService, Images: okrImageStore,
+			Workspace: okrWorkspaceService, Images: okrImageStore, Activity: okrActivityStore,
 			Enabled: func(ctx context.Context) (bool, error) { return appModuleService.Enabled(ctx, "okr") },
 		}
 	}
@@ -1111,7 +1116,7 @@ func main() {
 			fatalf("initialize OKR preview review service failed: %v", err)
 		}
 		bizOKRModuleDeps = &api.BizOKRModuleDependencies{
-			Workspace: okrWorkspaceService, Identity: okrIdentityService, Documents: larkClient, People: resolveService,
+			Workspace: okrWorkspaceService, Activity: okrActivityStore, Identity: okrIdentityService, Documents: larkClient, People: resolveService,
 			Enabled:       func(ctx context.Context) (bool, error) { return appModuleService.Enabled(ctx, "biz-okr") },
 			PreviewReview: previewReviewService,
 			UserTokens:    okrUserTokens, Tokens: okrTokenStore, FeishuAppID: okrModuleConfig.Identity.AppID,

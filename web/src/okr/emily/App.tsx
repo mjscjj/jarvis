@@ -18,6 +18,7 @@ import { weeklyShareURL, type WeeklyShareTab } from './share'
 import { okrTabForWeeklyWorkspace, weeklyDatasetLabel, weeklyViewLabel, weeklyWorkspace, type WeeklyWorkspace } from '../navigation'
 import { WeeklyShareNav } from './components/WeeklyShareNav'
 import { templateKeyForDataset } from './weekCatalog'
+import { ActivityLogButton } from './components/ActivityLogButton'
 
 function weekLabel(week: string): string {
   const matched = /^(\d{4})-W(\d{2})$/.exec(week)
@@ -258,6 +259,7 @@ export default function App({
 	          {managesWeeks && <button type="button" onClick={() => { setConfirmDeleteWeek(false); setNewQuarter(quarter || currentQuarter()); setNewWeek(currentISOWeek()); setOpeningWeek((value) => !value); setWeekNotice('') }} className={`h-8 whitespace-nowrap rounded-lg border px-2.5 text-[10px] font-medium ${reviewDataset ? 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100' : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'}`}>新建{lifecycleName}</button>}
 	          {managesWeeks && <button type="button" disabled={!week || deleteBlocked} onClick={() => { setConfirmDeleteWeek(true); setOpeningWeek(false); setWeekNotice('') }} className="h-8 whitespace-nowrap rounded-lg border border-red-200 bg-red-50 px-2.5 text-[10px] font-medium text-red-700 hover:bg-red-100 disabled:opacity-40">删除{lifecycleName}</button>}
 			<div className="ml-auto flex flex-wrap items-center justify-end gap-2.5">
+              <ActivityLogButton surface="weekly" quarter={quarter} week={week} disabled={!week} />
               <button type="button" onClick={() => void copyShareLink()} className="flex h-9 items-center whitespace-nowrap rounded-xl border border-slate-200 bg-white px-2.5 text-[11px] font-medium text-slate-600 shadow-[0_1px_2px_rgba(15,23,42,0.03)] hover:border-slate-300 hover:bg-slate-50">
                 分享{shareLabel}页
               </button>

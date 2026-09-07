@@ -1,3 +1,166 @@
+.chat-workspace {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  background: var(--color-bg-elevated);
+}
+
+.chat-workspace-bar {
+  display: flex;
+  align-items: center;
+  flex: none;
+  min-width: 0;
+  height: 42px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-bg-soft);
+}
+
+.chat-workspace-tabs {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  gap: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.chat-workspace-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.chat-workspace-tab-shell {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  min-width: 78px;
+  max-width: 174px;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  color: var(--color-text-secondary);
+}
+
+.chat-workspace-tab-shell:hover {
+  background: var(--color-bg-elevated);
+}
+
+.chat-workspace-tab-shell.is-active {
+  border-color: var(--color-border);
+  background: var(--color-bg-elevated);
+  color: var(--color-text);
+  box-shadow: 0 1px 2px rgb(16 20 24 / 5%);
+}
+
+.chat-workspace-tab {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  gap: 7px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.chat-workspace-tab > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-workspace-state {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-text-tertiary);
+  opacity: 0.55;
+}
+
+.chat-workspace-state.is-running {
+  background: var(--color-primary);
+  opacity: 1;
+  animation: jarvis-chat-status 1.3s ease-in-out infinite;
+}
+
+.chat-workspace-tab-close {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-right: 3px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.chat-workspace-tab-close:hover:not(:disabled) {
+  background: var(--color-bg-soft);
+  color: var(--color-text);
+}
+
+.chat-workspace-tab-close:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+
+.chat-workspace-add.ant-btn,
+.chat-workspace-actions .chat-icon-button.ant-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+}
+
+.chat-workspace-add.ant-btn {
+  margin-left: 4px;
+}
+
+.chat-workspace-actions {
+  display: flex;
+  align-items: center;
+  flex: none;
+  margin-left: 5px;
+  padding-left: 5px;
+  border-left: 1px solid var(--color-border);
+}
+
+.chat-workspace-stack {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+}
+
+.chat-workspace-pane {
+  display: none;
+  width: 100%;
+  height: 100%;
+}
+
+.chat-workspace-pane.is-active {
+  display: flex;
+}
+
 .chat-panel.jarvis-chat {
   min-width: 0;
   width: 100%;
@@ -672,6 +835,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .chat-workspace-state.is-running,
   .chat-status.is-running > span,
   .chat-suggestion,
   .chat-suggestion-arrow,

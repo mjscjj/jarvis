@@ -41,7 +41,8 @@ interface QueuedChatTurn {
   createdAt: number
 }
 
-const CHAT_THREAD_STORAGE_KEY = 'jarvis.chat.threadId'
+const LEGACY_CHAT_THREAD_STORAGE_KEY = 'jarvis.chat.threadId'
+const CHAT_WORKSPACES_STORAGE_KEY = 'jarvis.chat.workspaces.v1'
 const CHAT_IMAGE_MAX_BYTES = 10 * 1024 * 1024
 const CHAT_IMAGE_TYPES = new Set(['image/png', 'image/jpeg'])
 const CHAT_THREAD_LIST_LIMIT = 30
@@ -224,7 +225,50 @@ interface ChatProps {
   onClose: () => void
 }
 
-export default function Chat({ open, expanded, onToggleExpanded, onClose }: ChatProps) {
+interface ChatWorkspace {
+  id: string
+  title: string
+  threadId: string | null
+  busy?: boolean
+}
+
+interface ChatSessionProps {
+  open: boolean
+  active: boolean
+  workspace: ChatWorkspace
+  onWorkspaceChange: (id: string, change: Partial<ChatWorkspace>) => void
+}
+
+function defaultWorkspace(index = 1, threadId: string | null = null): ChatWorkspace {
+  return { id: makeClientId('workspace'), title: `会话 ${index}`, threadId }
+}
+
+function loadWorkspaces(): ChatWorkspace[] {
+  try {
+    const stored = window.localStorage.getItem(CHAT_WORKSPACES_STORAGE_KEY)
+    if (stored) {
+      const parsed = JSON.parse(stored) as unknown
+      if (Array.isArray(parsed)) {
+        const valid = parsed.flatMap((item): ChatWorkspace[] => {
+          if (!item || typeof item !== 'object') return []
+          const candidate = item as Partial<ChatWorkspace>
+          if (typeof candidate.id !== 'string' || typeof candidate.title !== 'string') return []
+          return [{
+            id: candidate.id,
+            title: candidate.title.trim() || '未命名会话',
+            threadId: typeof candidate.threadId === 'string' ? candidate.threadId : null,
+          }]
+        })
+        if (valid.length > 0) return valid
+      }
+    }
+  } catch {
+    // Invalid browser state should not prevent chat from opening.
+  }
+  return [defaultWorkspace(1, window.localStorage.getItem(LEGACY_CHAT_THREAD_STORAGE_KEY))]
+}
+
+function ChatSession({ open, active, workspace, onWorkspaceChange }: ChatSessionProps) {
   const { name: agentName, shortName: agentShortName } = useAgentIdentity()
   const { context } = usePageContext()
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -244,13 +288,19 @@ export default function Chat({ open, expanded, onToggleExpanded, onClose }: Chat
   const [runningStatusIndex, setRunningStatusIndex] = useState(0)
   const [notice, setNotice] = useState<string>()
   const [chatBaseURL, setChatBaseURL] = useState<string>()
-  const [threadId, setThreadId] = useState<string | null>(() => window.localStorage.getItem(CHAT_THREAD_STORAGE_KEY))
+  const [threadId, setThreadId] = useState<string | null>(workspace.threadId)
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<TextAreaRef>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const processingRef = useRef(false)
   const threadIdRef = useRef(threadId)
+
+  const rememberThreadId = useCallback((nextThreadId: string | null) => {
+    setThreadId(nextThreadId)
+    threadIdRef.current = nextThreadId
+    onWorkspaceChange(workspace.id, { threadId: nextThreadId })
+  }, [onWorkspaceChange, workspace.id])
 
   const imagePreviewURL = useMemo(() => image ? URL.createObjectURL(image) : undefined, [image])
 
@@ -306,6 +356,12 @@ export default function Chat({ open, expanded, onToggleExpanded, onClose }: Chat
     listChatThreads(baseURL, controller.signal)
       .then((result) => {
         setThreads(result.threads)
+        const selected = workspace.threadId
+          ? result.threads.find((item) => item.thread_id === workspace.threadId)
+          : undefined
+        if (selected?.title && /^会话 \d+$/.test(workspace.title)) {
+          onWorkspaceChange(workspace.id, { title: compactText(selected.title, 18) })
+        }
         if (result.warnings && result.warnings.length > 0) {
           setError({
             message: '部分历史对话暂时无法读取。',
@@ -332,7 +388,7 @@ export default function Chat({ open, expanded, onToggleExpanded, onClose }: Chat
         if (!controller.signal.aborted) setThreadsLoading(false)
       })
     return () => controller.abort()
-  }, [chatBaseURL])
+  }, [chatBaseURL, onWorkspaceChange, workspace.id, workspace.threadId, workspace.title])
 
   useEffect(() => {
     if (!chatBaseURL) return
@@ -363,8 +419,7 @@ export default function Chat({ open, expanded, onToggleExpanded, onClose }: Chat
       .catch((cause: unknown) => {
         if (isAbortError(cause)) return
         if (isMissingChatHistoryError(cause)) {
-          window.localStorage.removeItem(CHAT_THREAD_STORAGE_KEY)
-          setThreadId(null)
+          rememberThreadId(null)
           setMessages([])
           setError(undefined)
           setNotice('上次会话已失效，已自动切换到新会话。')
@@ -381,15 +436,19 @@ export default function Chat({ open, expanded, onToggleExpanded, onClose }: Chat
         if (!controller.signal.aborted) setHistoryLoading(false)
       })
     return () => controller.abort()
-  }, [chatBaseURL, queue.length, sending, threadId])
+  }, [chatBaseURL, queue.length, rememberThreadId, sending, threadId])
 
   useEffect(() => {
-    if (open) inputRef.current?.focus()
-  }, [open])
+    if (open && active) inputRef.current?.focus()
+  }, [active, open])
 
   useEffect(() => {
-    if (!sending && messages.length > 0) inputRef.current?.focus()
-  }, [sending, messages.length])
+    if (active && !sending && messages.length > 0) inputRef.current?.focus()
+  }, [active, sending, messages.length])
+
+  useEffect(() => {
+    onWorkspaceChange(workspace.id, { busy: historyLoading || sending || queue.length > 0 })
+  }, [historyLoading, onWorkspaceChange, queue.length, sending, workspace.id])
 
   const currentPageLabel = pageLabel(context)
   const currentSelectionLabel = context.selection?.label
@@ -448,8 +507,7 @@ export default function Chat({ open, expanded, onToggleExpanded, onClose }: Chat
       setNotice('当前还有消息在处理，完成或清空队列后再新建对话。')
       return
     }
-    window.localStorage.removeItem(CHAT_THREAD_STORAGE_KEY)
-    setThreadId(null)
+    rememberThreadId(null)
     setMessages([])
     setImage(null)
     setQueue([])
@@ -460,7 +518,7 @@ export default function Chat({ open, expanded, onToggleExpanded, onClose }: Chat
     setPaused(false)
     setThreadsOpen(false)
     inputRef.current?.focus()
-  }, [queue.length, sending])
+  }, [queue.length, rememberThreadId, sending])
 
   const attachImage = useCallback((file: File) => {
     const validationError = chatImageError(file)
@@ -482,15 +540,16 @@ export default function Chat({ open, expanded, onToggleExpanded, onClose }: Chat
       setThreadsOpen(false)
       return
     }
-    window.localStorage.setItem(CHAT_THREAD_STORAGE_KEY, normalized)
-    setThreadId(normalized)
+    rememberThreadId(normalized)
+    const selected = threads.find((item) => item.thread_id === normalized)
+    if (selected?.title) onWorkspaceChange(workspace.id, { title: compactText(selected.title, 18) })
     setImage(null)
     setError(undefined)
     setDiagnosticOpen(false)
     setNotice(undefined)
     setPaused(false)
     setThreadsOpen(false)
-  }, [queue.length, sending, threadId])
+  }, [onWorkspaceChange, queue.length, rememberThreadId, sending, threadId, threads, workspace.id])
 
   const clearQueue = useCallback(() => {
     setQueue([])
@@ -539,7 +598,10 @@ export default function Chat({ open, expanded, onToggleExpanded, onClose }: Chat
     setPaused(false)
     setError(undefined)
     setDiagnosticOpen(false)
-  }, [context, queue.length, queuePaused, sending])
+    if (!options?.reuseMessageId && messages.length === 0 && /^会话 \d+$/.test(workspace.title)) {
+      onWorkspaceChange(workspace.id, { title: compactText(message, 18) || workspace.title })
+    }
+  }, [context, messages.length, onWorkspaceChange, queue.length, queuePaused, sending, workspace.id, workspace.title])
 
   const send = useCallback(() => {
     const message = input.trim()
@@ -644,9 +706,7 @@ export default function Chat({ open, expanded, onToggleExpanded, onClose }: Chat
         const { event, data } = parseSSEBlock(block)
         if (event === 'thread') {
           const parsed = JSON.parse(data) as ChatThreadEvent
-          setThreadId(parsed.thread_id)
-          threadIdRef.current = parsed.thread_id
-          window.localStorage.setItem(CHAT_THREAD_STORAGE_KEY, parsed.thread_id)
+          rememberThreadId(parsed.thread_id)
           setThreads((prev) => {
             const withoutCurrent = prev.filter((item) => item.thread_id !== parsed.thread_id)
             return [threadSummaryFromTurn(parsed.thread_id, turn), ...withoutCurrent].slice(0, CHAT_THREAD_LIST_LIMIT)
@@ -700,9 +760,7 @@ export default function Chat({ open, expanded, onToggleExpanded, onClose }: Chat
       }
       const diagnostic = diagnosticFromCause(cause)
       if (isStaleThreadError(`${diagnostic.detail ?? ''} ${diagnostic.message}`) && threadAtStart) {
-        window.localStorage.removeItem(CHAT_THREAD_STORAGE_KEY)
-        setThreadId(null)
-        threadIdRef.current = null
+        rememberThreadId(null)
         setNotice('这个会话暂时无法继续，已切换到新对话。你可以继续发送。')
       }
       setQueuePaused(true)
@@ -724,7 +782,7 @@ export default function Chat({ open, expanded, onToggleExpanded, onClose }: Chat
       setSending(false)
       processingRef.current = false
     }
-  }, [chatBaseURL, refreshThreads])
+  }, [chatBaseURL, refreshThreads, rememberThreadId])
 
   useEffect(() => {
     if (!chatBaseURL || historyLoading || sending || queuePaused || queue.length === 0 || processingRef.current) return
@@ -752,7 +810,7 @@ export default function Chat({ open, expanded, onToggleExpanded, onClose }: Chat
   const canSwitchThread = !sending && !hasPendingQueue && !historyLoading
   const activeThread = threadId ? threads.find((item) => item.thread_id === threadId) : undefined
 
-  return <section className="chat-panel jarvis-chat" aria-label={`${agentName} 对话`}>
+  return <section className="chat-panel jarvis-chat" aria-label={`${workspace.title} · ${agentName} 对话`}>
     <header className="chat-header">
       <div className="chat-title-row">
         <div className="chat-heading">
@@ -765,17 +823,6 @@ export default function Chat({ open, expanded, onToggleExpanded, onClose }: Chat
         <div className="chat-header-actions">
           <Button type="text" size="small" className="chat-icon-button" icon={<HistoryOutlined />} aria-label="查看历史对话" title="历史对话" onClick={() => setThreadsOpen((value) => !value)} />
           <Button type="text" size="small" className="chat-icon-button" icon={<PlusOutlined />} disabled={!canSwitchThread} aria-label="新建对话" title="新建对话" onClick={startNewChat} />
-          <Button
-            type="text"
-            size="small"
-            className="chat-expand chat-icon-button"
-            icon={expanded ? <CompressOutlined /> : <ExpandOutlined />}
-            aria-label={expanded ? '缩小对话' : '展开对话'}
-            title={expanded ? '缩小' : '展开'}
-            aria-pressed={expanded}
-            onClick={onToggleExpanded}
-          />
-          <Button type="text" size="small" className="chat-close chat-icon-button" icon={<CloseOutlined />} aria-label={`关闭 ${agentName} 对话`} onClick={onClose} />
         </div>
       </div>
       {threadsOpen && <div className="chat-thread-panel" aria-label="历史对话">
@@ -947,4 +994,106 @@ export default function Chat({ open, expanded, onToggleExpanded, onClose }: Chat
       </div>
     </div>
   </section>
+}
+
+export default function Chat({ open, expanded, onToggleExpanded, onClose }: ChatProps) {
+  const { name: agentName } = useAgentIdentity()
+  const [workspaces, setWorkspaces] = useState<ChatWorkspace[]>(loadWorkspaces)
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState(() => workspaces[0].id)
+
+  useEffect(() => {
+    const stored = workspaces.map(({ busy: _busy, ...workspace }) => workspace)
+    window.localStorage.setItem(CHAT_WORKSPACES_STORAGE_KEY, JSON.stringify(stored))
+    window.localStorage.removeItem(LEGACY_CHAT_THREAD_STORAGE_KEY)
+  }, [workspaces])
+
+  const updateWorkspace = useCallback((id: string, change: Partial<ChatWorkspace>) => {
+    setWorkspaces((current) => current.map((workspace) => {
+      if (workspace.id !== id) return workspace
+      const next = { ...workspace, ...change }
+      if (next.title === workspace.title && next.threadId === workspace.threadId && next.busy === workspace.busy) return workspace
+      return next
+    }))
+  }, [])
+
+  const addWorkspace = useCallback(() => {
+    const usedNumbers = new Set(workspaces.flatMap((workspace) => {
+      const match = /^会话 (\d+)$/.exec(workspace.title)
+      return match ? [Number(match[1])] : []
+    }))
+    let nextNumber = 1
+    while (usedNumbers.has(nextNumber)) nextNumber += 1
+    const workspace = defaultWorkspace(nextNumber)
+    setWorkspaces((current) => [...current, workspace])
+    setActiveWorkspaceId(workspace.id)
+  }, [workspaces])
+
+  const closeWorkspace = useCallback((id: string) => {
+    const closingIndex = workspaces.findIndex((workspace) => workspace.id === id)
+    const closing = workspaces[closingIndex]
+    if (!closing || closing.busy || workspaces.length === 1) return
+    const remaining = workspaces.filter((workspace) => workspace.id !== id)
+    setWorkspaces(remaining)
+    if (activeWorkspaceId === id) {
+      setActiveWorkspaceId(remaining[Math.min(closingIndex, remaining.length - 1)].id)
+    }
+  }, [activeWorkspaceId, workspaces])
+
+  return <div className="chat-workspace">
+    <div className="chat-workspace-bar">
+      <div className="chat-workspace-tabs" role="tablist" aria-label="并行会话">
+        {workspaces.map((workspace) => {
+          const active = workspace.id === activeWorkspaceId
+          return <div key={workspace.id} className={`chat-workspace-tab-shell ${active ? 'is-active' : ''}`}>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={active}
+              className="chat-workspace-tab"
+              title={workspace.title}
+              onClick={() => setActiveWorkspaceId(workspace.id)}
+            >
+              <span className={`chat-workspace-state ${workspace.busy ? 'is-running' : ''}`} aria-hidden="true" />
+              <span>{workspace.title}</span>
+            </button>
+            {workspaces.length > 1 && <button
+              type="button"
+              className="chat-workspace-tab-close"
+              disabled={workspace.busy}
+              aria-label={`关闭${workspace.title}`}
+              title={workspace.busy ? '处理中，完成后可关闭' : '关闭会话'}
+              onClick={() => closeWorkspace(workspace.id)}
+            ><CloseOutlined /></button>}
+          </div>
+        })}
+      </div>
+      <Button type="text" size="small" className="chat-workspace-add" icon={<PlusOutlined />} aria-label="新增并行会话" title="新增并行会话" onClick={addWorkspace} />
+      <div className="chat-workspace-actions">
+        <Button
+          type="text"
+          size="small"
+          className="chat-expand chat-icon-button"
+          icon={expanded ? <CompressOutlined /> : <ExpandOutlined />}
+          aria-label={expanded ? '缩小对话' : '展开对话'}
+          title={expanded ? '缩小' : '展开'}
+          aria-pressed={expanded}
+          onClick={onToggleExpanded}
+        />
+        <Button type="text" size="small" className="chat-close chat-icon-button" icon={<CloseOutlined />} aria-label={`关闭 ${agentName} 对话`} onClick={onClose} />
+      </div>
+    </div>
+    <div className="chat-workspace-stack">
+      {workspaces.map((workspace) => {
+        const active = workspace.id === activeWorkspaceId
+        return <div key={workspace.id} className={`chat-workspace-pane ${active ? 'is-active' : ''}`} aria-hidden={!active}>
+          <ChatSession
+            open={open}
+            active={active}
+            workspace={workspace}
+            onWorkspaceChange={updateWorkspace}
+          />
+        </div>
+      })}
+    </div>
+  </div>
 }

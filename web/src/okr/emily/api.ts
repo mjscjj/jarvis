@@ -1,5 +1,5 @@
 import { normalizeKRTitle } from './krTitle'
-import type { AuthStatus, Entry, EnumValues, FeishuDeviceLogin, FeishuDeviceLoginPoll, FeishuDocumentResult, FollowUpItem, FollowUpList, FollowUpStatus, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, OKRPlan, OKRPlanContent, OKRPlanList, PageComment, PageCommentList, PersonAvatarItem, PersonSearchResult, PointKind, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
+import type { AuthStatus, Entry, EnumValues, FeishuDeviceLogin, FeishuDeviceLoginPoll, FeishuDocumentResult, FollowUpItem, FollowUpList, FollowUpStatus, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, OKRActivityEntry, OKRPlan, OKRPlanContent, OKRPlanList, PageComment, PageCommentList, PersonAvatarItem, PersonSearchResult, PointKind, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
 
 interface Envelope<T> {
   code: number
@@ -86,6 +86,19 @@ interface APIPlanList {
   quarter: string
   available_quarters: string[]
   plans: APIPlanSummary[]
+}
+
+interface APIActivityEntry {
+  at: string
+  actor_id: string
+  actor_name: string
+  surface: 'plan' | 'weekly'
+  quarter?: string
+  week?: string
+  plan_id?: string
+  action: string
+  target_id?: string
+  summary: string
 }
 
 interface APIWeek {
@@ -657,6 +670,32 @@ export async function replaceOKRPlan(input: { id: string; expectedVersion: numbe
 
 export async function deleteOKRPlan(id: string): Promise<void> {
   await request<{ id: string }>(`/api/biz-okr/plans/${encodeURIComponent(id)}`, { method: 'DELETE' })
+}
+
+export async function getOKRActivities(input: {
+  surface: 'plan' | 'weekly'
+  quarter?: string
+  week?: string
+  planId?: string
+  limit?: number
+}): Promise<OKRActivityEntry[]> {
+  const params = new URLSearchParams({ surface: input.surface, limit: String(input.limit ?? 50) })
+  if (input.quarter) params.set('quarter', input.quarter)
+  if (input.week) params.set('week', input.week)
+  if (input.planId) params.set('plan_id', input.planId)
+  const value = await request<{ items: APIActivityEntry[] }>(`/api/biz-okr/activity?${params}`)
+  return value.items.map((item) => ({
+    at: item.at,
+    actorId: item.actor_id,
+    actorName: item.actor_name,
+    surface: item.surface,
+    quarter: item.quarter,
+    week: item.week,
+    planId: item.plan_id,
+    action: item.action,
+    targetId: item.target_id,
+    summary: item.summary,
+  }))
 }
 
 function fromAPIComment(value: APIPageComment): PageComment {
