@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
+import { PlayCircleOutlined } from '@ant-design/icons'
 import { Alert, Badge, Button, Card, Form, Input, message, Modal, Select, Space, Spin, Table, Tabs, Tag, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
+import type { Key } from 'react'
 import { createTask, executeTask, finishTask, getTask, interruptTask, listProjects, listTaskEvents, listTaskRuns, listTasks, recallEffectMessage, rerunTask, resumeTask, supplementTask } from './api'
 import type { ExecutionRun, Project, Task, TaskEvent, TaskStatus } from './types'
 import MergedPageHeader from './components/MergedPageHeader'
@@ -23,6 +25,7 @@ import './styles/workbench.css'
 
 const { Text } = Typography
 const taskActionModalZIndex = 1100
+const maxBulkExecuteTasks = 5
 
 // 列表状态旁的时间：月日时分，例如「7/22 21:25」。
 function formatBriefTime(value: string | null | undefined): string {
@@ -100,6 +103,8 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
   const [summary, setSummary] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [executingId, setExecutingId] = useState<number>()
+  const [bulkExecuting, setBulkExecuting] = useState(false)
+  const [selectedTaskIDs, setSelectedTaskIDs] = useState<Key[]>([])
   const [interruptingId, setInterruptingId] = useState<number>()
   const [rerunTarget, setRerunTarget] = useState<Task>()
   const [rerunNote, setRerunNote] = useState('')
@@ -179,6 +184,13 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
   }, [statuses, page, refreshKey])
+
+  useEffect(() => {
+    setSelectedTaskIDs((prev) => {
+      const pendingIDs = new Set(items.filter((task) => task.status === 'pending').map((task) => task.id))
+      return prev.filter((id) => typeof id === 'number' && pendingIDs.has(id))
+    })
+  }, [items])
 
   // 有任务在执行中时静默轮询列表，点完「执行」后状态会从执行中变为完成/失败，无需手动刷新。
   const hasExecuting = items.some((task) => task.status === 'executing')
@@ -316,6 +328,43 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       setError(errorText(cause))
     } finally {
       setExecutingId(undefined)
+    }
+  }
+
+  const runBulkExecute = async () => {
+    const tasksByID = new Map(items.map((task) => [task.id, task]))
+    const pendingTasks = selectedTaskIDs
+      .map((id) => typeof id === 'number' ? tasksByID.get(id) : undefined)
+      .filter((task): task is Task => task?.status === 'pending')
+    if (pendingTasks.length === 0) return
+    setBulkExecuting(true)
+    setError(undefined)
+    const failures: string[] = []
+    let nextIndex = 0
+    const workerCount = Math.min(maxBulkExecuteTasks, pendingTasks.length)
+    const runNext = async () => {
+      while (nextIndex < pendingTasks.length) {
+        const task = pendingTasks[nextIndex]
+        nextIndex += 1
+        try {
+          await executeTask(task.id)
+          markLocalExecuting(task.id)
+        } catch (cause: unknown) {
+          failures.push(`#${task.id} ${task.title}: ${errorText(cause)}`)
+        }
+      }
+    }
+    try {
+      await Promise.all(Array.from({ length: workerCount }, () => runNext()))
+      if (failures.length > 0) {
+        setError(`批量执行完成，${failures.length} 个任务启动失败：\n${failures.join('\n')}`)
+      } else {
+        message.success(`已启动 ${pendingTasks.length} 个任务`)
+      }
+      setSelectedTaskIDs([])
+      setRefreshKey((value) => value + 1)
+    } finally {
+      setBulkExecuting(false)
     }
   }
 
@@ -487,12 +536,43 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
             : tabLabels[key],
         }))}
       />
+      {activeTab === 'running' && (
+        <div className="workbench-task-bulkbar">
+          <Space size={8} wrap>
+            <Button
+              type="primary"
+              icon={<PlayCircleOutlined />}
+              loading={bulkExecuting}
+              disabled={selectedTaskIDs.length === 0}
+              onClick={() => { void runBulkExecute() }}
+            >
+              批量执行
+            </Button>
+            <Text type="secondary">已选 {selectedTaskIDs.length} 个待执行任务，本批最多 {maxBulkExecuteTasks} 个</Text>
+          </Space>
+        </div>
+      )}
       <Table<Task>
         className="workbench-task-table"
         rowKey="id"
         columns={columns}
         dataSource={items}
         loading={loading}
+        rowSelection={activeTab === 'running' ? {
+          selectedRowKeys: selectedTaskIDs,
+          onChange: (keys) => {
+            if (keys.length > maxBulkExecuteTasks) {
+              message.warning(`一次最多启动 ${maxBulkExecuteTasks} 个任务`)
+              setSelectedTaskIDs(keys.slice(0, maxBulkExecuteTasks))
+              return
+            }
+            setSelectedTaskIDs(keys)
+          },
+          getCheckboxProps: (task) => ({
+            disabled: task.status !== 'pending' || bulkExecuting,
+            onClick: (event) => event.stopPropagation(),
+          }),
+        } : undefined}
         pagination={{
           current: page,
           pageSize: 20,

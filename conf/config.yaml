@@ -151,7 +151,7 @@ execute:
   enabled: true                                    # 全自动：extracted Todo 固化成 Task 后立即执行；下方 schedule 只补偿遗漏（含对外动作 + push/MR）
   schedule: "@every 5m"
   batch_limit: 5
-  concurrency: 1                                    # 单次 sweep 内只执行一个 Task，避免多个 Codex/编译任务叠加占满 CPU
+  concurrency: 5                                    # 自动执行的 M5 Task 并发上限；每个 Task 仍靠状态/version 防重复抢占
   repo_root: ".."                                  # code_change 的 repo_ref 基目录（相对仓库根，加载时展开成绝对路径）
   runs_dir: "runs"                                 # diff/产物落盘
   bin: "traex"                                     # 与 M3 使用同一个 CLI，但模型/超时独立（右侧对话与日报也复用本 bin）
