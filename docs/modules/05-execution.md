@@ -81,7 +81,7 @@ pending -> executing
 - effects 使用严格外壳 `kind/title/url/target/preview/extra`，其中 `kind` 开放；未知 kind 保留。它是 Agent 声明，不是独立 verifier 的 receipt。
 - 代码分支、commit、push、MR 等交付结果写进 effects，不再有专用 Git 列或 Go 编排。
 
-普通飞书业务消息同样是 M5 显式选择并执行的工具动作：M5 先确定目标、会话位置、mention 和完整文案，按审批策略判断这一次具体发送要不要先问 principal，再读取 `feishu-send-message` Skill 调用 `lark-cli`。发送成功以唯一真实 `message_id` 和读回结果为准，由 M5 在 effects 中申报；runtime 不根据来源会话、outcome 或 execution output 字段自动发送、回复或更新普通消息。
+飞书消息同样是 M5 显式选择并执行的工具动作：普通一对一或群聊会话消息读取 `feishu-send-message`，面向多个独立收件人的通知读取 `feishu-broadcast`，后者固定使用专用通知 Bot 直接私聊而不建助手群。M5 先确定受众、位置和完整文案，再按审批策略判断这一次具体发送要不要先问 principal。普通或个性化直发以真实 `om_...` 和读回结果为准，同文案批量广播以 `bm-...` 和发送进度为准；runtime 不根据来源会话、outcome 或 execution output 字段自动发送消息。
 
 `internal/taskfeedback` 只负责在 execute 和 resume 开始时，尝试给来源飞书消息添加 `OnIt` reaction。它是 best-effort 的开始确认：Bot 不在来源会话时失败只记日志，不影响 M5；它不承载业务结果，也不提供文字 fallback。问题卡是另一条机器协议，仍由 runtime 在 `question`、`needs_human` 和 Task version 持久化后投递。
 

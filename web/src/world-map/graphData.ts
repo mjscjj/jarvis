@@ -2,20 +2,31 @@ import type { PageIndexItem, PageLink, PageType, PageView } from '../types'
 import type { LayoutMode, SpacingMode } from './settings'
 
 export const pageTypes: PageType[] = ['principal', 'project', 'key_matter', 'person', 'group', 'resource']
+export const okrNodeTypes = ['okr_objective', 'okr_kr', 'okr_point'] as const
+export type OKRNodeType = typeof okrNodeTypes[number]
+export type WorldNodeType = PageType | OKRNodeType | 'external'
+export const worldNodeTypes: WorldNodeType[] = [...pageTypes, ...okrNodeTypes, 'external']
 
-export const pageTypeMeta: Record<PageType, { label: string; color: string; dimColor: string }> = {
+export const worldNodeTypeMeta: Record<WorldNodeType, { label: string; color: string; dimColor: string }> = {
   principal: { label: '我', color: '#e56f50', dimColor: '#c8aaa2' },
   project: { label: '项目', color: '#4cab8c', dimColor: '#a9c9bf' },
   key_matter: { label: '关键事项', color: '#d65d86', dimColor: '#cda7b4' },
   person: { label: '人物', color: '#6385d2', dimColor: '#a8b3cc' },
   group: { label: '会话', color: '#936bc2', dimColor: '#b9a9ca' },
   resource: { label: '资源', color: '#d29c35', dimColor: '#cbbd9f' },
+  okr_objective: { label: 'Objective', color: '#de5b45', dimColor: '#d7aaa2' },
+  okr_kr: { label: 'KR', color: '#ed8b2d', dimColor: '#d7b794' },
+  okr_point: { label: '子 KR', color: '#e6b72d', dimColor: '#d4c59a' },
+  external: { label: '外部对象', color: '#76817d', dimColor: '#b2b9b6' },
 }
 
 export interface WorldNode {
   id: string
-  pageType: PageType
-  pageId: number
+  nodeType: WorldNodeType
+  pageType?: PageType
+  pageId?: number
+  entityId: string
+  objectiveId?: string
   name: string
   indexLine: string
   summary: string | null
@@ -36,7 +47,9 @@ export interface WorldLink {
   id: string
   source: string | WorldNode
   target: string | WorldNode
-  label: '引用'
+  relationType: string
+  label: string
+  strength: 'reference' | 'structural' | 'owner' | 'strong'
 }
 
 export interface WorldGraph {
@@ -46,7 +59,7 @@ export interface WorldGraph {
 
 export type RelationDirection = 'both' | 'outgoing' | 'incoming'
 
-export function nodeKey(type: string, id: number): string {
+export function nodeKey(type: string, id: number | string): string {
   return `${type}:${id}`
 }
 
@@ -86,8 +99,10 @@ function nodeFromPage(page: PageView, activeIds: Set<string>, indexes: Map<strin
   const summary = readableSummary(page.summary)
   return {
     id,
+    nodeType: page.type,
     pageType: page.type,
     pageId: page.id,
+    entityId: String(page.id),
     name: page.name,
     indexLine: indexes.get(id)?.index_line || summary.split('\n').find(Boolean) || '',
     summary: summary || null,
@@ -105,8 +120,10 @@ function nodeFromLink(link: PageLink, activeIds: Set<string>, indexes: Map<strin
   const item = indexes.get(id)
   return {
     id,
+    nodeType: link.type,
     pageType: link.type,
     pageId: link.id,
+    entityId: String(link.id),
     name: link.name || item?.name || id,
     indexLine: item?.index_line || '',
     summary: null,
@@ -139,7 +156,7 @@ export function buildActiveGraph(pages: PageView[], activeIndex: PageIndexItem[]
       const id = `${source}->${target}`
       if (!nodeIds.has(target) || seen.has(id)) continue
       seen.add(id)
-      links.push({ id, source, target, label: '引用' })
+      links.push({ id, source, target, relationType: 'reference', label: '引用', strength: 'reference' })
     }
   }
   return { nodes, links }
@@ -166,7 +183,7 @@ export function buildFocusGraph(
     if (!neighbor) return
     seen.add(id)
     nodes.set(neighbor.id, neighbor)
-    links.push({ id, source, target, label: '引用' })
+    links.push({ id, source, target, relationType: 'reference', label: '引用', strength: 'reference' })
   }
   const outgoing = (page.outgoing || []).slice(0, 12)
   const backlinks = (page.backlinks || []).filter((item) => !outgoing.some((other) => nodeKey(other.type, other.id) === nodeKey(item.type, item.id))).slice(0, Math.max(0, 24 - outgoing.length))
@@ -202,8 +219,8 @@ export function buildFocusGraph(
   return { nodes: [...nodes.values()], links }
 }
 
-export function filterGraph(graph: WorldGraph, visibleTypes: Set<PageType>, selectedId?: string): WorldGraph {
-  const keep = new Set(graph.nodes.filter((node) => visibleTypes.has(node.pageType) || node.id === selectedId).map((node) => node.id))
+export function filterGraph(graph: WorldGraph, visibleTypes: Set<WorldNodeType>, selectedId?: string): WorldGraph {
+  const keep = new Set(graph.nodes.filter((node) => visibleTypes.has(node.nodeType) || node.id === selectedId).map((node) => node.id))
   return {
     nodes: graph.nodes.filter((node) => keep.has(node.id)),
     links: graph.links.filter((link) => keep.has(linkEndpointId(link.source)) && keep.has(linkEndpointId(link.target))),

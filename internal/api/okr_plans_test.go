@@ -57,9 +57,9 @@ func TestOKRPlanRoutesUseOwnLifecycle(t *testing.T) {
 		body   string
 		status int
 	}{
-		{"unknown field", `{"quarter":"2026-Q3","title":"Plan","extra":1,"content":{"objectives":[]}}`, 400},
-		{"bad quarter", `{"quarter":"Q3","title":"Plan","content":{"objectives":[]}}`, 400},
-		{"empty title", `{"quarter":"2026-Q3","title":" ","content":{"objectives":[]}}`, 400},
+		{"unknown field", `{"quarter":"2026-Q3","title":"Plan","extra":true}`, 400},
+		{"bad quarter", `{"quarter":"Q3","title":"Plan"}`, 400},
+		{"empty title", `{"quarter":"2026-Q3","title":" "}`, 400},
 	} {
 		response := ut.PerformRequest(h.Engine, "POST", "/api/biz-okr/plans", &ut.Body{Body: strings.NewReader(test.body), Len: len(test.body)}).Result()
 		if response.StatusCode() != test.status {
@@ -67,7 +67,7 @@ func TestOKRPlanRoutesUseOwnLifecycle(t *testing.T) {
 		}
 	}
 
-	createBody := `{"quarter":"2026-Q3","title":"Q3 Plan","content":{"objectives":[{"id":"plan-o","title":"计划 O","krs":[{"id":"plan-kr","title":"计划 KR","owners":[{"open_id":"ou_a","name":"甲"}],"metric_note":"口径","metrics":[{"id":"plan-m","text":"核心目标","light":"green","images":[]}],"points":[{"id":"plan-p","kind":"product","title":"产品 KR","owners":[],"tags":[]}],"tags":[{"type":"business_category","value":"直播"},{"type":"priority","value":"p1"}]}]}]}}`
+	createBody := `{"quarter":"2026-Q3","title":"Q3 Plan"}`
 	response := ut.PerformRequest(h.Engine, "POST", "/api/biz-okr/plans", &ut.Body{Body: strings.NewReader(createBody), Len: len(createBody)}).Result()
 	if response.StatusCode() != 201 {
 		t.Fatalf("create status=%d body=%s", response.StatusCode(), response.Body())
@@ -80,6 +80,11 @@ func TestOKRPlanRoutesUseOwnLifecycle(t *testing.T) {
 	}
 	if created.Data.ID == "" || created.Data.Version != 0 || created.Data.CreatedBy != "jarvis" {
 		t.Fatalf("created plan = %+v", created.Data)
+	}
+	objectiveBody := `{"id":"plan-o","title":"计划 O","krs":[{"id":"plan-kr","title":"计划 KR","owners":[{"open_id":"ou_a","name":"甲"}],"metric_note":"口径","metrics":[{"id":"plan-m","text":"核心目标","light":"green","images":[]}],"points":[{"id":"plan-p","kind":"product","title":"产品 KR","owners":[],"tags":[]}],"tags":[{"type":"business_category","value":"直播"},{"type":"priority","value":"p1"}]}]}`
+	objectiveResponse := ut.PerformRequest(h.Engine, "POST", "/api/biz-okr/plans/"+created.Data.ID+"/objectives", &ut.Body{Body: strings.NewReader(objectiveBody), Len: len(objectiveBody)}).Result()
+	if objectiveResponse.StatusCode() != 201 {
+		t.Fatalf("create objective status=%d body=%s", objectiveResponse.StatusCode(), objectiveResponse.Body())
 	}
 
 	listResponse := ut.PerformRequest(h.Engine, "GET", "/api/biz-okr/plans?quarter=2026-Q3", nil).Result()
@@ -94,12 +99,6 @@ func TestOKRPlanRoutesUseOwnLifecycle(t *testing.T) {
 	}
 	if len(listed.Data.Plans) != 1 || listed.Data.Plans[0].ObjectiveCnt != 1 || listed.Data.Plans[0].KRCnt != 1 {
 		t.Fatalf("listed plans = %+v", listed.Data)
-	}
-
-	for _, route := range h.Engine.Routes() {
-		if route.Method == "PUT" && route.Path == "/api/biz-okr/plans/:plan_id" {
-			t.Fatal("legacy full-plan replacement route is still registered")
-		}
 	}
 
 	deleteResponse := ut.PerformRequest(h.Engine, "DELETE", "/api/biz-okr/plans/"+created.Data.ID, nil).Result()

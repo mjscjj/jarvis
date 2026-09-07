@@ -37,7 +37,7 @@ function NewPlanPanel({ onClose }: { onClose: () => void }) {
   return (
     <section className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50/60 p-3">
       <div className="mr-2">
-        <div className="text-xs font-semibold text-slate-700">新建 OKR Plan</div>
+        <div className="text-xs font-semibold text-slate-700">新建 Biz OKR Plan</div>
         <div className="mt-0.5 text-[10px] text-slate-400">创建独立草稿，不会改动正式 OKR。</div>
       </div>
       <input value={targetQuarter} onChange={(event) => setTargetQuarter(event.target.value)} placeholder="2026-Q3" aria-label="季度" className="h-9 w-28 rounded-lg border border-slate-200 bg-white px-3 text-xs outline-none focus:border-indigo-400" />
@@ -60,7 +60,7 @@ function PlanCanvas({ shared = false, onShareTabChange }: { shared?: boolean; on
         <div className="mx-auto flex min-h-14 max-w-[1580px] flex-wrap items-center gap-3 px-4 py-2 sm:px-6 lg:px-8">
           <span className="flex size-8 items-center justify-center rounded-lg bg-emerald-600 text-xs font-semibold text-white shadow-sm">P</span>
           <div className="leading-tight">
-            <h1 className="text-[14px] font-semibold tracking-tight text-slate-900">Emily · OKR Plan</h1>
+            <h1 className="text-[14px] font-semibold tracking-tight text-slate-900">Emily · Biz OKR Plan</h1>
             <div className="mt-1 text-[10px] text-slate-400">{quarter.replace('-', ' ')} · 计划草稿</div>
           </div>
           {shared && <WeeklyShareNav currentTab="okr-plan" onChange={(tab) => onShareTabChange?.(tab)} />}
@@ -94,7 +94,7 @@ function PlanCanvas({ shared = false, onShareTabChange }: { shared?: boolean; on
           <div className={`transition-opacity ${saving ? 'pointer-events-none opacity-55' : ''}`}>
             <ManagementView
               title={plan.title}
-              subtitle={`OKR Plan 草稿独立保存，当前版本 v${plan.version}；结构编辑与“管理与打标”一致，不影响正式 OKR。`}
+              subtitle={`Biz OKR Plan 草稿独立保存，当前版本 v${plan.version}；结构编辑与“管理与打标”一致，不影响正式 OKR。`}
               showTags
               deleteKrWarning="只删除这个 Plan 草稿里的 KR"
 				hierarchyNavigation
@@ -103,7 +103,7 @@ function PlanCanvas({ shared = false, onShareTabChange }: { shared?: boolean; on
           </div>
         ) : (
           <section className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
-            <div className="text-sm font-semibold text-slate-700">当前季度暂无 OKR Plan</div>
+            <div className="text-sm font-semibold text-slate-700">当前季度暂无 Biz OKR Plan</div>
             <div className="mt-1 text-xs text-slate-400">点击顶部“新建 Plan”开始规划。</div>
           </section>
         )}

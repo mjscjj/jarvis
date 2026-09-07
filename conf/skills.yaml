@@ -15,6 +15,10 @@ skills:
       enabled: true
       stages:
         - execute
+    - name: feishu-broadcast
+      enabled: true
+      stages:
+        - execute
     - name: bootstrap-jarvis-world-model
       enabled: false # 独立仓库 Skill；不注入 M3/M5 runtime catalog
       stages:

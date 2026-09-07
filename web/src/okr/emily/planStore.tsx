@@ -61,13 +61,14 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
   const [plan, setPlan] = useState<OKRPlan>()
   const [objectives, setObjectives] = useState<Objective[]>([])
   const [enums, setEnums] = useState<EnumValues>(DEFAULT_ENUMS)
-  const [syncState, setSyncState] = useState<SyncState>({ kind: 'loading', message: '正在读取 OKR Plan…' })
+  const [syncState, setSyncState] = useState<SyncState>({ kind: 'loading', message: '正在读取 Biz OKR Plan…' })
   const quarterRef = useRef(quarter)
   const planRef = useRef<OKRPlan | undefined>(undefined)
   const objectivesRef = useRef<Objective[]>([])
   const saveTimer = useRef(0)
   const dirtyObjectives = useRef(new Set<string>())
   const deletedObjectives = useRef(new Map<string, Objective>())
+  const objectiveRevisions = useRef(new Map<string, number>())
   const saveInFlight = useRef(false)
   const saveAgain = useRef(false)
   const scheduleSaveRef = useRef<() => void>(() => undefined)
@@ -76,14 +77,14 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
   const publishPlan = useCallback((next?: OKRPlan) => {
     planRef.current = next
     setPlan(next)
-    const nextObjectives = clone(next?.content.objectives ?? [])
+    const nextObjectives = clone(next?.objectives ?? [])
     objectivesRef.current = nextObjectives
     setObjectives(nextObjectives)
   }, [])
 
   const loadRemote = useCallback(async (targetQuarter?: string, targetPlanId?: string) => {
     remoteReady.current = false
-    setSyncState({ kind: 'loading', message: '正在读取 OKR Plan…' })
+    setSyncState({ kind: 'loading', message: '正在读取 Biz OKR Plan…' })
     try {
       const list = await listOKRPlans(targetQuarter ?? quarterRef.current)
       const remoteEnums = await getEnums()
@@ -98,11 +99,12 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
       publishPlan(loadedPlan)
       dirtyObjectives.current.clear()
       deletedObjectives.current.clear()
+      objectiveRevisions.current.clear()
       remoteReady.current = true
-      setSyncState({ kind: 'ready', message: loadedPlan ? 'OKR Plan 已加载' : '当前季度暂无 Plan' })
+      setSyncState({ kind: 'ready', message: loadedPlan ? 'Biz OKR Plan 已加载' : '当前季度暂无 Biz OKR Plan' })
       return { list, plan: loadedPlan }
     } catch (error) {
-      setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '加载 OKR Plan 失败。' })
+      setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '加载 Biz OKR Plan 失败。' })
     }
   }, [onQuarterChange, publishPlan])
 
@@ -113,6 +115,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
       window.clearTimeout(saveTimer.current)
       dirtyObjectives.current.clear()
       deletedObjectives.current.clear()
+      objectiveRevisions.current.clear()
     }
   }, [loadRemote])
 
@@ -131,11 +134,11 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
   const mergeSavedPlan = useCallback((saved: OKRPlan, objectiveId?: string) => {
     const current = planRef.current
     if (!current) return
-    const nextObjective = objectiveId ? saved.content.objectives.find((item) => item.id === objectiveId) : undefined
+    const nextObjective = objectiveId ? saved.objectives.find((item) => item.id === objectiveId) : undefined
     const nextObjectives = objectiveId && nextObjective
       ? objectivesRef.current.map((item) => item.id === objectiveId ? { ...item, version: nextObjective.version } : item)
       : objectivesRef.current
-    const nextPlan = { ...current, version: saved.version, updatedBy: saved.updatedBy, updatedAt: saved.updatedAt, content: { objectives: nextObjectives } }
+    const nextPlan = { ...current, version: saved.version, updatedBy: saved.updatedBy, updatedAt: saved.updatedAt, objectives: nextObjectives }
     planRef.current = nextPlan
     setPlan(nextPlan)
     objectivesRef.current = nextObjectives
@@ -152,16 +155,16 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
   const replaceConflictedObjective = useCallback((saved: OKRPlan, objectiveId: string) => {
     const current = planRef.current
     if (!current) return
-    const remoteObjective = saved.content.objectives.find((item) => item.id === objectiveId)
+    const remoteObjective = saved.objectives.find((item) => item.id === objectiveId)
     let nextObjectives = objectivesRef.current.filter((item) => item.id !== objectiveId)
     if (remoteObjective) {
-      const remoteOrder = new Map(saved.content.objectives.map((item, index) => [item.id, index]))
+      const remoteOrder = new Map(saved.objectives.map((item, index) => [item.id, index]))
       const remoteIndex = remoteOrder.get(objectiveId) ?? nextObjectives.length
       const insertAt = nextObjectives.findIndex((item) => (remoteOrder.get(item.id) ?? Number.MAX_SAFE_INTEGER) > remoteIndex)
       nextObjectives = clone(nextObjectives)
       nextObjectives.splice(insertAt < 0 ? nextObjectives.length : insertAt, 0, clone(remoteObjective))
     }
-    const nextPlan = { ...current, version: saved.version, updatedBy: saved.updatedBy, updatedAt: saved.updatedAt, content: { objectives: nextObjectives } }
+    const nextPlan = { ...current, version: saved.version, updatedBy: saved.updatedBy, updatedAt: saved.updatedAt, objectives: nextObjectives }
     planRef.current = nextPlan
     setPlan(nextPlan)
     objectivesRef.current = nextObjectives
@@ -192,22 +195,28 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
         for (const objectiveId of pending) {
           const objective = objectivesRef.current.find((item) => item.id === objectiveId)
           const deleted = deletedObjectives.current.get(objectiveId)
+          const revision = objectiveRevisions.current.get(objectiveId) ?? 0
           try {
             if (objective) {
-              const saved = (objective.version ?? 0) === 0 && !planRef.current.content.objectives.some((item) => item.id === objectiveId)
+              const saved = (objective.version ?? 0) === 0 && !planRef.current.objectives.some((item) => item.id === objectiveId)
                 ? await createOKRPlanObjective(planRef.current.id, objective)
                 : await updateOKRPlanObjective(planRef.current.id, objective)
-              dirtyObjectives.current.delete(objectiveId)
               mergeSavedPlan(saved, objectiveId)
+              if ((objectiveRevisions.current.get(objectiveId) ?? 0) === revision) {
+                dirtyObjectives.current.delete(objectiveId)
+                objectiveRevisions.current.delete(objectiveId)
+              }
             } else if (deleted) {
-              if (planRef.current.content.objectives.some((item) => item.id === objectiveId)) {
+              if (planRef.current.objectives.some((item) => item.id === objectiveId)) {
                 await deleteOKRPlanObjective(planRef.current.id, deleted)
               }
               dirtyObjectives.current.delete(objectiveId)
               deletedObjectives.current.delete(objectiveId)
+              objectiveRevisions.current.delete(objectiveId)
               mergeSavedPlan({ ...planRef.current, version: planRef.current.version + 1, updatedAt: new Date().toISOString() })
             } else {
               dirtyObjectives.current.delete(objectiveId)
+              objectiveRevisions.current.delete(objectiveId)
             }
           } catch (error) {
             if (error instanceof APIError && error.status === 409 && error.data) {
@@ -216,6 +225,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
               replaceConflictedObjective(remote, objectiveId)
               dirtyObjectives.current.delete(objectiveId)
               deletedObjectives.current.delete(objectiveId)
+              objectiveRevisions.current.delete(objectiveId)
               conflictedObjectives.push(title)
               continue
             }
@@ -257,12 +267,16 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
     const afterIDs = new Set(draft.map((item) => item.id))
     for (const objective of draft) {
       const previous = beforeByID.get(objective.id)
-      if (!previous || JSON.stringify(previous) !== JSON.stringify(objective)) dirtyObjectives.current.add(objective.id)
+      if (!previous || JSON.stringify(previous) !== JSON.stringify(objective)) {
+        dirtyObjectives.current.add(objective.id)
+        objectiveRevisions.current.set(objective.id, (objectiveRevisions.current.get(objective.id) ?? 0) + 1)
+      }
     }
     for (const objective of before) {
       if (!afterIDs.has(objective.id)) {
         dirtyObjectives.current.add(objective.id)
         deletedObjectives.current.set(objective.id, objective)
+        objectiveRevisions.current.set(objective.id, (objectiveRevisions.current.get(objective.id) ?? 0) + 1)
       }
     }
     scheduleSave()
@@ -277,7 +291,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
     setQuarter: (nextQuarter) => {
       if (nextQuarter === quarterRef.current) return
       if (syncState.kind === 'saving') {
-        setSyncState({ kind: 'error', message: '请等待当前 Plan 保存后再切换季度。' })
+        setSyncState({ kind: 'error', message: '请等待当前 Biz OKR Plan 保存后再切换季度。' })
         return
       }
       window.clearTimeout(saveTimer.current)
@@ -287,7 +301,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
     selectPlan: (id) => {
       if (id === planRef.current?.id) return
       if (syncState.kind === 'saving') {
-        setSyncState({ kind: 'error', message: '请等待当前 Plan 保存后再切换。' })
+        setSyncState({ kind: 'error', message: '请等待当前 Biz OKR Plan 保存后再切换。' })
         return
       }
       window.clearTimeout(saveTimer.current)
@@ -296,18 +310,19 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
         quarterRef.current = target.quarter
         setQuarterState(target.quarter)
       }
-      setSyncState({ kind: 'loading', message: '正在读取 OKR Plan…' })
+      setSyncState({ kind: 'loading', message: '正在读取 Biz OKR Plan…' })
       getOKRPlan(id).then((loaded) => {
         publishPlan(loaded)
         dirtyObjectives.current.clear()
         deletedObjectives.current.clear()
-        setSyncState({ kind: 'ready', message: 'OKR Plan 已加载' })
-      }).catch((error) => setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '读取 OKR Plan 失败。' }))
+        objectiveRevisions.current.clear()
+        setSyncState({ kind: 'ready', message: 'Biz OKR Plan 已加载' })
+      }).catch((error) => setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '读取 Biz OKR Plan 失败。' }))
     },
     createPlan: async (input) => {
-      setSyncState({ kind: 'saving', message: '正在新建 Plan…' })
+      setSyncState({ kind: 'saving', message: '正在新建 Biz OKR Plan…' })
       try {
-        const created = await createOKRPlan({ quarter: input.quarter, title: input.title, content: { objectives: [] } })
+        const created = await createOKRPlan({ quarter: input.quarter, title: input.title })
         quarterRef.current = created.quarter
         setQuarterState(created.quarter)
         const list = await listOKRPlans(created.quarter)
@@ -316,22 +331,23 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
         publishPlan(created)
         dirtyObjectives.current.clear()
         deletedObjectives.current.clear()
-        setSyncState({ kind: 'saved', message: 'Plan 已新建' })
+        objectiveRevisions.current.clear()
+        setSyncState({ kind: 'saved', message: 'Biz OKR Plan 已新建' })
       } catch (error) {
-        setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '新建 Plan 失败。' })
+        setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '新建 Biz OKR Plan 失败。' })
         throw error
       }
     },
     deleteCurrentPlan: async () => {
-      if (!planRef.current) throw new Error('当前没有可删除的 Plan。')
+      if (!planRef.current) throw new Error('当前没有可删除的 Biz OKR Plan。')
       const removed = planRef.current
-      setSyncState({ kind: 'saving', message: '正在删除 Plan…' })
+      setSyncState({ kind: 'saving', message: '正在删除 Biz OKR Plan…' })
       try {
         await deleteOKRPlan(removed.id)
         const loaded = await loadRemote(removed.quarter)
-        if (!loaded?.plan) setSyncState({ kind: 'saved', message: 'Plan 已删除，当前季度暂无 Plan' })
+        if (!loaded?.plan) setSyncState({ kind: 'saved', message: 'Biz OKR Plan 已删除，当前季度暂无 Biz OKR Plan' })
       } catch (error) {
-        setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '删除 Plan 失败。' })
+        setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '删除 Biz OKR Plan 失败。' })
         throw error
       }
     },
@@ -343,7 +359,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
     availableWeeks: [],
     setWeek: () => undefined,
     setWeeklyScope: () => false,
-    deleteWeeklyScope: async () => { throw new Error('OKR Plan 没有周次。') },
+    deleteWeeklyScope: async () => { throw new Error('Biz OKR Plan 没有周次。') },
     setKrTitle: (_objId, krId, title) => mutate((draft) => {
       const kr = findKr(draft, krId)
       if (kr) kr.title = title
@@ -516,7 +532,10 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
     setKrScore: async () => undefined,
     setPointScore: async () => undefined,
     reset: () => void loadRemote(),
-    retry: () => void loadRemote(),
+    retry: () => {
+      if (remoteReady.current && dirtyObjectives.current.size > 0) void saveNow()
+      else void loadRemote()
+    },
     resolveConflict: () => undefined,
     applySavedKr: (kr) => mutate((draft) => {
       for (const objective of draft) {

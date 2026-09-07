@@ -27,6 +27,29 @@ export interface OKRRelationRow extends EntityRelation {
   direction: 'outgoing' | 'incoming'
 }
 
+export interface OKRCoverageCount {
+  total: number
+  related: number
+  unrelated: number
+}
+
+export interface OKRObjectiveCoverage {
+  id: string
+  title: string
+  krs: number
+  points: number
+  relatedNodes: number
+  unrelatedNodes: number
+}
+
+export interface OKRProjectionCoverage {
+  objectives: OKRCoverageCount
+  krs: OKRCoverageCount
+  points: OKRCoverageCount
+  owners: OKRCoverageCount
+  byObjective: OKRObjectiveCoverage[]
+}
+
 function ref(type: string, id: string): string {
   return `${type}:${id}`
 }
@@ -74,4 +97,55 @@ export function relationsForOKRBoard(relations: EntityRelation[], objectives: Ob
     }
   }
   return rows
+}
+
+export function projectionCoverageForOKRBoard(relations: EntityRelation[], objectives: Objective[]): OKRProjectionCoverage {
+  const rows = relationsForOKRBoard(relations, objectives)
+  const related = new Set(rows.filter((row) => {
+    if (row.direction !== 'outgoing' || !row.confirmed_at) return false
+    const [type] = row.okr_ref.split(':', 1)
+    const [worldType] = row.world_ref.split(':', 1)
+    if (type === 'okr_objective') return row.relation_type === 'maps_to' && worldType === 'project'
+    if (type === 'okr_kr') return row.relation_type === 'maps_to' && worldType === 'key_matter'
+    if (type === 'okr_point') return (row.relation_type === 'maps_to' || row.relation_type === 'advances') && worldType === 'key_matter'
+    return false
+  }).map((row) => row.okr_ref))
+  const count = (refs: string[]): OKRCoverageCount => {
+    const relatedCount = refs.filter((value) => related.has(value)).length
+    return { total: refs.length, related: relatedCount, unrelated: refs.length - relatedCount }
+  }
+  const objectiveRefs = objectives.map((objective) => ref('okr_objective', objective.id))
+  const krRefs = objectives.flatMap((objective) => objective.krs.map((kr) => ref('okr_kr', kr.id)))
+  const pointRefs = objectives.flatMap((objective) => objective.krs.flatMap((kr) => kr.points.map((point) => ref('okr_point', point.id))))
+  const ownerOccurrences = objectives.flatMap((objective) => objective.krs.flatMap((kr) => [
+    ...(kr.owners ?? []).map((owner) => ({ nodeRef: ref('okr_kr', kr.id), openId: owner.openId })),
+    ...kr.points.flatMap((point) => (point.owners ?? []).map((owner) => ({ nodeRef: ref('okr_point', point.id), openId: owner.openId }))),
+  ])).filter((owner) => owner.openId)
+  const relatedOwners = ownerOccurrences.filter((owner) => rows.some((row) =>
+    row.direction === 'outgoing' && Boolean(row.confirmed_at) && row.okr_ref === owner.nodeRef &&
+    row.relation_type === 'owned_by' && (row.target_type === 'person' || row.target_type === 'principal') &&
+    row.evidence?.owner_open_id === owner.openId,
+  )).length
+  return {
+    objectives: count(objectiveRefs),
+    krs: count(krRefs),
+    points: count(pointRefs),
+    owners: { total: ownerOccurrences.length, related: relatedOwners, unrelated: ownerOccurrences.length - relatedOwners },
+    byObjective: objectives.map((objective) => {
+      const refs = [
+        ref('okr_objective', objective.id),
+        ...objective.krs.map((kr) => ref('okr_kr', kr.id)),
+        ...objective.krs.flatMap((kr) => kr.points.map((point) => ref('okr_point', point.id))),
+      ]
+      const relatedNodes = refs.filter((value) => related.has(value)).length
+      return {
+        id: objective.id,
+        title: objective.title,
+        krs: objective.krs.length,
+        points: objective.krs.reduce((sum, kr) => sum + kr.points.length, 0),
+        relatedNodes,
+        unrelatedNodes: refs.length - relatedNodes,
+      }
+    }),
+  }
 }

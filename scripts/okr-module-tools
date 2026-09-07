@@ -13,6 +13,9 @@ usage: okr-module-tools [--base-url URL] COMMAND [ARGS]
 commands:
   scope
   board [--quarter Q]
+  list-objectives [--quarter Q]
+  get-objective --id OBJECTIVE_ID
+  projection-audit [--quarter Q]
   find-krs --query TEXT [--quarter Q]
   get-kr --id KR_ID
   replace-kr --id KR_ID --payload JSON|-
@@ -120,6 +123,27 @@ encoded() {
   printf '%s' "$1" | jq -sRr @uri
 }
 
+relation_pages() {
+  local query_name="$1" relation_type="$2" cursor="" response next relations_file
+  relations_file="$(mktemp "${TMPDIR:-/tmp}/okr-projection-relations.XXXXXX")"
+  while true; do
+    args=(--data-urlencode "${query_name}=${relation_type}" --data-urlencode 'limit=200')
+    [[ -z "$cursor" ]] || args+=(--data-urlencode "cursor=$cursor")
+    response="$(request_get /api/relations "${args[@]}")"
+    printf '%s' "$response" | jq -e '.code == 0 and (.data.items | type == "array")' >/dev/null || {
+      echo "projection-audit received an invalid relation response for ${query_name}=${relation_type}" >&2
+      return 1
+    }
+    printf '%s\n' "$response" | jq -c '.data.items[]' >>"$relations_file"
+    next="$(printf '%s' "$response" | jq -r '.data.next_cursor // empty')"
+    [[ -n "$next" ]] || break
+    [[ "$next" != "$cursor" ]] || { echo "projection-audit relation cursor did not advance" >&2; return 1; }
+    cursor="$next"
+  done
+  jq -cs 'unique_by(.id)' "$relations_file"
+  rm -f "$relations_file"
+}
+
 case "$COMMAND" in
   scope)
     request_get /api/okr/scope
@@ -132,6 +156,163 @@ case "$COMMAND" in
     else
       request_get /api/okr/board "${args[@]}"
     fi
+    ;;
+  list-objectives)
+    args=()
+    [[ -z "$QUARTER" ]] || args+=(--data-urlencode "quarter=$QUARTER")
+    request_get /api/okr/objectives "${args[@]}"
+    ;;
+  get-objective)
+    [[ -n "$ID" ]] || { echo "get-objective requires --id" >&2; exit 2; }
+    request_get "/api/okr/objectives/$(encoded "$ID")"
+    ;;
+  projection-audit)
+    audit_dir="$(mktemp -d "${TMPDIR:-/tmp}/okr-projection-audit.XXXXXX")"
+    trap 'rm -rf "$audit_dir"' EXIT
+    manifest_file="$audit_dir/manifest.json"
+    slices_file="$audit_dir/slices.ndjson"
+    relations_file="$audit_dir/relations.ndjson"
+    : >"$slices_file"
+    : >"$relations_file"
+    args=()
+    [[ -z "$QUARTER" ]] || args+=(--data-urlencode "quarter=$QUARTER")
+    manifest="$(request_get /api/okr/objectives "${args[@]}")"
+    printf '%s' "$manifest" | jq -e '.code == 0 and (.data.objectives | type == "array")' >/dev/null || {
+      echo "projection-audit received an invalid objective manifest" >&2
+      exit 1
+    }
+    printf '%s' "$manifest" >"$manifest_file"
+
+    while IFS= read -r objective; do
+      objective_id="$(printf '%s' "$objective" | jq -er '.id | select(type == "string" and length > 0)')" || {
+        echo "projection-audit found an invalid objective id" >&2
+        exit 1
+      }
+      slice="$(request_get "/api/okr/objectives/$(encoded "$objective_id")")"
+      printf '%s' "$slice" | jq -e '.code == 0 and (.data.objective | type == "object")' >/dev/null || {
+        echo "projection-audit received an invalid objective slice for $objective_id" >&2
+        exit 1
+      }
+      printf '%s\n' "$slice" | jq -c '.data' >>"$slices_file"
+    done < <(printf '%s' "$manifest" | jq -c '.data.objectives[]')
+
+    for relation_type in okr_objective okr_kr okr_point; do
+      for direction in source target; do
+        query_name="${direction}_type"
+        page_items="$(relation_pages "$query_name" "$relation_type")"
+        printf '%s\n' "$page_items" | jq -c '.[]' >>"$relations_file"
+      done
+    done
+
+    jq -n --slurpfile manifest "$manifest_file" --slurpfile slices "$slices_file" --slurpfile relation_rows "$relations_file" '
+      ($manifest[0]) as $manifest
+      | ($relation_rows | unique_by(.id)) as $relations
+      |
+      def ref($type; $id): "\($type):\($id)";
+      def okr_type: . == "okr_objective" or . == "okr_kr" or . == "okr_point";
+      def current_nodes:
+        [$slices[] | .objective as $objective |
+          {type:"okr_objective", id:$objective.id, objective_id:$objective.id},
+          ($objective.krs[] |
+            {type:"okr_kr", id:.id, objective_id:$objective.id},
+            (.points[] | {type:"okr_point", id:.id, objective_id:$objective.id})
+          )
+        ];
+      def has_relation($relations; $node_type; $node_id; $relation_types; $target_type):
+        any($relations[]; . as $relation |
+          $relation.source_type == $node_type and $relation.source_id == $node_id and
+          ($relation_types | index($relation.relation_type)) != null and $relation.target_type == $target_type and
+          $relation.confirmed_at != null);
+      def has_owner_relation($relations; $owner):
+        any($relations[];
+          .source_type == $owner.node_type and .source_id == $owner.node_id and
+          .relation_type == "owned_by" and (.target_type == "person" or .target_type == "principal") and
+          .evidence.owner_open_id == $owner.open_id and .confirmed_at != null);
+      (current_nodes) as $nodes
+      | ($nodes | map(ref(.type; .id))) as $current_refs
+      | ($relations | map(. as $relation | select(
+          ($current_refs | index(ref($relation.source_type; $relation.source_id))) != null or
+          ($current_refs | index(ref($relation.target_type; $relation.target_id))) != null
+        ))) as $current_relations
+      | ([
+          $slices[] | .objective.krs[] as $kr |
+          ($kr.owners[]? | {node_type:"okr_kr", node_id:$kr.id, open_id:.open_id, name:.name}),
+          ($kr.points[] as $point | $point.owners[]? | {node_type:"okr_point", node_id:$point.id, open_id:.open_id, name:.name})
+        ]) as $owner_occurrences
+      | ([ $nodes[] | select(
+            if .type == "okr_objective" then has_relation($current_relations; .type; .id; ["maps_to"]; "project")
+            elif .type == "okr_kr" then has_relation($current_relations; .type; .id; ["maps_to"]; "key_matter")
+            else has_relation($current_relations; .type; .id; ["maps_to", "advances"]; "key_matter") end
+          ) | ref(.type; .id) ]) as $related_refs
+      | ([ $owner_occurrences[] | select(has_owner_relation($current_relations; .)) ]) as $related_owner_occurrences
+      | {
+          code: 0,
+          data: {
+            quarter: $manifest.data.quarter,
+            totals: $manifest.data.totals,
+            relations: {
+              count: ($current_relations | length),
+              confirmed_count: ($current_relations | map(select(.confirmed_at != null)) | length),
+              by_world_type: (
+                $current_relations
+                | map(
+                    if (.source_type | okr_type) then .target_type
+                    elif (.target_type | okr_type) then .source_type
+                    else empty end
+                  )
+                | group_by(.)
+                | map({key: .[0], value: length})
+                | from_entries
+              )
+            },
+            coverage: (
+              ["okr_objective", "okr_kr", "okr_point"]
+              | map(. as $type | {
+                  key: (if $type == "okr_objective" then "objectives" elif $type == "okr_kr" then "krs" else "points" end),
+                  value: (
+                    [$nodes[] | select(.type == $type)] as $typed
+                    | {
+                        total: ($typed | length),
+                        related: ($typed | map(. as $node | select(($related_refs | index(ref($node.type; $node.id))) != null)) | length),
+                        unrelated_ids: [$typed[] | . as $node | select(($related_refs | index(ref($node.type; $node.id))) == null) | $node.id]
+                      }
+                  )
+                })
+              | from_entries
+            ),
+            owner_coverage: {
+              total_occurrences: ($owner_occurrences | length),
+              related_occurrences: ($related_owner_occurrences | length),
+              unresolved: [
+                $owner_occurrences[] | select(has_owner_relation($current_relations; .) | not)
+              ]
+            },
+            by_objective: [
+              $slices[]
+              | .objective as $objective
+              | ([{type:"okr_objective", id:$objective.id}] +
+                  [$objective.krs[] | {type:"okr_kr", id:.id}] +
+                  [$objective.krs[].points[] | {type:"okr_point", id:.id}]) as $objective_nodes
+              | {
+                  id: $objective.id,
+                  title: $objective.title,
+                  krs: ($objective.krs | length),
+                  points: ([$objective.krs[].points[]] | length),
+                  related_nodes: ($objective_nodes | map(. as $node | select(($related_refs | index(ref($node.type; $node.id))) != null)) | length),
+                  unrelated_nodes: ($objective_nodes | map(. as $node | select(($related_refs | index(ref($node.type; $node.id))) == null)) | length)
+                }
+            ],
+            orphan_relations: [
+              $relations[]
+              | . as $relation
+              | select(
+                  (($relation.source_type | okr_type) and (($current_refs | index(ref($relation.source_type; $relation.source_id))) == null)) or
+                  (($relation.target_type | okr_type) and (($current_refs | index(ref($relation.target_type; $relation.target_id))) == null))
+                )
+            ]
+          }
+        }
+    '
     ;;
   find-krs)
     [[ -n "$QUERY" ]] || { echo "find-krs requires --query" >&2; exit 2; }

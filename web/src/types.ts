@@ -473,9 +473,7 @@ export interface Paged<T> {
   page_size: number
 }
 
-export interface KeyMatterList extends Paged<KeyMatter> {
-  max_open: number
-}
+export type KeyMatterList = Paged<KeyMatter>
 
 export interface ResourceList extends Paged<Resource> {
   active_total: number

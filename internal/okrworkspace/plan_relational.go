@@ -2,62 +2,38 @@ package okrworkspace
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
-	"jarvis/internal/datatypes"
 	"jarvis/internal/okrworkspace/domain"
 
 	"gorm.io/gorm"
 )
 
-// planContent reads the same relational definition used by the OKR board.
-// OKRPlan.Content remains only as a migration/compatibility source until all
-// existing plans have been backfilled.
-func (s *Service) planContent(ctx context.Context, record domain.OKRPlan) (PlanContentView, error) {
-	content, err := s.planContentRows(ctx, record.ID)
-	if err != nil {
-		return PlanContentView{}, err
-	}
-	if len(content.Objectives) > 0 || len(record.Content) == 0 || string(record.Content) == "null" {
-		return content, nil
-	}
-	var legacy PlanContentView
-	if err := json.Unmarshal(record.Content, &legacy); err != nil {
-		return PlanContentView{}, fmt.Errorf("decode legacy OKR plan content for %s: %w", record.ID, err)
-	}
-	content, err = normalizePlanContent(legacy)
-	if err != nil {
-		return PlanContentView{}, fmt.Errorf("validate legacy OKR plan content for %s: %w", record.ID, err)
-	}
-	return content, nil
-}
-
-func (s *Service) planContentRows(ctx context.Context, planID string) (PlanContentView, error) {
+func (s *Service) planObjectives(ctx context.Context, planID string) ([]PlanObjectiveView, error) {
 	var objectives []domain.Objective
 	if err := s.db.WithContext(ctx).Where("plan_id = ?", planID).Order("sort_order, id").Find(&objectives).Error; err != nil {
-		return PlanContentView{}, fmt.Errorf("list OKR plan objectives: %w", err)
+		return nil, fmt.Errorf("list OKR plan objectives: %w", err)
 	}
-	content := PlanContentView{Objectives: make([]PlanObjectiveView, 0, len(objectives))}
+	result := make([]PlanObjectiveView, 0, len(objectives))
 	for _, objective := range objectives {
 		var krs []domain.KR
 		if err := s.db.WithContext(ctx).Where("objective_id = ?", objective.ID).Order("sort_order, id").Find(&krs).Error; err != nil {
-			return PlanContentView{}, fmt.Errorf("list plan KRs for %s: %w", objective.ID, err)
+			return nil, fmt.Errorf("list plan KRs for %s: %w", objective.ID, err)
 		}
 		view := PlanObjectiveView{ID: objective.ID, Title: objective.Title, Version: objective.Version, KRs: make([]PlanKRView, 0, len(krs))}
 		for _, kr := range krs {
 			definition, err := s.loadKRDefinition(ctx, kr, true)
 			if err != nil {
-				return PlanContentView{}, fmt.Errorf("load plan KR %s: %w", kr.ID, err)
+				return nil, fmt.Errorf("load plan KR %s: %w", kr.ID, err)
 			}
 			view.KRs = append(view.KRs, planKRFromDefinition(definition))
 		}
-		content.Objectives = append(content.Objectives, view)
+		result = append(result, view)
 	}
-	return normalizePlanContent(content)
+	return normalizePlanObjectives(result)
 }
 
 func planKRFromDefinition(value KRView) PlanKRView {
@@ -69,35 +45,6 @@ func planKRFromDefinition(value KRView) PlanKRView {
 		ID: value.ID, Title: value.Title, Version: value.Version, Owners: append([]OwnerView(nil), value.Owners...),
 		MetricNote: value.MetricNote, Metrics: append([]MetricView(nil), value.Metrics...), Points: points, Tags: append([]TagView(nil), value.Tags...),
 	}
-}
-
-// replacePlanContentRows is used by creation, legacy backfill and the
-// compatibility full-replace endpoint. The Plan UI uses the granular
-// Objective endpoints below for normal editing.
-func (s *Service) replacePlanContentRows(ctx context.Context, planID string, content PlanContentView, actor string) error {
-	content, err := normalizePlanContent(content)
-	if err != nil {
-		return err
-	}
-	if err := s.deletePlanDefinitionRows(ctx, planID); err != nil {
-		return err
-	}
-	now := time.Now().UTC()
-	db := s.db.WithContext(ctx)
-	var plan domain.OKRPlan
-	if err := db.Select("id", "quarter").First(&plan, "id = ?", planID).Error; err != nil {
-		return fmt.Errorf("get plan while writing relational definitions: %w", err)
-	}
-	for objectiveIndex, objective := range content.Objectives {
-		o := domain.Objective{ID: objective.ID, PlanID: planID, Title: objective.Title, Quarter: plan.Quarter, SortOrder: objectiveIndex, Version: objective.Version, CreatedAt: now, UpdatedAt: now}
-		if err := db.Create(&o).Error; err != nil {
-			return fmt.Errorf("create plan objective %s: %w", objective.ID, err)
-		}
-		if err := s.writePlanObjectiveChildren(ctx, objective, actor, now); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (s *Service) writePlanObjectiveChildren(ctx context.Context, objective PlanObjectiveView, actor string, now time.Time) error {
@@ -224,14 +171,4 @@ func (s *Service) planObjective(ctx context.Context, planID, objectiveID string)
 		return domain.Objective{}, fmt.Errorf("get plan objective: %w", err)
 	}
 	return objective, nil
-}
-
-// Keep the legacy JSON column valid for old readers during the migration. New
-// reads use relational rows, so this is a compatibility snapshot only.
-func encodePlanContent(content PlanContentView) (datatypes.JSON, error) {
-	encoded, err := json.Marshal(content)
-	if err != nil {
-		return nil, fmt.Errorf("encode OKR plan content: %w", err)
-	}
-	return datatypes.JSON(encoded), nil
 }

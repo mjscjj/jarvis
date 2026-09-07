@@ -33,8 +33,23 @@ func runModuleTool(t *testing.T, script string, apiBase string, args ...string) 
 	return string(output)
 }
 
+func runModuleToolFailure(t *testing.T, script string, apiBase string, args ...string) string {
+	t.Helper()
+	path, err := filepath.Abs(filepath.Join("..", "..", "scripts", script))
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := exec.CommandContext(t.Context(), "bash", append([]string{path}, args...)...)
+	command.Env = append(command.Environ(), "JARVIS_API_BASE="+apiBase)
+	output, err := command.CombinedOutput()
+	if err == nil {
+		t.Fatalf("%s %s unexpectedly succeeded: %s", script, strings.Join(args, " "), output)
+	}
+	return string(output)
+}
+
 func TestOKRModuleToolsExposeGenericReads(t *testing.T) {
-	requests := make(chan moduleToolRequest, 4)
+	requests := make(chan moduleToolRequest, 6)
 	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		body, _ := io.ReadAll(request.Body)
 		requests <- moduleToolRequest{Method: request.Method, Path: request.URL.Path, Query: request.URL.RawQuery, Body: string(body)}
@@ -58,15 +73,140 @@ func TestOKRModuleToolsExposeGenericReads(t *testing.T) {
 	if request.Method != http.MethodGet || request.Path != "/api/okr/board" {
 		t.Fatalf("default board request = %+v", request)
 	}
+	runModuleTool(t, "okr-module-tools", server.URL, "list-objectives", "--quarter", "2026-Q3")
+	request = <-requests
+	if request.Method != http.MethodGet || request.Path != "/api/okr/objectives" || !strings.Contains(request.Query, "quarter=2026-Q3") {
+		t.Fatalf("list-objectives request = %+v", request)
+	}
+	runModuleTool(t, "okr-module-tools", server.URL, "get-objective", "--id", "o one")
+	request = <-requests
+	if request.Method != http.MethodGet || request.Path != "/api/okr/objectives/o one" {
+		t.Fatalf("get-objective request = %+v", request)
+	}
 
 	help := runModuleTool(t, "okr-module-tools", server.URL, "--help")
-	if !strings.Contains(help, "\n  replace-kr ") {
-		t.Fatalf("OKR Agent help is missing generic decomposition write: %s", help)
+	for _, command := range []string{"replace-kr", "list-objectives", "get-objective", "projection-audit"} {
+		if !strings.Contains(help, "\n  "+command) {
+			t.Fatalf("OKR Agent help is missing %q: %s", command, help)
+		}
 	}
 	for _, forbidden := range []string{"create-objective", "create-kr", "delete-kr"} {
 		if strings.Contains(help, "\n  "+forbidden+" ") {
 			t.Fatalf("OKR Agent help exposed %q: %s", forbidden, help)
 		}
+	}
+}
+
+func TestOKRProjectionAuditCombinesBothRelationDirections(t *testing.T) {
+	requests := make(chan moduleToolRequest, 16)
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		requests <- moduleToolRequest{Method: request.Method, Path: request.URL.Path, Query: request.URL.RawQuery}
+		response.Header().Set("content-type", "application/json")
+		switch request.URL.Path {
+		case "/api/okr/objectives":
+			_, _ = response.Write([]byte(`{"code":0,"data":{"quarter":"2026-Q3","objectives":[{"id":"o-1","title":"目标","kr_count":1,"metric_count":0,"point_count":1,"kr_owner_count":1,"point_owner_count":1}],"totals":{"objectives":1,"krs":1,"metrics":0,"points":1,"kr_owner_occurrences":1,"point_owner_occurrences":1}}}`))
+		case "/api/okr/objectives/o-1":
+			_, _ = response.Write([]byte(`{"code":0,"data":{"quarter":"2026-Q3","objective":{"id":"o-1","title":"目标","krs":[{"id":"kr-1","title":"结果","points":[{"id":"p-1","title":"拆解"}]}]}}}`))
+		case "/api/relations":
+			query := request.URL.Query()
+			switch {
+			case query.Get("source_type") == "okr_kr":
+				_, _ = response.Write([]byte(`{"code":0,"data":{"items":[{"id":1,"source_type":"okr_kr","source_id":"kr-1","relation_type":"maps_to","target_type":"key_matter","target_id":"7","confirmed_at":"2026-09-07T00:00:00Z"},{"id":3,"source_type":"okr_kr","source_id":"kr-removed","relation_type":"maps_to","target_type":"key_matter","target_id":"8","confirmed_at":"2026-09-01T00:00:00Z"}]}}`))
+			case query.Get("source_type") == "okr_point":
+				_, _ = response.Write([]byte(`{"code":0,"data":{"items":[{"id":2,"source_type":"okr_point","source_id":"p-1","relation_type":"advances","target_type":"key_matter","target_id":"9","confirmed_at":"2026-09-07T00:00:00Z"}]}}`))
+			case query.Get("target_type") == "okr_objective":
+				_, _ = response.Write([]byte(`{"code":0,"data":{"items":[{"id":4,"source_type":"project","source_id":"10","relation_type":"mapped_from","target_type":"okr_objective","target_id":"o-1","confirmed_at":"2026-09-07T00:00:00Z"}]}}`))
+			default:
+				_, _ = response.Write([]byte(`{"code":0,"data":{"items":[]}}`))
+			}
+		default:
+			response.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	output := runModuleTool(t, "okr-module-tools", server.URL, "projection-audit", "--quarter", "2026-Q3")
+	var payload struct {
+		Data struct {
+			Relations struct {
+				Count          int            `json:"count"`
+				ConfirmedCount int            `json:"confirmed_count"`
+				ByWorldType    map[string]int `json:"by_world_type"`
+			} `json:"relations"`
+			Coverage map[string]struct {
+				Total   int `json:"total"`
+				Related int `json:"related"`
+			} `json:"coverage"`
+			Orphans []struct {
+				ID int `json:"id"`
+			} `json:"orphan_relations"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("audit output is not JSON: %v: %s", err, output)
+	}
+	if payload.Data.Relations.Count != 3 || payload.Data.Relations.ConfirmedCount != 3 || payload.Data.Relations.ByWorldType["project"] != 1 || payload.Data.Relations.ByWorldType["key_matter"] != 2 {
+		t.Fatalf("relation audit = %+v", payload.Data.Relations)
+	}
+	if payload.Data.Coverage["objectives"].Related != 0 || payload.Data.Coverage["krs"].Related != 1 || payload.Data.Coverage["points"].Related != 1 || len(payload.Data.Orphans) != 1 || payload.Data.Orphans[0].ID != 3 {
+		t.Fatalf("coverage = %+v orphans=%+v", payload.Data.Coverage, payload.Data.Orphans)
+	}
+	close(requests)
+}
+
+func TestOKRProjectionAuditReadsAllRelationPages(t *testing.T) {
+	largeEvidence := strings.Repeat("完整业务 Ontology 关系证据", 128)
+	relations := make([]map[string]any, 200)
+	for index := range relations {
+		relations[index] = map[string]any{
+			"id":            index + 1,
+			"source_type":   "okr_objective",
+			"source_id":     "o-1",
+			"relation_type": "maps_to",
+			"target_type":   "project",
+			"target_id":     index + 1,
+			"evidence":      map[string]any{"basis": largeEvidence},
+		}
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		response.Header().Set("content-type", "application/json")
+		switch request.URL.Path {
+		case "/api/okr/objectives":
+			_, _ = response.Write([]byte(`{"code":0,"data":{"quarter":"2026-Q3","objectives":[{"id":"o-1"}],"totals":{"objectives":1,"krs":0,"metrics":0,"points":0,"kr_owner_occurrences":0,"point_owner_occurrences":0}}}`))
+		case "/api/okr/objectives/o-1":
+			_, _ = response.Write([]byte(`{"code":0,"data":{"quarter":"2026-Q3","objective":{"id":"o-1","title":"目标","krs":[]}}}`))
+		case "/api/relations":
+			if request.URL.Query().Get("source_type") == "okr_objective" {
+				if request.URL.Query().Get("cursor") == "2" {
+					_ = json.NewEncoder(response).Encode(map[string]any{"code": 0, "data": map[string]any{"items": []map[string]any{{
+						"id": 201, "source_type": "okr_objective", "source_id": "o-1",
+						"relation_type": "maps_to", "target_type": "project", "target_id": 201,
+					}}}})
+					return
+				}
+				_ = json.NewEncoder(response).Encode(map[string]any{"code": 0, "data": map[string]any{"items": relations, "next_cursor": "2"}})
+				return
+			}
+			_, _ = response.Write([]byte(`{"code":0,"data":{"items":[]}}`))
+		default:
+			response.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	output := runModuleTool(t, "okr-module-tools", server.URL, "projection-audit", "--quarter", "2026-Q3")
+	var payload struct {
+		Data struct {
+			Relations struct {
+				Count int `json:"count"`
+			} `json:"relations"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(output), &payload); err != nil {
+		t.Fatalf("audit output is not JSON: %v: %s", err, output)
+	}
+	if payload.Data.Relations.Count != 201 {
+		t.Fatalf("relation count = %d, want 201", payload.Data.Relations.Count)
 	}
 }
 

@@ -39,7 +39,7 @@ export const OKR_ACTIONS: OKRActionDefinition[] = [
     key: 'remind_missing',
     title: '周报催填',
     shortLabel: '催',
-    description: '检查当周未填写项，并按 Prompt 约定完成提醒与回执。',
+    description: '检查当周未填写项，并通过广播 Skill 逐人私聊提醒与核验回执。',
     promptKey: 'okr_agent_weekly_reminder',
     cadence: 'weekly',
     weekday: 1,
@@ -110,7 +110,7 @@ export function formValueForAction(definition: OKRActionDefinition, task?: Sched
 export function scheduledTaskInput(definition: OKRActionDefinition, value: OKRActionFormValue): ScheduledTaskInput {
   const weekly = definition.cadence === 'weekly'
   return {
-    title: `OKR · ${definition.title}`,
+    title: `Biz OKR · ${definition.title}`,
     action_type: 'agent_task',
     instruction: `执行固定行动“${definition.title}”；范围、对象、产出和验收标准以绑定 Prompt 为准。`,
     context_snapshot: {
@@ -136,7 +136,7 @@ export function manualTaskInput(definition: OKRActionDefinition): CreateTaskInpu
     prompt_key: definition.promptKey,
   }
   return {
-    title: `OKR · ${definition.title}`,
+    title: `Biz OKR · ${definition.title}`,
     action_type: 'agent_task',
     target: `执行固定行动“${definition.title}”；范围、对象、产出和验收标准以绑定 Prompt 为准。`,
     background: context,

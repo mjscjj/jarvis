@@ -21,7 +21,7 @@ Biz OKR（module: biz-okr，requires: okr）
 ```
 
 - `okr` 是可复用的通用 OKR 插件：拥有 O、KR、Metric、Point、周次、正式 Progress 和周期指标。
-- `biz-okr` 是当前业务包装：拥有标签、OKR Plan、Preview/Review、评论、评分、Follow-up、催填、Meego 关联、飞书业务身份和业务 Prompt。
+- `biz-okr` 是当前业务包装：拥有标签、Biz OKR Plan、Preview/Review、评论、评分、Follow-up、催填、Meego 关联、飞书业务身份和业务 Prompt。
 - Jarvis 世界模型不复制 OKR 数据，也不导入 OKR 领域 DTO；模块启用后，由原子工具和 Skill 把有证据的语义投影到通用关系、事实页和世界进展中。
 - 当前 `data/okr/okr.db`、既有表名、主键和历史数据全部原地复用。本次拆分不是数据库搬家。
 - 当前 Biz OKR 中的 OKR、每周进展、历史记录和页面能力一个都不能丢。
@@ -95,7 +95,7 @@ Week
 ### 4.2 Biz OKR 拥有的对象
 
 - KR / Point 的 Biz 标签与打标流程
-- OKR Plan
+- Biz OKR Plan
 - OKR Preview AI Review
 - 周报业务布局和组织口径
 - 评论、评分、Follow-up
@@ -181,9 +181,10 @@ Objective 包含 KR、KR 包含 Metric/Point、Owner 属于哪个 KR，这些已
 例如：
 
 ```text
-okr_kr:kr1       --maps_to / mapped_from------> project:7
-okr_point:p1     --maps_to / mapped_from-----> key_matter:31
-project:7        --advances / advanced_by----> okr_kr:kr1
+okr_objective:o1 --maps_to / mapped_from-----> project:7
+okr_kr:kr1       --maps_to / mapped_from-----> key_matter:31
+okr_point:p1     --advances / advanced_by----> key_matter:31
+okr_kr:kr1       --owned_by / owns-----------> person:12
 key_matter:31    --depends_on / required_by--> resource:19
 ```
 
@@ -192,9 +193,10 @@ key_matter:31    --depends_on / required_by--> resource:19
 `okr-world-projector` 是 OKR 到世界模型的语义桥，它必须：
 
 - 通过 OKR 原子工具读取数据，不直接查询模块数据库；
-- 只建立有明确证据的跨模块关系；
-- 不按标题相似度硬绑；
-- 不复制 OKR 内部层级和 Owner；
+- 让每个 Objective、KR、Point 和结构化 Owner 都有现实承接；
+- 将 Objective 映射到 Project、KR 映射到 KeyMatter、Point 连接 KeyMatter、Owner 映射到 Principal/Person；
+- OKR 定义本身是这些定义投影的权威证据；标题相似仍不能把节点误并到语义不同的已有实体；
+- 不复制 Objective→KR→Point 原生层级；Owner 的 `owned_by` 仅是现实人物投影，不是第二份可编辑 Owner；
 - 不读取或同步周报 Progress；
 - 幂等写入并在写后回读。
 

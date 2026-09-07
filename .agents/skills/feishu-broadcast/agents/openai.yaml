@@ -1,0 +1,4 @@
+interface:
+  display_name: "广播"
+  short_description: "通过 Jarvis通知机器人向多人直接发送飞书通知"
+  default_prompt: "Use $feishu-broadcast to send an audited Feishu broadcast to the specified recipients."

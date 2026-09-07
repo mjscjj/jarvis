@@ -172,8 +172,9 @@ export function setTodoStatus(id: number, status: TodoStatus, reason: string): P
   })
 }
 
-export function listTasks(statuses: TaskStatus[], page = 1, pageSize = 20, signal?: AbortSignal): Promise<TaskList> {
+export function listTasks(statuses: TaskStatus[], page = 1, pageSize = 20, signal?: AbortSignal, query = ''): Promise<TaskList> {
   const params = new URLSearchParams({ status: statuses.join(','), page: String(page), page_size: String(pageSize) })
+  if (query.trim()) params.set('query', query.trim())
   return request<TaskList>(`/api/tasks?${params.toString()}`, { signal })
 }
 
@@ -517,8 +518,8 @@ export function updateGroupBackground(id: number, body: GroupBackgroundInput): P
   return request<Group>(`/api/groups/${id}`, { method: 'PUT', body })
 }
 
-export function getProfile(): Promise<ProfileView> {
-  return request<ProfileView>('/api/profile')
+export function getProfile(signal?: AbortSignal): Promise<ProfileView> {
+  return request<ProfileView>('/api/profile', { signal })
 }
 
 export function updateProfile(body: ProfileInput): Promise<ProfileView> {

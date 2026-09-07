@@ -347,7 +347,7 @@ export default function Plugins() {
       key: 'plugin',
       render: (_: unknown, item: CatalogItem) => (
         <Space direction="vertical" size={0}>
-          <Text strong>{item.kind === 'okr' ? 'OKR' : item.plugin.name}</Text>
+          <Text strong>{item.kind === 'okr' ? 'OKR 插件' : item.plugin.name}</Text>
           <Text type="secondary">{item.kind === 'okr' ? item.module.description : item.plugin.description}</Text>
         </Space>
       ),

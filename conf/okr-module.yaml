@@ -19,8 +19,9 @@ identity:
   # environment, so this MVP branch uses the built-in Jarvis identity. Set it
   # back to true when the login app works.
   enabled: false
-  # Biz OKR 专用登录应用 Emily Pro。只签发登录用户自己的 user token，与
-  # lark-cli 绑定的主应用无关：主应用凭证由 lark-cli 自己保管，不读这里。
+  # “Jarvis通知机器人”同时承载 Biz OKR 登录。这里仅签发登录用户自己的
+  # user token；广播使用 lark-cli 中显式选择的通知 Bot profile，不直接读取
+  # 这里的 secret，也不影响 lark-cli 当前默认的 Jarvis 主应用。
   # 换应用后 open_id 会变（按应用隔离），union_id 不变，所以署名锚 union_id。
   app_id: "cli_a96a2422f03bdbd7"
   app_secret_env: "JARVIS_OKR_EMILY_APP_SECRET"

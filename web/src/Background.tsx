@@ -72,6 +72,7 @@ import SystemTasks from './SystemTasks'
 import PageHeader from './components/PageHeader'
 import FactTimeline from './world/FactTimeline'
 import FactsPanel from './world/FactsPanel'
+import RelatedOKRCard from './world/RelatedOKRCard'
 import SummaryPageEditor from './world/SummaryPageEditor'
 import { summaryIndexLine } from './world/summary'
 import { usePageContext } from './pageContext'
@@ -349,6 +350,7 @@ function ProjectsPanel() {
           <Descriptions.Item label="最近实质进展" span={2}>{detail.last_progress_at ? dayjs(detail.last_progress_at).format('YYYY-MM-DD HH:mm') : '—'}</Descriptions.Item>
         </Descriptions>
         <SummaryPageEditor type="project" id={detail.id} />
+        <RelatedOKRCard type="project" id={detail.id} />
         {repositories.length > 0 && (
           <Card size="small" title="Codebase 仓库">
             <Space orientation="vertical">
@@ -394,7 +396,6 @@ interface KeyMatterCreateFields {
 function KeyMattersPanel() {
   const [items, setItems] = useState<KeyMatter[]>([])
   const [total, setTotal] = useState(0)
-  const [maxOpen, setMaxOpen] = useState(10)
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
@@ -414,7 +415,6 @@ function KeyMattersPanel() {
       .then((result) => {
         setItems(result.items)
         setTotal(result.total)
-        setMaxOpen(result.max_open)
         setError(undefined)
       })
       .catch((cause: unknown) => setError(errorText(cause)))
@@ -643,8 +643,8 @@ function KeyMattersPanel() {
 
   return <>
     <Flex justify="space-between" align="center" className="section-heading">
-      <Text type="secondary">未闭环关键事项 {total}/{maxOpen}</Text>
-      <Flex gap={8}><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={openCreate} disabled={total >= maxOpen}>新建关键事项</Button></Flex>
+      <Text type="secondary">未闭环关键事项 {total}</Text>
+      <Flex gap={8}><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={openCreate}>新建关键事项</Button></Flex>
     </Flex>
     {error && <Alert type="error" showIcon title="关键事项操作失败" description={error} closable onClose={() => setError(undefined)} />}
     <Card className="table-card key-matter-list-card" variant="borderless">
@@ -687,6 +687,7 @@ function KeyMattersPanel() {
             <Descriptions.Item label="最近活跃">{dayjs(selected.last_active_at).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
           </Descriptions>
           <SummaryPageEditor type="key_matter" id={selected.id} />
+          <RelatedOKRCard type="key_matter" id={selected.id} />
           <FactTimeline subject={{ type: 'key_matter', id: selected.id }} title="关键事项事实" />
         </Space>
       )}
@@ -956,6 +957,7 @@ function PersonsPanel() {
       </Form>
       {editing && <Space orientation="vertical" size={16} style={{ width: '100%' }}>
         <SummaryPageEditor type="person" id={editing.id} />
+        <RelatedOKRCard type="person" id={editing.id} />
         <FactTimeline subject={{ type: 'person', id: editing.id }} title="人物事实" />
       </Space>}
     </Drawer>
@@ -1201,6 +1203,7 @@ function GroupsPanel() {
           </Flex>
         </Form>
         <SummaryPageEditor type="group" id={editing.id} />
+        <RelatedOKRCard type="group" id={editing.id} />
         <FactTimeline subject={{ type: 'group', id: editing.id }} title="会话事实" />
       </Space>}
     </Drawer>
@@ -1342,6 +1345,9 @@ function ProfilePanel() {
     </Card>
     {profile?.saved && profile.id > 0 && (
       <SummaryPageEditor type="principal" id={profile.id} />
+    )}
+    {profile?.saved && profile.id > 0 && (
+      <RelatedOKRCard type="principal" id={profile.id} />
     )}
     {profile?.saved && profile.id > 0 && (
       <FactTimeline subject={{ type: 'principal', id: profile.id }} title="我的事实" />
@@ -1682,6 +1688,7 @@ function ResourcePanel() {
           <Descriptions.Item label="最近确认">{dayjs(selectedResource.last_active_at).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
         </Descriptions>
         <SummaryPageEditor type="resource" id={selectedResource.id} />
+        <RelatedOKRCard type="resource" id={selectedResource.id} />
         <FactTimeline subject={{ type: 'resource', id: selectedResource.id }} title="资源事实" />
       </Space>}
     </Drawer>
@@ -1903,7 +1910,7 @@ export function Settings() {
                 <AppModules
                   moduleKeys={['biz-okr']}
                   title="业务应用"
-                  description="OKR 提供业务打标、Plan、Review、周报与自动化。"
+                  description="Biz OKR 提供业务打标、Plan、Review、周报与自动化。"
                 />
                 <SkillsPanel />
               </Space>

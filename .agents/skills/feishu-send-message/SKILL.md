@@ -1,11 +1,11 @@
 ---
 name: feishu-send-message
-description: 使用 lark-cli 通过 {{AGENT_NAME}} Bot 给个人或群聊发送飞书消息。适用于通知、提醒、回复、总结、图片和文件。
+description: 使用 lark-cli 通过 {{AGENT_NAME}} Bot 发送普通一对一或群聊会话消息，包括回复、总结、图片和文件。面向多个独立收件人的系统通知或批量提醒改用 feishu-broadcast。
 ---
 
 # 飞书发消息
 
-所有 M5 普通业务消息都使用本 Skill，不区分消息是否回到 Task 的来源会话。消息发送和回复始终使用 {{AGENT_NAME}} Bot；联系人查询、群搜索和助手群创建使用 principal 的 user 身份。禁止把发送失败 fallback 成 user 身份、另一个目标或另一种会话。
+所有非广播的 M5 普通业务消息都使用本 Skill，不区分消息是否回到 Task 的来源会话。消息发送和回复始终使用 {{AGENT_NAME}} Bot；联系人查询、群搜索和助手群创建使用 principal 的 user 身份。面向多个独立收件人的系统通知或批量提醒读取 `feishu-broadcast`，不要用本 Skill 逐个建助手群。禁止把发送失败 fallback 成 user 身份、另一个目标或另一种会话。
 
 ## 0. 先判断审批，未获授权不要写
 

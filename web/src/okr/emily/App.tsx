@@ -109,7 +109,7 @@ export default function App({
 	const meetingLike = view === 'meeting'
 	const managesWeeks = view === 'fill'
 	const lifecycleName = weeklyDatasetLabel(dataset)
-	const pageTitle = reviewDataset ? 'Emily · OKR Review' : 'Emily · OKR 周报协作台'
+	const pageTitle = reviewDataset ? 'Emily · Biz OKR Review' : 'Emily · Biz OKR 周报协作台'
 	const shareLabel = `${lifecycleName}${weeklyViewLabel(view)}`
 
   const submitWeek = async () => {

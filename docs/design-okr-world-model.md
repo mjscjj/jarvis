@@ -20,12 +20,14 @@ Jarvis 世界模型保存跨来源的认知状态：Person、Project、KeyMatter
 
 `okr-world-projector` Skill 负责把模块层级映射到世界实体：
 
-1. 用 `scripts/okr-module-tools board` 读取模块真源；
-2. 用 `jarvis-tools` 查找或创建 Person、Project、KeyMatter；
-3. 用 `create-relation` 保存已确认映射及证据；
-4. 用 `list-relations` 回读验证。
+1. 用 `scripts/okr-module-tools list-objectives/get-objective` 冻结并逐项读取完整季度；
+2. 为每个 Objective 创建或复用 Project，为每个 KR 创建或复用归属于该 Project 的 KeyMatter；
+3. 将每个 Point 连接到现实 KeyMatter，并把 Metric 写入 KR KeyMatter Page；
+4. 按 `open_id` 把每个结构化 Owner 解析为 Principal/Person，对每次 Owner 出现写 `owned_by`；
+5. 用 `create-relation` 保存已确认定义投影，并从两端回读；
+6. 用 `projection-audit` 验证 Objective、KR、Point、Owner occurrence 均为全覆盖。
 
-没有证据时不建立关系；标题相似不能单独作为自动关联依据。投影只读取稳定的 OKR 定义，不读取周报内容。投影失败不会阻塞周报填写，世界模型失败也不能回滚模块表写入。
+OKR 定义本身是目标、拆解和责任归属存在的权威证据；不能以缺少第二份外部材料为由拒绝投影。标题相似仍不能用来把 OKR 误并到一个已有但语义不同的现实对象；若无正确承接实体，则创建新的 Project/KeyMatter。投影只读取稳定的 OKR 定义，不读取周报内容。投影失败不会阻塞周报填写，世界模型失败也不能回滚模块表写入。
 
 ## 3. 周进展闭环
 

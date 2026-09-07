@@ -1,6 +1,6 @@
 ---
 name: weekly-report-reminder
-description: 每周检查周报模块本周未填写项，生成可审计催办快照，并通过 Jarvis Bot 给有真实 open_id 的缺失负责人发送一条幂等提醒。仅用于已显式启用的周报催填 ScheduledTask。
+description: 每周检查周报模块本周未填写项，生成可审计催办快照，并通过 feishu-broadcast 给有真实 open_id 的缺失负责人发送一条幂等私聊提醒。仅用于已显式启用的周报催填 ScheduledTask。
 module: biz-okr
 ---
 
@@ -39,7 +39,7 @@ scripts/biz-okr-tools create-reminder-batch --quarter '<quarter>' --week '<week>
 
 批次是本轮预览的不可变快照，不代表已经送达。
 
-## 4. 逐人发送
+## 4. 通过广播 Skill 逐人直发
 
 发送飞书消息是具体外部副作用，由 M5 根据统一审批策略和当前任务上下文判断是否需要先请示。不得读取业务配置中的 `approval` 或 `mode` 字段替代该判断；尚未获准时保留批次并等待，不得发送。
 
@@ -50,17 +50,13 @@ scripts/biz-okr-tools create-reminder-batch --quarter '<quarter>' --week '<week>
 - `owner_open_id` 以 `ou_` 开头；
 - `message` 非空。
 
-发送前读取 `feishu-send-message` Skill，使用 Jarvis Bot 身份。消息内容以 `weekly_report_reminder_template` 为模板，只替换预览能够直接提供的 `owner_name`、`week` 和 `missing_items`；模板中不存在的事实不得补猜。`missing_items` 使用 `missing_krs` 的真实标题逐行生成，不添加链接或截止时间：
+发送前读取 `feishu-broadcast` Skill，使用其中固定的“Jarvis通知机器人”和个性化广播路径，直接私聊负责人；不得搜索、复用或创建私有助手群，也不得改用默认 Jarvis Bot。
 
-```bash
-lark-cli im +messages-send \
-  --user-id '<owner_open_id>' \
-  --text '<message>' \
-  --idempotency-key 'okr-reminder-<week>-<owner_open_id>' \
-  --as bot
-```
+消息内容以 `weekly_report_reminder_template` 为模板，只替换预览能够直接提供的 `owner_name`、`week` 和 `missing_items`；模板中不存在的事实不得补猜。`missing_items` 使用 `missing_krs` 的真实标题逐行生成，不添加链接或截止时间。
 
-幂等键不得超过 50 字符；超长时把 open_id 部分换成稳定短哈希。同一周同一负责人重跑必须复用同一键。单人发送失败不重发已经成功的收件人；继续处理其余人，并在最终结果逐项保留失败原因。
+把本轮所有收件人先整理成一份广播计划，每项包含 `owner_open_id`、其来源 App、`owner_name`、完整最终文案和稳定幂等键。这里的 `owner_open_id` 来自主 Jarvis App，必须先按 `feishu-broadcast` 的跨 App 身份归一步骤精确解析企业邮箱，不能原样交给通知 App。各负责人的缺失项不同，因此按邮箱使用个性化路径逐人直发；即使人数较多也不能把不同正文错误合并成同一批量消息。
+
+幂等键不得超过 50 字符；同一周同一负责人重跑必须复用同一键。单人发送失败不重发已经确认成功的收件人；继续处理其余人，并在最终结果逐项保留真实 `message_id` 或失败原因。
 
 ## 完成检查
 

@@ -80,8 +80,10 @@ func TestRepositoryM5EffectivePromptUsesExplicitMessageTool(t *testing.T) {
 	for _, want := range []string{
 		"普通业务消息：显式工具动作",
 		"先完整确定受众、会话位置或原消息锚点",
-		"所有普通业务消息都通过 `feishu-send-message` Skill",
+		"普通一对一或群聊会话消息通过 `feishu-send-message` Skill",
+		"面向多个独立收件人的通知广播通过 `feishu-broadcast` Skill",
 		"feishu-send-message",
+		"feishu-broadcast",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("effective M5 prompt missing message-tool contract %q:\n%s", want, prompt)

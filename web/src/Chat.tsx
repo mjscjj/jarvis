@@ -65,8 +65,8 @@ const PAGE_LABELS: Record<string, string> = {
   progress: '工作台',
   memory: '世界',
   background: '世界',
-  okr: 'OKR',
-  'biz-okr': 'OKR',
+  okr: 'OKR 插件',
+  'biz-okr': 'Biz OKR',
   automation: '任务',
   'scheduled-tasks': '任务',
   plugins: '插件',
@@ -107,7 +107,7 @@ function errorText(cause: unknown): string {
 function pageLabel(context: PageContext): string {
   if (context.active_key === 'biz-okr') {
     const definition = OKR_TAB_DEFINITIONS.find((item) => item.key === context.view_state.tab)
-    return `OKR · ${definition?.label ?? '管理与打标'}`
+    return `Biz OKR · ${definition?.label ?? '管理与打标'}`
   }
   return PAGE_LABELS[context.active_key] ?? '当前页面'
 }

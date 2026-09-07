@@ -117,7 +117,7 @@ func TestKeyMatterLifecycleAndFacts(t *testing.T) {
 	}
 }
 
-func TestKeyMatterCapacityAndActivityOrder(t *testing.T) {
+func TestKeyMatterHasNoStorageCapacityAndOrdersByActivity(t *testing.T) {
 	db, err := store.OpenSQLite(t.Context(), config.SQLiteConfig{Path: filepath.Join(t.TempDir(), "jarvis.db")})
 	if err != nil {
 		t.Fatalf("OpenSQLite() error = %v", err)
@@ -131,8 +131,9 @@ func TestKeyMatterCapacityAndActivityOrder(t *testing.T) {
 		t.Fatalf("NewKeyMatterService() error = %v", err)
 	}
 	base := time.Date(2026, 8, 1, 8, 0, 0, 0, time.UTC)
-	created := make([]*KeyMatterView, 0, maxOpenKeyMatters)
-	for i := 0; i < maxOpenKeyMatters; i++ {
+	const matterCount = 12
+	created := make([]*KeyMatterView, 0, matterCount)
+	for i := 0; i < matterCount; i++ {
 		activeAt := base.Add(time.Duration(i) * time.Hour)
 		service.now = func() time.Time { return activeAt }
 		item, err := service.Create(t.Context(), KeyMatterInput{Title: fmt.Sprintf("事项 %d", i)})
@@ -141,20 +142,17 @@ func TestKeyMatterCapacityAndActivityOrder(t *testing.T) {
 		}
 		created = append(created, item)
 	}
-	if _, err := service.Create(t.Context(), KeyMatterInput{Title: "超限"}); !errors.Is(err, ErrInvalidInput) {
-		t.Fatalf("Create() over capacity error = %v", err)
-	}
 	list, err := service.List(t.Context(), KeyMatterFilter{ListFilter: ListFilter{Page: 1, PageSize: 20}})
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
-	if list.MaxOpen != maxOpenKeyMatters || list.Items[0].ID != created[len(created)-1].ID {
+	if list.Total != matterCount || list.Items[0].ID != created[len(created)-1].ID {
 		t.Fatalf("List() = %+v", list)
 	}
 	if err := service.Delete(t.Context(), created[0].ID); err != nil {
 		t.Fatalf("Delete() error = %v", err)
 	}
-	if _, err := service.Create(t.Context(), KeyMatterInput{Title: "补位"}); err != nil {
+	if _, err := service.Create(t.Context(), KeyMatterInput{Title: "继续新增"}); err != nil {
 		t.Fatalf("Create() after close error = %v", err)
 	}
 	if _, err := service.Touch(t.Context(), created[0].ID); !errors.Is(err, ErrInvalidInput) {

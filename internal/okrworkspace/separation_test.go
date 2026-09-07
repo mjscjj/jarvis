@@ -54,6 +54,30 @@ func TestCoreSubjectExistsSupportsAllOKRLevels(t *testing.T) {
 	}
 }
 
+func TestCoreSubjectExistsRejectsPlanDraftSubjects(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	objective := domain.Objective{ID: "o-plan-subject", PlanID: "plan-1", Title: "草稿目标", Quarter: "2026-Q3"}
+	kr := domain.KR{ID: "kr-plan-subject", ObjectiveID: objective.ID, Title: "草稿 KR"}
+	point := domain.KRPoint{ID: "point-plan-subject", KRID: kr.ID, Kind: domain.PointKindStrategy, Title: "草稿子 KR"}
+	for _, value := range []any{&objective, &kr, &point} {
+		if err := db.Create(value).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, testCase := range []struct{ subjectType, subjectID string }{
+		{"okr_objective", objective.ID}, {"okr_kr", kr.ID}, {"okr_point", point.ID},
+	} {
+		exists, err := service.CoreSubjectExists(t.Context(), testCase.subjectType, testCase.subjectID)
+		if err != nil || exists {
+			t.Fatalf("CoreSubjectExists(%s, %s) = %t, %v; want false", testCase.subjectType, testCase.subjectID, exists, err)
+		}
+	}
+}
+
 // Both quarter boards read the same objectives and KRs; only the Biz one may
 // carry labels and legacy Meego links. They share one loader, so this pins the
 // projection difference rather than each board's own row assembly.

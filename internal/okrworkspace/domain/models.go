@@ -85,19 +85,17 @@ type Objective struct {
 
 func (Objective) TableName() string { return "okr_workspace_objective" }
 
-// OKRPlan is a quarterly planning draft. Its structured content is consumed by
-// the OKR plan page, while the official Objective/KR tables remain the source
-// for committed OKR definitions.
+// OKRPlan owns only draft metadata. Draft definitions use the shared
+// Objective/KR/Metric/Point tables and are scoped by Objective.PlanID.
 type OKRPlan struct {
-	ID        string         `gorm:"primaryKey;size:64"`
-	Quarter   string         `gorm:"not null;index"`
-	Title     string         `gorm:"not null"`
-	Content   datatypes.JSON `gorm:"not null;type:text"`
-	Version   int32          `gorm:"not null;default:0"`
-	CreatedBy string         `gorm:"not null;default:''"`
-	UpdatedBy string         `gorm:"not null;default:''"`
-	CreatedAt time.Time      `gorm:"not null"`
-	UpdatedAt time.Time      `gorm:"not null"`
+	ID        string    `gorm:"primaryKey;size:64"`
+	Quarter   string    `gorm:"not null;index"`
+	Title     string    `gorm:"not null"`
+	Version   int32     `gorm:"not null;default:0"`
+	CreatedBy string    `gorm:"not null;default:''"`
+	UpdatedBy string    `gorm:"not null;default:''"`
+	CreatedAt time.Time `gorm:"not null"`
+	UpdatedAt time.Time `gorm:"not null"`
 }
 
 func (OKRPlan) TableName() string { return "okr_workspace_plan" }

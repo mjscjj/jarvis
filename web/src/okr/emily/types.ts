@@ -211,16 +211,12 @@ export interface Objective {
   krs: Kr[]
 }
 
-export interface OKRPlanContent {
-  objectives: Objective[]
-}
-
 export interface OKRPlan {
   id: string
   quarter: string
   title: string
   version: number
-  content: OKRPlanContent
+  objectives: Objective[]
   createdBy: string
   updatedBy: string
   createdAt: string

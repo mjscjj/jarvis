@@ -153,7 +153,7 @@ function AppShell() {
   }, [refreshPlugins])
 
   const enabledPluginPages = [
-    ...(moduleEnablement?.okr ? [{ id: 'okr', name: 'OKR' }] : []),
+    ...(moduleEnablement?.okr ? [{ id: 'okr', name: 'OKR 插件' }] : []),
     ...enabledPlugins.map((plugin) => ({ id: plugin.id, name: plugin.name })),
   ]
   const pluginMenu: NonNullable<MenuProps['items']>[number] = enabledPluginPages.length > 0

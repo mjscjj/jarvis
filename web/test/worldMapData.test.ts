@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import type { PageIndexItem, PageView } from '../src/types.ts'
+import type { EntityRelation, PageIndexItem, PageView } from '../src/types.ts'
 import { buildActiveGraph, buildFocusGraph, filterGraph, filterGraphByDirection, graphCounts, graphForNodeIds, primaryComponentIds, readableSummary, withoutIsolatedNodes } from '../src/world-map/graphData.ts'
+import { buildOKRGraph, okrWorldPageRefs } from '../src/world-map/okrGraph.ts'
+import { defaultWorldLens, isOKRPluginEnabled } from '../src/world-map/lens.ts'
+import type { Objective } from '../src/okr/emily/types.ts'
 import { boundsForNodes, cameraFrameForBounds } from '../src/world-map/camera.ts'
 import { createBoundingForce } from '../src/world-map/physics.ts'
 import { cameraPaddingValue, defaultWorldMapSettings, labelLengthValue, normalizeWorldMapSettings, spacingValue } from '../src/world-map/settings.ts'
@@ -23,6 +26,67 @@ test('active graph preserves explicit reference direction and counts facts', () 
   assert.equal(graph.nodes.length, 3)
   assert.deepEqual(graph.links.map((link) => `${link.source}->${link.target}`), ['principal:1->project:2', 'project:2->person:3'])
   assert.deepEqual(graphCounts(graph), { nodes: 3, links: 2, facts: 13 })
+})
+
+test('OKR lens shows native hierarchy but requires persisted relations for world owners', () => {
+  const objectives: Objective[] = [{
+    id: 'o-1',
+    title: '稳定交付',
+    krs: [{
+      id: 'kr-1', title: '完成上线', metricNote: '', metrics: [], entries: [],
+      owners: [{ openId: 'ou_me', name: '我' }, { openId: 'ou_dynamic', name: '临时协作者' }],
+      points: [{ id: 'point-1', kind: 'strategy', title: '灰度发布', entries: [], owners: [{ openId: 'ou_person', name: '协作者' }] }],
+    }],
+  }]
+  const graph = buildOKRGraph({ objectives, relations: [], activePages: pages, fullIndex: index, objectiveId: 'o-1' })
+
+  assert.deepEqual(new Set(graph.nodes.map((node) => node.id)), new Set([
+    'okr_objective:o-1', 'okr_kr:kr-1', 'okr_point:point-1',
+  ]))
+  assert.equal(graph.links.filter((link) => link.relationType === 'contains').length, 2)
+  assert.equal(graph.links.filter((link) => link.relationType === 'owned_by').length, 0)
+})
+
+test('OKR lens keeps the complete quarter hierarchy in overview and combines confirmed canonical relations', () => {
+  const objectives: Objective[] = [{
+    id: 'o-1', title: '稳定交付', krs: [{ id: 'kr-1', title: '完成上线', metricNote: '', metrics: [], points: [{ id: 'point-1', kind: 'product', title: '灰度', entries: [] }] }],
+  }]
+  const relations: EntityRelation[] = [
+    { id: 7, source_type: 'okr_kr', source_id: 'kr-1', relation_type: 'maps_to', target_type: 'key_matter', target_id: '77', evidence: {}, confidence: 1, confirmed_at: '2026-09-07T00:00:00Z', created_at: '', updated_at: '' },
+    { id: 8, source_type: 'okr_point', source_id: 'point-1', relation_type: 'advances', target_type: 'key_matter', target_id: '77', evidence: {}, confidence: 1, confirmed_at: '2026-09-07T00:00:00Z', created_at: '', updated_at: '' },
+    { id: 9, source_type: 'key_matter', source_id: '77', relation_type: 'advanced_by', target_type: 'okr_point', target_id: 'point-1', evidence: {}, confidence: 1, confirmed_at: '2026-09-07T00:00:00Z', created_at: '', updated_at: '' },
+  ]
+  const expanded = buildOKRGraph({ objectives, relations, activePages: pages, fullIndex: [...index, { type: 'key_matter', id: 77, name: '灰度事项', index_line: '', char_count: 0, last_progress_at: null }], objectiveId: 'o-1' })
+  assert.ok(expanded.links.some((link) => link.id === 'relation:7' && link.source === 'okr_kr:kr-1' && link.target === 'key_matter:77' && link.label === '映射到'))
+  assert.ok(expanded.links.some((link) => link.id === 'relation:8' && link.source === 'okr_point:point-1' && link.target === 'key_matter:77' && link.label === '推进'))
+  assert.equal(expanded.links.some((link) => link.id === 'relation:9'), false)
+
+  const overview = buildOKRGraph({ objectives, relations, activePages: pages, fullIndex: index })
+  assert.deepEqual(new Set(overview.nodes.map((node) => node.id)), new Set(['okr_objective:o-1', 'okr_kr:kr-1', 'okr_point:point-1', 'key_matter:77']))
+})
+
+test('world map defaults to OKR only when the OKR plugin is active in the runtime', () => {
+  const enabled = [{ key: 'okr', name: 'OKR 插件', description: '', is_enabled: true, configured_enabled: true, restart_required: false, requires: [] }]
+  const pendingRestart = [{ ...enabled[0], is_enabled: false, configured_enabled: true, restart_required: true }]
+  assert.equal(isOKRPluginEnabled(enabled), true)
+  assert.equal(defaultWorldLens(enabled), 'okr')
+  assert.equal(isOKRPluginEnabled(pendingRestart), false)
+  assert.equal(defaultWorldLens(pendingRestart), 'world')
+})
+
+test('OKR world pages are loaded from confirmed canonical targets even when absent from the active index', () => {
+  const objectives: Objective[] = [{
+    id: 'o-1', title: '稳定交付', krs: [{ id: 'kr-1', title: '完成上线', metricNote: '', metrics: [], points: [] }],
+  }]
+  const relations: EntityRelation[] = [
+    { id: 1, source_type: 'okr_objective', source_id: 'o-1', relation_type: 'maps_to', target_type: 'project', target_id: '19', evidence: {}, confidence: 1, confirmed_at: '2026-09-07T00:00:00Z', created_at: '', updated_at: '' },
+    { id: 2, source_type: 'okr_kr', source_id: 'kr-1', relation_type: 'owned_by', target_type: 'person', target_id: '71', evidence: {}, confidence: 1, confirmed_at: '2026-09-07T00:00:00Z', created_at: '', updated_at: '' },
+    { id: 3, source_type: 'okr_kr', source_id: 'kr-1', relation_type: 'maps_to', target_type: 'key_matter', target_id: '60', evidence: {}, confidence: 1, confirmed_at: null, created_at: '', updated_at: '' },
+  ]
+  assert.deepEqual(okrWorldPageRefs(objectives, relations), [
+    { type: 'project', id: 19 },
+    { type: 'person', id: 71 },
+  ])
 })
 
 test('focus graph contains exactly the selected page and one-hop references', () => {

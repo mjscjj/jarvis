@@ -182,6 +182,37 @@ func GetCoreBoard(service *okrworkspace.Service) app.HandlerFunc {
 	}
 }
 
+func ListCoreObjectives(service *okrworkspace.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		result, err := service.ListObjectiveManifest(ctx, strings.TrimSpace(c.Query("quarter")))
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40014, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+func GetCoreObjective(service *okrworkspace.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		id := strings.TrimSpace(c.Param("objective_id"))
+		if id == "" {
+			writeAPIError(c, consts.StatusBadRequest, 40015, fmt.Errorf("objective_id is required"))
+			return
+		}
+		result, err := service.GetCoreObjective(ctx, id)
+		if errors.Is(err, okrworkspace.ErrNotFound) {
+			writeAPIError(c, consts.StatusNotFound, 40415, err)
+			return
+		}
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40015, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
 func GetCoreKR(service *okrworkspace.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		id := strings.TrimSpace(c.Param("kr_id"))

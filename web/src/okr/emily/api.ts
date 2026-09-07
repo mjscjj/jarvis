@@ -1,5 +1,5 @@
 import { normalizeKRTitle } from './krTitle'
-import type { AuthStatus, Entry, EnumValues, FeishuDeviceLogin, FeishuDeviceLoginPoll, FeishuDocumentResult, FollowUpItem, FollowUpList, FollowUpStatus, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, OKRActivityEntry, OKRPlan, OKRPlanContent, OKRPlanList, PageComment, PageCommentList, PersonAvatarItem, PersonSearchResult, PointKind, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
+import type { AuthStatus, Entry, EnumValues, FeishuDeviceLogin, FeishuDeviceLoginPoll, FeishuDocumentResult, FollowUpItem, FollowUpList, FollowUpStatus, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, OKRActivityEntry, OKRPlan, OKRPlanList, PageComment, PageCommentList, PersonAvatarItem, PersonSearchResult, PointKind, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
 
 interface Envelope<T> {
   code: number
@@ -44,21 +44,19 @@ interface APIBoard {
   objectives: Array<{ id: string; title: string; krs: APIKr[] }>
 }
 
-interface APIPlanContent {
-  objectives: Array<{
+interface APIPlanObjective {
+  id: string
+  title: string
+  version?: number
+  krs: Array<{
     id: string
     title: string
     version?: number
-    krs: Array<{
-      id: string
-      title: string
-      version?: number
-      owners: Array<{ open_id: string; name: string; identity_namespace?: 'main_feishu_app' }>
-      metric_note: string
-      metrics: Array<{ id: string; text: string; light?: Light; images?: Entry['images'] }>
-      points: Array<{ id: string; kind: PointKind; title: string; meego_work_item_id?: string; meego_url?: string; owners?: Array<{ open_id: string; name: string; identity_namespace?: 'main_feishu_app' }>; tags: KrTag[] }>
-      tags: KrTag[]
-    }>
+    owners: Array<{ open_id: string; name: string; identity_namespace?: 'main_feishu_app' }>
+    metric_note: string
+    metrics: Array<{ id: string; text: string; light?: Light; images?: Entry['images'] }>
+    points: Array<{ id: string; kind: PointKind; title: string; meego_work_item_id?: string; meego_url?: string; owners?: Array<{ open_id: string; name: string; identity_namespace?: 'main_feishu_app' }>; tags: KrTag[] }>
+    tags: KrTag[]
   }>
 }
 
@@ -67,7 +65,7 @@ interface APIPlan {
   quarter: string
   title: string
   version: number
-  content: APIPlanContent
+  objectives: APIPlanObjective[]
   created_by: string
   updated_by: string
   created_at: string
@@ -406,9 +404,8 @@ function fromAPIKr(value: APIKr): Kr {
   }
 }
 
-function fromAPIPlanContent(value: APIPlanContent): OKRPlanContent {
-  return {
-    objectives: (value.objectives ?? []).map((objective) => ({
+function fromAPIPlanObjectives(value: APIPlanObjective[]): Objective[] {
+  return (value ?? []).map((objective) => ({
       id: objective.id,
       title: objective.title,
       version: objective.version ?? 0,
@@ -435,34 +432,31 @@ function fromAPIPlanContent(value: APIPlanContent): OKRPlanContent {
         })),
         tags: kr.tags ?? [],
       })),
-    })),
-  }
+    }))
 }
 
-function toAPIPlanContent(value: OKRPlanContent): APIPlanContent {
+function toAPIPlanObjective(objective: Objective): APIPlanObjective {
   return {
-    objectives: value.objectives.map((objective) => ({
-      id: objective.id,
-      title: objective.title,
-      version: objective.version ?? 0,
-      krs: objective.krs.map((kr) => ({
-        id: kr.id,
-        title: normalizeKRTitle(kr.title),
-        version: kr.version ?? 0,
-        owners: (kr.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
-        metric_note: kr.metricNote ?? '',
-        metrics: kr.metrics.map((metric) => ({ id: metric.id, text: metric.text, light: metric.light, images: metric.images ?? [] })),
-        points: kr.points.map((point) => ({
-          id: point.id,
-          kind: point.kind,
-          title: point.title,
-          meego_work_item_id: point.meegoWorkItemId ?? '',
-          meego_url: point.meegoUrl ?? '',
-          owners: (point.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
-          tags: point.tags ?? [],
-        })),
-        tags: kr.tags ?? [],
+    id: objective.id,
+    title: objective.title,
+    version: objective.version ?? 0,
+    krs: objective.krs.map((kr) => ({
+      id: kr.id,
+      title: normalizeKRTitle(kr.title),
+      version: kr.version ?? 0,
+      owners: (kr.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
+      metric_note: kr.metricNote ?? '',
+      metrics: kr.metrics.map((metric) => ({ id: metric.id, text: metric.text, light: metric.light, images: metric.images ?? [] })),
+      points: kr.points.map((point) => ({
+        id: point.id,
+        kind: point.kind,
+        title: point.title,
+        meego_work_item_id: point.meegoWorkItemId ?? '',
+        meego_url: point.meegoUrl ?? '',
+        owners: (point.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
+        tags: point.tags ?? [],
       })),
+      tags: kr.tags ?? [],
     })),
   }
 }
@@ -473,7 +467,7 @@ function fromAPIPlan(value: APIPlan): OKRPlan {
     quarter: value.quarter,
     title: value.title,
     version: value.version,
-    content: fromAPIPlanContent(value.content),
+    objectives: fromAPIPlanObjectives(value.objectives),
     createdBy: value.created_by,
     updatedBy: value.updated_by,
     createdAt: value.created_at,
@@ -501,6 +495,27 @@ export interface BoardData {
   availableQuarters: string[]
   availableWeeks: string[]
   objectives: Objective[]
+}
+
+export interface ObjectiveManifestData {
+  quarter: string
+  objectives: Array<{
+    id: string
+    title: string
+    kr_count: number
+    metric_count: number
+    point_count: number
+    kr_owner_count: number
+    point_owner_count: number
+  }>
+  totals: {
+    objectives: number
+    krs: number
+    metrics: number
+    points: number
+    kr_owner_occurrences: number
+    point_owner_occurrences: number
+  }
 }
 
 export interface OpenWeekResult {
@@ -604,10 +619,10 @@ export async function getBoard(quarter: string, week: string, surface: BoardSurf
   }
 }
 
-export async function getGenericOKRBoard(quarter = ''): Promise<BoardData> {
+export async function getGenericOKRBoard(quarter = '', signal?: AbortSignal): Promise<BoardData> {
   const params = new URLSearchParams()
   if (quarter) params.set('quarter', quarter)
-  const board = await request<APIBoard>(`/api/okr/board?${params}`)
+  const board = await request<APIBoard>(`/api/okr/board?${params}`, { signal })
   return {
     quarter: board.quarter,
     week: board.week,
@@ -617,6 +632,12 @@ export async function getGenericOKRBoard(quarter = ''): Promise<BoardData> {
     availableWeeks: board.available_weeks,
     objectives: board.objectives.map((objective) => ({ id: objective.id, title: objective.title, krs: objective.krs.map(fromAPIKr) })),
   }
+}
+
+export async function listGenericOKRObjectives(quarter = '', signal?: AbortSignal): Promise<ObjectiveManifestData> {
+  const params = new URLSearchParams()
+  if (quarter) params.set('quarter', quarter)
+  return request<ObjectiveManifestData>(`/api/okr/objectives?${params}`, { signal })
 }
 
 export async function getGenericOKRProgressBoard(quarter: string, week: string): Promise<BoardData> {
@@ -648,31 +669,28 @@ export async function getOKRPlan(id: string): Promise<OKRPlan> {
   return fromAPIPlan(await request<APIPlan>(`/api/biz-okr/plans/${encodeURIComponent(id)}`))
 }
 
-export async function createOKRPlan(input: { quarter: string; title: string; content: OKRPlanContent }): Promise<OKRPlan> {
+export async function createOKRPlan(input: { quarter: string; title: string }): Promise<OKRPlan> {
   return fromAPIPlan(await request<APIPlan>('/api/biz-okr/plans', {
     method: 'POST',
     body: JSON.stringify({
       quarter: input.quarter,
       title: input.title,
-      content: toAPIPlanContent(input.content),
     }),
   }))
 }
 
 export async function createOKRPlanObjective(planId: string, objective: Objective): Promise<OKRPlan> {
-  const content = toAPIPlanContent({ objectives: [objective] })
   return fromAPIPlan(await request<APIPlan>(`/api/biz-okr/plans/${encodeURIComponent(planId)}/objectives`, {
     method: 'POST',
-    body: JSON.stringify(content.objectives[0]),
+    body: JSON.stringify(toAPIPlanObjective(objective)),
   }))
 }
 
 export async function updateOKRPlanObjective(planId: string, objective: Objective): Promise<OKRPlan> {
-  const content = toAPIPlanContent({ objectives: [objective] })
   try {
     return fromAPIPlan(await request<APIPlan>(`/api/biz-okr/plans/${encodeURIComponent(planId)}/objectives/${encodeURIComponent(objective.id)}`, {
       method: 'PATCH',
-      body: JSON.stringify({ expected_version: objective.version ?? 0, objective: content.objectives[0] }),
+      body: JSON.stringify({ expected_version: objective.version ?? 0, objective: toAPIPlanObjective(objective) }),
     }))
   } catch (error) {
     if (error instanceof APIError && error.status === 409 && error.data) {

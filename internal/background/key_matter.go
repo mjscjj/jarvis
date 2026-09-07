@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
 	"jarvis/internal/domain"
@@ -19,10 +18,7 @@ type KeyMatterList struct {
 	Total    int64           `json:"total"`
 	Page     int             `json:"page"`
 	PageSize int             `json:"page_size"`
-	MaxOpen  int             `json:"max_open"`
 }
-
-const maxOpenKeyMatters = 10
 
 // KeyMatterFilter controls whether closed matters are included.
 type KeyMatterFilter struct {
@@ -35,7 +31,6 @@ type KeyMatterService struct {
 	db     *gorm.DB
 	events *progress.Service
 	now    func() time.Time
-	mu     sync.Mutex
 }
 
 func NewKeyMatterService(db *gorm.DB) (*KeyMatterService, error) {
@@ -54,11 +49,6 @@ func (s *KeyMatterService) Create(ctx context.Context, in KeyMatterInput) (*KeyM
 		return nil, invalid(err)
 	}
 	if err := s.requireProject(ctx, in.ProjectID); err != nil {
-		return nil, err
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.requireOpenCapacity(ctx); err != nil {
 		return nil, err
 	}
 	now := s.now().UTC()
@@ -227,7 +217,6 @@ func (s *KeyMatterService) List(ctx context.Context, filter KeyMatterFilter) (*K
 	}
 	return &KeyMatterList{
 		Items: toKeyMatterViews(items), Total: total, Page: filter.Page, PageSize: filter.PageSize,
-		MaxOpen: maxOpenKeyMatters,
 	}, nil
 }
 
@@ -249,17 +238,6 @@ func (s *KeyMatterService) requireProject(ctx context.Context, projectID *uint64
 	}
 	if count != 1 {
 		return invalid(fmt.Errorf("key matter project_id=%d does not exist", *projectID))
-	}
-	return nil
-}
-
-func (s *KeyMatterService) requireOpenCapacity(ctx context.Context) error {
-	var count int64
-	if err := s.openQuery(ctx).Model(&domain.KeyMatter{}).Count(&count).Error; err != nil {
-		return fmt.Errorf("count open key matters before create: %w", err)
-	}
-	if count >= maxOpenKeyMatters {
-		return invalid(fmt.Errorf("open key matter limit reached: %d", maxOpenKeyMatters))
 	}
 	return nil
 }

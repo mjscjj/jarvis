@@ -457,6 +457,25 @@ body {
   border-left: 2px solid var(--color-border);
 }
 
+.world-related-okr-row {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.world-related-okr-row:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.world-related-okr-context {
+  display: block;
+  margin-top: 4px;
+}
+
+.world-related-okr-basis.ant-typography {
+  margin: 6px 0 4px;
+}
+
 @media (max-width: 720px) {
   .okr-plugin-progress-columns {
     grid-template-columns: 1fr;

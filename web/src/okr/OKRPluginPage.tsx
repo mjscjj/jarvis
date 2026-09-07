@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Card, Collapse, Empty, Flex, Select, Spin, Statistic, Table, Tabs, Tag, Typography } from 'antd'
-import { ReloadOutlined } from '@ant-design/icons'
-import { listRelations, listWorldProgress } from '../api'
-import type { WorldProgress, WorldProgressSignal } from '../types'
+import { Alert, Button, Card, Collapse, Empty, Flex, Modal, Select, Spin, Statistic, Table, Tabs, Tag, Typography } from 'antd'
+import { NodeIndexOutlined, ReloadOutlined } from '@ant-design/icons'
+import { createTask, executeTask, listRelations, listTasks, listWorldProgress } from '../api'
+import type { Task, TaskStatus, WorldProgress, WorldProgressSignal } from '../types'
 import { usePageContext } from '../pageContext'
-import { getGenericOKRBoard, getGenericOKRProgressBoard, listWeeklyReportWeeks } from './emily/api'
-import type { BoardData } from './emily/api'
+import { getGenericOKRBoard, getGenericOKRProgressBoard, listGenericOKRObjectives, listWeeklyReportWeeks } from './emily/api'
+import type { BoardData, ObjectiveManifestData } from './emily/api'
 import type { Entry, Kr, Objective, Point, Status } from './emily/types'
-import { okrRelationTypes, relationsForOKRBoard, type OKRRelationRow } from './relationView'
+import { projectionCoverageForOKRBoard, relationsForOKRBoard, type OKRRelationRow } from './relationView'
+import { projectionTaskInput, projectionTaskStatuses, projectionTaskTitle, reusableProjectionTask } from './projectionTask'
 
 const { Text, Title, Paragraph } = Typography
 
@@ -169,7 +170,7 @@ function StructureView({ board }: { board: BoardData }) {
 }
 
 export default function OKRPluginPage() {
-  const { context, setViewState } = usePageContext()
+  const { context, setSelection, setViewState } = usePageContext()
   const requestedTab = context.view_state.plugin_tab
   const activeTab: PluginTab = requestedTab === 'progress' || requestedTab === 'relations' ? requestedTab : 'structure'
   const [board, setBoard] = useState<BoardData>()
@@ -185,6 +186,9 @@ export default function OKRPluginPage() {
   const [quarterError, setQuarterError] = useState<string>()
   const [progressError, setProgressError] = useState<string>()
   const [relationsError, setRelationsError] = useState<string>()
+  const [projectionTask, setProjectionTask] = useState<Task>()
+  const [projectionStarting, setProjectionStarting] = useState(false)
+  const [manifest, setManifest] = useState<ObjectiveManifestData>()
 
   const loadQuarter = useCallback(async (targetQuarter = '') => {
     setLoading(true)
@@ -213,8 +217,7 @@ export default function OKRPluginPage() {
     setRelations([])
     setRelationsError(undefined)
     try {
-      // One paginated query returns all edges touching an OKR node type.
-      const result = await listRelations({ nodeTypes: okrRelationTypes }, signal)
+      const result = await listRelations({ nodeTypes: ['okr_objective', 'okr_kr', 'okr_point'] }, signal)
       if (signal?.aborted) return
       setRelations(relationsForOKRBoard(result.items, nextBoard.objectives))
     } catch (cause) {
@@ -233,6 +236,18 @@ export default function OKRPluginPage() {
     void loadRelations(board, controller.signal)
     return () => controller.abort()
   }, [board, loadRelations])
+
+  useEffect(() => {
+    if (!quarter) {
+      setManifest(undefined)
+      return
+    }
+    const controller = new AbortController()
+    listGenericOKRObjectives(quarter, controller.signal)
+      .then((value) => { if (!controller.signal.aborted) setManifest(value) })
+      .catch((cause) => { if (!(cause instanceof DOMException && cause.name === 'AbortError')) setRelationsError(errorText(cause)) })
+    return () => controller.abort()
+  }, [quarter, progressReloadRevision])
 
   useEffect(() => {
     if (!quarter || !week) {
@@ -259,12 +274,29 @@ export default function OKRPluginPage() {
     return () => controller.abort()
   }, [quarter, week, progressReloadRevision])
 
+  useEffect(() => {
+    if (!quarter) {
+      setProjectionTask(undefined)
+      return
+    }
+    const controller = new AbortController()
+    listTasks([...projectionTaskStatuses] as TaskStatus[], 1, 100, controller.signal, projectionTaskTitle(quarter))
+      .then((result) => {
+        if (!controller.signal.aborted) setProjectionTask(reusableProjectionTask(result.items, quarter))
+      })
+      .catch((cause) => {
+        if (!(cause instanceof DOMException && cause.name === 'AbortError')) setRelationsError(errorText(cause))
+      })
+    return () => controller.abort()
+  }, [quarter, progressReloadRevision])
+
   const counts = useMemo(() => {
     const objectives = board?.objectives.length ?? 0
     const krs = board?.objectives.flatMap((objective) => objective.krs).length ?? 0
     const points = board?.objectives.flatMap((objective) => objective.krs.flatMap((kr) => kr.points)).length ?? 0
     return { objectives, krs, points }
   }, [board])
+  const coverage = useMemo(() => projectionCoverageForOKRBoard(relations, board?.objectives ?? []), [board, relations])
   const error = [quarterError, progressError, relationsError].filter(Boolean).join('；')
 
   const changeRoute = (patch: Record<string, string>) => setViewState({
@@ -282,12 +314,54 @@ export default function OKRPluginPage() {
     { title: '世界对象', dataIndex: 'world_ref' },
     { title: '置信度', dataIndex: 'confidence', width: 100, render: (value: number | null) => value == null ? '—' : `${Math.round(value * 100)}%` },
   ]
+  const coverageColumns = [
+    { title: 'Objective', dataIndex: 'title' },
+    { title: 'KR', dataIndex: 'krs', width: 80 },
+    { title: '子 KR', dataIndex: 'points', width: 90 },
+    { title: '完整投影', dataIndex: 'relatedNodes', width: 110 },
+    { title: '尚未投影', dataIndex: 'unrelatedNodes', width: 110 },
+  ]
+
+  const openProjectionTask = (task: Pick<Task, 'id' | 'title'>) => {
+    setSelection({ kind: 'task', id: task.id, label: `Task #${task.id} ${task.title}` })
+  }
+
+  const startProjection = async () => {
+    if (!quarter || projectionStarting) return
+    setProjectionStarting(true)
+    setRelationsError(undefined)
+    try {
+      const existing = await listTasks([...projectionTaskStatuses] as TaskStatus[], 1, 100, undefined, projectionTaskTitle(quarter))
+      const reusable = reusableProjectionTask(existing.items, quarter)
+      if (reusable) {
+        setProjectionTask(reusable)
+        openProjectionTask(reusable)
+        return
+      }
+      const created = await createTask(projectionTaskInput(quarter))
+      setProjectionTask({ ...created, source_payload: null, execution_result: null, summary: null, last_progress_at: null, project_id: null, created_at: '', updated_at: '', resolution: null })
+      await executeTask(created.id)
+      openProjectionTask(created as Pick<Task, 'id' | 'title'>)
+    } catch (cause) {
+      setRelationsError(errorText(cause))
+    } finally {
+      setProjectionStarting(false)
+    }
+  }
+
+  const confirmProjection = () => Modal.confirm({
+    title: `投影 ${quarter.replace('-', ' ')} 全部 OKR？`,
+    content: 'Agent 会逐项拆解整个季度：每个 Objective 必须落到 Project，每个 KR 必须落到 KeyMatter，每个子 KR 必须连接 KeyMatter，每次结构化 Owner 都必须落到现实人物并建立负责人关系。任务只写 Jarvis 内部世界模型，不发送消息、不修改正式 Progress，也不生成 WorldProgress。',
+    okText: '创建并执行 Task',
+    cancelText: '取消',
+    onOk: startProjection,
+  })
 
   return (
     <div className="plugin-detail okr-plugin-page">
       <div className="plugin-detail-heading">
         <div>
-          <Title level={3}>OKR</Title>
+          <Title level={3}>OKR 插件</Title>
           <Text type="secondary">通用 Objective、KR、子 KR、正式进展及其与 Jarvis 世界的连接。</Text>
         </div>
         <Button icon={<ReloadOutlined />} loading={loading || progressLoading || relationsLoading} onClick={() => { setProgressReloadRevision((value) => value + 1); void loadQuarter(quarter) }}>重新载入</Button>
@@ -315,6 +389,8 @@ export default function OKRPluginPage() {
         <Card size="small"><Statistic title="Objective" value={counts.objectives} /></Card>
         <Card size="small"><Statistic title="KR" value={counts.krs} /></Card>
         <Card size="small"><Statistic title="子 KR" value={counts.points} /></Card>
+        <Card size="small"><Statistic title="指标" value={manifest?.totals.metrics ?? 0} /></Card>
+        <Card size="small"><Statistic title="Owner 出现项" value={(manifest?.totals.kr_owner_occurrences ?? 0) + (manifest?.totals.point_owner_occurrences ?? 0)} /></Card>
         <Card size="small"><Statistic title="世界关联" value={relations.length} /></Card>
       </Flex>
       <Tabs
@@ -341,8 +417,28 @@ export default function OKRPluginPage() {
           {
             key: 'relations',
             label: '世界关联',
-            children: relationsLoading ? <Spin /> : relations.length === 0 ? <Empty description="尚未建立 OKR 到项目、关键事项或人物的强关系" /> : (
-              <Table<OKRRelationRow> rowKey="id" columns={relationColumns} dataSource={relations} pagination={false} />
+            children: relationsLoading ? <Spin /> : (
+              <Flex vertical gap={16}>
+                <Alert type="info" showIcon message="完整投影要求 Objective → Project、KR → KeyMatter、子 KR → KeyMatter，并把每次结构化 Owner 以已确认 owned_by 关系连接到 Principal 或 Person；任何缺口都算未完成。" />
+                <Flex align="center" justify="space-between" gap={12} wrap>
+                  <Flex gap={12} wrap>
+                    <Card size="small"><Statistic title="Objective → Project" value={coverage.objectives.related} suffix={`/ ${coverage.objectives.total}`} /></Card>
+                    <Card size="small"><Statistic title="KR → KeyMatter" value={coverage.krs.related} suffix={`/ ${coverage.krs.total}`} /></Card>
+                    <Card size="small"><Statistic title="子 KR → KeyMatter" value={coverage.points.related} suffix={`/ ${coverage.points.total}`} /></Card>
+                    <Card size="small"><Statistic title="Owner → 人物" value={coverage.owners.related} suffix={`/ ${coverage.owners.total}`} /></Card>
+                  </Flex>
+                  <Flex gap={8}>
+                    {projectionTask && <Button onClick={() => openProjectionTask(projectionTask)}>查看 Task #{projectionTask.id}</Button>}
+                    <Button type="primary" icon={<NodeIndexOutlined />} loading={projectionStarting} disabled={!quarter} onClick={confirmProjection}>
+                      {projectionTask ? '继续查看整季度投影' : '投影整个季度'}
+                    </Button>
+                  </Flex>
+                </Flex>
+                <Table rowKey="id" size="small" columns={coverageColumns} dataSource={coverage.byObjective} pagination={{ pageSize: 10 }} />
+                {relations.length === 0 ? <Empty description="尚未建立 OKR 到项目、关键事项或人物的强关系" /> : (
+                  <Table<OKRRelationRow> rowKey="id" columns={relationColumns} dataSource={relations} pagination={false} />
+                )}
+              </Flex>
             ),
           },
         ]}

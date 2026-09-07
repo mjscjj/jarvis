@@ -20,8 +20,8 @@ func TestServiceListsAndUpdatesKnownModule(t *testing.T) {
 	if err != nil || len(items) != 2 || items[0].Key != "biz-okr" || len(items[0].Requires) != 1 || items[1].Key != "okr" || !items[1].IsEnabled || items[1].Requires == nil {
 		t.Fatalf("List() items=%+v err=%v", items, err)
 	}
-	if items[0].Name != "OKR" || items[1].Name != "OKR 插件" {
-		t.Fatalf("List() names=(%q, %q), want OKR and OKR 插件", items[0].Name, items[1].Name)
+	if items[0].Name != "Biz OKR" || items[1].Name != "OKR 插件" {
+		t.Fatalf("List() names=(%q, %q), want Biz OKR and OKR 插件", items[0].Name, items[1].Name)
 	}
 	disabled := false
 	updated, err := service.Update(context.Background(), "biz-okr", Input{IsEnabled: &disabled})

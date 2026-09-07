@@ -52,7 +52,7 @@ test('keeps the original four actions and binds each to one current prompt', () 
 
 test('manual action creates an ordinary Agent Task without requiring a schedule', () => {
   const input = manualTaskInput(actionDefinition('remind_missing'))
-  assert.equal(input.title, 'OKR · 周报催填')
+  assert.equal(input.title, 'Biz OKR · 周报催填')
   assert.equal(input.action_type, 'agent_task')
   assert.deepEqual(input.background, {
     module: 'biz-okr',

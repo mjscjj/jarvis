@@ -1,7 +1,7 @@
 # Biz OKR 飞书登录申请的 user scope，一行一个，`#` 起头为注释。
 #
 # 警告：这份清单只表达意图，不构成约束。实测（2026-09-03 复测）飞书 device flow
-# 忽略请求里的 scope 子集，按 Emily Pro 后台已开通的全集签发 token：这里请求
+# 忽略请求里的 scope 子集，按“Jarvis通知机器人”后台已开通的 user scope 全集签发 token：这里请求
 # 85 个且零敏感域，换回来的 token 却带 155 个，含 im、mail、contact、calendar。
 # 真正的生效点是开发者后台的勾选项，详见 docs/design-dual-app-identity.md。
 #
@@ -16,10 +16,11 @@
 # offline_access 换取 refresh_token，缺它 token 两小时后无法续期；
 # profile:user_profile:read 用于登录后确认 token 属于谁。
 #
-# 只能申请 OKR 登录应用 cli_a96a2422f03bdbd7（Emily Pro）已开通的 scope，
+# 只能申请 OKR 登录应用 cli_a96a2422f03bdbd7（Jarvis通知机器人）已开通的 user scope，
 # 申请未开通的会导致授权失败。改动后所有人需要重新登录一次授权新范围。
-# 注意这里的范围属于 Emily Pro，不是 lark-cli 绑定的主应用；两者的已开通
-# 清单互不相干，用 `lark-cli auth scopes` 查到的是主应用的。
+# 注意这里的范围只约束该应用的登录 user token；广播需要的 tenant scopes
+# `im:message:send_as_bot` 与 `im:message:send_multi_users` 由开发者后台和
+# `feishu-broadcast` Skill 核验，不加入本文件。lark-cli 默认 profile 仍是主应用。
 
 offline_access
 profile:user_profile:read

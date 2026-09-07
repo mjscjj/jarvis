@@ -43,7 +43,7 @@ test('weekly share scope resolves OKR Plan and all four weekly pages', () => {
     'weekly-fill',
     'weekly-meeting',
   ])
-  assert.equal(WEEKLY_SHARE_NAV[0].label, 'OKR Plan')
+  assert.equal(WEEKLY_SHARE_NAV[0].label, 'Biz OKR Plan')
   assert.equal(weeklyShareTab('okr-plan'), 'okr-plan')
   assert.equal(weeklyShareWorkspaceTab('okr-plan'), undefined)
   assert.equal(weeklyShareWorkspaceTab('review-fill'), 'review-fill')

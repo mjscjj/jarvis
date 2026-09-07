@@ -251,7 +251,8 @@ func TestRepositoryFeishuMessageSkillDefinesM5SendClosure(t *testing.T) {
 	}
 	skill := string(content)
 	for _, want := range []string{
-		"所有 M5 普通业务消息都使用本 Skill",
+		"所有非广播的 M5 普通业务消息都使用本 Skill",
+		"面向多个独立收件人的系统通知或批量提醒读取 `feishu-broadcast`",
 		"不执行本 Skill 的任何写命令",
 		"jarvis-config show-principal",
 		"不能改读 Task 仓库里的同名文件",
@@ -311,6 +312,53 @@ func TestRepositoryFeishuMessageSkillIsNotExposedToExtract(t *testing.T) {
 	}
 	if !strings.Contains(executeCatalog, "feishu-send-message") {
 		t.Fatalf("execute catalog is missing feishu-send-message:\n%s", executeCatalog)
+	}
+}
+
+func TestRepositoryFeishuBroadcastSkillIsExecuteOnlyAndOwnsDirectDelivery(t *testing.T) {
+	content, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "feishu-broadcast", "SKILL.md"))
+	if err != nil {
+		t.Fatalf("read repository Feishu broadcast skill: %v", err)
+	}
+	skill := string(content)
+	for _, want := range []string{
+		"Jarvis通知机器人",
+		"cli_a96a2422f03bdbd7",
+		"不搜索、复用或创建助手群",
+		"/open-apis/message/v4/batch_send/",
+		"/get_progress",
+		"个性化广播",
+		"im:message:send_multi_users",
+		"union_id",
+		"enterprise_email",
+		"receive_id_type",
+		"open_id` 按飞书 App 隔离",
+	} {
+		if !strings.Contains(skill, want) {
+			t.Fatalf("Feishu broadcast skill missing delivery contract %q:\n%s", want, skill)
+		}
+	}
+
+	service, err := NewService(
+		filepath.Join("..", "..", ".agents", "skills"),
+		filepath.Join("..", "..", "conf", "skills.yaml"),
+	)
+	if err != nil {
+		t.Fatalf("load repository skills: %v", err)
+	}
+	extractCatalog, err := service.Catalog(t.Context(), StageExtract)
+	if err != nil {
+		t.Fatalf("extract Catalog() error = %v", err)
+	}
+	if strings.Contains(extractCatalog, "feishu-broadcast") {
+		t.Fatalf("extract catalog exposes feishu-broadcast:\n%s", extractCatalog)
+	}
+	executeCatalog, err := service.Catalog(t.Context(), StageExecute)
+	if err != nil {
+		t.Fatalf("execute Catalog() error = %v", err)
+	}
+	if !strings.Contains(executeCatalog, "feishu-broadcast") {
+		t.Fatalf("execute catalog is missing feishu-broadcast:\n%s", executeCatalog)
 	}
 }
 

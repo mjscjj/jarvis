@@ -1,201 +1,162 @@
 ---
 name: okr-world-projector
-description: 将已经填写好的 OKR 在 Jarvis 世界模型中运行起来：读取 O、KR、Point、指标和负责人，按证据识别或补充 Project、KeyMatter、Person、Group、Resource 与外部工作项，建立跨模块强关系，并为后续进展巡检准备稳定锚点。用于“把 OKR 跑起来”“把 OKR 拆到或关联到世界模型”“初始化或刷新 OKR 世界映射”；不复制 OKR 真源、不修改正式周进展、不按标题相似度硬绑，也不为每个 OKR 自动创建 Task 或世界实体。
+description: 将已填写的 OKR 完整投影为 Jarvis 业务 Ontology：逐一读取 Objective、KR、Point、Metric 与结构化 Owner，为每个 Objective 建立或复用现实 Project，为每个 KR 建立或复用归属该 Project 的 KeyMatter，让每个 Point 连接到现实 KeyMatter，并把每个 Owner 解析为 Principal/Person 后建立可查询关系。用于“把 OKR 拆到现实模型”“建立完整业务 Ontology”“初始化或刷新整个季度的 OKR 世界投影”；不修改 OKR 真源、正式 Progress 或 WorldProgress，不发送消息或写外部系统。
 module: okr
 ---
 
-# 让填写好的 OKR 在现实世界中运行
+# 把 OKR 完整投影为业务 Ontology
 
-把 OKR 看成目标层，把 Jarvis 看成现实层：OKR 回答“承诺实现什么”，Project、KeyMatter、Person、Group、Resource 和外部工作项回答“现实中由谁、通过什么、在哪里推进”。本 Skill 负责建立和刷新两层之间的稳定连接。
+OKR 是目标层真源，Jarvis 世界模型是现实层真源。本 Skill 不把 OKR 表复制一遍，而是保证每一个目标节点都能落到现实中的“人、项目、关键事项”上，并能从两端查询：
 
-一次执行的完成状态不是“生成了多少节点”，而是：目标结构可解析，重要目标有现实承接，所有强关系有直接证据，未确认项被明确保留，后续进展巡检可以沿关系找到证据。
+```text
+Objective --maps_to--> Project
+KR        --maps_to--> KeyMatter --belongs_to--> Project（由 ProjectID 表达）
+Point     --advances--> KeyMatter
+KR/Point  --owned_by--> Principal 或 Person
+```
+
+同一现实 Project 可以承接多个 Objective；一个 Point 默认推进父 KR 的 KeyMatter，只有它本身确实需要独立长期跟踪时才新建 KeyMatter。因此完整投影不等于按 OKR 行数机械复制世界实体，但每个 O、KR、Point 和 Owner 都必须有现实承接，不能只留下“已审计但未映射”。
 
 ## 硬边界
 
-- OKR 模块是 Objective、KR、Metric、Point、Owner 和正式 Progress 的唯一真源。只通过 `scripts/okr-module-tools` 读取，不直接查询或修改 `okr_workspace_*` 表。
-- 不把 O、KR、Point 复制为 Project、KeyMatter 或 Task；它们直接以 `okr_objective:<id>`、`okr_kr:<id>`、`okr_point:<id>` 参与世界图。
-- 本 Skill 不读取或修改正式周进展，也不生成 WorldProgress；启用 Biz OKR 时可把进展闭环交给 `weekly-report-progress-sync`。
-- 不为了填满图而创建实体。标题相似、同一 Owner、在同一个群出现都只能形成候选，不能单独构成强关系。
-- 不把所有 Owner 批量创建成 Person。OKR 原生 Owner 通过 `open_id` 动态解析；只有对 principal 的长期世界确实重要的人才进入 Person。
-- 不为 OKR 创建常驻 Task。Task 只表示本次 Agent 执行或真实待办。
-- 不向外部系统写入，不发送消息，不改 Meego；本 Skill 只读取证据并维护 Jarvis 内部实体、Page 和关系。
-- 所有写入逐项回读。中途失败立即停止；重跑前先查询现状，不依靠事务、回滚或重复创建。
+- Objective、KR、Metric、Point、Owner 和正式 Progress 的唯一真源是 OKR 模块。只通过 `scripts/okr-module-tools` 读取，不直接访问或修改 `okr_workspace_*` 表。
+- OKR 定义本身就是“该业务承诺、分解和负责人存在”的权威证据；建立 `maps_to`、`advances`、`owned_by` 投影不需要再找一份外部材料。外部材料只用于丰富现实实体当前状态，不能作为拒绝投影的理由。
+- Objective 必须有 Project 承接；KR 必须有 KeyMatter 承接；Point 必须连接到一个 KeyMatter；每个带 `open_id` 的结构化 Owner 必须解析为 Principal 或 Person。
+- 不允许把 `evidence_insufficient`、`no_independent_world_entity`、`dynamic_owner_only` 或“仅在图上显示虚拟节点”作为完整季度的成功结果。无法落地的节点必须使本次执行停在失败或 `needs_human`，并列出准确 ID 和原因。
+- Metric 不单独创建世界实体；它必须完整写入所属 KR 的 KeyMatter Page，作为衡量口径。
+- OKR 原生层级仍由 OKR 模块读取，不写 `contains` 关系；跨层现实投影才写 `entity_relation`。
+- 不创建常驻 Task 表示 O/KR/Point。Task 只记录本次投影执行或真实动作。
+- 不读取或修改正式 Progress，不生成 WorldProgress，不调用 `weekly-report-progress-sync`，不发送消息，不写 Meego 或其他外部系统。
+- 所有创建和关系写入逐项回读。中途失败立即停止；重跑先查询现状并幂等复用，不做事务回滚。
 
-## 关系放在哪里
+## 关系语义
 
-先使用已有真源，只有跨模块强关系才写 `entity_relation`：
-
-| 关系 | 唯一真源 | 本 Skill 的处理 |
-|---|---|---|
-| Objective 包含 KR，KR 包含 Metric/Point | OKR 模块 | 读取时派生，不复制 |
-| KR/Point 的正式 Owner | OKR 模块的结构化 `open_id` | 解析为 Principal/Person 展示，不复制 |
-| KeyMatter 属于 Project | `KeyMatter.ProjectID` | 使用实体字段，不复制 |
-| Group 属于 Project | `Group.ProjectID` | 使用 `update-group` 绑定，不复制 |
-| Resource 属于 Project/Person | ManagedResource 字段 | 使用资源字段，不复制 |
-| Point 明确绑定 Meego WorkItem | 绑定来源自己的稳定 ID | 读取时派生；只有跨来源查询确有需要时才写映射 |
-| OKR 与现实实体的对应、贡献、依赖 | 无共同外键 | 写入 `entity_relation` |
-| Page 正文提到另一个核心世界实体 | Markdown `[名称](type:id)` | 仅作为弱引用，不提升为强关系 |
-
-关系词只从以下七组中选择；只保存事实成立的一个方向，读取层负责反向显示：
+只写事实成立的一个方向，读取层负责反向显示：
 
 ```text
-belongs_to / contains
-owned_by / owns
-participates_in / has_participant
-depends_on / required_by
-advances / advanced_by
-maps_to / mapped_from
-derived_from / produces
+okr_objective --maps_to--> project
+okr_kr        --maps_to--> key_matter
+okr_point     --advances--> key_matter
+okr_kr        --owned_by--> principal|person
+okr_point     --owned_by--> principal|person
 ```
 
-优先使用以下几条主桥：
+若一个 Point 是独立、跨周持续的现实事项，可为它建立单独 KeyMatter，并使用 `okr_point --maps_to--> key_matter`；否则必须 `advances` 父 KR 的 KeyMatter。Project 与 KeyMatter 的归属使用 `KeyMatter.ProjectID`，不复制为 `entity_relation`。
 
-```text
-okr_kr    --maps_to-->  project       # KR 与现实项目有稳定的一一或主承接对应
-okr_point --maps_to-->  key_matter    # Point 与长期现实事项明确对应
-project   --advances--> okr_kr        # 项目确实对 KR 产生贡献，不要求一一对应
-key_matter--advances--> okr_kr        # 事项确实推进 KR
+每条投影关系的 evidence 至少包含：
+
+```json
+{
+  "source": "okr-world-projector",
+  "basis": "OKR 定义中的 Objective/KR/Point/Owner 是本次现实承接关系的权威依据",
+  "refs": ["okr_kr:<id>", "key_matter:<id>"],
+  "quarter": "<YYYY-Qn>",
+  "observed_at": "<RFC3339>"
+}
 ```
 
-不要默认建立 `okr_kr belongs_to project`。`belongs_to` 只表示稳定结构归属；“这个项目帮助实现 KR”应使用 `advances`，“这两者是目标层与现实层的同一承接对象”应使用 `maps_to`。
+定义投影使用 `confidence=1` 和 `confirmed_at`。这只确认结构对应，不断言目标已经完成或当前进展正常。
 
-## 1. 确定运行范围
-
-读取当前周期和完整定义：
+## 1. 冻结完整季度范围
 
 ```bash
 scripts/okr-module-tools scope
-scripts/okr-module-tools board --quarter '<quarter>'
+scripts/okr-module-tools list-objectives --quarter '<quarter>'
+scripts/okr-module-tools projection-audit --quarter '<quarter>'
 ```
 
-整理 O、KR、Metric、Point、Owner 的稳定 ID；Metric 作为判断 KR 的衡量口径，不默认变成独立世界实体。
+整季度模式必须按 manifest 顺序逐个读取：
 
-默认处理用户指定的 O、KR 或当前活跃范围。用户明确要求“运行整个季度”时才遍历全量；数据很大时按 Objective 分批执行，但同一次交付中汇总完整覆盖情况。
+```bash
+scripts/okr-module-tools get-objective --id '<objective_id>'
+```
 
-如果模块未启用、没有季度或没有 OKR，停止并报告真实原因。不要绕过模块 API 查数据库。
+保存 Objective、KR、Point、Metric 和每次 Owner 出现的稳定 ID/`open_id`。`board` 可以浏览，但不能代替 manifest + Objective slice 的全量遍历。模块关闭、季度不存在或 slice 不完整时 fail-fast。
 
-## 2. 读取已有世界，不先创建
+## 2. 建立现实 Project 层
 
-先查 Principal 和现有现实实体：
+每个 Objective 必须恰有至少一条到 Project 的 `maps_to`：
+
+1. 先查已有关系和 Project。
+2. 若已有 Project 确实承接同一业务工作流，直接复用；多个 Objective 可以映射到同一 Project。
+3. 若没有承接对象，依据 Objective 定义创建 Project。Objective 标题在这里是创建现实工作容器的直接业务定义证据，不得再以“标题不是证据”为由跳过。
+4. 新 Project 使用稳定、可读名称；可选 code 必须唯一。`role` 表达 principal 在现实工作中的角色，无法证明 owner 时使用 `participant`；状态按季度和当前事实使用 `planning`、`active` 或 `done`，不得从目标措辞臆造完成。
+5. Project Page 写明承接的季度 Objective 稳定引用、范围、下属 KeyMatter；不复制整段 OKR 正文，不制造进展。
+6. 写 `okr_objective --maps_to--> project` 并从两端回读。
+
+只有拿到一个 Objective 的 Project ID 后，才能处理它的 KR。
+
+## 3. 建立现实 KeyMatter 层
+
+每个 KR 必须恰有一个主 KeyMatter 承接：
+
+1. 先查该 KR 已有关系和现有 KeyMatter。
+2. 已有 KeyMatter 表达同一持续事项时复用；否则以 KR 定义创建新的 KeyMatter。
+3. `ProjectID` 必须指向承接父 Objective 的 Project。若复用 KeyMatter 但 ProjectID 不一致，先核对真实归属；不能静默跨项目。
+4. KeyMatter Page 至少写入：季度与 KR 稳定引用、KR 当前定义、全部 Metric 衡量口径、全部 Point 稳定引用及标题、结构化 Owner 的人物引用。Page 表达定义和当前稳定范围，不把计划写成已完成事实。
+5. 写 `okr_kr --maps_to--> key_matter` 并从两端回读。
+
+世界模型完整保存所有仍成立的 KeyMatter，没有“全库最多 10 个”的容量限制。主动巡视可只关注最近活跃的 10 个，那是注意力窗口，不是 Ontology 存储边界。
+
+## 4. 投影每个 Point
+
+每个 Point 都必须有一条现实承接关系：
+
+- 默认写 `okr_point --advances--> <父 KR 的 KeyMatter>`。
+- 若 Point 明确是一件需要独立长期维护状态、聚合多条证据的现实事项，则创建/复用独立 KeyMatter，归属同一 Project，并写 `maps_to`。
+- Point 标题、稳定 ID 和 Owner 必须出现在承接 KeyMatter Page 中；不能把 131 个 Point 只保留为前端虚拟节点。
+- Point 已有 Meego ID 时仍保留来源原生绑定；它不替代 Point 到现实 KeyMatter 的连接。
+
+## 5. 投影每个 Owner 为现实人物
+
+按 `open_id` 去重处理整个季度全部结构化 Owner：
+
+1. `open_id` 等于 Principal 时复用 `principal:<id>`。
+2. 已有相同 `open_id` 的 Person 时复用，禁止因中英文姓名不同重复建人。
+3. 其他 Owner 全部创建 Person；`open_id` 是稳定业务键，OKR 中的姓名是创建时可用的权威显示名。没有更多资料时允许 department/title 为空，role 使用 `colleague`，不得因为资料不全只留虚拟 Owner。
+4. Person Page 写明其是该季度的结构化 OKR Owner，并列出其负责的 KR/Point 稳定引用；关系本身以 `entity_relation` 为可查询真源。
+5. 对每个 Owner 出现项分别写：`okr_kr|okr_point --owned_by--> principal|person`。
+
+Owner 关系是 OKR 原生责任人在现实人物层的投影，不是第二份可编辑的负责人真源。下次运行若 OKR Owner 改变，必须报告旧投影边；只有当前任务明确包含刷新且新定义直接证明旧边失效时才删除。
+
+## 6. 读取、写入与回读顺序
+
+常用查询：
 
 ```bash
 jarvis-tools get-principal
-jarvis-tools list-projects --keyword '<明确项目代号或名称>' --limit 100
-jarvis-tools list-key-matters --keyword '<明确事项名>' --limit 100
+jarvis-tools list-projects --limit 100
+jarvis-tools list-key-matters --limit 100
+jarvis-tools list-persons --limit 100
 jarvis-tools get-person --open-id '<owner_open_id>'
-jarvis-tools list-groups --keyword '<明确项目或群名>' --limit 100
-jarvis-tools query-resources --keyword '<明确项目、文档或仓库名>' --limit 100
 jarvis-tools resolve-world-node --type '<okr_objective|okr_kr|okr_point>' --id '<id>'
-jarvis-tools list-relations --node-type '<okr_objective|okr_kr|okr_point>' --node-id '<id>' --limit 100
+jarvis-tools list-relations --node-type '<okr_objective|okr_kr|okr_point>' --node-id '<id>' --limit 200
 ```
 
-需要判断当前状态时，再按候选实体读取 `get-page`、`list-facts`、`query-messages` 或具体资源。先从已有关系、明确项目代号、稳定 URL/ID 和 Page 引用下钻；不要从全租户宽泛搜索开始。
+`resolve-world-node` 只从所属模块读取节点，不复制节点或推断关系；`list-relations --node-type/--node-id` 一次返回该节点的双向一跳邻域。写入使用 `create-project`、`create-key-matter`、`create-person`、`update-page` 和 `create-relation`。payload 以各命令 `--help` 与 API 校验为准。每次创建后立即读取真实 ID；Page 使用 CAS；关系按五元组幂等 upsert，并从节点的一跳邻域回读。
 
-将每个待处理 KR 整理成一份工作表：
+Group 和 Resource 不是全量完成门槛。只有已有证据能把群、文档、仓库或外部工作项稳定绑定到 Project/KeyMatter 时才补充；不得因缺少这些可选实体阻塞人、项目、关键事项三层完整性。
 
-```text
-OKR 节点 | 正式 Owner | 候选 Project | 候选 KeyMatter | 群/资源/外部工作项 | 证据 | 决定
-```
+## 7. 整季度完成协议
 
-`决定` 只允许：复用已有实体、创建现实实体、建立/刷新关系、保留未确认、无须映射。
-
-## 3. 识别现实承接对象
-
-### Principal 与 Person
-
-- Owner `open_id` 等于 Principal 时解析为 `principal:<id>`，不要再创建同名 Person。
-- 已存在相同 `open_id` 的 Person 时复用；姓名不同不创建第二个人。
-- 只有长期协作、后续需要按人查询或其 Page 会持续维护时才创建 Person。单纯出现在 Owner 列表中不够。
-- OKR Owner 表示正式责任；现实中的参与使用 `participates_in`。不要因为是 Owner 就自动断言参与了所有关联 Project/KeyMatter。
-
-### Project
-
-仅当材料表明存在跨周持续、有明确边界的现实项目时创建或复用 Project。Objective/KR 标题本身不是项目证明。优先使用明确项目代号、权威文档、已有群绑定、稳定仓库或用户确认作为证据。
-
-### KeyMatter
-
-仅当某件事需要跨多次动作持续记忆、检查状态或承接多个证据时创建 KeyMatter。Point 是目标拆解，KeyMatter 是现实事项；两者即使标题相同也不是同一条记录。短期动作留给 Task，进展判断留给 WorldProgress。
-
-### Group
-
-Group 由采集层发现，本 Skill 不创建群。找到明确项目群后，先用 `get-group --chat-id` 读取完整记录，再使用 `update-group` 将其 `ProjectID` 指向现实 Project。`update-group` 是完整替换而不是 patch，payload 必须显式携带并默认原样保留 `project_id`、`related_group`、`pinned`、`include_in_memory`、`is_key_group` 五个控制字段；只有当前任务和证据明确要求时才改变监听控制位。写完再次 `get-group` 回读。群里讨论过某个 KR 只在 Page 中用普通文本记录 OKR 稳定引用；仅当存在额外强语义且确需查询时才写 `entity_relation`。
-
-### Resource
-
-只有后续会反复使用的权威文档、仓库、看板或链接才创建 ManagedResource，并优先使用其 `ProjectID`、`PersonID` 或 `link_principal` 字段。普通消息附件不升级为长期资源。
-
-### Meego 和其它插件对象
-
-- 若 Point 已带稳定 `meego_work_item_id`，将其作为来源原生绑定读取，不再复制一条同义边。
-- 若工作项来自独立插件查询、没有来源原生绑定且确实需要跨来源检索，可使用 `meego_work_item:<stable-id>` 作为虚拟节点，与 Point 或 KeyMatter 建 `maps_to`；只有插件能够解析该引用时才建立。
-- Meego WorkItem 不等于 KeyMatter。只有它确实代表值得长期跟踪的现实事项时才创建 KeyMatter。
-- 其它插件实体使用相同原则：来源插件拥有对象与状态，Jarvis 只保存必要的世界实体和跨模块强关系。
-
-## 4. 写入最小现实骨架
-
-确认不存在可复用实体后，才调用 `create-project`、`create-key-matter`、`create-person` 或 `create-resource`。具体 payload 以各命令当前 `--help` 和 API 校验为准，不在 Skill 中复制易漂移字段清单。每次创建后立即用对应 `get-*` 回读，拿真实 ID 再建立下一条连接。
-
-为新建或确认的 Project、KeyMatter、Person、Group、Resource 写最小长期 Page：第一行说明它是什么，正文保留当前稳定范围、明确责任和 OKR 引用，例如：
-
-```markdown
-这是承接 OKR「提升交付效率」（okr_kr:kr_123）的长期项目。
-
-- 当前范围：……
-- 关键事项：[交付链路改造](key_matter:71)
-- 主要讨论空间：[项目核心群](group:8)
-```
-
-当前 Page 解析器只把 `principal`、`person`、`project`、`key_matter`、`group`、`resource`、`task`、`todo`、`fact` 加正整数 ID 的 Markdown 链接识别为叙述性弱引用；`okr_kr:kr_123` 目前只是供人和 Agent 阅读的普通文本标识，不会形成 backlink。OKR 与现实实体的可查询连接必须写入 `entity_relation`。不要在 Page 中写尚未发生的进展，也不要把 OKR 定义复制成长篇摘要。更新 Page 前先 `get-page`，使用 CAS 写入；冲突时重新读取并合并。
-
-## 5. 建立有证据的强关系
-
-每条新边至少记录：本 Skill 来源、直接依据、证据引用或稳定 ID、观察时间。`confidence` 由证据质量决定；只有已经确认的关系才设置 `confirmed_at`。
+每完成一个 Objective，记录其 Project、全部 KR KeyMatter、Point 关系和 Owner 关系计数。最终必须再次运行：
 
 ```bash
-jarvis-tools create-relation --payload - <<'JSON'
-{
-  "source_type": "okr_point",
-  "source_id": "<point_id>",
-  "relation_type": "maps_to",
-  "target_type": "key_matter",
-  "target_id": "<key_matter_id>",
-  "evidence": {
-    "source": "okr-world-projector",
-    "basis": "<为什么可以确认对应>",
-    "refs": ["<稳定证据引用>"],
-    "observed_at": "<RFC3339>"
-  },
-  "confidence": 1,
-  "confirmed_at": "<RFC3339>"
-}
-JSON
+scripts/okr-module-tools projection-audit --quarter '<quarter>'
 ```
 
-然后从任一端一次读取双向一跳邻域，确认新边可见：
+成功必须同时满足：
 
-```bash
-jarvis-tools list-relations --node-type okr_point --node-id '<point_id>' --limit 100
-```
+- Objective 关系覆盖 = manifest Objective 总数；
+- KR 关系覆盖 = manifest KR 总数；
+- Point 关系覆盖 = manifest Point 总数；
+- 每个带 `open_id` 的 KR/Point Owner 出现项都有 `owned_by` 到 Principal/Person；
+- 每个唯一 Owner `open_id` 都能从世界模型解析；
+- 每个 KR 的 KeyMatter 归属父 Objective 的 Project；
+- 每个 KR 的全部 Metric 和 Point 已写入承接 KeyMatter Page；
+- 新增/复用实体和关系均已回读；不存在孤儿关系；
+- 没有修改正式 Progress、生成 WorldProgress、发送消息或产生外部 effect。
 
-相同五元组会刷新证据，不应产生重复边。没有稳定证据时不要写“低置信度占位边”，在结果中列为未确认候选即可。不能仅因本轮没找到关系就删除旧边；只有直接证据确认关系已失效且当前任务明确包含刷新时，才删除并记录依据。
+任何一项未满足都不能报告“整季度投影完成”。失败结果必须列出未覆盖的稳定 ID，供同一任务续跑。
 
-## 6. 把 OKR 接入持续运行
-
-关系投影完成后，按用户目标选择：
-
-- 只要求映射、拆解或初始化：到此结束，报告后续巡检尚未启动。
-- 要求“把 OKR 跑起来”或立即看现实进展：先尝试 `jarvis-tools get-skill --name weekly-report-progress-sync`。它属于可选的 `biz-okr` 模块；能读取时按其正文执行一次，由它读取人工正式 Progress、Meego/消息等证据并维护 Fact、Page 和 O/KR/Point 的 WorldProgress。因模块关闭而不可用时，关系投影仍然成功，只报告当前未启用 Biz 证据适配器，因此没有生成新的 WorldProgress。其它读取错误按真实错误停止，不伪装成模块关闭。
-- 要求持续运行：只有 `weekly-report-progress-sync` 可用时，才用 `list-scheduled-tasks` 查找既有的 OKR 进展巡检。用户已给出周期时才创建或更新 ScheduledTask；没有周期时不猜测，报告需要配置执行频率。不要重复创建同名 active 任务。
-
-关系投影与进展巡检必须保持两个独立职责：稳定定义或现实承接变化时重跑本 Skill；日常变化由进展巡检处理。投影失败不回滚 OKR，也不阻塞人填写正式 Progress。
-
-## 完成检查
-
-- 已回读本轮范围内全部 O、KR、Point 和结构化 Owner，且没有直查模块数据库。
-- OKR 原生层级和 Owner 没有复制到 `entity_relation`。
-- 创建的每个 Project、KeyMatter、Person 和 Resource 都代表独立现实对象，而不是为 OKR 节点凑数。
-- Group 使用已有发现记录和 `ProjectID`，没有由本 Skill 创建。
-- 每条强关系都有直接依据并从两端回读；未知项没有被强绑。
-- Page 只对当前解析器支持的核心实体使用 `[名称](type:id)` 弱引用；OKR 稳定引用使用普通文本，并由 `entity_relation` 提供机器可查询连接。
-- 没有修改正式 Progress、外部系统或发送消息，也没有为 O/KR/Point 创建常驻 Task。
-- 交付结果包含：处理范围、复用/创建实体、建立/刷新关系、群和资源绑定、外部对象覆盖、未确认候选、证据缺口，以及进展巡检是否已执行或调度。
+最终输出使用宽松 JSON `schema=okr_world_projection_result.v2`，至少包含 quarter、manifest totals、Project/KR KeyMatter/Person 的复用与创建、Objective/KR/Point/Owner 关系计数、未覆盖 ID、孤儿关系和最终机械覆盖；不能再输出 `no_independent_world_entity`、`evidence_insufficient` 或 `dynamic_owner_only` 作为成功处置。

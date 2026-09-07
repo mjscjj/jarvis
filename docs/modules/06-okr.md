@@ -19,12 +19,12 @@ Jarvis 世界模型
 ```
 
 - `okr` 拥有 Objective、KR、Metric、Point、结构化负责人、周次、Weekly KR Core 和正式 Progress。
-- `biz-okr` 拥有标签、OKR Plan、Preview/Review、周报业务展示、评论、评分、Follow-up、催填、Meego、飞书页面身份和业务 Agent 编排。
-- 当前完整业务页面显示为 `OKR`，内部模块 key 仍为 `biz-okr`。启用通用 `okr` 后，左侧“插件”下出现独立 `OKR` 页面，展示通用结构、正式进展与 Jarvis 世界进展对照、跨世界关系；关系列表同时读取以 O/KR/Point 为 source 和 target 的边，并只展示当前季度节点。它不承载 Biz 标签、Plan、Review、评论或评分。
+- `biz-okr` 拥有标签、Biz OKR Plan、Preview/Review、周报业务展示、评论、评分、Follow-up、催填、Meego、飞书页面身份和业务 Agent 编排。
+- 当前完整业务页面显示为 `Biz OKR`，内部模块 key 仍为 `biz-okr`。启用通用 `okr` 后，左侧“插件”下出现独立 `OKR 插件` 页面，展示通用结构、正式进展与 Jarvis 世界进展对照、跨世界关系；关系列表同时读取以 O/KR/Point 为 source 和 target 的边，并只展示当前季度节点。它不承载 Biz 标签、Plan、Review、评论或评分。
 - 两个模块继续复用 `internal/okrworkspace/`、`data/okr/okr.db` 和既有 `okr_workspace_*` 表。本次拆分没有搬库、改表名或复制历史数据。
 - `internal/plugin` 仍只负责 Codebase、Meego、Oncall 等外部线索采集插件；OKR 不进入这套采集器运行时。
 
-模块注册和依赖的代码真源是 `internal/appmodule/module.go`，仓库默认开关是 `conf/modules.yaml`。插件管理页用一张目录同时展示通用 `OKR` 与 Codebase、Meego、Oncall；启用后都在左侧“插件”下出现自己的页面。底层仍按能力区分：OKR 复用 `appmodule` 的业务生命周期，后三者使用 `internal/plugin` 的授权、调度和 Clue 采集运行时。`biz-okr` 是依赖 OKR 的独立业务应用，用户可见名称为 `OKR`，在左侧有自己的入口，并在系统设置中管理启停。`biz-okr=on, okr=off` 是非法组合，会因依赖缺失而失败；关闭模块不会删除数据。旧配置键 `agency-okr` 会在启动时原子迁移为 `biz-okr`。
+模块注册和依赖的代码真源是 `internal/appmodule/module.go`，仓库默认开关是 `conf/modules.yaml`。插件管理页用一张目录同时展示通用 `OKR 插件` 与 Codebase、Meego、Oncall；启用后都在左侧“插件”下出现自己的页面。底层仍按能力区分：OKR 复用 `appmodule` 的业务生命周期，后三者使用 `internal/plugin` 的授权、调度和 Clue 采集运行时。`biz-okr` 是依赖 OKR 插件的独立业务应用，用户可见名称为 `Biz OKR`，在左侧有自己的入口，并在系统设置中管理启停。`biz-okr=on, okr=off` 是非法组合，会因依赖缺失而失败；关闭模块不会删除数据。旧配置键 `agency-okr` 会在启动时原子迁移为 `biz-okr`。
 
 ## 数据所有权
 
@@ -55,7 +55,7 @@ Jarvis 世界模型
 
 - API 前缀：`/api/biz-okr/*`。
 - 原子工具：`scripts/biz-okr-tools`。
-- 页面入口：`web/src/modules/registry.tsx` 注册的 `OKR`（内部 key 为 `biz-okr`），复用当前 `web/src/okr/` 页面实现。
+- 页面入口：`web/src/modules/registry.tsx` 注册的 `Biz OKR`（内部 key 为 `biz-okr`），复用当前 `web/src/okr/` 页面实现。
 - Biz 组合视图读取通用 OKR 和正式 Progress，再叠加标签、评分、评论与 Meego 信息；它不是第二份 OKR 真源。
 - Review 的结构化待跟进事项支持 `not_started`、`in_progress`、`done`、`abandoned` 四种状态；Review 会议页只开放状态编辑，其余字段保持只读。
 - 正式 Progress 的写入仍调用 `/api/okr/*`，写完再回读 Biz 组合视图，防止页面本地状态丢失 Biz 字段。
@@ -72,6 +72,8 @@ Jarvis 世界模型
 | `okr-agent-orchestrator` | `biz-okr` | 根据可编辑业务 Prompt 编排标签、Plan、Review 和报告动作 |
 | `weekly-report-progress-sync` | `biz-okr` | 调查 Meego/飞书证据并维护世界模型，不自动提交正式进展 |
 | `weekly-report-reminder` | `biz-okr` | 生成催填快照并提醒真实负责人 |
+
+周报催填的收件人判断和个性化文案仍由 Biz OKR Prompt/Skill 所有；实际外发统一调用无模块门禁的 `feishu-broadcast` Skill，由“Jarvis通知机器人”直接私聊负责人并返回逐人送达回执，不再创建或维护 OKR 催填助手群。
 
 Objective→KR、KR→Metric/Point 和 Owner 等 OKR 内部关系由 OKR 原生结构派生，不复制进 `EntityRelation`。只有 OKR 到 Project、KeyMatter、Resource 等跨模块、有证据的强关系才进入通用关系存储。
 

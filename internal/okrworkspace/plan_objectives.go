@@ -37,11 +37,11 @@ func (s *Service) CreatePlanObjective(ctx context.Context, planID string, object
 		}
 		return PlanView{}, fmt.Errorf("get plan for objective creation: %w", err)
 	}
-	normalized, err := normalizePlanContent(PlanContentView{Objectives: []PlanObjectiveView{objective}})
+	normalized, err := normalizePlanObjectives([]PlanObjectiveView{objective})
 	if err != nil {
 		return PlanView{}, err
 	}
-	objective = normalized.Objectives[0]
+	objective = normalized[0]
 	if objective.ID == "" {
 		return PlanView{}, fmt.Errorf("objective id is required")
 	}
@@ -84,11 +84,11 @@ func (s *Service) UpdatePlanObjective(ctx context.Context, planID, objectiveID s
 		return PlanView{}, fmt.Errorf("expected_version must be non-negative")
 	}
 	input.Objective.ID = objectiveID
-	normalized, err := normalizePlanContent(PlanContentView{Objectives: []PlanObjectiveView{input.Objective}})
+	normalized, err := normalizePlanObjectives([]PlanObjectiveView{input.Objective})
 	if err != nil {
 		return PlanView{}, err
 	}
-	objective := normalized.Objectives[0]
+	objective := normalized[0]
 	current, err := s.planObjective(ctx, planID, objectiveID)
 	if err != nil {
 		return PlanView{}, err
@@ -167,16 +167,7 @@ func (s *Service) ReorderPlanObjectives(ctx context.Context, planID string, ids 
 }
 
 func (s *Service) bumpPlan(ctx context.Context, planID, actor string) error {
-	content, err := s.planContentRows(ctx, planID)
-	if err != nil {
-		return err
-	}
-	encoded, err := encodePlanContent(content)
-	if err != nil {
-		return err
-	}
 	updates := map[string]any{"version": gorm.Expr("version + 1"), "updated_at": time.Now().UTC()}
-	updates["content"] = encoded
 	if strings.TrimSpace(actor) != "" {
 		updates["updated_by"] = strings.TrimSpace(actor)
 	}

@@ -66,7 +66,7 @@ func TestRepositoryWeeklyReportReminderTemplateListsReviewIssues(t *testing.T) {
 	}
 	template := string(content)
 	for _, placeholder := range []string{
-		"{{owner_mention}}",
+		"{{owner_name}}",
 		"{{missing_progress_section}}",
 		"{{missing_core_section}}",
 		"{{missing_score_section}}",
@@ -80,9 +80,27 @@ func TestRepositoryWeeklyReportReminderTemplateListsReviewIssues(t *testing.T) {
 			t.Errorf("reminder template missing review issue placeholder %s", placeholder)
 		}
 	}
-	for _, unavailable := range []string{"{{owner_name}}", "{{missing_items}}", "{{due_at}}", "\n同步："} {
+	for _, unavailable := range []string{"{{owner_mention}}", "{{missing_items}}", "{{due_at}}", "\n同步："} {
 		if strings.Contains(template, unavailable) {
 			t.Errorf("reminder template contains unsupported content %s", unavailable)
+		}
+	}
+}
+
+func TestOKRWeeklyReminderUsesBroadcastDelivery(t *testing.T) {
+	content, err := os.ReadFile(filepath.Join("..", "..", "conf", "prompts", "okr-agent-weekly-reminder.md"))
+	if err != nil {
+		t.Fatalf("read OKR weekly reminder prompt: %v", err)
+	}
+	prompt := string(content)
+	for _, want := range []string{"`feishu-broadcast` Skill", "Jarvis通知机器人", "企业邮箱", "不得搜索、复用或创建助手群"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("OKR weekly reminder prompt missing broadcast contract %q:\n%s", want, prompt)
+		}
+	}
+	for _, obsolete := range []string{"okr_review_reminder_channel_for", "`feishu-send-message` Skill", "群复用/新建数量"} {
+		if strings.Contains(prompt, obsolete) {
+			t.Fatalf("OKR weekly reminder prompt still contains assistant-group delivery %q:\n%s", obsolete, prompt)
 		}
 	}
 }
