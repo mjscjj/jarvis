@@ -154,7 +154,7 @@ func TestPromptReportsUnusableFeishuCredentialsWithoutFailingTheTurn(t *testing.
 	if err != nil {
 		t.Fatalf("buildPrompt() error = %v", err)
 	}
-	for _, want := range []string{"ou_alice", "token expired, sign in again", "重新在 OKR 页面登录"} {
+	for _, want := range []string{"ou_alice", "token expired, sign in again", "重新登录"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt is missing %q:\n%s", want, prompt)
 		}
@@ -217,7 +217,7 @@ func TestBuildPromptInjectsToolsAndContext(t *testing.T) {
 	}
 }
 
-func TestBuildPromptInjectsLatestOKRPrinciplesOnlyOnOKRPage(t *testing.T) {
+func TestBuildPromptTreatsOKRPageAsContextWithoutInjectingWorkflow(t *testing.T) {
 	t.Parallel()
 	svc := newTestService(t)
 	prompt, err := svc.buildPrompt(t.Context(), Request{
@@ -230,18 +230,15 @@ func TestBuildPromptInjectsLatestOKRPrinciplesOnlyOnOKRPage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"BEGIN_OKR_AGENT_PRINCIPLES", "OKR 原子工具与权限原则", `"point_id":"point-1"`} {
+	for _, expected := range []string{"当前所在页面：okr", `"point_id":"point-1"`} {
 		if !strings.Contains(prompt, expected) {
 			t.Fatalf("OKR prompt missing %q\n%s", expected, prompt)
 		}
 	}
-
-	nonOKR, err := svc.buildPrompt(t.Context(), Request{Message: "看看任务", PageContext: &PageContext{ActiveKey: "tasks"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(nonOKR, "BEGIN_OKR_AGENT_PRINCIPLES") {
-		t.Fatalf("non-OKR prompt leaked OKR principles\n%s", nonOKR)
+	for _, forbidden := range []string{"BEGIN_OKR_AGENT_PRINCIPLES", "OKR 原子工具与权限原则", "必须使用 $okr-agent-orchestrator"} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("OKR page injected workflow %q\n%s", forbidden, prompt)
+		}
 	}
 }
 
@@ -289,8 +286,8 @@ func TestBuildPromptInjectsSharedMemory(t *testing.T) {
 	}
 }
 
-// 多轮 followup 不再灌系统指引（resume 已带历史），只带 page_context + 消息。
-func TestBuildFollowupPromptOmitsSystemGuidance(t *testing.T) {
+// 多轮 followup 不再重复系统指引和完整业务快照，只带会变化的页面状态、身份与消息。
+func TestBuildFollowupPromptKeepsOnlyChangingContext(t *testing.T) {
 	t.Parallel()
 	svc := newTestService(t)
 	prompt, err := svc.buildFollowupPrompt(t.Context(), Request{
@@ -304,8 +301,13 @@ func TestBuildFollowupPromptOmitsSystemGuidance(t *testing.T) {
 	if !strings.Contains(prompt, "那第一个呢？") {
 		t.Fatalf("followup prompt missing user message\n%s", prompt)
 	}
-	if !strings.Contains(prompt, "BEGIN_JARVIS_CONTEXT") {
-		t.Fatalf("followup prompt missing refreshed Jarvis context\n%s", prompt)
+	if !strings.Contains(prompt, "当前所在页面：todos") {
+		t.Fatalf("followup prompt missing latest page context\n%s", prompt)
+	}
+	for _, forbidden := range []string{"BEGIN_JARVIS_CONTEXT", "BEGIN_OKR_AGENT_PRINCIPLES", "BEGIN_AVAILABLE_TOOLS", "安全约束"} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("followup prompt repeated %q\n%s", forbidden, prompt)
+		}
 	}
 }
 

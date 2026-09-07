@@ -287,7 +287,7 @@ func (s *Service) Threads(limit int) (ThreadList, error) {
 	return s.history.List(limit)
 }
 
-// buildPrompt 组装首轮 prompt：系统指引（末尾追加可信共享记忆）+ page_context + 用户消息。
+// buildPrompt 组装首轮 prompt：系统指引、工具目录、可信业务上下文、page_context 与用户消息。
 func (s *Service) buildPrompt(ctx context.Context, req Request) (string, error) {
 	sharedMemory, err := s.sharedMem.Text(ctx)
 	if err != nil {
@@ -319,12 +319,6 @@ func (s *Service) buildPrompt(ctx context.Context, req Request) (string, error) 
 		b.WriteString("\n\n")
 		b.WriteString(ctxBlock)
 	}
-	if okrBlock, err := s.okrPrinciplesBlock(ctx, req.PageContext); err != nil {
-		return "", err
-	} else if okrBlock != "" {
-		b.WriteString("\n\n")
-		b.WriteString(okrBlock)
-	}
 	if identityBlock := s.feishuIdentityBlock(ctx, req); identityBlock != "" {
 		b.WriteString("\n\n")
 		b.WriteString(identityBlock)
@@ -334,24 +328,12 @@ func (s *Service) buildPrompt(ctx context.Context, req Request) (string, error) 
 	return b.String(), nil
 }
 
-// buildFollowupPrompt 组装多轮 prompt：resume 已带会话历史，重新附上最新业务上下文、
-// page_context 与用户消息；业务状态和页面选择每轮都可能变化。
+// buildFollowupPrompt 组装多轮 prompt：resume 已带首轮系统指引和业务快照，后续只附上
+// 会变化的页面状态、飞书登录身份与用户消息。需要最新业务事实时由 Agent 按需查询。
 func (s *Service) buildFollowupPrompt(ctx context.Context, req Request) (string, error) {
 	var b strings.Builder
-	contextBlock, err := s.contextBlock(ctx, req.PageContext)
-	if err != nil {
-		return "", err
-	}
-	b.WriteString(contextBlock)
-	b.WriteString("\n\n")
 	if ctxBlock := s.pageContextBlock(req.PageContext); ctxBlock != "" {
 		b.WriteString(ctxBlock)
-		b.WriteString("\n\n")
-	}
-	if okrBlock, err := s.okrPrinciplesBlock(ctx, req.PageContext); err != nil {
-		return "", err
-	} else if okrBlock != "" {
-		b.WriteString(okrBlock)
 		b.WriteString("\n\n")
 	}
 	// 每轮都重发：token 会续期，且 resume 时首轮的路径说明可能已滚出上下文。
@@ -397,28 +379,15 @@ func (s *Service) feishuIdentityBlock(ctx context.Context, req Request) string {
 	if err != nil {
 		b.WriteString(fmt.Sprintf("- open_id：%s\n", openID))
 		b.WriteString(fmt.Sprintf("- 该用户的飞书凭证当前不可用：%v\n", err))
-		b.WriteString("- 需要以该用户身份读取飞书内容时，先告诉他重新在 OKR 页面登录一次飞书；不要改用其它身份替他访问。\n")
+		b.WriteString("- 需要访问飞书时请用户重新登录；不要改用其它身份替他访问。\n")
 		return strings.TrimSpace(b.String())
 	}
 	b.WriteString(fmt.Sprintf("- 姓名：%s\n", identity.Name))
 	b.WriteString(fmt.Sprintf("- open_id：%s\n", identity.OpenID))
-	b.WriteString(fmt.Sprintf("- access token 文件：%s（字段 access_token，本轮已续期）\n", identity.TokenPath))
-	b.WriteString("- 他扔进来的飞书文档、表格、知识库、消息，优先用**他自己**的 token 读：他本人有权限的内容，Jarvis 默认身份往往读不到，这时不需要走申请权限。\n")
-	b.WriteString("- 用法是给**单条**命令加环境变量前缀：\n")
+	b.WriteString(fmt.Sprintf("- 本轮 token：%s（字段 access_token）\n", identity.TokenPath))
+	b.WriteString("- 访问该用户的飞书内容时，仅给单条命令加此前缀，不要 export：\n")
 	b.WriteString(fmt.Sprintf("  `LARKSUITE_CLI_APP_ID=%s LARKSUITE_CLI_USER_ACCESS_TOKEN=\"$(jq -r .access_token %s)\" lark-cli <子命令> --as user`\n", identity.AppID, identity.TokenPath))
-	b.WriteString("- 用他的身份仍然读不到时，才考虑 `drive +apply-permission` 向 owner 申请，并先告知用户会给 owner 发申请卡片。\n")
 	return strings.TrimSpace(b.String())
-}
-
-func (s *Service) okrPrinciplesBlock(ctx context.Context, pageContext *PageContext) (string, error) {
-	if pageContext == nil || strings.TrimSpace(pageContext.ActiveKey) != "okr" {
-		return "", nil
-	}
-	principles, err := s.prompts.Content(ctx, textstore.OKRAgentPrinciplesKey)
-	if err != nil {
-		return "", fmt.Errorf("read OKR Agent principles: %w", err)
-	}
-	return "## OKR Agent 共用原则（可信策略）\nBEGIN_OKR_AGENT_PRINCIPLES\n" + principles + "\nEND_OKR_AGENT_PRINCIPLES", nil
 }
 
 // pageContextBlock 把 page_context 渲染成 prompt 片段。无上下文返回空串。

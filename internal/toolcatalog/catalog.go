@@ -28,7 +28,9 @@ func Block(stage string) (string, error) {
 		// The advisory review reaches only OKR data; it has no reason to touch
 		// Feishu, the world model or code, so it is not given that vocabulary.
 		return okrReviewBlock(), nil
-	case StageExtract, StageExecute, StageChat, StageFactEngine, StageProactive, StageMeetingSweep, StageMorningBrief:
+	case StageChat:
+		return chatBlock(), nil
+	case StageExtract, StageExecute, StageFactEngine, StageProactive, StageMeetingSweep, StageMorningBrief:
 	default:
 		return "", fmt.Errorf("unknown tool catalog stage %q", stage)
 	}
@@ -55,6 +57,23 @@ func Block(stage string) (string, error) {
 	}
 	lines = append(lines, "END_AVAILABLE_TOOLS")
 	return strings.Join(lines, "\n"), nil
+}
+
+// chatBlock keeps interactive conversation responsive. Detailed workflows live
+// in each tool's help and matching Skill, so the entire execution-stage manual
+// does not need to be repeated in every new chat.
+func chatBlock() string {
+	lines := []string{
+		"BEGIN_AVAILABLE_TOOLS（按需发现，不要先介绍工具。）",
+		"当前阶段：" + StageChat,
+		"- jarvis-tools：查询或维护 Jarvis 数据；先用 `jarvis-tools --help`，再查看所需子命令。",
+		"- lark-cli：操作飞书；先用 `lark-cli skills list/read` 匹配 Skill，单 API 参数用 `lark-cli schema`。用户身份和 token 前缀由本轮身份块提供。",
+		"- bytedcli：查询内部研发信息；用 `bytedcli --json --all-help` 发现命令。",
+		"- git：查询或操作本地代码仓库；同时遵守仓库 AGENTS.md。",
+		"- 部署统一使用 `./scripts/jarvis-deploy --skip-pull`。仅改主服务、前端或配置时加 `--skip-chat-restart`；改到对话服务需整体重启时，先告知用户本轮会中断。",
+		"END_AVAILABLE_TOOLS",
+	}
+	return strings.Join(lines, "\n")
 }
 
 // okrReviewBlock describes the split between the generic OKR and Biz OKR

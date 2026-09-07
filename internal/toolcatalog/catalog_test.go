@@ -5,10 +5,10 @@ import (
 	"testing"
 )
 
-func TestEveryStageExposesTheSameMachineCapabilities(t *testing.T) {
+func TestBackgroundStagesExposeTheSameMachineCapabilities(t *testing.T) {
 	t.Parallel()
 	for _, stage := range []string{
-		StageExtract, StageExecute, StageChat, StageFactEngine,
+		StageExtract, StageExecute, StageFactEngine,
 		StageProactive, StageMeetingSweep, StageMorningBrief,
 	} {
 		block, err := Block(stage)
@@ -26,6 +26,30 @@ func TestEveryStageExposesTheSameMachineCapabilities(t *testing.T) {
 			if !strings.Contains(block, required) {
 				t.Fatalf("Block(%q) missing %q:\n%s", stage, required, block)
 			}
+		}
+	}
+}
+
+func TestChatCatalogIsConciseAndPointsToDiscovery(t *testing.T) {
+	t.Parallel()
+	block, err := Block(StageChat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		"jarvis-tools --help", "lark-cli skills list/read", "bytedcli --json --all-help",
+		"git", "AGENTS.md", "jarvis-deploy --skip-pull", "skip-chat-restart",
+	} {
+		if !strings.Contains(block, required) {
+			t.Fatalf("chat block missing %q:\n%s", required, block)
+		}
+	}
+	for _, verbose := range []string{
+		"同一套工具能力", "query-captured-resources", "create-world-progress",
+		"append-shared-memory", "JARVIS_AGENT_STAGE=proactive",
+	} {
+		if strings.Contains(block, verbose) {
+			t.Fatalf("chat block retained execution manual %q:\n%s", verbose, block)
 		}
 	}
 }
