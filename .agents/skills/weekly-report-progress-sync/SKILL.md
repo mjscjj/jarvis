@@ -25,11 +25,10 @@ module: biz-okr
 ```bash
 scripts/biz-okr-tools scope
 scripts/biz-okr-tools board --quarter <quarter> --week <week>
-jarvis-tools list-relations --source-type okr_kr --source-id <kr_id> --limit 100
-jarvis-tools list-relations --target-type okr_kr --target-id <kr_id> --limit 100
+jarvis-tools list-relations --node-type okr_kr --node-id <kr_id> --limit 100
 ```
 
-关系只存事实成立的一个方向，因此对 O、KR、Point 都要按 source 和 target 两端读取，再沿 `maps_to`、`advances` 等已确认关系寻找现实锚点。没有已确认关系时，读取 `okr-world-projector` Skill 建立或审阅映射；锚点不明确时跳过并报告，不做全租户宽泛搜索。
+关系只存事实成立的一个方向，因此对 O、KR、Point 都使用双向一跳查询，再沿 `maps_to`、`advances` 等已确认关系寻找现实锚点。没有已确认关系时，读取 `okr-world-projector` Skill 建立或审阅映射；锚点不明确时跳过并报告，不做全租户宽泛搜索。
 
 ## 2. 读取 Meego 证据
 
