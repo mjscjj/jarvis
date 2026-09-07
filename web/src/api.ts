@@ -313,8 +313,19 @@ export function getPage(type: PageType, id: number, signal?: AbortSignal): Promi
   return request<PageView>(`/api/pages/${type}/${id}`, { signal })
 }
 
-export function listPages(all = false, signal?: AbortSignal): Promise<PageIndexItem[]> {
-  return request<PageIndexItem[]>(`/api/pages${all ? '?all=true' : ''}`, { signal })
+export async function listPages(all = false, signal?: AbortSignal, q = ''): Promise<PageIndexItem[]> {
+  const params = new URLSearchParams({ page_size: '200' })
+  if (all) params.set('all', 'true')
+  if (q.trim()) params.set('q', q.trim())
+  const items: PageIndexItem[] = []
+  let cursor = ''
+  do {
+    if (cursor) params.set('cursor', cursor)
+    const page = await request<{ items: PageIndexItem[]; next_cursor?: string }>(`/api/pages?${params.toString()}`, { signal })
+    items.push(...page.items)
+    cursor = page.next_cursor ?? ''
+  } while (cursor)
+  return items
 }
 
 export async function updatePage(type: PageType, id: number, body: PageUpdateInput): Promise<PageView> {
@@ -743,18 +754,35 @@ export function listWorldProgress(periodKey: string, signal?: AbortSignal): Prom
 export interface RelationQuery {
   sourceType?: string
   sourceId?: string
+  relationType?: string
   targetType?: string
   targetId?: string
+  nodeType?: string
+  nodeId?: string
+  nodeTypes?: readonly string[]
   limit?: number
 }
 
-export function listRelations(query: RelationQuery, signal?: AbortSignal): Promise<{ items: EntityRelation[] }> {
+export async function listRelations(query: RelationQuery, signal?: AbortSignal): Promise<{ items: EntityRelation[] }> {
   const params = new URLSearchParams({ limit: String(query.limit ?? 200) })
   if (query.sourceType) params.set('source_type', query.sourceType)
   if (query.sourceId) params.set('source_id', query.sourceId)
+  if (query.relationType) params.set('relation_type', query.relationType)
   if (query.targetType) params.set('target_type', query.targetType)
   if (query.targetId) params.set('target_id', query.targetId)
-  return request<{ items: EntityRelation[] }>(`/api/relations?${params.toString()}`, { signal })
+  if (query.nodeType) params.set('node_type', query.nodeType)
+  if (query.nodeId) params.set('node_id', query.nodeId)
+  if (query.nodeTypes?.length) params.set('node_types', query.nodeTypes.join(','))
+
+  const items: EntityRelation[] = []
+  let cursor = ''
+  do {
+    if (cursor) params.set('cursor', cursor)
+    const page = await request<{ items: EntityRelation[]; next_cursor?: string }>(`/api/relations?${params.toString()}`, { signal })
+    items.push(...page.items)
+    cursor = page.next_cursor ?? ''
+  } while (cursor)
+  return { items }
 }
 
 export function shutdownJarvis(): Promise<{ stopping: boolean }> {

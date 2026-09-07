@@ -1682,7 +1682,7 @@ function ResourcePanel() {
           <Descriptions.Item label="最近确认">{dayjs(selectedResource.last_active_at).format('YYYY-MM-DD HH:mm')}</Descriptions.Item>
         </Descriptions>
         <SummaryPageEditor type="resource" id={selectedResource.id} />
-        <FactTimeline subject={{ type: 'managed_resource', id: selectedResource.id }} title="资源事实" />
+        <FactTimeline subject={{ type: 'resource', id: selectedResource.id }} title="资源事实" />
       </Space>}
     </Drawer>
     <Modal title="新建资源" open={open} confirmLoading={submitting} onOk={submit} onCancel={() => setOpen(false)} okText="保存" destroyOnHidden>

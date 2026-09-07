@@ -175,6 +175,27 @@ func (s *Service) SearchFacts(ctx context.Context, filter FactSearchFilter) (Fac
 	if filter.SourceKind != "" {
 		query = query.Where("source_kind = ?", filter.SourceKind)
 	}
+	needle := strings.ToLower(strings.TrimSpace(filter.Query))
+	if needle == "" {
+		var total int64
+		if err := query.Count(&total).Error; err != nil {
+			return FactSearchView{}, fmt.Errorf("count facts: %w", err)
+		}
+		var rows []domain.Fact
+		if err := query.Order("occurred_at DESC, id DESC").
+			Offset((filter.Page - 1) * filter.PageSize).Limit(filter.PageSize).Find(&rows).Error; err != nil {
+			return FactSearchView{}, fmt.Errorf("search facts: %w", err)
+		}
+		labels, err := s.factSubjectLabels(ctx, rows)
+		if err != nil {
+			return FactSearchView{}, err
+		}
+		items := make([]LabeledFactView, 0, len(rows))
+		for _, row := range rows {
+			items = append(items, labeledFactView(row, labels[factSubjectKey{Type: row.SubjectType, ID: row.SubjectID}]))
+		}
+		return FactSearchView{Items: items, Total: int(total), Page: filter.Page, PageSize: filter.PageSize}, nil
+	}
 	var rows []domain.Fact
 	if err := query.Order("occurred_at DESC, id DESC").Find(&rows).Error; err != nil {
 		return FactSearchView{}, fmt.Errorf("search facts: %w", err)
@@ -183,7 +204,6 @@ func (s *Service) SearchFacts(ctx context.Context, filter FactSearchFilter) (Fac
 	if err != nil {
 		return FactSearchView{}, err
 	}
-	needle := strings.ToLower(strings.TrimSpace(filter.Query))
 	matches := make([]LabeledFactView, 0, len(rows))
 	for _, row := range rows {
 		key := factSubjectKey{Type: row.SubjectType, ID: row.SubjectID}
@@ -272,16 +292,7 @@ func (s *Service) factSubjectLabel(ctx context.Context, key factSubjectKey) (str
 		if err == nil {
 			return row.Title, nil
 		}
-	case "resource":
-		var row domain.Resource
-		err = db.Select("id", "name").First(&row, key.ID).Error
-		if err == nil && row.Name != nil && strings.TrimSpace(*row.Name) != "" {
-			return *row.Name, nil
-		}
-		if err == nil {
-			return fallback, nil
-		}
-	case "managed_resource":
+	case "resource", "managed_resource":
 		var row domain.ManagedResource
 		err = db.Select("id", "title").First(&row, key.ID).Error
 		if err == nil {

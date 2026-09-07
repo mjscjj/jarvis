@@ -20,7 +20,7 @@ func ListPages(svc *background.PageService) app.HandlerFunc {
 			writeAPIError(c, consts.StatusBadRequest, 40020, err)
 			return
 		}
-		result, err := svc.ListPages(ctx, filter)
+		result, err := svc.ListPagesPage(ctx, filter)
 		if err != nil {
 			writeBackgroundError(c, err)
 			return
@@ -82,6 +82,38 @@ func ListPageBacklinks(svc *background.PageService) app.HandlerFunc {
 	}
 }
 
+func ListPageRevisions(svc *background.PageService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		pageType, id, err := pageIdentity(c)
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40022, err)
+			return
+		}
+		limit := 20
+		if raw := strings.TrimSpace(c.Query("limit")); raw != "" {
+			limit, err = strconv.Atoi(raw)
+			if err != nil {
+				writeAPIError(c, consts.StatusBadRequest, 40023, fmt.Errorf("limit must be between 1 and 100"))
+				return
+			}
+		}
+		var cursor uint64
+		if raw := strings.TrimSpace(c.Query("cursor")); raw != "" {
+			cursor, err = strconv.ParseUint(raw, 10, 64)
+			if err != nil || cursor == 0 {
+				writeAPIError(c, consts.StatusBadRequest, 40023, fmt.Errorf("cursor must be a positive revision id"))
+				return
+			}
+		}
+		result, err := svc.ListRevisions(ctx, pageType, id, cursor, limit)
+		if err != nil {
+			writeBackgroundError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
 func pageIdentity(c *app.RequestContext) (string, uint64, error) {
 	pageType := strings.TrimSpace(c.Param("type"))
 	if pageType == "" {
@@ -95,7 +127,10 @@ func pageIdentity(c *app.RequestContext) (string, uint64, error) {
 }
 
 func pageListFilter(c *app.RequestContext) (background.ListPagesFilter, error) {
-	filter := background.ListPagesFilter{Type: strings.TrimSpace(c.Query("type"))}
+	filter := background.ListPagesFilter{
+		Type: strings.TrimSpace(c.Query("type")), Query: strings.TrimSpace(c.Query("q")),
+		Cursor: strings.TrimSpace(c.Query("cursor")), PageSize: 100,
+	}
 	if raw := strings.TrimSpace(c.Query("all")); raw != "" {
 		value, err := strconv.ParseBool(raw)
 		if err != nil {
@@ -116,6 +151,13 @@ func pageListFilter(c *app.RequestContext) (background.ListPagesFilter, error) {
 			return background.ListPagesFilter{}, fmt.Errorf("over_limit must be true or false")
 		}
 		filter.OverLimit = value
+	}
+	if raw := strings.TrimSpace(c.Query("page_size")); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 1 || value > 200 {
+			return background.ListPagesFilter{}, fmt.Errorf("page_size must be between 1 and 200")
+		}
+		filter.PageSize = value
 	}
 	return filter, nil
 }

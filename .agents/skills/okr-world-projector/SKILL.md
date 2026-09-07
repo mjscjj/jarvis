@@ -85,8 +85,8 @@ jarvis-tools list-key-matters --keyword '<明确事项名>' --limit 100
 jarvis-tools get-person --open-id '<owner_open_id>'
 jarvis-tools list-groups --keyword '<明确项目或群名>' --limit 100
 jarvis-tools query-resources --keyword '<明确项目、文档或仓库名>' --limit 100
-jarvis-tools list-relations --source-type '<okr_objective|okr_kr|okr_point>' --source-id '<id>' --limit 100
-jarvis-tools list-relations --target-type '<okr_objective|okr_kr|okr_point>' --target-id '<id>' --limit 100
+jarvis-tools resolve-world-node --type '<okr_objective|okr_kr|okr_point>' --id '<id>'
+jarvis-tools list-relations --node-type '<okr_objective|okr_kr|okr_point>' --node-id '<id>' --limit 100
 ```
 
 需要判断当前状态时，再按候选实体读取 `get-page`、`list-facts`、`query-messages` 或具体资源。先从已有关系、明确项目代号、稳定 URL/ID 和 Page 引用下钻；不要从全租户宽泛搜索开始。
@@ -171,11 +171,10 @@ jarvis-tools create-relation --payload - <<'JSON'
 JSON
 ```
 
-然后分别从 source 和 target 方向回读：
+然后从任一端一次读取双向一跳邻域，确认新边可见：
 
 ```bash
-jarvis-tools list-relations --source-type okr_point --source-id '<point_id>' --limit 100
-jarvis-tools list-relations --target-type key_matter --target-id '<key_matter_id>' --limit 100
+jarvis-tools list-relations --node-type okr_point --node-id '<point_id>' --limit 100
 ```
 
 相同五元组会刷新证据，不应产生重复边。没有稳定证据时不要写“低置信度占位边”，在结果中列为未确认候选即可。不能仅因本轮没找到关系就删除旧边；只有直接证据确认关系已失效且当前任务明确包含刷新时，才删除并记录依据。

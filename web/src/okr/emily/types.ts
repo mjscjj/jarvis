@@ -141,6 +141,7 @@ export interface Kr {
 export interface KrOwner {
   openId: string
   name: string
+  identityNamespace?: 'main_feishu_app'
 }
 
 export interface KrTag {

@@ -69,3 +69,39 @@ func TestSearchFactsFindsHiddenDetailAndPaginates(t *testing.T) {
 		t.Fatalf("subject result = %#v", bySubject)
 	}
 }
+
+func TestSearchFactsWithoutKeywordPaginatesInStorageOrder(t *testing.T) {
+	service := newFactTestService(t)
+	now := time.Date(2026, 8, 8, 10, 0, 0, 0, time.UTC)
+	insertFact(t, service, "topic", 7, "oldest", now, nil)
+	insertFact(t, service, "topic", 7, "middle", now.Add(time.Minute), nil)
+	insertFact(t, service, "topic", 7, "newest", now.Add(2*time.Minute), nil)
+
+	result, err := service.SearchFacts(context.Background(), FactSearchFilter{Page: 2, PageSize: 1})
+	if err != nil {
+		t.Fatalf("SearchFacts: %v", err)
+	}
+	if result.Total != 3 || len(result.Items) != 1 || result.Items[0].Description != "middle" {
+		t.Fatalf("result = %#v", result)
+	}
+}
+
+func TestFactSubjectLabelUsesManagedResourceForCanonicalResourceType(t *testing.T) {
+	service := newFactTestService(t)
+	if err := service.db.AutoMigrate(&domain.ManagedResource{}); err != nil {
+		t.Fatal(err)
+	}
+	resource := domain.ManagedResource{Title: "季度方案", ResourceType: "doc", IsActive: true}
+	if err := service.db.Create(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	insertFact(t, service, "resource", resource.ID, "文档已更新", time.Now().UTC(), nil)
+
+	result, err := service.SearchFacts(context.Background(), FactSearchFilter{Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("SearchFacts: %v", err)
+	}
+	if len(result.Items) != 1 || result.Items[0].SubjectLabel != "季度方案" {
+		t.Fatalf("result = %#v", result)
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -44,6 +45,19 @@ type ListPagesFilter struct {
 	All       bool
 	StaleDays *int
 	OverLimit bool
+	Query     string
+	Cursor    string
+	PageSize  int
+}
+
+type PageIndexPage struct {
+	Items      []PageIndexItem `json:"items"`
+	NextCursor string          `json:"next_cursor,omitempty"`
+}
+
+type PageRevisionPage struct {
+	Items      []domain.PageRevision `json:"items"`
+	NextCursor string                `json:"next_cursor,omitempty"`
 }
 
 // UpdatePageInput is the only write path for an entity's long-term summary.
@@ -101,7 +115,59 @@ func (s *PageService) Backlinks(ctx context.Context, pageType string, id uint64)
 	return links, nil
 }
 
+// ListRevisions returns complete archived page texts newest first. Revisions
+// are read-only evidence about our own notes; restoring one remains an Agent
+// decision made through the ordinary CAS update tool.
+func (s *PageService) ListRevisions(ctx context.Context, pageType string, id, cursor uint64, limit int) (*PageRevisionPage, error) {
+	if _, ok := pageTypes[pageType]; !ok {
+		return nil, invalid(fmt.Errorf("page type %q is not supported", pageType))
+	}
+	if id == 0 {
+		return nil, invalid(fmt.Errorf("page id must be positive"))
+	}
+	if limit <= 0 || limit > 100 {
+		return nil, invalid(fmt.Errorf("limit must be between 1 and 100"))
+	}
+	if _, err := s.loadPage(ctx, pageType, id); err != nil {
+		return nil, err
+	}
+	query := s.db.WithContext(ctx).Where("page_type = ? AND page_id = ?", pageType, id)
+	if cursor != 0 {
+		query = query.Where("id < ?", cursor)
+	}
+	var rows []domain.PageRevision
+	if err := query.Order("id DESC").Limit(limit + 1).Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list page revisions %s:%d: %w", pageType, id, err)
+	}
+	page := &PageRevisionPage{Items: rows}
+	if len(rows) > limit {
+		page.Items = rows[:limit]
+		page.NextCursor = strconv.FormatUint(page.Items[len(page.Items)-1].ID, 10)
+	}
+	if page.Items == nil {
+		page.Items = []domain.PageRevision{}
+	}
+	return page, nil
+}
+
 func (s *PageService) ListPages(ctx context.Context, filter ListPagesFilter) ([]PageIndexItem, error) {
+	filter.Cursor = ""
+	filter.PageSize = 200
+	items := []PageIndexItem{}
+	for {
+		page, err := s.ListPagesPage(ctx, filter)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, page.Items...)
+		if page.NextCursor == "" {
+			return items, nil
+		}
+		filter.Cursor = page.NextCursor
+	}
+}
+
+func (s *PageService) ListPagesPage(ctx context.Context, filter ListPagesFilter) (*PageIndexPage, error) {
 	if filter.Type != "" {
 		if _, ok := pageTypes[filter.Type]; !ok {
 			return nil, invalid(fmt.Errorf("page type %q is not supported", filter.Type))
@@ -110,6 +176,10 @@ func (s *PageService) ListPages(ctx context.Context, filter ListPagesFilter) ([]
 	if filter.StaleDays != nil && *filter.StaleDays < 1 {
 		return nil, invalid(fmt.Errorf("stale_days must be a positive integer"))
 	}
+	if filter.PageSize <= 0 || filter.PageSize > 200 {
+		return nil, invalid(fmt.Errorf("page_size must be between 1 and 200"))
+	}
+	filter.Query = strings.TrimSpace(filter.Query)
 	types := []string{
 		PageTypePrincipal, PageTypePerson, PageTypeProject,
 		PageTypeKeyMatter, PageTypeGroup, PageTypeResource,
@@ -117,18 +187,39 @@ func (s *PageService) ListPages(ctx context.Context, filter ListPagesFilter) ([]
 	if filter.Type != "" {
 		types = []string{filter.Type}
 	}
-	var items []PageIndexItem
+	cursorType, cursorID, err := parsePageCursor(filter.Cursor, types)
+	if err != nil {
+		return nil, invalid(err)
+	}
+	items := make([]PageIndexItem, 0, filter.PageSize+1)
+	started := cursorType == ""
 	for _, pageType := range types {
-		rows, err := s.listType(ctx, pageType, filter)
+		if !started {
+			if pageType != cursorType {
+				continue
+			}
+			started = true
+		}
+		afterID := uint64(0)
+		if pageType == cursorType {
+			afterID = cursorID
+		}
+		rows, err := s.listType(ctx, pageType, filter, afterID, filter.PageSize+1-len(items))
 		if err != nil {
 			return nil, err
 		}
 		items = append(items, rows...)
+		if len(items) > filter.PageSize {
+			break
+		}
 	}
-	if items == nil {
-		return []PageIndexItem{}, nil
+	page := &PageIndexPage{Items: items}
+	if len(items) > filter.PageSize {
+		page.Items = items[:filter.PageSize]
+		last := page.Items[len(page.Items)-1]
+		page.NextCursor = fmt.Sprintf("%s:%d", last.Type, last.ID)
 	}
-	return items, nil
+	return page, nil
 }
 
 func (s *PageService) UpdatePage(ctx context.Context, pageType string, id uint64, in UpdatePageInput) (*PageView, error) {
@@ -148,32 +239,42 @@ func (s *PageService) UpdatePage(ctx context.Context, pageType string, id uint64
 	if err := ValidateReferences(ctx, s.db, refs); err != nil {
 		return nil, invalid(err)
 	}
-	current, err := s.loadPage(ctx, pageType, id)
-	if err != nil {
-		return nil, err
-	}
-	if !sameUpdatedAt(current.UpdatedAt, in.IfUnchangedSince) {
-		view, viewErr := s.pageView(ctx, current)
-		if viewErr != nil {
-			return nil, viewErr
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		txService := &PageService{db: tx, now: s.now}
+		current, err := txService.loadPage(ctx, pageType, id)
+		if err != nil {
+			return err
 		}
-		return nil, &PageConflictError{Current: view}
-	}
-	oldText := stringValue(current.Summary)
-	if oldText != in.Content {
+		if !sameUpdatedAt(current.UpdatedAt, in.IfUnchangedSince) {
+			view, viewErr := txService.pageView(ctx, current)
+			if viewErr != nil {
+				return viewErr
+			}
+			return &PageConflictError{Current: view}
+		}
+		oldText := stringValue(current.Summary)
+		if oldText == in.Content {
+			return nil
+		}
+		expectedUpdatedAt, err := txService.storedUpdatedAtText(ctx, pageType, id)
+		if err != nil {
+			return err
+		}
+
 		now := s.now().UTC()
 		if oldText != "" {
 			revision := domain.PageRevision{
 				PageType: pageType, PageID: id, OldText: oldText, ChangedAt: now,
 			}
-			if err := s.db.WithContext(ctx).Create(&revision).Error; err != nil {
-				return nil, fmt.Errorf("archive page revision %s:%d: %w", pageType, id, err)
+			if err := tx.WithContext(ctx).Create(&revision).Error; err != nil {
+				return fmt.Errorf("archive page revision %s:%d: %w", pageType, id, err)
 			}
 		}
 		updates := map[string]any{"summary": in.Content, "last_progress_at": now}
-		if err := s.writeSummary(ctx, pageType, id, updates); err != nil {
-			return nil, err
-		}
+		return txService.writeSummary(ctx, pageType, id, expectedUpdatedAt, updates)
+	})
+	if err != nil {
+		return nil, err
 	}
 	return s.GetPage(ctx, pageType, id)
 }
@@ -232,7 +333,7 @@ func (s *PageService) loadPage(ctx context.Context, pageType string, id uint64) 
 	return row, nil
 }
 
-func (s *PageService) writeSummary(ctx context.Context, pageType string, id uint64, updates map[string]any) error {
+func (s *PageService) writeSummary(ctx context.Context, pageType string, id uint64, expectedUpdatedAt string, updates map[string]any) error {
 	var model any
 	switch pageType {
 	case PageTypeProject:
@@ -250,14 +351,48 @@ func (s *PageService) writeSummary(ctx context.Context, pageType string, id uint
 	default:
 		return invalid(fmt.Errorf("page type %q is not supported", pageType))
 	}
-	result := s.db.WithContext(ctx).Model(model).Where("id = ?", id).Updates(updates)
+	result := s.db.WithContext(ctx).Model(model).
+		Where("id = ? AND CAST(updated_at AS TEXT) = ?", id, expectedUpdatedAt).
+		Updates(updates)
 	if result.Error != nil {
 		return fmt.Errorf("update page %s:%d: %w", pageType, id, result.Error)
+	}
+	if result.RowsAffected == 0 {
+		current, err := s.loadPage(ctx, pageType, id)
+		if err != nil {
+			return err
+		}
+		view, err := s.pageView(ctx, current)
+		if err != nil {
+			return err
+		}
+		return &PageConflictError{Current: view}
 	}
 	if result.RowsAffected != 1 {
 		return fmt.Errorf("update page %s:%d affected %d rows", pageType, id, result.RowsAffected)
 	}
 	return nil
+}
+
+func (s *PageService) storedUpdatedAtText(ctx context.Context, pageType string, id uint64) (string, error) {
+	table := map[string]string{
+		PageTypeProject: "project", PageTypePerson: "person",
+		PageTypeKeyMatter: "key_matter", PageTypeGroup: "feishu_group",
+		PageTypeResource: "managed_resource", PageTypePrincipal: "principal_profile",
+	}[pageType]
+	if table == "" {
+		return "", invalid(fmt.Errorf("page type %q is not supported", pageType))
+	}
+	var value string
+	if err := s.db.WithContext(ctx).Raw(
+		"SELECT CAST(updated_at AS TEXT) FROM `"+table+"` WHERE id = ?", id,
+	).Scan(&value).Error; err != nil {
+		return "", fmt.Errorf("load page version %s:%d: %w", pageType, id, err)
+	}
+	if value == "" {
+		return "", ErrNotFound
+	}
+	return value, nil
 }
 
 func (s *PageService) pageView(ctx context.Context, row *pageRow) (*PageView, error) {
@@ -287,7 +422,7 @@ func (s *PageService) pageView(ctx context.Context, row *pageRow) (*PageView, er
 	}, nil
 }
 
-func (s *PageService) listType(ctx context.Context, pageType string, filter ListPagesFilter) ([]PageIndexItem, error) {
+func (s *PageService) listType(ctx context.Context, pageType string, filter ListPagesFilter, afterID uint64, limit int) ([]PageIndexItem, error) {
 	query := s.db.WithContext(ctx)
 	switch pageType {
 	case PageTypeProject:
@@ -324,6 +459,23 @@ func (s *PageService) listType(ctx context.Context, pageType string, filter List
 		cutoff := s.now().UTC().Add(-time.Duration(*filter.StaleDays) * 24 * time.Hour)
 		query = query.Where("last_progress_at IS NULL OR last_progress_at < ?", cutoff)
 	}
+	if afterID != 0 {
+		query = query.Where("id > ?", afterID)
+	}
+	if filter.Query != "" {
+		like := "%" + filter.Query + "%"
+		switch pageType {
+		case PageTypeKeyMatter, PageTypeResource:
+			query = query.Where("title LIKE ? OR summary LIKE ?", like, like)
+		case PageTypeGroup:
+			query = query.Where("name LIKE ? OR chat_id LIKE ? OR summary LIKE ?", like, like, like)
+		default:
+			query = query.Where("name LIKE ? OR summary LIKE ?", like, like)
+		}
+	}
+	if filter.OverLimit {
+		query = query.Where("length(COALESCE(summary, '')) > ?", SummaryMaxChars)
+	}
 	type listRow struct {
 		ID             uint64
 		Name           string
@@ -333,7 +485,7 @@ func (s *PageService) listType(ctx context.Context, pageType string, filter List
 		LastProgressAt *time.Time
 	}
 	var rows []listRow
-	if err := query.Select(listSelect(pageType)).Order("id ASC").Scan(&rows).Error; err != nil {
+	if err := query.Select(listSelect(pageType)).Order("id ASC").Limit(limit).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("list pages type=%s: %w", pageType, err)
 	}
 	items := make([]PageIndexItem, 0, len(rows))
@@ -360,6 +512,27 @@ func (s *PageService) listType(ctx context.Context, pageType string, filter List
 		})
 	}
 	return items, nil
+}
+
+func parsePageCursor(cursor string, types []string) (string, uint64, error) {
+	cursor = strings.TrimSpace(cursor)
+	if cursor == "" {
+		return "", 0, nil
+	}
+	pageType, rawID, ok := strings.Cut(cursor, ":")
+	if !ok {
+		return "", 0, fmt.Errorf("cursor is invalid")
+	}
+	id, err := strconv.ParseUint(rawID, 10, 64)
+	if err != nil || id == 0 {
+		return "", 0, fmt.Errorf("cursor is invalid")
+	}
+	for _, candidate := range types {
+		if candidate == pageType {
+			return pageType, id, nil
+		}
+	}
+	return "", 0, fmt.Errorf("cursor does not belong to the selected page types")
 }
 
 func listSelect(pageType string) string {

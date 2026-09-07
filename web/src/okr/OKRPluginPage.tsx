@@ -213,13 +213,10 @@ export default function OKRPluginPage() {
     setRelations([])
     setRelationsError(undefined)
     try {
-      // The relation API has an MVP cap of 200 rows per direction and type.
-      const results = await Promise.all(okrRelationTypes.flatMap((type) => [
-        listRelations({ sourceType: type }, signal),
-        listRelations({ targetType: type }, signal),
-      ]))
+      // One paginated query returns all edges touching an OKR node type.
+      const result = await listRelations({ nodeTypes: okrRelationTypes }, signal)
       if (signal?.aborted) return
-      setRelations(relationsForOKRBoard(results.flatMap((result) => result.items), nextBoard.objectives))
+      setRelations(relationsForOKRBoard(result.items, nextBoard.objectives))
     } catch (cause) {
       if (!(cause instanceof DOMException && cause.name === 'AbortError')) setRelationsError(errorText(cause))
     } finally {

@@ -75,8 +75,10 @@ subcommands:
   append-shared-memory   Append one entry to shared memory
   append-clue            Hand M2 one observed fact as evidence for M3
   get-page               Read one entity's long-term fact page
+  resolve-world-node     Read one world-graph node from its owning module
   update-page            Replace one entity's long-term fact page
   list-pages             List long-term fact page indexes
+  list-page-revisions    Read archived versions of one long-term fact page
   list-backlinks         List pages that reference an entity
   list-relations         List generic cross-module entity relations
   create-relation       Create or refresh one generic entity relation
@@ -146,10 +148,15 @@ EOF
     close-key-matter) delete_id_help "close-key-matter" "Close one key matter; this does not hard-delete it." ;;
     list-relations) cat <<'EOF'
 usage: jarvis-tools list-relations [--source-type TYPE] [--source-id ID]
+                                   [--relation-type TYPE]
                                    [--target-type TYPE] [--target-id ID]
+                                   [--node-type TYPE --node-id ID]
+                                   [--node-types TYPE[,TYPE...]]
                                    [--limit N] [--config PATH]
-List generic cross-module relation edges. At least one source or target filter
-is recommended; the command never infers a relation.
+List generic cross-module relation edges, following API cursors until the
+filtered result is complete. --node-type plus --node-id reads both incoming
+and outgoing one-hop neighbors; --node-types keeps edges touching any listed
+type. The command never infers a relation.
 EOF
       ;;
     create-relation) payload_help "create-relation" "Create or refresh one evidence-backed generic relation edge." ;;
@@ -364,16 +371,23 @@ EOF
       ;;
     get-page) cat <<'EOF'
 usage: jarvis-tools get-page --type TYPE --id N [--config PATH]
-Read one entity's long-term fact page. TYPE is principal, person, okr, project,
+Read one entity's long-term fact page. TYPE is principal, person, project,
 key_matter, group or resource. Returns the full summary, character count and
 limit, updated_at for CAS, outbound and back links, and the subject's fact
 count without fact content. Use list-facts for history detail.
 EOF
       ;;
+    resolve-world-node) cat <<'EOF'
+usage: jarvis-tools resolve-world-node --type TYPE --id ID [--config PATH]
+Read one world-graph node from its authoritative module. Reality entity types
+resolve to their Page; OKR and Biz OKR plan node types resolve to their module
+definition. This command does not infer or create relations.
+EOF
+      ;;
     update-page) cat <<'EOF'
 usage: jarvis-tools update-page --type TYPE --id N --content -|TEXT
                                --if-unchanged-since TS [--config PATH]
-Replace one entity's long-term fact page. TYPE is principal, person, okr, project,
+Replace one entity's long-term fact page. TYPE is principal, person, project,
 key_matter, group or resource. --content - reads stdin. --if-unchanged-since is
 the updated_at from get-page; a 409 response returns the current page so the
 caller can re-merge.
@@ -381,15 +395,24 @@ EOF
       ;;
     list-pages) cat <<'EOF'
 usage: jarvis-tools list-pages [--type TYPE] [--all] [--stale-days N]
-                              [--over-limit] [--config PATH]
-List long-term fact page indexes. TYPE is principal, person, okr, project,
+                              [--over-limit] [--query TEXT] [--limit N]
+                              [--config PATH]
+List long-term fact page indexes. TYPE is principal, person, project,
 key_matter, group or resource. Default is active entities only; --all includes
-inactive ones. --stale-days and --over-limit are inspection filters.
+inactive ones. --query searches names and index text. --stale-days and
+--over-limit are inspection filters. API cursor pages are followed automatically.
+EOF
+      ;;
+    list-page-revisions) cat <<'EOF'
+usage: jarvis-tools list-page-revisions --type TYPE --id N [--limit N] [--config PATH]
+Read complete archived versions of one long-term fact page, newest first. API
+cursor pages are followed automatically. To restore text, read the live page
+and use update-page with its current CAS timestamp.
 EOF
       ;;
     list-backlinks) cat <<'EOF'
 usage: jarvis-tools list-backlinks --type TYPE --id N [--config PATH]
-List pages that reference this entity. TYPE is principal, person, okr, project,
+List pages that reference this entity. TYPE is principal, person, project,
 key_matter, group or resource.
 EOF
       ;;
@@ -779,8 +802,12 @@ REASON="-"
 SOURCE=""
 SOURCE_ID=""
 SOURCE_TYPE=""
+RELATION_TYPE=""
 TARGET_TYPE=""
 TARGET_ID=""
+NODE_TYPE=""
+NODE_ID=""
+NODE_TYPES=""
 ACTOR=""
 EXTERNAL_ID=""
 TITLE=""
@@ -825,8 +852,12 @@ reset_flags() {
   SOURCE=""
   SOURCE_ID=""
   SOURCE_TYPE=""
+  RELATION_TYPE=""
   TARGET_TYPE=""
   TARGET_ID=""
+  NODE_TYPE=""
+  NODE_ID=""
+  NODE_TYPES=""
   ACTOR=""
   EXTERNAL_ID=""
   TITLE=""
@@ -893,10 +924,11 @@ require_command_flag() {
     list-facts) allowed+=" --subject-type --subject-id --date --limit" ;;
     get-world-progress) allowed+=" --id --subject-type --subject-id --period-key" ;;
     update-world-progress) allowed+=" --id --payload" ;;
-    get-page | list-backlinks) allowed+=" --type --id" ;;
+    get-page | list-backlinks | resolve-world-node) allowed+=" --type --id" ;;
+    list-page-revisions) allowed+=" --type --id --limit" ;;
     update-page) allowed+=" --type --id --content --if-unchanged-since" ;;
-    list-pages) allowed+=" --type --all --stale-days --over-limit" ;;
-    list-relations) allowed+=" --source-type --source-id --target-type --target-id --limit" ;;
+    list-pages) allowed+=" --type --all --stale-days --over-limit --query --limit" ;;
+    list-relations) allowed+=" --source-type --source-id --relation-type --target-type --target-id --node-type --node-id --node-types --limit" ;;
     delete-relation) allowed+=" --id" ;;
     list-todos) allowed+=" --date --status --limit --project-id --group-id --page --query --source-message-id" ;;
     get-todo) allowed+=" --id --context --message-id --revision" ;;
@@ -932,8 +964,8 @@ require_limit() {
 require_page_type() {
   local cmd="$1" value="$2"
   case "$value" in
-    principal|person|okr|project|key_matter|group|resource) ;;
-    *) fail "${cmd} --type must be principal, person, okr, project, key_matter, group or resource" ;;
+    principal|person|project|key_matter|group|resource) ;;
+    *) fail "${cmd} --type must be principal, person, project, key_matter, group or resource" ;;
   esac
 }
 
@@ -1183,6 +1215,15 @@ consume_flags() {
         SOURCE_TYPE="${1#--source-type=}"
         shift
         ;;
+      --relation-type)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        RELATION_TYPE="$2"
+        shift 2
+        ;;
+      --relation-type=*)
+        RELATION_TYPE="${1#--relation-type=}"
+        shift
+        ;;
       --target-type)
         [[ $# -ge 2 ]] || fail "$1 requires a value"
         TARGET_TYPE="$2"
@@ -1199,6 +1240,33 @@ consume_flags() {
         ;;
       --target-id=*)
         TARGET_ID="${1#--target-id=}"
+        shift
+        ;;
+      --node-type)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        NODE_TYPE="$2"
+        shift 2
+        ;;
+      --node-type=*)
+        NODE_TYPE="${1#--node-type=}"
+        shift
+        ;;
+      --node-id)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        NODE_ID="$2"
+        shift 2
+        ;;
+      --node-id=*)
+        NODE_ID="${1#--node-id=}"
+        shift
+        ;;
+      --node-types)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        NODE_TYPES="$2"
+        shift 2
+        ;;
+      --node-types=*)
+        NODE_TYPES="${1#--node-types=}"
         shift
         ;;
       --actor)
@@ -2098,6 +2166,19 @@ cmd_get_page() {
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
 
+cmd_resolve_world_node() {
+  reset_flags
+  consume_flags "$@"
+  [[ -n "$TYPE" ]] || fail "resolve-world-node requires --type"
+  [[ -n "$ID" ]] || fail "resolve-world-node requires --id"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local enc_type enc_id body
+  enc_type="$(jq -rn --arg s "$TYPE" '$s|@uri')"
+  enc_id="$(jq -rn --arg s "$ID" '$s|@uri')"
+  body="$(api_get "/api/world-nodes/${enc_type}/${enc_id}")"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
 cmd_update_page() {
   reset_flags
   consume_flags "$@"
@@ -2140,7 +2221,9 @@ cmd_update_page() {
 
 cmd_list_pages() {
   reset_flags
+  LIMIT="100"
   consume_flags "$@"
+  require_limit list-pages "$LIMIT" 200
   if [[ -n "$TYPE" ]]; then
     require_page_type list-pages "$TYPE"
   fi
@@ -2148,26 +2231,35 @@ cmd_list_pages() {
     [[ "$STALE_DAYS" =~ ^[1-9][0-9]*$ ]] || fail "list-pages --stale-days must be a positive integer"
   fi
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
-  local query="" sep="?"
+  local query="page_size=${LIMIT}" value body cursor="" items='[]'
   if [[ -n "$TYPE" ]]; then
-    query="${query}${sep}type=$(jq -rn --arg s "$TYPE" '$s|@uri')"
-    sep="&"
+    query="${query}&type=$(jq -rn --arg s "$TYPE" '$s|@uri')"
   fi
   if [[ "$ALL" == "true" ]]; then
-    query="${query}${sep}all=true"
-    sep="&"
+    query="${query}&all=true"
   fi
   if [[ -n "$STALE_DAYS" ]]; then
-    query="${query}${sep}stale_days=${STALE_DAYS}"
-    sep="&"
+    query="${query}&stale_days=${STALE_DAYS}"
   fi
   if [[ "$OVER_LIMIT" == "true" ]]; then
-    query="${query}${sep}over_limit=true"
-    sep="&"
+    query="${query}&over_limit=true"
   fi
-  local body
-  body="$(api_get "/api/pages${query}")"
-  emit "$(printf '%s' "$body" | jq -c '.data')"
+  if [[ -n "$QUERY" ]]; then
+    value="$(jq -rn --arg s "$QUERY" '$s|@uri')"
+    query="${query}&q=${value}"
+  fi
+  while true; do
+    local page_query="$query"
+    if [[ -n "$cursor" ]]; then
+      value="$(jq -rn --arg s "$cursor" '$s|@uri')"
+      page_query="${page_query}&cursor=${value}"
+    fi
+    body="$(api_get "/api/pages?${page_query}")"
+    items="$(jq -cn --argjson current "$items" --argjson page "$(printf '%s' "$body" | jq -c '.data.items')" '$current + $page')"
+    cursor="$(printf '%s' "$body" | jq -r '.data.next_cursor // empty')"
+    [[ -n "$cursor" ]] || break
+  done
+  emit "$items"
 }
 
 cmd_list_backlinks() {
@@ -2181,13 +2273,37 @@ cmd_list_backlinks() {
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
 
+cmd_list_page_revisions() {
+  reset_flags
+  LIMIT="20"
+  consume_flags "$@"
+  require_page_type list-page-revisions "$TYPE"
+  [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "list-page-revisions requires a positive --id"
+  require_limit list-page-revisions "$LIMIT" 100
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local query="limit=${LIMIT}" body cursor="" items='[]'
+  while true; do
+    local page_query="$query"
+    [[ -z "$cursor" ]] || page_query="${page_query}&cursor=${cursor}"
+    body="$(api_get "/api/pages/${TYPE}/${ID}/revisions?${page_query}")"
+    items="$(jq -cn --argjson current "$items" --argjson page "$(printf '%s' "$body" | jq -c '.data.items')" '$current + $page')"
+    cursor="$(printf '%s' "$body" | jq -r '.data.next_cursor // empty')"
+    [[ -n "$cursor" ]] || break
+  done
+  emit "$items"
+}
+
 cmd_list_relations() {
   reset_flags
   LIMIT="100"
   consume_flags "$@"
   require_limit list-relations "$LIMIT" 200
+  if [[ -n "$NODE_TYPE" || -n "$NODE_ID" ]]; then
+    [[ -n "$NODE_TYPE" && -n "$NODE_ID" ]] || fail "list-relations --node-type and --node-id must be provided together"
+  fi
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
-  local query="limit=${LIMIT}" value body
+  local query="limit=${LIMIT}" value body cursor="" items_file items
+  items_file="$(mktemp "${TMPDIR:-/tmp}/jarvis-relations.XXXXXX")"
   if [[ -n "$SOURCE_TYPE" ]]; then
     value="$(jq -rn --arg s "$SOURCE_TYPE" '$s|@uri')"
     query="${query}&source_type=${value}"
@@ -2195,6 +2311,10 @@ cmd_list_relations() {
   if [[ -n "$SOURCE_ID" ]]; then
     value="$(jq -rn --arg s "$SOURCE_ID" '$s|@uri')"
     query="${query}&source_id=${value}"
+  fi
+  if [[ -n "$RELATION_TYPE" ]]; then
+    value="$(jq -rn --arg s "$RELATION_TYPE" '$s|@uri')"
+    query="${query}&relation_type=${value}"
   fi
   if [[ -n "$TARGET_TYPE" ]]; then
     value="$(jq -rn --arg s "$TARGET_TYPE" '$s|@uri')"
@@ -2204,8 +2324,29 @@ cmd_list_relations() {
     value="$(jq -rn --arg s "$TARGET_ID" '$s|@uri')"
     query="${query}&target_id=${value}"
   fi
-  body="$(api_get "/api/relations?${query}")"
-  emit "$(printf '%s' "$body" | jq -c '.data.items')"
+  if [[ -n "$NODE_TYPE" ]]; then
+    value="$(jq -rn --arg s "$NODE_TYPE" '$s|@uri')"
+    query="${query}&node_type=${value}"
+    value="$(jq -rn --arg s "$NODE_ID" '$s|@uri')"
+    query="${query}&node_id=${value}"
+  fi
+  if [[ -n "$NODE_TYPES" ]]; then
+    value="$(jq -rn --arg s "$NODE_TYPES" '$s|@uri')"
+    query="${query}&node_types=${value}"
+  fi
+  while true; do
+    local page_query="$query"
+    if [[ -n "$cursor" ]]; then
+      page_query="${page_query}&cursor=${cursor}"
+    fi
+    body="$(api_get "/api/relations?${page_query}")"
+    printf '%s\n' "$body" | jq -c '.data.items[]' >>"$items_file"
+    cursor="$(printf '%s' "$body" | jq -r '.data.next_cursor // empty')"
+    [[ -n "$cursor" ]] || break
+  done
+  items="$(jq -cs '.' "$items_file")"
+  rm -f "$items_file"
+  emit "$items"
 }
 
 cmd_list_todos() {
@@ -2595,8 +2736,10 @@ case "$SUBCOMMAND" in
   create-world-progress) cmd_write_world_progress create-world-progress POST "$@" ;;
   update-world-progress) cmd_write_world_progress update-world-progress PUT "$@" ;;
   get-page)             cmd_get_page "$@" ;;
+  resolve-world-node)   cmd_resolve_world_node "$@" ;;
   update-page)          cmd_update_page "$@" ;;
   list-pages)           cmd_list_pages "$@" ;;
+  list-page-revisions)  cmd_list_page_revisions "$@" ;;
   list-backlinks)       cmd_list_backlinks "$@" ;;
   list-relations)       cmd_list_relations "$@" ;;
   create-relation)      cmd_payload_create create-relation POST /api/relations "$@" ;;

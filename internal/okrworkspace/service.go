@@ -225,8 +225,19 @@ type ScoreView struct {
 }
 
 type OwnerView struct {
-	OpenID string `json:"open_id"`
-	Name   string `json:"name"`
+	OpenID            string `json:"open_id"`
+	Name              string `json:"name"`
+	IdentityNamespace string `json:"identity_namespace,omitempty"`
+}
+
+const OwnerIdentityNamespaceMainFeishuApp = "main_feishu_app"
+
+func storedOwnerView(openID, name string) OwnerView {
+	view := OwnerView{OpenID: openID, Name: name}
+	if strings.TrimSpace(openID) != "" {
+		view.IdentityNamespace = OwnerIdentityNamespaceMainFeishuApp
+	}
+	return view
 }
 
 type MetricView struct {
@@ -604,7 +615,7 @@ func (s *Service) ReminderPreview(ctx context.Context, quarter, week string) (Re
 	}
 	ownersByKR := make(map[string][]OwnerView, len(records))
 	for _, link := range ownerLinks {
-		ownersByKR[link.KRID] = append(ownersByKR[link.KRID], OwnerView{OpenID: link.OpenID, Name: link.Name})
+		ownersByKR[link.KRID] = append(ownersByKR[link.KRID], storedOwnerView(link.OpenID, link.Name))
 	}
 	owners := map[string]*recipientAccumulator{}
 	for _, record := range records {
@@ -802,7 +813,7 @@ func (s *Service) loadKRDefinition(ctx context.Context, record domain.KR, includ
 	}
 	view := KRView{ID: record.ID, Title: record.Title, MetricNote: record.MetricNote, Version: record.Version, Metrics: []MetricView{}, Points: []PointView{}, Tags: []TagView{}, Owners: []OwnerView{}}
 	for _, owner := range owners {
-		view.Owners = append(view.Owners, OwnerView{OpenID: owner.OpenID, Name: owner.Name})
+		view.Owners = append(view.Owners, storedOwnerView(owner.OpenID, owner.Name))
 		if view.OwnerOpenID == "" && strings.TrimSpace(owner.OpenID) != "" {
 			view.OwnerOpenID = owner.OpenID
 		}
@@ -825,7 +836,7 @@ func (s *Service) loadKRDefinition(ctx context.Context, record domain.KR, includ
 	}
 	pointOwnersByID := make(map[string][]OwnerView, len(points))
 	for _, owner := range pointOwners {
-		pointOwnersByID[owner.PointID] = append(pointOwnersByID[owner.PointID], OwnerView{OpenID: owner.OpenID, Name: owner.Name})
+		pointOwnersByID[owner.PointID] = append(pointOwnersByID[owner.PointID], storedOwnerView(owner.OpenID, owner.Name))
 	}
 	for _, point := range points {
 		pointView := PointView{ID: point.ID, Kind: point.Kind, Title: point.Title, Tags: pointTagsByID[point.ID], Owners: pointOwnersByID[point.ID], Entries: []ProgressView{}, PreviousEntries: []ProgressView{}}
@@ -1882,6 +1893,7 @@ func normalizeOwners(input []OwnerView) []OwnerView {
 	for _, owner := range owners {
 		owner.OpenID = strings.TrimSpace(owner.OpenID)
 		owner.Name = strings.TrimSpace(owner.Name)
+		owner.IdentityNamespace = ""
 		if owner.Name == "" {
 			continue
 		}

@@ -81,3 +81,38 @@ func TestUpdatePageConflictReturns409WithCurrentContent(t *testing.T) {
 		t.Fatalf("current summary = %q, want 线上当前全文; written=%#v", payload.Data.Summary, written)
 	}
 }
+
+func TestListPagesReturnsCursorEnvelope(t *testing.T) {
+	db, err := store.OpenSQLite(t.Context(), config.SQLiteConfig{Path: filepath.Join(t.TempDir(), "jarvis.db")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close(db) })
+	if err := store.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"Atlas One", "Atlas Two", "Other"} {
+		if err := db.Create(&domain.Project{Name: name, Role: "owner", Status: "active", Priority: 1}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	svc, err := background.NewPageService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := server.New()
+	h.GET("/api/pages", ListPages(svc))
+	response := ut.PerformRequest(h.Engine, "GET", "/api/pages?type=project&all=true&q=Atlas&page_size=1", nil).Result()
+	if response.StatusCode() != consts.StatusOK {
+		t.Fatalf("status = %d body=%s", response.StatusCode(), response.Body())
+	}
+	var payload struct {
+		Data background.PageIndexPage `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.Data.Items) != 1 || payload.Data.NextCursor == "" {
+		t.Fatalf("page = %#v", payload.Data)
+	}
+}

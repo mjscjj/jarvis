@@ -40,8 +40,11 @@ func TestReplaceKRCorePersistsOwnersPerPoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantStrategy := []OwnerView{{OpenID: "ou_a", Name: "甲"}, {OpenID: "ou_b", Name: "乙"}}
-	wantProduct := []OwnerView{{OpenID: "ou_c", Name: "丙"}}
+	wantStrategy := []OwnerView{
+		{OpenID: "ou_a", Name: "甲", IdentityNamespace: OwnerIdentityNamespaceMainFeishuApp},
+		{OpenID: "ou_b", Name: "乙", IdentityNamespace: OwnerIdentityNamespaceMainFeishuApp},
+	}
+	wantProduct := []OwnerView{{OpenID: "ou_c", Name: "丙", IdentityNamespace: OwnerIdentityNamespaceMainFeishuApp}}
 	if !reflect.DeepEqual(updated.Points[0].Owners, wantStrategy) || !reflect.DeepEqual(updated.Points[1].Owners, wantProduct) {
 		t.Fatalf("point owners = %+v / %+v", updated.Points[0].Owners, updated.Points[1].Owners)
 	}

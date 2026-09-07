@@ -23,15 +23,34 @@ func ListRelations(service *background.RelationService) app.HandlerFunc {
 			}
 			limit = parsed
 		}
-		rows, err := service.List(ctx, background.RelationFilter{
+		var cursor uint64
+		if raw := strings.TrimSpace(c.Query("cursor")); raw != "" {
+			parsed, err := strconv.ParseUint(raw, 10, 64)
+			if err != nil || parsed == 0 {
+				writeAPIError(c, consts.StatusBadRequest, 40091, fmt.Errorf("cursor must be a positive relation id"))
+				return
+			}
+			cursor = parsed
+		}
+		var nodeTypes []string
+		if raw := strings.TrimSpace(c.Query("node_types")); raw != "" {
+			for _, value := range strings.Split(raw, ",") {
+				nodeTypes = append(nodeTypes, strings.TrimSpace(value))
+			}
+		}
+		page, err := service.ListPage(ctx, background.RelationFilter{
 			SourceType: c.Query("source_type"), SourceID: c.Query("source_id"),
-			TargetType: c.Query("target_type"), TargetID: c.Query("target_id"), Limit: limit,
+			RelationType: c.Query("relation_type"),
+			TargetType:   c.Query("target_type"), TargetID: c.Query("target_id"),
+			NodeType: c.Query("node_type"), NodeID: c.Query("node_id"),
+			NodeTypes: nodeTypes,
+			Cursor:    cursor, Limit: limit,
 		})
 		if err != nil {
 			writeBackgroundError(c, err)
 			return
 		}
-		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"items": rows}})
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": page})
 	}
 }
 

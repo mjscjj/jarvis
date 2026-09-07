@@ -19,7 +19,7 @@ func TestJarvisToolsHelpStatesDesignPrinciples(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Simple first", "Progressive loading", "query-captured-resources", "create-project", "list-key-matters", "touch-key-matter", "touch-resource", "get-page", "update-page", "list-pages", "list-backlinks", "list-relations", "create-relation", "get-world-progress", "create-world-progress", "update-world-progress"} {
+	for _, want := range []string{"Simple first", "Progressive loading", "query-captured-resources", "create-project", "list-key-matters", "touch-key-matter", "touch-resource", "get-page", "resolve-world-node", "update-page", "list-pages", "list-page-revisions", "list-backlinks", "list-relations", "create-relation", "get-world-progress", "create-world-progress", "update-world-progress"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("help missing %q:\n%s", want, out)
 		}
@@ -498,6 +498,8 @@ func TestJarvisToolsPageCommandsUseExactEndpoints(t *testing.T) {
 			fmt.Fprint(w, `{"code":0,"data":{"items":[{"type":"person","id":12}]}}`)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/pages/person/12/backlinks":
 			fmt.Fprint(w, `{"code":0,"data":{"items":[{"type":"project","id":7}]}}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/world-nodes/okr_kr/kr-7":
+			fmt.Fprint(w, `{"code":0,"data":{"type":"okr_kr","id":"kr-7","name":"增长 KR"}}`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -515,6 +517,34 @@ func TestJarvisToolsPageCommandsUseExactEndpoints(t *testing.T) {
 	out, err = runJarvisTools(t, server.URL, nil, "list-backlinks", "--type", "person", "--id", "12")
 	if err != nil || !strings.Contains(out, `"id":7`) {
 		t.Fatalf("list-backlinks output = %s, error = %v", out, err)
+	}
+	out, err = runJarvisTools(t, server.URL, nil, "resolve-world-node", "--type", "okr_kr", "--id", "kr-7")
+	if err != nil || !strings.Contains(out, `"name":"增长 KR"`) {
+		t.Fatalf("resolve-world-node output = %s, error = %v", out, err)
+	}
+}
+
+func TestJarvisToolsListPageRevisionsReadsAllCursorPages(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/pages/project/7/revisions" || r.URL.Query().Get("limit") != "1" {
+			t.Fatalf("request = %s %s?%s", r.Method, r.URL.Path, r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("cursor") == "7" {
+			fmt.Fprint(w, `{"code":0,"data":{"items":[{"id":6,"old_text":"older"}]}}`)
+			return
+		}
+		fmt.Fprint(w, `{"code":0,"data":{"items":[{"id":7,"old_text":"newer"}],"next_cursor":"7"}}`)
+	}))
+	defer server.Close()
+
+	out, err := runJarvisTools(t, server.URL, nil, "list-page-revisions", "--type", "project", "--id", "7", "--limit", "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var revisions []map[string]any
+	if err := json.Unmarshal([]byte(out), &revisions); err != nil || len(revisions) != 2 {
+		t.Fatalf("revisions = %#v, error = %v, output = %s", revisions, err, out)
 	}
 }
 
@@ -589,6 +619,46 @@ func TestJarvisToolsGenericRelationCommandsAreDiscoverable(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "unknown subcommand") {
 			t.Fatalf("%s help error = %v", command, err)
 		}
+	}
+}
+
+func TestJarvisToolsListRelationsReadsLargePaginatedResults(t *testing.T) {
+	const pageSize = 200
+	largeEvidence := strings.Repeat("完整业务 Ontology 关系证据", 128)
+	firstPage := make([]map[string]any, pageSize)
+	for index := range firstPage {
+		firstPage[index] = map[string]any{
+			"id": index + 2, "source_type": "okr_point", "source_id": fmt.Sprintf("p-%d", index),
+			"relation_type": "owned_by", "target_type": "person", "target_id": fmt.Sprintf("%d", index+1),
+			"evidence": map[string]any{"basis": largeEvidence},
+		}
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/api/relations" {
+			t.Fatalf("request path = %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("node_types") != "okr_objective,okr_kr,okr_point" {
+			t.Fatalf("node_types = %q", r.URL.Query().Get("node_types"))
+		}
+		if r.URL.Query().Get("cursor") == "2" {
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"items": []map[string]any{{"id": 1, "source_type": "okr_point", "source_id": "last", "relation_type": "owned_by", "target_type": "person", "target_id": "201"}}}})
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"items": firstPage, "next_cursor": "2"}})
+	}))
+	defer server.Close()
+
+	output, err := runJarvisTools(t, server.URL, nil, "list-relations", "--node-types", "okr_objective,okr_kr,okr_point", "--limit", "200")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var relations []map[string]any
+	if err := json.Unmarshal([]byte(output), &relations); err != nil {
+		t.Fatalf("output is not JSON: %v", err)
+	}
+	if len(relations) != pageSize+1 {
+		t.Fatalf("relation count = %d, want %d", len(relations), pageSize+1)
 	}
 }
 

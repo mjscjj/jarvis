@@ -72,7 +72,7 @@ export default function FactsPanel() {
             value={subjectType}
             onChange={setSubjectType}
             style={{ width: 140 }}
-            options={['project', 'key_matter', 'person', 'group', 'task', 'todo', 'resource', 'managed_resource', 'principal'].map((value) => ({ value, label: value }))}
+            options={['project', 'key_matter', 'person', 'group', 'task', 'todo', 'resource', 'principal'].map((value) => ({ value, label: value }))}
           />
           <InputNumber min={1} placeholder="主体 ID" value={subjectId} onChange={setSubjectId} style={{ width: 110 }} />
           <Select allowClear placeholder="来源" value={sourceKind} onChange={setSourceKind} style={{ width: 130 }} options={['system', 'message', 'todo_event', 'task_event', 'execution_run', 'resource'].map((value) => ({ value, label: value }))} />

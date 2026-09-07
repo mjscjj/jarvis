@@ -24,12 +24,12 @@ interface APIKr {
   title: string
   owner_open_id: string
 	owner_name: string
-	owners: Array<{ open_id: string; name: string }>
+	owners: Array<{ open_id: string; name: string; identity_namespace?: 'main_feishu_app' }>
 	metric_note: string
   version: number
 	weekly_core_version: number
   metrics: Array<{ id: string; text: string; light?: Light; images?: Entry['images'] }>
-  points: Array<{ id: string; kind: PointKind; title: string; meego_work_item_id?: string; meego_url?: string; tags: KrTag[]; owners?: Array<{ open_id: string; name: string }>; entries: APIEntry[]; previous_entries: APIEntry[]; score?: WeeklyScore }>
+  points: Array<{ id: string; kind: PointKind; title: string; meego_work_item_id?: string; meego_url?: string; tags: KrTag[]; owners?: Array<{ open_id: string; name: string; identity_namespace?: 'main_feishu_app' }>; entries: APIEntry[]; previous_entries: APIEntry[]; score?: WeeklyScore }>
   tags: KrTag[]
   score?: WeeklyScore
 }
@@ -366,7 +366,7 @@ function fromAPIKr(value: APIKr): Kr {
     title: normalizeKRTitle(value.title),
     ownerOpenId: value.owner_open_id,
     ownerName: value.owner_name,
-    owners: (value.owners ?? []).map((owner): KrOwner => ({ openId: owner.open_id, name: owner.name })),
+    owners: (value.owners ?? []).map((owner): KrOwner => ({ openId: owner.open_id, name: owner.name, identityNamespace: owner.identity_namespace })),
 		metricNote: value.metric_note,
     version: value.version,
 		weeklyCoreVersion: value.weekly_core_version,
@@ -378,7 +378,7 @@ function fromAPIKr(value: APIKr): Kr {
       meegoWorkItemId: point.meego_work_item_id ?? '',
       meegoUrl: point.meego_url ?? '',
       tags: point.tags ?? [],
-      owners: (point.owners ?? []).map((owner): KrOwner => ({ openId: owner.open_id, name: owner.name })),
+      owners: (point.owners ?? []).map((owner): KrOwner => ({ openId: owner.open_id, name: owner.name, identityNamespace: owner.identity_namespace })),
       score: point.score,
       entries: point.entries.map((entry) => ({
         id: entry.id,

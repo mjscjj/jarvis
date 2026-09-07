@@ -108,10 +108,10 @@ export default function WorldMap() {
   useEffect(() => {
     const controller = new AbortController()
     setLoading(true)
-    Promise.all([listPages(false, controller.signal), listPages(true, controller.signal)])
-      .then(async ([active, all]) => {
+    listPages(false, controller.signal)
+      .then(async (active) => {
         setActiveIndex(active)
-        setFullIndex(all)
+        setFullIndex(active)
         const pages = await loadPages(active, controller.signal)
         pages.forEach((page) => pageCache.current.set(nodeKey(page.type, page.id), page))
         setActiveGraph(buildActiveGraph(pages, active))
@@ -123,6 +123,31 @@ export default function WorldMap() {
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
   }, [])
+
+  useEffect(() => {
+    const needle = query.trim()
+    if (!needle) {
+      setFullIndex(activeIndex)
+      return
+    }
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => {
+      listPages(true, controller.signal, needle)
+        .then((matches) => {
+          if (controller.signal.aborted) return
+          const merged = new Map(activeIndex.map((item) => [nodeKey(item.type, item.id), item]))
+          matches.forEach((item) => merged.set(nodeKey(item.type, item.id), item))
+          setFullIndex([...merged.values()])
+        })
+        .catch((cause: unknown) => {
+          if (!controller.signal.aborted) setError(errorText(cause))
+        })
+    }, 180)
+    return () => {
+      window.clearTimeout(timer)
+      controller.abort()
+    }
+  }, [activeIndex, query])
 
   const activePrimaryIds = useMemo(() => primaryComponentIds(activeGraph), [activeGraph])
   const rawGraph = useMemo(() => {

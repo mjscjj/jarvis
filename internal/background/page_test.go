@@ -2,7 +2,9 @@ package background
 
 import (
 	"errors"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -179,6 +181,88 @@ func TestUpdatePageConflictReturnsCurrentPage(t *testing.T) {
 	}
 }
 
+func TestUpdatePageConcurrentCASAllowsOneWriter(t *testing.T) {
+	db := openBackgroundTestDB(t)
+	svc := newPageService(t, db)
+	project := createTestProject(t, db, "Concurrent CAS", "active")
+	page, err := svc.GetPage(t.Context(), PageTypeProject, project.ID)
+	if err != nil {
+		t.Fatalf("GetPage() error = %v", err)
+	}
+
+	start := make(chan struct{})
+	errs := make(chan error, 2)
+	var wg sync.WaitGroup
+	for _, content := range []string{"writer one", "writer two"} {
+		content := content
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := svc.UpdatePage(t.Context(), PageTypeProject, project.ID, UpdatePageInput{
+				Content: content, IfUnchangedSince: page.UpdatedAt,
+			})
+			errs <- err
+		}()
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+
+	var successes, conflicts int
+	for err := range errs {
+		switch {
+		case err == nil:
+			successes++
+		case errors.Is(err, ErrConflict):
+			conflicts++
+		default:
+			t.Fatalf("UpdatePage() unexpected error = %v", err)
+		}
+	}
+	if successes != 1 || conflicts != 1 {
+		t.Fatalf("successes=%d conflicts=%d, want 1 and 1", successes, conflicts)
+	}
+}
+
+func TestUpdatePageRollsBackRevisionWhenSummaryWriteFails(t *testing.T) {
+	db := openBackgroundTestDB(t)
+	svc := newPageService(t, db)
+	project := createTestProject(t, db, "Atomic Revision", "active")
+	page, err := svc.GetPage(t.Context(), PageTypeProject, project.ID)
+	if err != nil {
+		t.Fatalf("GetPage() error = %v", err)
+	}
+	written, err := svc.UpdatePage(t.Context(), PageTypeProject, project.ID, UpdatePageInput{
+		Content: "first version", IfUnchangedSince: page.UpdatedAt,
+	})
+	if err != nil {
+		t.Fatalf("seed UpdatePage() error = %v", err)
+	}
+	if err := db.Exec(`CREATE TRIGGER reject_project_summary_update
+		BEFORE UPDATE OF summary ON project
+		BEGIN SELECT RAISE(ABORT, 'reject summary update'); END`).Error; err != nil {
+		t.Fatalf("create reject trigger: %v", err)
+	}
+
+	_, err = svc.UpdatePage(t.Context(), PageTypeProject, project.ID, UpdatePageInput{
+		Content: "second version", IfUnchangedSince: written.UpdatedAt,
+	})
+	if err == nil {
+		t.Fatal("UpdatePage() succeeded despite rejecting trigger")
+	}
+	if countPageRevisions(t, db, project.ID) != 0 {
+		t.Fatal("failed summary write left a page revision behind")
+	}
+	current, getErr := svc.GetPage(t.Context(), PageTypeProject, project.ID)
+	if getErr != nil {
+		t.Fatalf("GetPage(after failure) error = %v", getErr)
+	}
+	if current.Summary != "first version" {
+		t.Fatalf("summary after rollback = %q", current.Summary)
+	}
+}
+
 func TestUpdatePageRejectsMissingReference(t *testing.T) {
 	db := openBackgroundTestDB(t)
 	svc := newPageService(t, db)
@@ -308,6 +392,74 @@ func TestListPagesDefaultActiveAndInspectionFilters(t *testing.T) {
 	}
 	if len(overItems) != 1 || overItems[0].ID != active.ID || overItems[0].CharCount != SummaryMaxChars+1 {
 		t.Fatalf("over_limit = %#v", overItems)
+	}
+}
+
+func TestListPagesPageSearchesAndUsesStableCursor(t *testing.T) {
+	db := openBackgroundTestDB(t)
+	svc := newPageService(t, db)
+	first := createTestProject(t, db, "Atlas Alpha", "planning")
+	second := createTestProject(t, db, "Atlas Beta", "planning")
+	_ = createTestProject(t, db, "Other", "planning")
+
+	page, err := svc.ListPagesPage(t.Context(), ListPagesFilter{
+		Type: PageTypeProject, All: true, Query: "Atlas", PageSize: 1,
+	})
+	if err != nil {
+		t.Fatalf("ListPagesPage(first) error = %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].ID != first.ID || page.NextCursor == "" {
+		t.Fatalf("first page = %#v", page)
+	}
+	page, err = svc.ListPagesPage(t.Context(), ListPagesFilter{
+		Type: PageTypeProject, All: true, Query: "Atlas", PageSize: 1, Cursor: page.NextCursor,
+	})
+	if err != nil {
+		t.Fatalf("ListPagesPage(second) error = %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].ID != second.ID || page.NextCursor != "" {
+		t.Fatalf("second page = %#v", page)
+	}
+}
+
+func TestListPagesPageRejectsCursorOutsideSelectedType(t *testing.T) {
+	db := openBackgroundTestDB(t)
+	svc := newPageService(t, db)
+	_, err := svc.ListPagesPage(t.Context(), ListPagesFilter{
+		Type: PageTypeProject, All: true, PageSize: 10, Cursor: "person:1",
+	})
+	if !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("error = %v, want ErrInvalidInput", err)
+	}
+}
+
+func TestListPageRevisionsReturnsCompleteTextWithCursor(t *testing.T) {
+	db := openBackgroundTestDB(t)
+	svc := newPageService(t, db)
+	project := createTestProject(t, db, "History", "active")
+	for index, text := range []string{"first complete page", "second complete page", "third complete page"} {
+		page, err := svc.GetPage(t.Context(), PageTypeProject, project.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.UpdatePage(t.Context(), PageTypeProject, project.ID, UpdatePageInput{Content: text, IfUnchangedSince: page.UpdatedAt}); err != nil {
+			t.Fatalf("update %d: %v", index, err)
+		}
+	}
+	first, err := svc.ListRevisions(t.Context(), PageTypeProject, project.ID, 0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Items) != 1 || first.Items[0].OldText != "second complete page" || first.NextCursor == "" {
+		t.Fatalf("first page = %#v", first)
+	}
+	cursor, _ := strconv.ParseUint(first.NextCursor, 10, 64)
+	second, err := svc.ListRevisions(t.Context(), PageTypeProject, project.ID, cursor, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(second.Items) != 1 || second.Items[0].OldText != "first complete page" || second.NextCursor != "" {
+		t.Fatalf("second page = %#v", second)
 	}
 }
 

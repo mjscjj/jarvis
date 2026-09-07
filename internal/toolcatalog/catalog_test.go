@@ -18,7 +18,8 @@ func TestBackgroundStagesExposeTheSameMachineCapabilities(t *testing.T) {
 		for _, required := range []string{
 			"同一套工具能力", "参数、环境和权限硬校验", "通用世界实体", "关系",
 			"query-messages", "get-message", "get-todo-event", "get-task-event", "query-captured-resources", "get-captured-resource",
-			"list-facts", "get-page", "update-page", "list-pages", "yield-until", "JARVIS_TASK_ID",
+			"list-facts", "get-page", "update-page", "list-pages", "list-page-revisions", "resolve-world-node",
+			"list-relations --node-type TYPE --node-id ID", "--node-types TYPE[,TYPE...]", "yield-until", "JARVIS_TASK_ID",
 			"get-world-progress", "create-world-progress", "update-world-progress",
 			"get-shared-memory", "append-shared-memory", "set-shared-memory", "2000",
 			"JARVIS_AGENT_STAGE=proactive",
