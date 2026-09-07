@@ -2231,7 +2231,8 @@ cmd_list_pages() {
     [[ "$STALE_DAYS" =~ ^[1-9][0-9]*$ ]] || fail "list-pages --stale-days must be a positive integer"
   fi
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
-  local query="page_size=${LIMIT}" value body cursor="" items='[]'
+  local query="page_size=${LIMIT}" value body cursor="" items_file items
+  items_file="$(mktemp "${TMPDIR:-/tmp}/jarvis-pages.XXXXXX")"
   if [[ -n "$TYPE" ]]; then
     query="${query}&type=$(jq -rn --arg s "$TYPE" '$s|@uri')"
   fi
@@ -2255,10 +2256,12 @@ cmd_list_pages() {
       page_query="${page_query}&cursor=${value}"
     fi
     body="$(api_get "/api/pages?${page_query}")"
-    items="$(jq -cn --argjson current "$items" --argjson page "$(printf '%s' "$body" | jq -c '.data.items')" '$current + $page')"
+    printf '%s\n' "$body" | jq -c '.data.items[]' >>"$items_file"
     cursor="$(printf '%s' "$body" | jq -r '.data.next_cursor // empty')"
     [[ -n "$cursor" ]] || break
   done
+  items="$(jq -cs '.' "$items_file")"
+  rm -f "$items_file"
   emit "$items"
 }
 
@@ -2281,15 +2284,18 @@ cmd_list_page_revisions() {
   [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "list-page-revisions requires a positive --id"
   require_limit list-page-revisions "$LIMIT" 100
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
-  local query="limit=${LIMIT}" body cursor="" items='[]'
+  local query="limit=${LIMIT}" body cursor="" items_file items
+  items_file="$(mktemp "${TMPDIR:-/tmp}/jarvis-page-revisions.XXXXXX")"
   while true; do
     local page_query="$query"
     [[ -z "$cursor" ]] || page_query="${page_query}&cursor=${cursor}"
     body="$(api_get "/api/pages/${TYPE}/${ID}/revisions?${page_query}")"
-    items="$(jq -cn --argjson current "$items" --argjson page "$(printf '%s' "$body" | jq -c '.data.items')" '$current + $page')"
+    printf '%s\n' "$body" | jq -c '.data.items[]' >>"$items_file"
     cursor="$(printf '%s' "$body" | jq -r '.data.next_cursor // empty')"
     [[ -n "$cursor" ]] || break
   done
+  items="$(jq -cs '.' "$items_file")"
+  rm -f "$items_file"
   emit "$items"
 }
 

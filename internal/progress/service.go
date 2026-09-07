@@ -192,8 +192,8 @@ func (s *Service) AppendFact(ctx context.Context, input FactInput) (*FactView, e
 	if fact.SourceKind != nil && fact.SourceID != nil {
 		var existing domain.Fact
 		result := db.Where(
-			"source_kind = ? AND source_id = ? AND subject_type = ? AND subject_id = ? AND description = ?",
-			*fact.SourceKind, *fact.SourceID, fact.SubjectType, fact.SubjectID, fact.Description,
+			"source_kind = ? AND source_id = ? AND subject_type IN ? AND subject_id = ? AND description = ?",
+			*fact.SourceKind, *fact.SourceID, factSubjectTypeAliases(fact.SubjectType), fact.SubjectID, fact.Description,
 		).Limit(1).Find(&existing)
 		if result.Error != nil {
 			return nil, fmt.Errorf("find replayed fact source=%s/%d: %w", *fact.SourceKind, *fact.SourceID, result.Error)
@@ -215,11 +215,11 @@ func (s *Service) AppendFact(ctx context.Context, input FactInput) (*FactView, e
 
 // ListFacts returns one subject's facts newest first.
 func (s *Service) ListFacts(ctx context.Context, filter FactFilter) ([]FactView, error) {
-	subjectType := strings.TrimSpace(strings.ToLower(filter.SubjectType))
+	subjectType := normalizeFactSubjectType(filter.SubjectType)
 	if subjectType == "" || filter.SubjectID == 0 {
 		return nil, fmt.Errorf("%w: subject_type and positive subject_id are required", ErrInvalidInput)
 	}
-	query := s.db.WithContext(ctx).Where("subject_type = ? AND subject_id = ?", subjectType, filter.SubjectID)
+	query := s.db.WithContext(ctx).Where("subject_type IN ? AND subject_id = ?", factSubjectTypeAliases(subjectType), filter.SubjectID)
 	if filter.From != nil {
 		query = query.Where("occurred_at >= ?", filter.From.UTC())
 	}
@@ -244,11 +244,11 @@ func (s *Service) ListFacts(ctx context.Context, filter FactFilter) ([]FactView,
 }
 
 func (s *Service) CountFacts(ctx context.Context, filter FactFilter) (int, error) {
-	subjectType := strings.TrimSpace(strings.ToLower(filter.SubjectType))
+	subjectType := normalizeFactSubjectType(filter.SubjectType)
 	if subjectType == "" || filter.SubjectID == 0 {
 		return 0, fmt.Errorf("%w: subject_type and positive subject_id are required", ErrInvalidInput)
 	}
-	query := s.db.WithContext(ctx).Model(&domain.Fact{}).Where("subject_type = ? AND subject_id = ?", subjectType, filter.SubjectID)
+	query := s.db.WithContext(ctx).Model(&domain.Fact{}).Where("subject_type IN ? AND subject_id = ?", factSubjectTypeAliases(subjectType), filter.SubjectID)
 	if filter.From != nil {
 		query = query.Where("occurred_at >= ?", filter.From.UTC())
 	}
@@ -302,7 +302,7 @@ func prepareTaskEvent(input TaskEventInput) (*domain.TaskEvent, error) {
 
 func prepareFact(input FactInput) (*domain.Fact, error) {
 	input.Description = strings.TrimSpace(input.Description)
-	input.SubjectType = strings.TrimSpace(strings.ToLower(input.SubjectType))
+	input.SubjectType = normalizeFactSubjectType(input.SubjectType)
 	input.SourceKind = normalizedOptional(input.SourceKind)
 	if input.SourceKind != nil {
 		normalized := strings.ToLower(*input.SourceKind)
@@ -420,10 +420,25 @@ func taskEventView(event *domain.TaskEvent) TaskEventView {
 
 func factView(fact *domain.Fact) FactView {
 	return FactView{
-		ID: fact.ID, SubjectType: fact.SubjectType, SubjectID: fact.SubjectID,
+		ID: fact.ID, SubjectType: normalizeFactSubjectType(fact.SubjectType), SubjectID: fact.SubjectID,
 		Description: fact.Description, OccurredAt: fact.OccurredAt,
 		SourceKind: fact.SourceKind, SourceID: fact.SourceID, CreatedAt: fact.CreatedAt,
 	}
+}
+
+func normalizeFactSubjectType(value string) string {
+	value = strings.TrimSpace(strings.ToLower(value))
+	if value == "managed_resource" {
+		return "resource"
+	}
+	return value
+}
+
+func factSubjectTypeAliases(value string) []string {
+	if normalizeFactSubjectType(value) == "resource" {
+		return []string{"resource", "managed_resource"}
+	}
+	return []string{normalizeFactSubjectType(value)}
 }
 
 func rawJSON(value []byte) json.RawMessage {

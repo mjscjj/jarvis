@@ -84,6 +84,25 @@ func TestListFactsSourceKindEquality(t *testing.T) {
 	}
 }
 
+func TestResourceFactReadsIncludeLegacySubjectType(t *testing.T) {
+	service := newFactTestService(t)
+	now := time.Now().UTC()
+	insertFact(t, service, "managed_resource", 7, "旧类型事实", now, nil)
+	insertFact(t, service, "resource", 7, "新类型事实", now.Add(time.Minute), nil)
+
+	items, err := service.ListFacts(t.Context(), FactFilter{SubjectType: "resource", SubjectID: 7})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 2 || items[0].SubjectType != "resource" || items[1].SubjectType != "resource" {
+		t.Fatalf("items = %#v", items)
+	}
+	count, err := service.CountFacts(t.Context(), FactFilter{SubjectType: "managed_resource", SubjectID: 7})
+	if err != nil || count != 2 {
+		t.Fatalf("count = %d, error = %v", count, err)
+	}
+}
+
 func TestAppendFactReturnsExistingExactFactFromSameSourceUnit(t *testing.T) {
 	service := newFactTestService(t)
 	ctx := context.Background()

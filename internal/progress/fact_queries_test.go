@@ -105,3 +105,30 @@ func TestFactSubjectLabelUsesManagedResourceForCanonicalResourceType(t *testing.
 		t.Fatalf("result = %#v", result)
 	}
 }
+
+func TestCanonicalResourceQueryIncludesLegacyFacts(t *testing.T) {
+	service := newFactTestService(t)
+	if err := service.db.AutoMigrate(&domain.ManagedResource{}); err != nil {
+		t.Fatal(err)
+	}
+	resource := domain.ManagedResource{Title: "历史方案", ResourceType: "doc", IsActive: true}
+	if err := service.db.Create(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	insertFact(t, service, "managed_resource", resource.ID, "旧类型事实", now, nil)
+	insertFact(t, service, "resource", resource.ID, "新类型事实", now.Add(time.Minute), nil)
+
+	result, err := service.SearchFacts(context.Background(), FactSearchFilter{SubjectType: "resource", SubjectID: resource.ID, Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Total != 2 || len(result.Items) != 2 {
+		t.Fatalf("result = %#v", result)
+	}
+	for _, item := range result.Items {
+		if item.SubjectType != "resource" || item.SubjectLabel != "历史方案" {
+			t.Fatalf("item = %#v", item)
+		}
+	}
+}

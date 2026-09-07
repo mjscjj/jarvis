@@ -408,9 +408,13 @@ func (s *PageService) pageView(ctx context.Context, row *pageRow) (*PageView, er
 	if outgoing == nil {
 		outgoing = []Reference{}
 	}
+	subjectTypes := []string{row.Type}
+	if row.Type == PageTypeResource {
+		subjectTypes = append(subjectTypes, "managed_resource")
+	}
 	var factCount int64
 	if err := s.db.WithContext(ctx).Model(&domain.Fact{}).
-		Where("subject_type = ? AND subject_id = ?", row.Type, row.ID).
+		Where("subject_type IN ? AND subject_id = ?", subjectTypes, row.ID).
 		Count(&factCount).Error; err != nil {
 		return nil, fmt.Errorf("count facts for %s:%d: %w", row.Type, row.ID, err)
 	}

@@ -548,6 +548,56 @@ func TestJarvisToolsListPageRevisionsReadsAllCursorPages(t *testing.T) {
 	}
 }
 
+func TestJarvisToolsPageListsDoNotPassAccumulatedJSONAsArguments(t *testing.T) {
+	largeText := strings.Repeat("完整世界模型正文", 1024)
+	pages := make([]map[string]any, 200)
+	revisions := make([]map[string]any, 100)
+	for index := range pages {
+		pages[index] = map[string]any{"type": "group", "id": index + 2, "name": fmt.Sprintf("group-%d", index), "index_line": largeText}
+	}
+	for index := range revisions {
+		revisions[index] = map[string]any{"id": index + 2, "old_text": largeText}
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/pages":
+			if r.URL.Query().Get("cursor") == "group:2" {
+				fmt.Fprint(w, `{"code":0,"data":{"items":[{"type":"group","id":1,"name":"last"}]}}`)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"items": pages, "next_cursor": "group:2"}})
+		case "/api/pages/project/7/revisions":
+			if r.URL.Query().Get("cursor") == "2" {
+				fmt.Fprint(w, `{"code":0,"data":{"items":[{"id":1,"old_text":"last"}]}}`)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "data": map[string]any{"items": revisions, "next_cursor": "2"}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	output, err := runJarvisTools(t, server.URL, nil, "list-pages", "--all", "--limit", "200")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var pageItems []map[string]any
+	if err := json.Unmarshal([]byte(output), &pageItems); err != nil || len(pageItems) != 201 {
+		t.Fatalf("page count = %d, error = %v", len(pageItems), err)
+	}
+
+	output, err = runJarvisTools(t, server.URL, nil, "list-page-revisions", "--type", "project", "--id", "7", "--limit", "100")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var revisionItems []map[string]any
+	if err := json.Unmarshal([]byte(output), &revisionItems); err != nil || len(revisionItems) != 101 {
+		t.Fatalf("revision count = %d, error = %v", len(revisionItems), err)
+	}
+}
+
 func TestJarvisToolsUpdatePageSurfacesConflictBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut || r.URL.Path != "/api/pages/project/7" {

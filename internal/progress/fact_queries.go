@@ -81,7 +81,7 @@ func (s *Service) FactTimeline(ctx context.Context, filter FactTimelineFilter) (
 	if filter.Days <= 0 || filter.Days > 31 {
 		return FactTimelineView{}, fmt.Errorf("%w: days must be between 1 and 31", ErrInvalidInput)
 	}
-	filter.SubjectType = strings.TrimSpace(strings.ToLower(filter.SubjectType))
+	filter.SubjectType = normalizeFactSubjectType(filter.SubjectType)
 	if (filter.SubjectType == "") != (filter.SubjectID == 0) {
 		return FactTimelineView{}, fmt.Errorf("%w: subject_type and subject_id must be provided together", ErrInvalidInput)
 	}
@@ -93,7 +93,7 @@ func (s *Service) FactTimeline(ctx context.Context, filter FactTimelineFilter) (
 	query := s.db.WithContext(ctx).
 		Where("occurred_at >= ? AND occurred_at < ?", from.UTC(), until.UTC())
 	if filter.SubjectType != "" {
-		query = query.Where("subject_type = ? AND subject_id = ?", filter.SubjectType, filter.SubjectID)
+		query = query.Where("subject_type IN ? AND subject_id = ?", factSubjectTypeAliases(filter.SubjectType), filter.SubjectID)
 	}
 	var rows []domain.Fact
 	if err := query.Order("occurred_at DESC, id DESC").Find(&rows).Error; err != nil {
@@ -120,7 +120,7 @@ func (s *Service) FactTimeline(ctx context.Context, filter FactTimelineFilter) (
 		if !exists {
 			continue
 		}
-		key := factSubjectKey{Type: row.SubjectType, ID: row.SubjectID}
+		key := factSubjectKey{Type: normalizeFactSubjectType(row.SubjectType), ID: row.SubjectID}
 		if dayIndex == 0 {
 			result.Days[0].Details = append(result.Days[0].Details, labeledFactView(row, labels[key]))
 			result.Days[0].DetailCount++
@@ -150,7 +150,7 @@ func (s *Service) FactTimeline(ctx context.Context, filter FactTimelineFilter) (
 }
 
 func (s *Service) SearchFacts(ctx context.Context, filter FactSearchFilter) (FactSearchView, error) {
-	filter.SubjectType = strings.TrimSpace(strings.ToLower(filter.SubjectType))
+	filter.SubjectType = normalizeFactSubjectType(filter.SubjectType)
 	filter.SourceKind = strings.TrimSpace(filter.SourceKind)
 	if filter.Page <= 0 || filter.PageSize <= 0 || filter.PageSize > 200 {
 		return FactSearchView{}, fmt.Errorf("%w: page must be positive and page_size must be between 1 and 200", ErrInvalidInput)
@@ -167,7 +167,7 @@ func (s *Service) SearchFacts(ctx context.Context, filter FactSearchFilter) (Fac
 		query = query.Where("occurred_at < ?", filter.Until.UTC())
 	}
 	if filter.SubjectType != "" {
-		query = query.Where("subject_type = ?", filter.SubjectType)
+		query = query.Where("subject_type IN ?", factSubjectTypeAliases(filter.SubjectType))
 	}
 	if filter.SubjectID != 0 {
 		query = query.Where("subject_id = ?", filter.SubjectID)
@@ -192,7 +192,7 @@ func (s *Service) SearchFacts(ctx context.Context, filter FactSearchFilter) (Fac
 		}
 		items := make([]LabeledFactView, 0, len(rows))
 		for _, row := range rows {
-			items = append(items, labeledFactView(row, labels[factSubjectKey{Type: row.SubjectType, ID: row.SubjectID}]))
+			items = append(items, labeledFactView(row, labels[factSubjectKey{Type: normalizeFactSubjectType(row.SubjectType), ID: row.SubjectID}]))
 		}
 		return FactSearchView{Items: items, Total: int(total), Page: filter.Page, PageSize: filter.PageSize}, nil
 	}
@@ -206,7 +206,7 @@ func (s *Service) SearchFacts(ctx context.Context, filter FactSearchFilter) (Fac
 	}
 	matches := make([]LabeledFactView, 0, len(rows))
 	for _, row := range rows {
-		key := factSubjectKey{Type: row.SubjectType, ID: row.SubjectID}
+		key := factSubjectKey{Type: normalizeFactSubjectType(row.SubjectType), ID: row.SubjectID}
 		view := labeledFactView(row, labels[key])
 		if needle != "" {
 			haystack := strings.ToLower(view.Description + "\n" + view.SubjectLabel + "\n" + fmt.Sprintf("%s/%d", view.SubjectType, view.SubjectID))
@@ -232,7 +232,7 @@ func labeledFactView(fact domain.Fact, label string) LabeledFactView {
 func (s *Service) factSubjectLabels(ctx context.Context, facts []domain.Fact) (map[factSubjectKey]string, error) {
 	labels := make(map[factSubjectKey]string)
 	for _, fact := range facts {
-		key := factSubjectKey{Type: fact.SubjectType, ID: fact.SubjectID}
+		key := factSubjectKey{Type: normalizeFactSubjectType(fact.SubjectType), ID: fact.SubjectID}
 		if _, exists := labels[key]; exists {
 			continue
 		}

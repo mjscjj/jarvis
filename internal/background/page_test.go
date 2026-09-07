@@ -463,6 +463,29 @@ func TestListPageRevisionsReturnsCompleteTextWithCursor(t *testing.T) {
 	}
 }
 
+func TestResourcePageCountsCanonicalAndLegacyFacts(t *testing.T) {
+	db := openBackgroundTestDB(t)
+	svc := newPageService(t, db)
+	resource := domain.ManagedResource{Title: "Reference", ResourceType: "doc", IsActive: true}
+	if err := db.Create(&resource).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	for _, subjectType := range []string{"resource", "managed_resource"} {
+		fact := domain.Fact{SubjectType: subjectType, SubjectID: resource.ID, Description: subjectType, OccurredAt: now}
+		if err := db.Create(&fact).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	page, err := svc.GetPage(t.Context(), PageTypeResource, resource.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.FactCount != 2 {
+		t.Fatalf("FactCount = %d, want 2", page.FactCount)
+	}
+}
+
 func newPageService(t *testing.T, db *gorm.DB) *PageService {
 	t.Helper()
 	svc, err := NewPageService(db)

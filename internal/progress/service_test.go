@@ -141,6 +141,21 @@ func TestPrepareFactUsesNaturalLanguage(t *testing.T) {
 	}
 }
 
+func TestPrepareFactNormalizesLegacyResourceType(t *testing.T) {
+	t.Parallel()
+	now := time.Now()
+	sourceKind := FactSourceSystem
+	fact, err := prepareFact(FactInput{
+		SubjectType: "managed_resource", SubjectID: 2, Description: "资源已更新", OccurredAt: &now, SourceKind: &sourceKind,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fact.SubjectType != "resource" {
+		t.Fatalf("SubjectType = %q, want resource", fact.SubjectType)
+	}
+}
+
 func TestPrepareFactRequiresDescriptionAndSubject(t *testing.T) {
 	t.Parallel()
 	now := time.Now()
