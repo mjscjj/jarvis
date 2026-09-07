@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { CloseOutlined, CompressOutlined, CopyOutlined, DeleteOutlined, ExpandOutlined, HistoryOutlined, PaperClipOutlined, PlusOutlined, ReloadOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
 import { Alert, Button, Input, Typography } from 'antd'
 import type { TextAreaRef } from 'antd/es/input/TextArea'
@@ -236,6 +237,8 @@ interface ChatSessionProps {
   open: boolean
   active: boolean
   workspace: ChatWorkspace
+  workspaceBar?: ReactNode
+  workspaceActions?: ReactNode
   onWorkspaceChange: (id: string, change: Partial<ChatWorkspace>) => void
 }
 
@@ -268,7 +271,7 @@ function loadWorkspaces(): ChatWorkspace[] {
   return [defaultWorkspace(1, window.localStorage.getItem(LEGACY_CHAT_THREAD_STORAGE_KEY))]
 }
 
-function ChatSession({ open, active, workspace, onWorkspaceChange }: ChatSessionProps) {
+function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, onWorkspaceChange }: ChatSessionProps) {
   const { name: agentName, shortName: agentShortName } = useAgentIdentity()
   const { context } = usePageContext()
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -823,6 +826,7 @@ function ChatSession({ open, active, workspace, onWorkspaceChange }: ChatSession
         <div className="chat-header-actions">
           <Button type="text" size="small" className="chat-icon-button" icon={<HistoryOutlined />} aria-label="查看历史对话" title="历史对话" onClick={() => setThreadsOpen((value) => !value)} />
           <Button type="text" size="small" className="chat-icon-button" icon={<PlusOutlined />} disabled={!canSwitchThread} aria-label="新建对话" title="新建对话" onClick={startNewChat} />
+          {workspaceActions}
         </div>
       </div>
       {threadsOpen && <div className="chat-thread-panel" aria-label="历史对话">
@@ -867,6 +871,7 @@ function ChatSession({ open, active, workspace, onWorkspaceChange }: ChatSession
       </div>
       {activeThread && <div className="chat-active-thread" title={activeThread.title}>{activeThread.title}</div>}
     </header>
+    {workspaceBar}
     <div
       className="chat-messages"
       ref={listRef}
@@ -1039,49 +1044,51 @@ export default function Chat({ open, expanded, onToggleExpanded, onClose }: Chat
     }
   }, [activeWorkspaceId, workspaces])
 
-  return <div className="chat-workspace">
-    <div className="chat-workspace-bar">
-      <div className="chat-workspace-tabs" role="tablist" aria-label="并行会话">
-        {workspaces.map((workspace) => {
-          const active = workspace.id === activeWorkspaceId
-          return <div key={workspace.id} className={`chat-workspace-tab-shell ${active ? 'is-active' : ''}`}>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={active}
-              className="chat-workspace-tab"
-              title={workspace.title}
-              onClick={() => setActiveWorkspaceId(workspace.id)}
-            >
-              <span className={`chat-workspace-state ${workspace.busy ? 'is-running' : ''}`} aria-hidden="true" />
-              <span>{workspace.title}</span>
-            </button>
-            {workspaces.length > 1 && <button
-              type="button"
-              className="chat-workspace-tab-close"
-              disabled={workspace.busy}
-              aria-label={`关闭${workspace.title}`}
-              title={workspace.busy ? '处理中，完成后可关闭' : '关闭会话'}
-              onClick={() => closeWorkspace(workspace.id)}
-            ><CloseOutlined /></button>}
-          </div>
-        })}
-      </div>
-      <Button type="text" size="small" className="chat-workspace-add" icon={<PlusOutlined />} aria-label="新增并行会话" title="新增并行会话" onClick={addWorkspace} />
-      <div className="chat-workspace-actions">
-        <Button
-          type="text"
-          size="small"
-          className="chat-expand chat-icon-button"
-          icon={expanded ? <CompressOutlined /> : <ExpandOutlined />}
-          aria-label={expanded ? '缩小对话' : '展开对话'}
-          title={expanded ? '缩小' : '展开'}
-          aria-pressed={expanded}
-          onClick={onToggleExpanded}
-        />
-        <Button type="text" size="small" className="chat-close chat-icon-button" icon={<CloseOutlined />} aria-label={`关闭 ${agentName} 对话`} onClick={onClose} />
-      </div>
+  const workspaceBar = <div className="chat-workspace-bar">
+    <div className="chat-workspace-tabs" role="tablist" aria-label="并行会话">
+      {workspaces.map((workspace) => {
+        const active = workspace.id === activeWorkspaceId
+        return <div key={workspace.id} className={`chat-workspace-tab-shell ${active ? 'is-active' : ''}`}>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={active}
+            className="chat-workspace-tab"
+            title={workspace.title}
+            onClick={() => setActiveWorkspaceId(workspace.id)}
+          >
+            <span className={`chat-workspace-state ${workspace.busy ? 'is-running' : ''}`} aria-hidden="true" />
+            <span>{workspace.title}</span>
+          </button>
+          {workspaces.length > 1 && <button
+            type="button"
+            className="chat-workspace-tab-close"
+            disabled={workspace.busy}
+            aria-label={`关闭${workspace.title}`}
+            title={workspace.busy ? '处理中，完成后可关闭' : '关闭会话'}
+            onClick={() => closeWorkspace(workspace.id)}
+          ><CloseOutlined /></button>}
+        </div>
+      })}
     </div>
+    <Button type="text" size="small" className="chat-workspace-add" icon={<PlusOutlined />} aria-label="新增并行会话" title="新增并行会话" onClick={addWorkspace} />
+  </div>
+
+  const workspaceActions = <div className="chat-workspace-actions">
+    <Button
+      type="text"
+      size="small"
+      className="chat-expand chat-icon-button"
+      icon={expanded ? <CompressOutlined /> : <ExpandOutlined />}
+      aria-label={expanded ? '缩小对话' : '展开对话'}
+      title={expanded ? '缩小' : '展开'}
+      aria-pressed={expanded}
+      onClick={onToggleExpanded}
+    />
+    <Button type="text" size="small" className="chat-close chat-icon-button" icon={<CloseOutlined />} aria-label={`关闭 ${agentName} 对话`} onClick={onClose} />
+  </div>
+
+  return <div className="chat-workspace">
     <div className="chat-workspace-stack">
       {workspaces.map((workspace) => {
         const active = workspace.id === activeWorkspaceId
@@ -1090,6 +1097,8 @@ export default function Chat({ open, expanded, onToggleExpanded, onClose }: Chat
             open={open}
             active={active}
             workspace={workspace}
+            workspaceBar={active ? workspaceBar : undefined}
+            workspaceActions={active ? workspaceActions : undefined}
             onWorkspaceChange={updateWorkspace}
           />
         </div>

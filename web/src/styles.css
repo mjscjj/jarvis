@@ -506,7 +506,7 @@ body {
     right: 0;
     bottom: 32px;
     left: var(--sider-width);
-    width: min(960px, calc(100vw - var(--sider-width) - 64px));
+    width: min(1120px, calc(100vw - var(--sider-width) - 32px));
     max-width: none;
     margin-inline: auto;
     border: 1px solid var(--color-border);
