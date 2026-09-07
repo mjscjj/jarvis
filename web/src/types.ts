@@ -1083,6 +1083,7 @@ export interface RuntimeSettings {
   chat_enabled: boolean
   chat_cli: ChatCLI
   chat_model: string
+  chat_fast_mode: boolean
   chat_sandbox: 'read-only' | 'workspace-write' | 'danger-full-access'
   chat_reasoning_effort: ReasoningEffort
   chat_timeout_seconds: number

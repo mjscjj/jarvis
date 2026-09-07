@@ -19,7 +19,7 @@ func TestRunnerPreservesStartupError(t *testing.T) {
 	if err := os.WriteFile(bin, []byte("#!/bin/sh\nprintf '%s\\n' '"+detail+"' >&2\nexit 1\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	runner, err := newRunner(bin, "fixture-model", "read-only", "medium", 5*time.Second)
+	runner, err := newRunner(bin, "fixture-model", "read-only", "medium", false, 5*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,6 +39,7 @@ func TestRunnerArgsIncludeImageForNewAndResumedTurns(t *testing.T) {
 	t.Parallel()
 	runner := &runner{
 		model:           "fixture-model",
+		fastMode:        true,
 		sandbox:         "read-only",
 		reasoningEffort: "high",
 	}
@@ -55,6 +56,14 @@ func TestRunnerArgsIncludeImageForNewAndResumedTurns(t *testing.T) {
 			if !strings.Contains(joined, "--image\x00/tmp/screenshot.png") {
 				t.Fatalf("args = %q, want image path", args)
 			}
+			for _, want := range []string{
+				"-c\x00features.fast_mode=true",
+				"-c\x00service_tier=\"fast\"",
+			} {
+				if !strings.Contains(joined, want) {
+					t.Fatalf("args = %q, missing Fast Mode config %q", args, want)
+				}
+			}
 			if args[len(args)-1] != "-" {
 				t.Fatalf("args = %q, stdin prompt marker must remain last", args)
 			}
@@ -62,6 +71,10 @@ func TestRunnerArgsIncludeImageForNewAndResumedTurns(t *testing.T) {
 	}
 	if args := runner.args("", ""); slices.Contains(args, "--image") {
 		t.Fatalf("args = %q, image flag must be absent without an image", args)
+	}
+	runner.fastMode = false
+	if joined := strings.Join(runner.args("", ""), "\x00"); strings.Contains(joined, "service_tier") || strings.Contains(joined, "fast_mode") {
+		t.Fatalf("args = %q, Fast Mode config must be absent when disabled", runner.args("", ""))
 	}
 }
 
@@ -279,17 +292,19 @@ func TestNewRunnerValidation(t *testing.T) {
 		model           string
 		sandbox         string
 		reasoningEffort string
+		fastMode        bool
 		wantErr         string
 	}{
 		{name: "blank bin", bin: "", model: "m", sandbox: "read-only", reasoningEffort: "low", wantErr: "bin is required"},
 		{name: "bad sandbox", bin: "codex", model: "m", sandbox: "nope", reasoningEffort: "low", wantErr: "sandbox must be"},
 		{name: "bad reasoning", bin: "codex", model: "m", sandbox: "read-only", reasoningEffort: "nope", wantErr: "reasoning_effort must be"},
+		{name: "cursor fast mode", bin: "cursor-agent", model: "m", sandbox: "danger-full-access", reasoningEffort: "low", fastMode: true, wantErr: "not supported"},
 	}
 	for _, tt := range tests {
 		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := newRunner(tt.bin, tt.model, tt.sandbox, tt.reasoningEffort, 1)
+			_, err := newRunner(tt.bin, tt.model, tt.sandbox, tt.reasoningEffort, tt.fastMode, 1)
 			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
 				t.Fatalf("newRunner() error = %v, want containing %q", err, tt.wantErr)
 			}

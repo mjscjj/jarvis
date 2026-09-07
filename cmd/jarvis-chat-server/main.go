@@ -97,6 +97,7 @@ func main() {
 		AgentName:        cfg.Identity.DisplayName,
 		Bin:              cfg.Chat.Bin,
 		Model:            cfg.Chat.Model,
+		FastMode:         cfg.Chat.FastMode,
 		Sandbox:          cfg.Chat.Sandbox,
 		ReasoningEffort:  cfg.Chat.ReasoningEffort,
 		Timeout:          time.Duration(cfg.Chat.TimeoutSeconds) * time.Second,

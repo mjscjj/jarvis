@@ -162,6 +162,7 @@ M2 → M3 → M5 是一条通用流水线，每段只有一套协议。M3 用 `e
 ## 8. 其它既有约定
 
 - **fail-fast**：暴露问题而非掩盖，尤其单测；不乱加兜底 fallback。
+- 向用户提供本服务的页面或接口链接时，必须优先使用 `server.public_base_url` 配置的可访问域名，不得把 `localhost`、`127.0.0.1` 或局域网 IP 当作用户链接；只有该域名未配置、不可用，或用户明确要求原始地址时才例外。
 - 展示列表优先行内编辑，见 [.cursor/rules/list-inline-edit.mdc](.cursor/rules/list-inline-edit.mdc)。
 - 写组件/代码前优先复用已有官方包和仓库内已有实现。
 - 让大模型填写的语义字段尽量使用自然语言或宽松 JSON，不用枚举限制模型发挥；Jarvis 的目标不是通用 Agent 平台。

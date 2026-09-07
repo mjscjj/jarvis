@@ -265,6 +265,7 @@ type ChatConfig struct {
 	Bin             string `yaml:"bin"`
 	Addr            string `yaml:"addr"`
 	Model           string `yaml:"model"`
+	FastMode        bool   `yaml:"fast_mode"`
 	TimeoutSeconds  int    `yaml:"timeout_seconds"`
 	Sandbox         string `yaml:"sandbox"`
 	ReasoningEffort string `yaml:"reasoning_effort"`
@@ -588,6 +589,9 @@ func (c *Config) validate() error {
 	}
 	if strings.TrimSpace(c.Chat.Bin) == "" {
 		return fmt.Errorf("chat.bin 不能为空")
+	}
+	if c.Chat.FastMode && filepath.Base(strings.TrimSpace(c.Chat.Bin)) == "cursor-agent" {
+		return fmt.Errorf("chat.fast_mode 仅支持 codex / traex，不能与 cursor-agent 同时启用")
 	}
 	if _, err := apiBaseForAddr("chat.addr", c.Chat.Addr); err != nil {
 		return err

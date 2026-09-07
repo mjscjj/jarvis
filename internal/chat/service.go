@@ -72,6 +72,7 @@ type Options struct {
 	AgentName       string
 	Bin             string
 	Model           string
+	FastMode        bool
 	Sandbox         string
 	ReasoningEffort string
 	Timeout         time.Duration
@@ -131,7 +132,7 @@ func NewService(opts Options) (*Service, error) {
 	if opts.SystemPrompts == nil {
 		return nil, fmt.Errorf("chat service system prompt reader is required")
 	}
-	r, err := newRunner(opts.Bin, opts.Model, opts.Sandbox, opts.ReasoningEffort, opts.Timeout)
+	r, err := newRunner(opts.Bin, opts.Model, opts.Sandbox, opts.ReasoningEffort, opts.FastMode, opts.Timeout)
 	if err != nil {
 		return nil, err
 	}

@@ -134,16 +134,18 @@ function SwitchField({
   label,
   extra,
   help,
+  disabled,
 }: {
   name: FieldName
   label: string
   extra?: string
   help?: string
+  disabled?: boolean
 }) {
   return (
     <SettingCol>
       <Form.Item name={name} label={<FieldLabel label={label} help={help} />} valuePropName="checked" extra={extra}>
-        <Switch />
+        <Switch disabled={disabled} />
       </Form.Item>
     </SettingCol>
   )
@@ -215,6 +217,7 @@ export default function RuntimeSettings() {
   const [overridePath, setOverridePath] = useState('')
   const [liveSettings, setLiveSettings] = useState<RuntimeSettingsInput>()
   const executeAutoEnabled = Form.useWatch('execute_auto_enabled', form)
+  const chatCLI = Form.useWatch('chat_cli', form)
 
   const reload = useCallback(() => {
     const controller = new AbortController()
@@ -390,6 +393,7 @@ export default function RuntimeSettings() {
           <Section title="右侧对话" description="CLI、模型、权限和超时均与 M5 独立。">
             <SelectField name="chat_cli" label="对话 CLI" options={chatCLIOptions} help="仅用于右侧对话；切换 CLI 后旧会话会自动新建。" />
             <TextField name="chat_model" label="对话模型" help="Cursor 的思考模式和档位由模型 ID 决定，例如 claude-opus-5-high 表示 High、No Thinking。" />
+            <SwitchField name="chat_fast_mode" label="Fast Mode" disabled={chatCLI === 'cursor-agent'} help="仅用于 Codex/TraeX 对话。GPT-5.6 约快 1.5 倍，但消耗约 2.5 倍标准额度。" />
             <SelectField name="chat_reasoning_effort" label="推理档位" options={reasoningOptions} help="Codex/TraeX 使用该值；Cursor 使用模型 ID 中的档位。" />
             <SelectField name="chat_sandbox" label="文件权限" options={sandboxOptions} />
             <NumberField name="chat_timeout_seconds" label="单轮超时（秒）" min={30} max={3600} step={30} />
@@ -520,7 +524,7 @@ export default function RuntimeSettings() {
           title="右侧对话"
           enabled={liveSettings.chat_enabled}
           primary={`${liveSettings.chat_cli} · ${liveSettings.chat_model}`}
-          secondary={`${liveSettings.chat_reasoning_effort} · ${liveSettings.chat_timeout_seconds}s 超时`}
+          secondary={`${liveSettings.chat_reasoning_effort} · ${liveSettings.chat_fast_mode ? 'Fast Mode · ' : ''}${liveSettings.chat_timeout_seconds}s 超时`}
         />
         <RuntimeStep
           stage="FACT"
@@ -541,7 +545,10 @@ export default function RuntimeSettings() {
         layout="vertical"
         requiredMark={false}
         size="small"
-        onValuesChange={() => {
+        onValuesChange={(changedValues: Partial<RuntimeSettingsInput>) => {
+          if (changedValues.chat_cli === 'cursor-agent' && form.getFieldValue('chat_fast_mode')) {
+            form.setFieldValue('chat_fast_mode', false)
+          }
           setLiveSettings(form.getFieldsValue(true) as RuntimeSettingsInput)
           setDirty(true)
           setSuccess(undefined)

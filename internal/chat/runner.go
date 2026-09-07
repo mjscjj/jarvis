@@ -50,6 +50,7 @@ type runner struct {
 	bin             string
 	provider        string
 	model           string
+	fastMode        bool
 	sandbox         string
 	reasoningEffort string
 	timeout         time.Duration
@@ -63,7 +64,7 @@ const (
 
 var errUnresumableThread = errors.New("chat thread belongs to another CLI")
 
-func newRunner(bin, model, sandbox, reasoningEffort string, timeout time.Duration) (*runner, error) {
+func newRunner(bin, model, sandbox, reasoningEffort string, fastMode bool, timeout time.Duration) (*runner, error) {
 	if strings.TrimSpace(bin) == "" {
 		return nil, fmt.Errorf("chat CLI bin is required")
 	}
@@ -90,6 +91,9 @@ func newRunner(bin, model, sandbox, reasoningEffort string, timeout time.Duratio
 	provider := providerCodex
 	if filepath.Base(resolved) == "cursor-agent" {
 		provider = providerCursor
+		if fastMode {
+			return nil, fmt.Errorf("chat CLI Fast Mode is not supported by cursor-agent")
+		}
 		if sandbox != "danger-full-access" {
 			return nil, fmt.Errorf("Cursor chat currently requires danger-full-access sandbox")
 		}
@@ -98,6 +102,7 @@ func newRunner(bin, model, sandbox, reasoningEffort string, timeout time.Duratio
 		bin:             resolved,
 		provider:        provider,
 		model:           model,
+		fastMode:        fastMode,
 		sandbox:         sandbox,
 		reasoningEffort: reasoningEffort,
 		timeout:         timeout,
@@ -121,6 +126,10 @@ func (r *runner) args(threadID, imagePath string) []string {
 		}
 		return args
 	}
+	fastArgs := []string{}
+	if r.fastMode {
+		fastArgs = []string{"-c", "features.fast_mode=true", "-c", `service_tier="fast"`}
+	}
 	var args []string
 	if strings.TrimSpace(threadID) == "" {
 		args = []string{
@@ -131,6 +140,7 @@ func (r *runner) args(threadID, imagePath string) []string {
 			"-c", "model_reasoning_effort=" + r.reasoningEffort,
 			"--model", r.model,
 		}
+		args = append(args, fastArgs...)
 		if strings.TrimSpace(imagePath) != "" {
 			args = append(args, "--image", imagePath)
 		}
@@ -145,6 +155,7 @@ func (r *runner) args(threadID, imagePath string) []string {
 		"-c", "model_reasoning_effort=" + r.reasoningEffort,
 		"--model", r.model,
 	}
+	args = append(args, fastArgs...)
 	if strings.TrimSpace(imagePath) != "" {
 		args = append(args, "--image", imagePath)
 	}

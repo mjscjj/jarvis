@@ -183,6 +183,10 @@ func TestValidate(t *testing.T) {
 		}, wantErr: "execute.stale_executing_minute"},
 		{name: "chat sandbox", mutate: func(c *Config) { c.Chat.Sandbox = "sandbox-x" }, wantErr: "chat.sandbox"},
 		{name: "chat reasoning effort", mutate: func(c *Config) { c.Chat.ReasoningEffort = "ultra" }, wantErr: "chat.codex_reasoning_effort"},
+		{name: "chat fast mode with cursor", mutate: func(c *Config) {
+			c.Chat.Bin = "cursor-agent"
+			c.Chat.FastMode = true
+		}, wantErr: "chat.fast_mode"},
 		{name: "chat timeout", mutate: func(c *Config) { c.Chat.TimeoutSeconds = 0 }, wantErr: "chat.timeout_seconds"},
 		{name: "chat model when enabled", mutate: func(c *Config) {
 			c.Chat.Enabled = true

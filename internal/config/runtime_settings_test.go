@@ -117,6 +117,7 @@ chat:
   bin: "codex"
   addr: "127.0.0.1:18801"
   model: "chat-model"
+  fast_mode: false
   timeout_seconds: 600
   sandbox: "danger-full-access"
   reasoning_effort: "medium"
@@ -185,6 +186,7 @@ chat:
 	input.AnalysisModel = "new-analysis-model"
 	input.ExecuteCLI = "traex"
 	input.ChatCLI = "traex"
+	input.ChatFastMode = true
 	input.ExecuteConcurrency = 4
 	input.ExtractSchedule = "@every 2m"
 	input.ExtractConcurrency = 4
@@ -205,7 +207,7 @@ chat:
 	if !reflect.DeepEqual(updated.Settings, input) {
 		t.Fatalf("round-trip settings mismatch:\nupdated=%#v\ninput=%#v", updated.Settings, input)
 	}
-	if updated.Settings.AgentDisplayName != "小贾" || updated.Settings.AnalysisCLI != "codex" || updated.Settings.ExecuteCLI != "traex" || updated.Settings.ChatCLI != "traex" ||
+	if updated.Settings.AgentDisplayName != "小贾" || updated.Settings.AnalysisCLI != "codex" || updated.Settings.ExecuteCLI != "traex" || updated.Settings.ChatCLI != "traex" || !updated.Settings.ChatFastMode ||
 		updated.Settings.ExecuteConcurrency != 4 || updated.Settings.ExtractSchedule != "@every 2m" || updated.Settings.ExtractConcurrency != 4 ||
 		updated.Settings.CaptureScanWorkers != 6 || updated.Settings.FactEngineReasoningEffort != "high" || updated.Settings.FactEngineWindowMaxMessages != 80 ||
 		updated.Settings.ProactiveSchedule != "@every 2h" || updated.Settings.ProactiveStartupDelaySeconds != 180 ||
@@ -227,7 +229,7 @@ chat:
 	if err != nil {
 		t.Fatalf("Load() after update error = %v", err)
 	}
-	if reloaded.Identity.DisplayName != "小贾" || reloaded.Codex.Bin != "codex" || reloaded.Execute.Bin != "traex" || reloaded.Chat.Bin != "traex" ||
+	if reloaded.Identity.DisplayName != "小贾" || reloaded.Codex.Bin != "codex" || reloaded.Execute.Bin != "traex" || reloaded.Chat.Bin != "traex" || !reloaded.Chat.FastMode ||
 		reloaded.Execute.Concurrency != 4 || reloaded.Extract.Schedule != "@every 2m" || reloaded.Extract.Concurrency != 4 ||
 		reloaded.Capture.ScanWorkers != 6 || reloaded.FactEngine.ReasoningEffort != "high" || reloaded.FactEngine.WindowMaxMessages != 80 ||
 		reloaded.Proactive.Schedule != "@every 2h" || reloaded.Proactive.StartupDelaySeconds != 180 ||
