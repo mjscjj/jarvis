@@ -203,15 +203,16 @@ func main() {
 		fatalf("initialize lark-cli failed: %v", err)
 	}
 	captureService, err := capture.NewService(db, larkClient, capture.Options{
-		PageSize:           cfg.Capture.PageSize,
-		ScanWorkers:        cfg.Capture.ScanWorkers,
-		HotAge:             time.Duration(cfg.Capture.HotAgeHours) * time.Hour,
-		WarmAge:            time.Duration(cfg.Capture.WarmAgeHours) * time.Hour,
-		Location:           location,
-		PrincipalOpenID:    cfg.Extract.PrincipalOpenID,
-		SearchOverlap:      10 * time.Minute,
-		ActivationContext:  time.Duration(cfg.Extract.ContextWindowMinutes) * time.Minute,
-		AutoRelatedP2PTopN: cfg.Capture.AutoRelatedP2PTopN,
+		PageSize:            cfg.Capture.PageSize,
+		ScanWorkers:         cfg.Capture.ScanWorkers,
+		HotAge:              time.Duration(cfg.Capture.HotAgeHours) * time.Hour,
+		WarmAge:             time.Duration(cfg.Capture.WarmAgeHours) * time.Hour,
+		Location:            location,
+		PrincipalOpenID:     cfg.Extract.PrincipalOpenID,
+		SearchOverlap:       10 * time.Minute,
+		ActivationContext:   time.Duration(cfg.Extract.ContextWindowMinutes) * time.Minute,
+		P2PActivationWindow: time.Duration(cfg.Capture.P2PWindowMinutes) * time.Minute,
+		AutoRelatedP2PTopN:  cfg.Capture.AutoRelatedP2PTopN,
 	})
 	if err != nil {
 		fatalf("initialize capture service failed: %v", err)

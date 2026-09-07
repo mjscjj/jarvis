@@ -48,7 +48,7 @@ func TestDiscoverChatsRotatesCurrentActiveP2PTopN(t *testing.T) {
 	if err := db.Where("chat_id = ?", "oc_third").Take(&thirdCheckpoint).Error; err != nil {
 		t.Fatalf("load newly monitored checkpoint: %v", err)
 	}
-	wantActivationStart := second.Add(-service.opts.ActivationContext).UnixMilli()
+	wantActivationStart := second.Add(-service.opts.P2PActivationWindow).UnixMilli()
 	if thirdCheckpoint.HighWaterCreateTime != wantActivationStart {
 		t.Fatalf("newly monitored checkpoint = %d, want activation start %d", thirdCheckpoint.HighWaterCreateTime, wantActivationStart)
 	}
@@ -150,7 +150,8 @@ func newDiscoverTestService(t *testing.T, db *gorm.DB, runner runner, topN int) 
 	service, err := NewService(db, runner, Options{
 		PageSize: 50, ScanWorkers: 1, HotAge: 6 * time.Hour, WarmAge: 7 * 24 * time.Hour,
 		Location: location, PrincipalOpenID: "ou_principal", SearchOverlap: 10 * time.Minute,
-		ActivationContext: 2 * time.Hour, AutoRelatedP2PTopN: topN,
+		ActivationContext: 2 * time.Hour, P2PActivationWindow: 15 * time.Minute,
+		AutoRelatedP2PTopN: topN,
 	})
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)

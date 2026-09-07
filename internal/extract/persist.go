@@ -221,7 +221,10 @@ func (s *PipelineStore) prepareCandidate(ctx context.Context, batch ChatBatch, u
 
 func (s *PipelineStore) persistCandidate(tx *gorm.DB, batch ChatBatch, prepared *preparedCandidate, modelName string) (bool, *domain.Todo, error) {
 	var existing domain.Todo
-	query := tx
+	query := tx.Where(
+		"status IN ? AND NOT EXISTS (SELECT 1 FROM task WHERE task.todo_id = todo.id)",
+		ActiveTodoStatuses(),
+	)
 	if prepared.MatchedTodoID != nil {
 		query = query.Where("id = ?", *prepared.MatchedTodoID)
 	} else {
@@ -236,9 +239,6 @@ func (s *PipelineStore) persistCandidate(tx *gorm.DB, batch ChatBatch, prepared 
 			if existing.ActionType != prepared.Candidate.ActionType || !sameUint64(existing.ProjectID, prepared.ProjectID) {
 				return false, nil, fmt.Errorf("semantic match todo_id=%d changed domain before persistence", existing.ID)
 			}
-			if _, active := activeTodoStatuses[existing.Status]; !active {
-				return false, nil, fmt.Errorf("semantic match todo_id=%d became inactive with status=%s", existing.ID, existing.Status)
-			}
 		}
 		if err := s.updateTodo(tx, &existing, prepared, modelName); err != nil {
 			return false, nil, err
@@ -248,9 +248,8 @@ func (s *PipelineStore) persistCandidate(tx *gorm.DB, batch ChatBatch, prepared 
 		}
 		return false, &existing, nil
 	case result.RowsAffected == 0:
-		if prepared.MatchedTodoID != nil {
-			return false, nil, fmt.Errorf("semantic match todo_id=%d no longer exists", *prepared.MatchedTodoID)
-		}
+		// A semantic neighbor may have been materialized between resolution and
+		// persistence. It no longer owns deduplication, so this is a new Todo.
 		return s.createTodo(tx, batch, prepared, modelName)
 	default:
 		return false, nil, fmt.Errorf("find Todo fingerprint=%s returned rows=%d, want 0 or 1", prepared.Fingerprint, result.RowsAffected)

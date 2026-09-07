@@ -72,6 +72,9 @@ func Migrate(db *gorm.DB) error {
 	if err := rejectRetiredContextSchema(db); err != nil {
 		return err
 	}
+	if err := migrateTodoDedupIndex(db); err != nil {
+		return err
+	}
 	if err := migrateActivityColumns(db); err != nil {
 		return err
 	}
@@ -84,6 +87,16 @@ func Migrate(db *gorm.DB) error {
 	models = append(models, domain.PluginModels()...)
 	if err := db.AutoMigrate(models...); err != nil {
 		return fmt.Errorf("migrate schema: %w", err)
+	}
+	return nil
+}
+
+func migrateTodoDedupIndex(db *gorm.DB) error {
+	if !db.Migrator().HasTable(&domain.Todo{}) || !db.Migrator().HasIndex(&domain.Todo{}, "uk_todo_fingerprint") {
+		return nil
+	}
+	if err := db.Migrator().DropIndex(&domain.Todo{}, "uk_todo_fingerprint"); err != nil {
+		return fmt.Errorf("drop obsolete unique Todo fingerprint index: %w", err)
 	}
 	return nil
 }

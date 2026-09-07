@@ -1086,6 +1086,7 @@ export interface RuntimeSettings {
   capture_scan_workers: number
   capture_discover_schedule: string
   capture_scan_schedule: string
+  capture_p2p_activation_window_minutes: number
   capture_auto_related_p2p_top_n: number
 
   fact_engine_enabled: boolean

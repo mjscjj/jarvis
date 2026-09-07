@@ -149,7 +149,7 @@ func TestDeduplicatorSkipsLLMForExactFingerprint(t *testing.T) {
 	}
 }
 
-func TestDeduplicatorTreatsMaterializedStatusAsActive(t *testing.T) {
+func TestDeduplicatorSkipsTodoThatAlreadyProducedTask(t *testing.T) {
 	candidate := validCandidate()
 	fingerprint, err := Fingerprint(&candidate, nil)
 	if err != nil {
@@ -157,6 +157,35 @@ func TestDeduplicatorTreatsMaterializedStatusAsActive(t *testing.T) {
 	}
 	existing := semanticTodoFixture(t, candidate, nil, 111)
 	existing.Status = "materialized"
+	existing.DedupFingerprint = fingerprint
+	adjudicator := &fakeSemanticAdjudicator{}
+	dedup, err := NewDeduplicator(
+		&fakeSemanticEmbedder{vector: []float32{1}},
+		&fakeSemanticSearcher{matches: []semantic.Match{{TodoID: existing.ID, Fingerprint: fingerprint}}},
+		&fakeSemanticTodoLoader{todos: map[uint64]*SemanticTodo{existing.ID: existing}},
+		adjudicator,
+	)
+	if err != nil {
+		t.Fatalf("NewDeduplicator() error = %v", err)
+	}
+	resolution, err := dedup.Resolve(context.Background(), candidate, nil)
+	if err != nil {
+		t.Fatalf("Resolve() error = %v", err)
+	}
+	if resolution.MatchedTodoID != nil || adjudicator.calls != 0 {
+		t.Fatalf("resolution=%#v adjudicator.calls=%d", resolution, adjudicator.calls)
+	}
+}
+
+func TestDeduplicatorSkipsObservingTodoThatAlreadyProducedTask(t *testing.T) {
+	candidate := validCandidate()
+	fingerprint, err := Fingerprint(&candidate, nil)
+	if err != nil {
+		t.Fatalf("Fingerprint() error = %v", err)
+	}
+	existing := semanticTodoFixture(t, candidate, nil, 112)
+	existing.Status = "observing"
+	existing.HasTask = true
 	existing.DedupFingerprint = fingerprint
 	dedup, err := NewDeduplicator(
 		&fakeSemanticEmbedder{vector: []float32{1}},
@@ -171,13 +200,13 @@ func TestDeduplicatorTreatsMaterializedStatusAsActive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Resolve() error = %v", err)
 	}
-	if resolution.MatchedTodoID == nil || *resolution.MatchedTodoID != existing.ID {
+	if resolution.MatchedTodoID != nil {
 		t.Fatalf("resolution = %#v", resolution)
 	}
 }
 
 func TestActiveTodoStatusesOnlyContainsCurrentLifecycle(t *testing.T) {
-	want := []string{"extracted", "materialized", "observing"}
+	want := []string{"extracted", "observing"}
 	if got := ActiveTodoStatuses(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("ActiveTodoStatuses() = %v, want %v", got, want)
 	}

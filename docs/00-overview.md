@@ -91,7 +91,7 @@ M3 默认使用 Agent CLI，model API 是可选引擎。它只调查到足以决
 
 - 判断新证据是否形成或更新 Todo，以及应为 `extracted` 还是 `observing`；
 - 校验 source message / quote；
-- 精确、向量和模型辅助去重；
+- 对尚未生成 Task 的 Todo 做精确、向量和模型辅助去重；
 - 在群绑定、原文或短查询能够确认时推算项目归属和仓库提示，保存 `resolution`；
 - 输出宽松 `annotation`，由程序冻结 `Todo.content`：完整 `source`、创建时 `capture` 和模型说明。
 

@@ -199,6 +199,7 @@ type CaptureConfig struct {
 	Timezone         string `yaml:"timezone"`
 	DiscoverSchedule string `yaml:"discover_schedule"`
 	ScanSchedule     string `yaml:"scan_schedule"`
+	P2PWindowMinutes int    `yaml:"p2p_activation_window_minutes"`
 	// AutoRelatedP2PTopN：discover 时按 active_time 轮换自动监听的内部真人私聊。
 	// 保留当前最活跃的前 N 个；pinned 私聊额外保留，服务号私聊不参与。
 	AutoRelatedP2PTopN int `yaml:"auto_related_p2p_top_n"`
@@ -489,6 +490,9 @@ func (c *Config) validate() error {
 	}
 	if c.Capture.DiscoverSchedule == "" || c.Capture.ScanSchedule == "" {
 		return fmt.Errorf("capture 的 discover/scan schedule 均不能为空")
+	}
+	if c.Capture.P2PWindowMinutes <= 0 {
+		return fmt.Errorf("capture.p2p_activation_window_minutes 必须大于 0")
 	}
 	if c.CardApproval.Enabled {
 		if c.CardApproval.PrincipalOpenID == "" {

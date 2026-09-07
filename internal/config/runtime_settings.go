@@ -67,6 +67,7 @@ type RuntimeSettings struct {
 	CaptureScanWorkers        int    `json:"capture_scan_workers"`
 	CaptureDiscoverSchedule   string `json:"capture_discover_schedule"`
 	CaptureScanSchedule       string `json:"capture_scan_schedule"`
+	CaptureP2PWindowMinutes   int    `json:"capture_p2p_activation_window_minutes"`
 	CaptureAutoRelatedP2PTopN int    `json:"capture_auto_related_p2p_top_n"`
 
 	FactEngineEnabled           bool   `json:"fact_engine_enabled"`
@@ -226,6 +227,7 @@ func runtimeSettingsFromConfig(cfg *Config) RuntimeSettings {
 		CaptureScanWorkers:           cfg.Capture.ScanWorkers,
 		CaptureDiscoverSchedule:      cfg.Capture.DiscoverSchedule,
 		CaptureScanSchedule:          cfg.Capture.ScanSchedule,
+		CaptureP2PWindowMinutes:      cfg.Capture.P2PWindowMinutes,
 		CaptureAutoRelatedP2PTopN:    cfg.Capture.AutoRelatedP2PTopN,
 		FactEngineEnabled:            cfg.FactEngine.Enabled,
 		FactEngineSchedule:           cfg.FactEngine.Schedule,
@@ -301,6 +303,7 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 	cfg.Capture.ScanWorkers = input.CaptureScanWorkers
 	cfg.Capture.DiscoverSchedule = strings.TrimSpace(input.CaptureDiscoverSchedule)
 	cfg.Capture.ScanSchedule = strings.TrimSpace(input.CaptureScanSchedule)
+	cfg.Capture.P2PWindowMinutes = input.CaptureP2PWindowMinutes
 	cfg.Capture.AutoRelatedP2PTopN = input.CaptureAutoRelatedP2PTopN
 	cfg.FactEngine.Enabled = input.FactEngineEnabled
 	cfg.FactEngine.Schedule = strings.TrimSpace(input.FactEngineSchedule)
@@ -383,11 +386,12 @@ type runtimeOverride struct {
 		TimeoutSeconds  int    `yaml:"timeout_seconds"`
 	} `yaml:"chat"`
 	Capture struct {
-		PageSize           int    `yaml:"page_size"`
-		ScanWorkers        int    `yaml:"scan_workers"`
-		DiscoverSchedule   string `yaml:"discover_schedule"`
-		ScanSchedule       string `yaml:"scan_schedule"`
-		AutoRelatedP2PTopN int    `yaml:"auto_related_p2p_top_n"`
+		PageSize                   int    `yaml:"page_size"`
+		ScanWorkers                int    `yaml:"scan_workers"`
+		DiscoverSchedule           string `yaml:"discover_schedule"`
+		ScanSchedule               string `yaml:"scan_schedule"`
+		P2PActivationWindowMinutes int    `yaml:"p2p_activation_window_minutes"`
+		AutoRelatedP2PTopN         int    `yaml:"auto_related_p2p_top_n"`
 	} `yaml:"capture"`
 	// CardApproval is local identity/secret configuration, not a setting the
 	// management page may edit. Preserve its active value whenever that page
@@ -479,6 +483,7 @@ func runtimeOverrideFromSettings(input RuntimeSettings) runtimeOverride {
 	override.Capture.ScanWorkers = input.CaptureScanWorkers
 	override.Capture.DiscoverSchedule = strings.TrimSpace(input.CaptureDiscoverSchedule)
 	override.Capture.ScanSchedule = strings.TrimSpace(input.CaptureScanSchedule)
+	override.Capture.P2PActivationWindowMinutes = input.CaptureP2PWindowMinutes
 	override.Capture.AutoRelatedP2PTopN = input.CaptureAutoRelatedP2PTopN
 	override.FactEngine.Enabled = input.FactEngineEnabled
 	override.FactEngine.Schedule = strings.TrimSpace(input.FactEngineSchedule)

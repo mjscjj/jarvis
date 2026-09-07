@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"jarvis/internal/config"
+	"jarvis/internal/datatypes"
 	"jarvis/internal/domain"
 
 	"gorm.io/gorm"
@@ -77,6 +78,39 @@ func TestSQLiteUpdatedAtUsesGORM(t *testing.T) {
 func TestMigrateRejectsNilDatabase(t *testing.T) {
 	if err := Migrate(nil); err == nil {
 		t.Fatal("Migrate(nil) error = nil")
+	}
+}
+
+func TestMigrateReplacesUniqueTodoFingerprintIndex(t *testing.T) {
+	db := openMigratedSQLite(t)
+	if err := db.Migrator().DropIndex(&domain.Todo{}, "idx_todo_fingerprint"); err != nil {
+		t.Fatalf("drop current Todo fingerprint index: %v", err)
+	}
+	if err := db.Exec("CREATE UNIQUE INDEX uk_todo_fingerprint ON todo(dedup_fingerprint)").Error; err != nil {
+		t.Fatalf("create legacy Todo fingerprint index: %v", err)
+	}
+
+	if err := Migrate(db); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+	if db.Migrator().HasIndex(&domain.Todo{}, "uk_todo_fingerprint") {
+		t.Fatal("legacy unique Todo fingerprint index still exists")
+	}
+	if !db.Migrator().HasIndex(&domain.Todo{}, "idx_todo_fingerprint") {
+		t.Fatal("ordinary Todo fingerprint index was not created")
+	}
+
+	now := time.Now().UTC()
+	for _, title := range []string{"first occurrence", "second occurrence"} {
+		todo := domain.Todo{
+			Title: title, Description: title, ActionType: "investigate", Target: "same target",
+			SourceMessageIDs: datatypes.JSON(`["om_test"]`), SourceQuote: title,
+			Status: "materialized", DedupFingerprint: "same-fingerprint",
+			Revision: 1, FirstSeenAt: now, LastEvidenceAt: now,
+		}
+		if err := db.Create(&todo).Error; err != nil {
+			t.Fatalf("create %q Todo after migration: %v", title, err)
+		}
 	}
 }
 

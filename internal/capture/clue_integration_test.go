@@ -39,7 +39,8 @@ func TestAppendClueSQLite(t *testing.T) {
 	service, err := NewService(db, &captureFixture{}, Options{
 		PageSize: 50, ScanWorkers: 2, HotAge: 6 * time.Hour, WarmAge: 7 * 24 * time.Hour, Location: location,
 		PrincipalOpenID: "ou_principal", SearchOverlap: 10 * time.Minute, ActivationContext: 2 * time.Hour,
-		AutoRelatedP2PTopN: 30,
+		P2PActivationWindow: 15 * time.Minute,
+		AutoRelatedP2PTopN:  30,
 	})
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)

@@ -96,6 +96,7 @@ capture:
   timezone: "Asia/Shanghai"
   discover_schedule: "@every 6h"
   scan_schedule: "@every 5m"
+  p2p_activation_window_minutes: 15
 codex:
   bin: "traex"
   model: "analysis-model"
@@ -178,6 +179,7 @@ dailydigest:
 	input.ExtractSchedule = "@every 2m"
 	input.ExtractConcurrency = 4
 	input.CaptureScanWorkers = 6
+	input.CaptureP2PWindowMinutes = 25
 	input.FactEngineReasoningEffort = "high"
 	input.FactEngineWindowMaxMessages = 80
 	input.ProactiveSchedule = "@every 2h"
@@ -196,7 +198,8 @@ dailydigest:
 	}
 	if updated.Settings.AgentDisplayName != "小贾" || updated.Settings.AnalysisCLI != "codex" || updated.Settings.ExecuteCLI != "traex" ||
 		updated.Settings.ExecuteConcurrency != 4 || updated.Settings.ExtractSchedule != "@every 2m" || updated.Settings.ExtractConcurrency != 4 ||
-		updated.Settings.CaptureScanWorkers != 6 || updated.Settings.FactEngineReasoningEffort != "high" || updated.Settings.FactEngineWindowMaxMessages != 80 ||
+		updated.Settings.CaptureScanWorkers != 6 || updated.Settings.CaptureP2PWindowMinutes != 25 ||
+		updated.Settings.FactEngineReasoningEffort != "high" || updated.Settings.FactEngineWindowMaxMessages != 80 ||
 		updated.Settings.ProactiveSchedule != "@every 2h" || updated.Settings.ProactiveStartupDelaySeconds != 180 ||
 		updated.Settings.LarkRateLimit != 7.5 || updated.Settings.DailyDigestConcurrency != 4 {
 		t.Fatalf("updated settings = %#v", updated.Settings)
@@ -218,7 +221,8 @@ dailydigest:
 	}
 	if reloaded.Identity.DisplayName != "小贾" || reloaded.Codex.Bin != "codex" || reloaded.Execute.Bin != "traex" ||
 		reloaded.Execute.Concurrency != 4 || reloaded.Extract.Schedule != "@every 2m" || reloaded.Extract.Concurrency != 4 ||
-		reloaded.Capture.ScanWorkers != 6 || reloaded.FactEngine.ReasoningEffort != "high" || reloaded.FactEngine.WindowMaxMessages != 80 ||
+		reloaded.Capture.ScanWorkers != 6 || reloaded.Capture.P2PWindowMinutes != 25 ||
+		reloaded.FactEngine.ReasoningEffort != "high" || reloaded.FactEngine.WindowMaxMessages != 80 ||
 		reloaded.Proactive.Schedule != "@every 2h" || reloaded.Proactive.StartupDelaySeconds != 180 ||
 		reloaded.LarkCLI.RateLimit != 7.5 || reloaded.DailyDigest.GroupConcurrency != 4 {
 		t.Fatalf("reloaded config = %#v", reloaded)

@@ -136,7 +136,7 @@ type Todo struct {
 	// Status is extracted while awaiting materialization, then materialized once
 	// a Task exists. Observing clues stay visible without creating a Task.
 	Status           string         `gorm:"column:status;not null;default:extracted;index:idx_todo_status;index:idx_todo_leader_status,priority:2"`
-	DedupFingerprint string         `gorm:"column:dedup_fingerprint;not null;uniqueIndex:uk_todo_fingerprint"`
+	DedupFingerprint string         `gorm:"column:dedup_fingerprint;not null;index:idx_todo_fingerprint"`
 	Content          datatypes.JSON `gorm:"column:content"`    // 原始来源、冻结 capture 与开放 annotation；唯一语义载体
 	Resolution       datatypes.JSON `gorm:"column:resolution"` // 项目/仓库推算轨迹（method/project_id/repos_hint/confidence/basis）
 	// Revision counts how many times this clue was re-extracted; Version is the

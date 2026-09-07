@@ -45,14 +45,15 @@ type ScanObserver interface {
 
 // Options contains capture policy already decided by the technical design.
 type Options struct {
-	PageSize          int
-	ScanWorkers       int
-	HotAge            time.Duration
-	WarmAge           time.Duration
-	Location          *time.Location
-	PrincipalOpenID   string
-	SearchOverlap     time.Duration
-	ActivationContext time.Duration
+	PageSize            int
+	ScanWorkers         int
+	HotAge              time.Duration
+	WarmAge             time.Duration
+	Location            *time.Location
+	PrincipalOpenID     string
+	SearchOverlap       time.Duration
+	ActivationContext   time.Duration
+	P2PActivationWindow time.Duration
 	// AutoRelatedP2PTopN 是 discover 自动纳入监听的内部真人私聊上限（按 active_time
 	// 取最活跃的前 N 个）。0 表示不自动开任何私聊（全靠手动名单）。
 	AutoRelatedP2PTopN int
@@ -94,6 +95,9 @@ func NewService(db *gorm.DB, lark runner, opts Options) (*Service, error) {
 	}
 	if opts.ActivationContext <= 0 {
 		return nil, fmt.Errorf("capture activation context must be positive")
+	}
+	if opts.P2PActivationWindow <= 0 {
+		return nil, fmt.Errorf("capture p2p activation window must be positive")
 	}
 	if opts.AutoRelatedP2PTopN < 0 {
 		return nil, fmt.Errorf("capture auto-related p2p top-n must be non-negative")
@@ -234,7 +238,7 @@ func normalizeChatIDs(chatIDs []string) ([]string, error) {
 // reconciled only after the complete active_time-sorted list has been fetched
 // successfully, so a failed partial listing can never evict a currently
 // monitored conversation. A newly activated p2p receives only the bounded
-// ActivationContext window needed to capture the message that made it active.
+// P2PActivationWindow needed to capture the message that made it active.
 func (s *Service) DiscoverChats(ctx context.Context) (err error) {
 	record, err := s.beginScan("discover", nil, nil, nil, nil)
 	if err != nil {
@@ -384,7 +388,7 @@ func (s *Service) reconcileAutoRelatedP2P(rankedChatIDs []string) error {
 	}
 
 	if len(desired) > 0 {
-		activationStart := s.now().Add(-s.opts.ActivationContext).UnixMilli()
+		activationStart := s.now().Add(-s.opts.P2PActivationWindow).UnixMilli()
 		if err := s.db.Model(&domain.Checkpoint{}).
 			Where("chat_id IN ? AND last_scan_at IS NULL", desired).
 			Update("high_water_create_time", activationStart).Error; err != nil {
@@ -442,7 +446,7 @@ func (s *Service) ScanChatNow(ctx context.Context, chatID string) error {
 }
 
 // ensureScanWindow bounds the first scan of a manually related chat. Groups
-// start at now; p2p chats receive the short ActivationContext window so the
+// start at now; p2p chats receive the short P2PActivationWindow so the
 // message that prompted manual monitoring is not skipped.
 func (s *Service) ensureScanWindow(chatID string) error {
 	var group domain.Group
@@ -454,7 +458,7 @@ func (s *Service) ensureScanWindow(chatID string) error {
 	}
 	windowStart := s.now().UnixMilli()
 	if group.ChatMode == "p2p" {
-		windowStart = s.now().Add(-s.opts.ActivationContext).UnixMilli()
+		windowStart = s.now().Add(-s.opts.P2PActivationWindow).UnixMilli()
 	}
 	if err := s.db.Model(&domain.Checkpoint{}).
 		Where("chat_id = ?", chatID).
