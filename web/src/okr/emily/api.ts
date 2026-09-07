@@ -53,10 +53,10 @@ interface APIPlanContent {
       id: string
       title: string
       version?: number
-      owners: Array<{ open_id: string; name: string }>
+      owners: Array<{ open_id: string; name: string; identity_namespace?: 'main_feishu_app' }>
       metric_note: string
       metrics: Array<{ id: string; text: string; light?: Light; images?: Entry['images'] }>
-      points: Array<{ id: string; kind: PointKind; title: string; meego_work_item_id?: string; meego_url?: string; owners?: Array<{ open_id: string; name: string }>; tags: KrTag[] }>
+      points: Array<{ id: string; kind: PointKind; title: string; meego_work_item_id?: string; meego_url?: string; owners?: Array<{ open_id: string; name: string; identity_namespace?: 'main_feishu_app' }>; tags: KrTag[] }>
       tags: KrTag[]
     }>
   }>
@@ -416,7 +416,7 @@ function fromAPIPlanContent(value: APIPlanContent): OKRPlanContent {
         id: kr.id,
         title: normalizeKRTitle(kr.title),
         version: kr.version ?? 0,
-        owners: (kr.owners ?? []).map((owner): KrOwner => ({ openId: owner.open_id, name: owner.name })),
+        owners: (kr.owners ?? []).map((owner): KrOwner => ({ openId: owner.open_id, name: owner.name, identityNamespace: owner.identity_namespace })),
         ownerName: (kr.owners ?? []).map((owner) => owner.name).filter(Boolean).join('、'),
         ownerOpenId: (kr.owners ?? []).find((owner) => owner.open_id)?.open_id ?? '',
         metricNote: kr.metric_note,
@@ -429,7 +429,7 @@ function fromAPIPlanContent(value: APIPlanContent): OKRPlanContent {
           meegoWorkItemId: point.meego_work_item_id ?? '',
           meegoUrl: point.meego_url ?? '',
           tags: point.tags ?? [],
-          owners: (point.owners ?? []).map((owner): KrOwner => ({ openId: owner.open_id, name: owner.name })),
+          owners: (point.owners ?? []).map((owner): KrOwner => ({ openId: owner.open_id, name: owner.name, identityNamespace: owner.identity_namespace })),
           entries: [],
           previousEntries: [],
         })),

@@ -31,7 +31,7 @@ func TestPlanLifecycleKeepsOfficialOKRRowsUntouched(t *testing.T) {
 				ID: "plan-kr-1", Title: "计划 KR", Owners: []OwnerView{{OpenID: "ou_a", Name: "甲"}},
 				Tags:    []TagView{{Type: domain.TagTypeBusinessCategory, Value: "增长"}, {Type: domain.TagTypePriority, Value: "p0"}},
 				Metrics: []MetricView{{ID: "plan-m-1", Text: "核心目标 100", Light: domain.LightGreen}},
-				Points:  []PlanPointView{{ID: "plan-p-1", Kind: domain.PointKindStrategy, Title: "策略 KR", MeegoWorkItemID: "MEEGO-1", MeegoURL: "https://meego.test/MEEGO-1", Owners: []OwnerView{{Name: "乙"}}, Tags: []TagView{{Type: "custom", Value: "待评审"}}}},
+				Points:  []PlanPointView{{ID: "plan-p-1", Kind: domain.PointKindStrategy, Title: "策略 KR", MeegoWorkItemID: "MEEGO-1", MeegoURL: "https://meego.test/MEEGO-1", Owners: []OwnerView{{OpenID: "ou_b", Name: "乙"}}, Tags: []TagView{{Type: "custom", Value: "待评审"}}}},
 			}},
 		}}},
 		CreatedBy: "ou_editor",
@@ -41,6 +41,10 @@ func TestPlanLifecycleKeepsOfficialOKRRowsUntouched(t *testing.T) {
 	}
 	if created.Version != 0 || created.Content.Objectives[0].KRs[0].Owners[0].Name != "甲" {
 		t.Fatalf("created plan = %+v", created)
+	}
+	kr := created.Content.Objectives[0].KRs[0]
+	if kr.Owners[0].IdentityNamespace != OwnerIdentityNamespaceMainFeishuApp || kr.Points[0].Owners[0].IdentityNamespace != OwnerIdentityNamespaceMainFeishuApp {
+		t.Fatalf("plan owner namespaces = kr:%+v point:%+v", kr.Owners, kr.Points[0].Owners)
 	}
 
 	if err := service.DeletePlan(t.Context(), created.ID); err != nil {
@@ -122,6 +126,7 @@ func TestLegacyPlanContentBackfillsIntoRelationalDefinitions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	expected.Objectives[0].KRs[0].Owners[0].IdentityNamespace = OwnerIdentityNamespaceMainFeishuApp
 	if !reflect.DeepEqual(plan.Content, expected) {
 		t.Fatalf("relational round trip changed plan content:\nwant=%+v\n got=%+v", expected, plan.Content)
 	}

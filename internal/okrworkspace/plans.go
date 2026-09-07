@@ -215,11 +215,29 @@ func (s *Service) planFromRecord(ctx context.Context, record domain.OKRPlan) (Pl
 	if err != nil {
 		return PlanView{}, err
 	}
+	content = withPlanOwnerIdentityNamespaces(content)
 	return PlanView{
 		ID: record.ID, Quarter: record.Quarter, Title: record.Title, Version: record.Version, Content: content,
 		CreatedBy: record.CreatedBy, UpdatedBy: record.UpdatedBy,
 		CreatedAt: record.CreatedAt.UTC().Format(time.RFC3339), UpdatedAt: record.UpdatedAt.UTC().Format(time.RFC3339),
 	}, nil
+}
+
+func withPlanOwnerIdentityNamespaces(content PlanContentView) PlanContentView {
+	for objectiveIndex := range content.Objectives {
+		for krIndex := range content.Objectives[objectiveIndex].KRs {
+			kr := &content.Objectives[objectiveIndex].KRs[krIndex]
+			for ownerIndex, owner := range kr.Owners {
+				kr.Owners[ownerIndex] = storedOwnerView(owner.OpenID, owner.Name)
+			}
+			for pointIndex := range kr.Points {
+				for ownerIndex, owner := range kr.Points[pointIndex].Owners {
+					kr.Points[pointIndex].Owners[ownerIndex] = storedOwnerView(owner.OpenID, owner.Name)
+				}
+			}
+		}
+	}
+	return content
 }
 
 func normalizePlanContent(input PlanContentView) (PlanContentView, error) {
