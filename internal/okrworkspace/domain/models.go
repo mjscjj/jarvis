@@ -71,10 +71,14 @@ func ValidPriorityTag(value string) bool {
 }
 
 type Objective struct {
-	ID        string    `gorm:"primaryKey;size:64"`
+	ID string `gorm:"primaryKey;size:64"`
+	// PlanID scopes draft objectives to an OKR Plan. An empty value denotes
+	// the committed OKR definition used by Review and weekly reports.
+	PlanID    string    `gorm:"not null;default:'';index"`
 	Title     string    `gorm:"not null"`
 	Quarter   string    `gorm:"not null;index"`
 	SortOrder int       `gorm:"not null;default:0"`
+	Version   int32     `gorm:"not null;default:0"`
 	CreatedAt time.Time `gorm:"not null"`
 	UpdatedAt time.Time `gorm:"not null"`
 }

@@ -3,13 +3,11 @@ package okrworkspace
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
-	"jarvis/internal/datatypes"
 	"jarvis/internal/okrworkspace/domain"
 
 	"gorm.io/gorm"
@@ -48,14 +46,16 @@ type PlanContentView struct {
 }
 
 type PlanObjectiveView struct {
-	ID    string       `json:"id"`
-	Title string       `json:"title"`
-	KRs   []PlanKRView `json:"krs"`
+	ID      string       `json:"id"`
+	Title   string       `json:"title"`
+	Version int32        `json:"version"`
+	KRs     []PlanKRView `json:"krs"`
 }
 
 type PlanKRView struct {
 	ID         string          `json:"id"`
 	Title      string          `json:"title"`
+	Version    int32           `json:"version"`
 	Owners     []OwnerView     `json:"owners"`
 	MetricNote string          `json:"metric_note"`
 	Metrics    []MetricView    `json:"metrics"`
@@ -64,11 +64,13 @@ type PlanKRView struct {
 }
 
 type PlanPointView struct {
-	ID     string           `json:"id"`
-	Kind   domain.PointKind `json:"kind"`
-	Title  string           `json:"title"`
-	Owners []OwnerView      `json:"owners"`
-	Tags   []TagView        `json:"tags"`
+	ID              string           `json:"id"`
+	Kind            domain.PointKind `json:"kind"`
+	Title           string           `json:"title"`
+	MeegoWorkItemID string           `json:"meego_work_item_id"`
+	MeegoURL        string           `json:"meego_url"`
+	Owners          []OwnerView      `json:"owners"`
+	Tags            []TagView        `json:"tags"`
 }
 
 type CreatePlanInput struct {
@@ -106,7 +108,7 @@ func (s *Service) ListPlans(ctx context.Context, quarter string) (PlanListView, 
 	}
 	result := PlanListView{Quarter: quarter, AvailableQuarters: quarters, Plans: make([]PlanSummaryView, 0, len(records))}
 	for _, record := range records {
-		view, err := planFromRecord(record)
+		view, err := s.planFromRecord(ctx, record)
 		if err != nil {
 			return PlanListView{}, err
 		}
@@ -160,7 +162,7 @@ func (s *Service) GetPlan(ctx context.Context, id string) (PlanView, error) {
 		}
 		return PlanView{}, fmt.Errorf("get OKR plan: %w", err)
 	}
-	return planFromRecord(record)
+	return s.planFromRecord(ctx, record)
 }
 
 func (s *Service) CreatePlan(ctx context.Context, input CreatePlanInput) (PlanView, error) {
@@ -177,21 +179,24 @@ func (s *Service) CreatePlan(ctx context.Context, input CreatePlanInput) (PlanVi
 	if err != nil {
 		return PlanView{}, err
 	}
-	encoded, err := json.Marshal(content)
+	encoded, err := encodePlanContent(content)
 	if err != nil {
-		return PlanView{}, fmt.Errorf("encode OKR plan content: %w", err)
+		return PlanView{}, err
 	}
 	now := time.Now().UTC()
 	digest := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%d", input.Quarter, input.Title, now.UnixNano())))
 	record := domain.OKRPlan{
 		ID: fmt.Sprintf("plan-%x", digest[:10]), Quarter: input.Quarter, Title: input.Title,
-		Content: datatypes.JSON(encoded), CreatedBy: input.CreatedBy, UpdatedBy: input.CreatedBy,
+		Content: encoded, CreatedBy: input.CreatedBy, UpdatedBy: input.CreatedBy,
 		CreatedAt: now, UpdatedAt: now,
 	}
 	if err := s.db.WithContext(ctx).Create(&record).Error; err != nil {
 		return PlanView{}, fmt.Errorf("create OKR plan: %w", err)
 	}
-	return planFromRecord(record)
+	if err := s.replacePlanContentRows(ctx, record.ID, content, input.CreatedBy); err != nil {
+		return PlanView{}, err
+	}
+	return s.planFromRecord(ctx, record)
 }
 
 func (s *Service) ReplacePlan(ctx context.Context, id string, input ReplacePlanInput) (PlanView, error) {
@@ -208,12 +213,12 @@ func (s *Service) ReplacePlan(ctx context.Context, id string, input ReplacePlanI
 	if err != nil {
 		return PlanView{}, err
 	}
-	encoded, err := json.Marshal(content)
+	encoded, err := encodePlanContent(content)
 	if err != nil {
-		return PlanView{}, fmt.Errorf("encode OKR plan content: %w", err)
+		return PlanView{}, err
 	}
 	result := s.db.WithContext(ctx).Model(&domain.OKRPlan{}).Where("id = ? AND version = ?", id, input.ExpectedVersion).Updates(map[string]any{
-		"title": input.Title, "content": datatypes.JSON(encoded), "updated_by": input.UpdatedBy,
+		"title": input.Title, "content": encoded, "updated_by": input.UpdatedBy,
 		"version": gorm.Expr("version + 1"), "updated_at": time.Now().UTC(),
 	})
 	if result.Error != nil {
@@ -229,6 +234,9 @@ func (s *Service) ReplacePlan(ctx context.Context, id string, input ReplacePlanI
 		}
 		return PlanView{}, ErrConflict
 	}
+	if err := s.replacePlanContentRows(ctx, id, content, input.UpdatedBy); err != nil {
+		return PlanView{}, err
+	}
 	return s.GetPlan(ctx, id)
 }
 
@@ -236,6 +244,9 @@ func (s *Service) DeletePlan(ctx context.Context, id string) error {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return fmt.Errorf("plan id is required")
+	}
+	if err := s.deletePlanDefinitionRows(ctx, id); err != nil {
+		return err
 	}
 	result := s.db.WithContext(ctx).Delete(&domain.OKRPlan{}, "id = ?", id)
 	if result.Error != nil {
@@ -247,16 +258,10 @@ func (s *Service) DeletePlan(ctx context.Context, id string) error {
 	return nil
 }
 
-func planFromRecord(record domain.OKRPlan) (PlanView, error) {
-	content := PlanContentView{Objectives: []PlanObjectiveView{}}
-	if len(record.Content) > 0 {
-		if err := json.Unmarshal(record.Content, &content); err != nil {
-			return PlanView{}, fmt.Errorf("decode OKR plan content for %s: %w", record.ID, err)
-		}
-	}
-	content, err := normalizePlanContent(content)
+func (s *Service) planFromRecord(ctx context.Context, record domain.OKRPlan) (PlanView, error) {
+	content, err := s.planContent(ctx, record)
 	if err != nil {
-		return PlanView{}, fmt.Errorf("validate OKR plan content for %s: %w", record.ID, err)
+		return PlanView{}, err
 	}
 	return PlanView{
 		ID: record.ID, Quarter: record.Quarter, Title: record.Title, Version: record.Version, Content: content,
@@ -307,6 +312,8 @@ func normalizePlanContent(input PlanContentView) (PlanContentView, error) {
 					return PlanContentView{}, fmt.Errorf("plan points require unique ids and a valid kind")
 				}
 				seen[point.ID] = true
+				point.MeegoWorkItemID = strings.TrimSpace(point.MeegoWorkItemID)
+				point.MeegoURL = strings.TrimSpace(point.MeegoURL)
 				point.Owners = normalizeOwners(point.Owners)
 				point.Tags = normalizeTags(point.Tags)
 				if err := validatePointTags(point.Tags); err != nil {

@@ -90,7 +90,7 @@ func (s *Service) OpenWeek(ctx context.Context, input OpenWeekInput) (OpenWeekRe
 		return OpenWeekResult{}, fmt.Errorf("template_key must be %q or %q", domain.WeekTemplateClassic, domain.WeekTemplateOKRPreview)
 	}
 	var objectiveCount int64
-	if err := s.db.WithContext(ctx).Model(&domain.Objective{}).Where("quarter = ?", input.Quarter).Count(&objectiveCount).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&domain.Objective{}).Where("quarter = ? AND plan_id = ''", input.Quarter).Count(&objectiveCount).Error; err != nil {
 		return OpenWeekResult{}, fmt.Errorf("check weekly report quarter: %w", err)
 	}
 	if objectiveCount == 0 {
@@ -139,7 +139,7 @@ func (s *Service) DeleteWeek(ctx context.Context, quarter, week string) (DeleteW
 	var krIDs []string
 	if err := s.db.WithContext(ctx).Model(&domain.KR{}).
 		Joins("JOIN okr_workspace_objective ON okr_workspace_objective.id = okr_workspace_kr.objective_id").
-		Where("okr_workspace_objective.quarter = ?", quarter).
+		Where("okr_workspace_objective.quarter = ? AND okr_workspace_objective.plan_id = ''", quarter).
 		Pluck("okr_workspace_kr.id", &krIDs).Error; err != nil {
 		return DeleteWeekResult{}, fmt.Errorf("list weekly report KRs before delete: %w", err)
 	}

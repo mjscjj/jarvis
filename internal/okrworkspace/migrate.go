@@ -1,6 +1,8 @@
 package okrworkspace
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -127,6 +129,37 @@ func MigrateBizOKR(db *gorm.DB) error {
 	if err := db.AutoMigrate(domain.BizModels()...); err != nil {
 		return fmt.Errorf("migrate Biz OKR module schema: %w", err)
 	}
+	if err := backfillPlanDefinitions(db); err != nil {
+		return err
+	}
+	return nil
+}
+
+// backfillPlanDefinitions moves the legacy plan JSON into the same relational
+// Objective/KR/Metric/Point tables used by Review and weekly reports. It is
+// deliberately idempotent so startup can safely run it again at final launch.
+func backfillPlanDefinitions(db *gorm.DB) error {
+	var plans []domain.OKRPlan
+	if err := db.Find(&plans).Error; err != nil {
+		return fmt.Errorf("list plans for relational backfill: %w", err)
+	}
+	service := &Service{db: db}
+	for _, plan := range plans {
+		var count int64
+		if err := db.Model(&domain.Objective{}).Where("plan_id = ?", plan.ID).Count(&count).Error; err != nil {
+			return fmt.Errorf("count relational objectives for plan %s: %w", plan.ID, err)
+		}
+		if count > 0 || len(plan.Content) == 0 || string(plan.Content) == "null" {
+			continue
+		}
+		var content PlanContentView
+		if err := json.Unmarshal(plan.Content, &content); err != nil {
+			return fmt.Errorf("decode plan %s for relational backfill: %w", plan.ID, err)
+		}
+		if err := service.replacePlanContentRows(context.Background(), plan.ID, content, plan.UpdatedBy); err != nil {
+			return fmt.Errorf("backfill plan %s into relational definitions: %w", plan.ID, err)
+		}
+	}
 	return nil
 }
 
@@ -159,7 +192,7 @@ func backfillProgressWeeks(db *gorm.DB) error {
 		Joins("JOIN okr_workspace_point AS point ON point.id = progress.point_id").
 		Joins("JOIN okr_workspace_kr AS kr ON kr.id = point.kr_id").
 		Joins("JOIN okr_workspace_objective AS objective ON objective.id = kr.objective_id").
-		Where("objective.quarter <> '' AND progress.week <> ''").
+		Where("objective.quarter <> '' AND objective.plan_id = '' AND progress.week <> ''").
 		Group("objective.quarter, progress.week").Scan(&historical).Error; err != nil {
 		return fmt.Errorf("list historical weekly report scopes: %w", err)
 	}

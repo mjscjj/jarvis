@@ -156,6 +156,9 @@ func (s *Service) requirePreviewScoreTarget(ctx context.Context, quarter, week s
 	if err := s.db.WithContext(ctx).First(&objective, "id = ?", kr.ObjectiveID).Error; err != nil {
 		return "", fmt.Errorf("get objective for weekly score target: %w", err)
 	}
+	if objective.PlanID != "" {
+		return "", ErrNotFound
+	}
 	if objective.Quarter != quarter {
 		return "", fmt.Errorf("weekly score target does not belong to quarter %s", quarter)
 	}

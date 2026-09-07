@@ -48,13 +48,15 @@ interface APIPlanContent {
   objectives: Array<{
     id: string
     title: string
+    version?: number
     krs: Array<{
       id: string
       title: string
+      version?: number
       owners: Array<{ open_id: string; name: string }>
       metric_note: string
       metrics: Array<{ id: string; text: string; light?: Light; images?: Entry['images'] }>
-      points: Array<{ id: string; kind: PointKind; title: string; owners?: Array<{ open_id: string; name: string }>; tags: KrTag[] }>
+      points: Array<{ id: string; kind: PointKind; title: string; meego_work_item_id?: string; meego_url?: string; owners?: Array<{ open_id: string; name: string }>; tags: KrTag[] }>
       tags: KrTag[]
     }>
   }>
@@ -409,20 +411,23 @@ function fromAPIPlanContent(value: APIPlanContent): OKRPlanContent {
     objectives: (value.objectives ?? []).map((objective) => ({
       id: objective.id,
       title: objective.title,
+      version: objective.version ?? 0,
       krs: (objective.krs ?? []).map((kr) => ({
         id: kr.id,
         title: normalizeKRTitle(kr.title),
+        version: kr.version ?? 0,
         owners: (kr.owners ?? []).map((owner): KrOwner => ({ openId: owner.open_id, name: owner.name })),
         ownerName: (kr.owners ?? []).map((owner) => owner.name).filter(Boolean).join('、'),
         ownerOpenId: (kr.owners ?? []).find((owner) => owner.open_id)?.open_id ?? '',
         metricNote: kr.metric_note,
-        version: 0,
         weeklyCoreVersion: 0,
         metrics: (kr.metrics ?? []).map((metric) => ({ ...metric, images: metric.images ?? [] })),
         points: (kr.points ?? []).map((point) => ({
           id: point.id,
           kind: point.kind,
           title: point.title,
+          meegoWorkItemId: point.meego_work_item_id ?? '',
+          meegoUrl: point.meego_url ?? '',
           tags: point.tags ?? [],
           owners: (point.owners ?? []).map((owner): KrOwner => ({ openId: owner.open_id, name: owner.name })),
           entries: [],
@@ -439,9 +444,11 @@ function toAPIPlanContent(value: OKRPlanContent): APIPlanContent {
     objectives: value.objectives.map((objective) => ({
       id: objective.id,
       title: objective.title,
+      version: objective.version ?? 0,
       krs: objective.krs.map((kr) => ({
         id: kr.id,
         title: normalizeKRTitle(kr.title),
+        version: kr.version ?? 0,
         owners: (kr.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
         metric_note: kr.metricNote ?? '',
         metrics: kr.metrics.map((metric) => ({ id: metric.id, text: metric.text, light: metric.light, images: metric.images ?? [] })),
@@ -449,6 +456,8 @@ function toAPIPlanContent(value: OKRPlanContent): APIPlanContent {
           id: point.id,
           kind: point.kind,
           title: point.title,
+          meego_work_item_id: point.meegoWorkItemId ?? '',
+          meego_url: point.meegoUrl ?? '',
           owners: (point.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
           tags: point.tags ?? [],
         })),
@@ -666,6 +675,43 @@ export async function replaceOKRPlan(input: { id: string; expectedVersion: numbe
     }
     throw error
   }
+}
+
+export async function createOKRPlanObjective(planId: string, objective: Objective): Promise<OKRPlan> {
+  const content = toAPIPlanContent({ objectives: [objective] })
+  return fromAPIPlan(await request<APIPlan>(`/api/biz-okr/plans/${encodeURIComponent(planId)}/objectives`, {
+    method: 'POST',
+    body: JSON.stringify(content.objectives[0]),
+  }))
+}
+
+export async function updateOKRPlanObjective(planId: string, objective: Objective): Promise<OKRPlan> {
+  const content = toAPIPlanContent({ objectives: [objective] })
+  try {
+    return fromAPIPlan(await request<APIPlan>(`/api/biz-okr/plans/${encodeURIComponent(planId)}/objectives/${encodeURIComponent(objective.id)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ expected_version: objective.version ?? 0, objective: content.objectives[0] }),
+    }))
+  } catch (error) {
+    if (error instanceof APIError && error.status === 409 && error.data) {
+      throw new APIError(error.message, error.status, error.code, fromAPIPlan(error.data as APIPlan), error.logid)
+    }
+    throw error
+  }
+}
+
+export async function deleteOKRPlanObjective(planId: string, objective: Objective): Promise<void> {
+  await request(`/api/biz-okr/plans/${encodeURIComponent(planId)}/objectives/${encodeURIComponent(objective.id)}`, {
+    method: 'DELETE',
+    body: JSON.stringify({ expected_version: objective.version ?? 0 }),
+  })
+}
+
+export async function reorderOKRPlanObjectives(planId: string, ids: string[]): Promise<void> {
+  await request(`/api/biz-okr/plans/${encodeURIComponent(planId)}/objectives/order`, {
+    method: 'PUT',
+    body: JSON.stringify({ ids }),
+  })
 }
 
 export async function deleteOKRPlan(id: string): Promise<void> {
