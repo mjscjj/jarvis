@@ -80,13 +80,6 @@ type CreatePlanInput struct {
 	CreatedBy string          `json:"-"`
 }
 
-type ReplacePlanInput struct {
-	ExpectedVersion int32           `json:"expected_version"`
-	Title           string          `json:"title"`
-	Content         PlanContentView `json:"content"`
-	UpdatedBy       string          `json:"-"`
-}
-
 func (s *Service) ListPlans(ctx context.Context, quarter string) (PlanListView, error) {
 	quarter = strings.TrimSpace(quarter)
 	if quarter == "" {
@@ -197,47 +190,6 @@ func (s *Service) CreatePlan(ctx context.Context, input CreatePlanInput) (PlanVi
 		return PlanView{}, err
 	}
 	return s.planFromRecord(ctx, record)
-}
-
-func (s *Service) ReplacePlan(ctx context.Context, id string, input ReplacePlanInput) (PlanView, error) {
-	id = strings.TrimSpace(id)
-	input.Title = strings.TrimSpace(input.Title)
-	input.UpdatedBy = strings.TrimSpace(input.UpdatedBy)
-	if id == "" || input.Title == "" {
-		return PlanView{}, fmt.Errorf("plan id and title are required")
-	}
-	if input.ExpectedVersion < 0 {
-		return PlanView{}, fmt.Errorf("expected_version must be non-negative")
-	}
-	content, err := normalizePlanContent(input.Content)
-	if err != nil {
-		return PlanView{}, err
-	}
-	encoded, err := encodePlanContent(content)
-	if err != nil {
-		return PlanView{}, err
-	}
-	result := s.db.WithContext(ctx).Model(&domain.OKRPlan{}).Where("id = ? AND version = ?", id, input.ExpectedVersion).Updates(map[string]any{
-		"title": input.Title, "content": encoded, "updated_by": input.UpdatedBy,
-		"version": gorm.Expr("version + 1"), "updated_at": time.Now().UTC(),
-	})
-	if result.Error != nil {
-		return PlanView{}, fmt.Errorf("update OKR plan: %w", result.Error)
-	}
-	if result.RowsAffected == 0 {
-		var count int64
-		if err := s.db.WithContext(ctx).Model(&domain.OKRPlan{}).Where("id = ?", id).Count(&count).Error; err != nil {
-			return PlanView{}, fmt.Errorf("check OKR plan conflict: %w", err)
-		}
-		if count == 0 {
-			return PlanView{}, ErrNotFound
-		}
-		return PlanView{}, ErrConflict
-	}
-	if err := s.replacePlanContentRows(ctx, id, content, input.UpdatedBy); err != nil {
-		return PlanView{}, err
-	}
-	return s.GetPlan(ctx, id)
 }
 
 func (s *Service) DeletePlan(ctx context.Context, id string) error {

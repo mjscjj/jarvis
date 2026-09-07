@@ -54,36 +54,6 @@ func CreateOKRPlan(service *okrworkspace.Service) app.HandlerFunc {
 	}
 }
 
-func ReplaceOKRPlan(service *okrworkspace.Service) app.HandlerFunc {
-	return func(ctx context.Context, c *app.RequestContext) {
-		var input okrworkspace.ReplacePlanInput
-		if err := decodeStrictJSON(c.Request.Body(), &input); err != nil {
-			writeAPIError(c, consts.StatusBadRequest, 40075, err)
-			return
-		}
-		input.UpdatedBy = currentOKRIdentity(c).OpenID
-		result, err := service.ReplacePlan(ctx, strings.TrimSpace(c.Param("plan_id")), input)
-		if errors.Is(err, okrworkspace.ErrConflict) {
-			current, currentErr := service.GetPlan(ctx, strings.TrimSpace(c.Param("plan_id")))
-			if currentErr != nil {
-				writeAPIError(c, consts.StatusInternalServerError, 50075, currentErr)
-				return
-			}
-			writeAPIConflict(c, 40975, err, current)
-			return
-		}
-		if errors.Is(err, okrworkspace.ErrNotFound) {
-			writeAPIError(c, consts.StatusNotFound, 40475, err)
-			return
-		}
-		if err != nil {
-			writeAPIError(c, consts.StatusBadRequest, 40075, err)
-			return
-		}
-		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
-	}
-}
-
 func CreateOKRPlanObjective(service *okrworkspace.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		var objective okrworkspace.PlanObjectiveView

@@ -659,24 +659,6 @@ export async function createOKRPlan(input: { quarter: string; title: string; con
   }))
 }
 
-export async function replaceOKRPlan(input: { id: string; expectedVersion: number; title: string; content: OKRPlanContent }): Promise<OKRPlan> {
-  try {
-    return fromAPIPlan(await request<APIPlan>(`/api/biz-okr/plans/${encodeURIComponent(input.id)}`, {
-      method: 'PUT',
-      body: JSON.stringify({
-        expected_version: input.expectedVersion,
-        title: input.title,
-        content: toAPIPlanContent(input.content),
-      }),
-    }))
-  } catch (error) {
-    if (error instanceof APIError && error.status === 409 && error.data) {
-      throw new APIError(error.message, error.status, error.code, fromAPIPlan(error.data as APIPlan), error.logid)
-    }
-    throw error
-  }
-}
-
 export async function createOKRPlanObjective(planId: string, objective: Objective): Promise<OKRPlan> {
   const content = toAPIPlanContent({ objectives: [objective] })
   return fromAPIPlan(await request<APIPlan>(`/api/biz-okr/plans/${encodeURIComponent(planId)}/objectives`, {
@@ -701,10 +683,17 @@ export async function updateOKRPlanObjective(planId: string, objective: Objectiv
 }
 
 export async function deleteOKRPlanObjective(planId: string, objective: Objective): Promise<void> {
-  await request(`/api/biz-okr/plans/${encodeURIComponent(planId)}/objectives/${encodeURIComponent(objective.id)}`, {
-    method: 'DELETE',
-    body: JSON.stringify({ expected_version: objective.version ?? 0 }),
-  })
+  try {
+    await request(`/api/biz-okr/plans/${encodeURIComponent(planId)}/objectives/${encodeURIComponent(objective.id)}`, {
+      method: 'DELETE',
+      body: JSON.stringify({ expected_version: objective.version ?? 0 }),
+    })
+  } catch (error) {
+    if (error instanceof APIError && error.status === 409 && error.data) {
+      throw new APIError(error.message, error.status, error.code, fromAPIPlan(error.data as APIPlan), error.logid)
+    }
+    throw error
+  }
 }
 
 export async function reorderOKRPlanObjectives(planId: string, ids: string[]): Promise<void> {

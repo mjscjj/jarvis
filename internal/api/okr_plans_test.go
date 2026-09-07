@@ -96,14 +96,10 @@ func TestOKRPlanRoutesUseOwnLifecycle(t *testing.T) {
 		t.Fatalf("listed plans = %+v", listed.Data)
 	}
 
-	updateBody := `{"expected_version":0,"title":"Q3 Plan v2","content":{"objectives":[]}}`
-	updateResponse := ut.PerformRequest(h.Engine, "PUT", "/api/biz-okr/plans/"+created.Data.ID, &ut.Body{Body: strings.NewReader(updateBody), Len: len(updateBody)}).Result()
-	if updateResponse.StatusCode() != 200 {
-		t.Fatalf("update status=%d body=%s", updateResponse.StatusCode(), updateResponse.Body())
-	}
-	staleResponse := ut.PerformRequest(h.Engine, "PUT", "/api/biz-okr/plans/"+created.Data.ID, &ut.Body{Body: strings.NewReader(updateBody), Len: len(updateBody)}).Result()
-	if staleResponse.StatusCode() != 409 {
-		t.Fatalf("stale status=%d body=%s", staleResponse.StatusCode(), staleResponse.Body())
+	for _, route := range h.Engine.Routes() {
+		if route.Method == "PUT" && route.Path == "/api/biz-okr/plans/:plan_id" {
+			t.Fatal("legacy full-plan replacement route is still registered")
+		}
 	}
 
 	deleteResponse := ut.PerformRequest(h.Engine, "DELETE", "/api/biz-okr/plans/"+created.Data.ID, nil).Result()

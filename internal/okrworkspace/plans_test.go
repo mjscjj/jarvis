@@ -43,26 +43,6 @@ func TestPlanLifecycleKeepsOfficialOKRRowsUntouched(t *testing.T) {
 		t.Fatalf("created plan = %+v", created)
 	}
 
-	replaced, err := service.ReplacePlan(t.Context(), created.ID, ReplacePlanInput{
-		ExpectedVersion: created.Version,
-		Title:           "Q3 Final Draft",
-		Content:         created.Content,
-		UpdatedBy:       "ou_editor_2",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if replaced.Version != 1 || replaced.Title != "Q3 Final Draft" || replaced.UpdatedBy != "ou_editor_2" {
-		t.Fatalf("replaced plan = %+v", replaced)
-	}
-	if _, err := service.ReplacePlan(t.Context(), created.ID, ReplacePlanInput{
-		ExpectedVersion: 0,
-		Title:           "stale",
-		Content:         created.Content,
-	}); !errors.Is(err, ErrConflict) {
-		t.Fatalf("stale replace error = %v, want conflict", err)
-	}
-
 	if err := service.DeletePlan(t.Context(), created.ID); err != nil {
 		t.Fatal(err)
 	}

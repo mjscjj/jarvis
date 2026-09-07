@@ -149,6 +149,32 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
     } : item))
   }, [])
 
+  const replaceConflictedObjective = useCallback((saved: OKRPlan, objectiveId: string) => {
+    const current = planRef.current
+    if (!current) return
+    const remoteObjective = saved.content.objectives.find((item) => item.id === objectiveId)
+    let nextObjectives = objectivesRef.current.filter((item) => item.id !== objectiveId)
+    if (remoteObjective) {
+      const remoteOrder = new Map(saved.content.objectives.map((item, index) => [item.id, index]))
+      const remoteIndex = remoteOrder.get(objectiveId) ?? nextObjectives.length
+      const insertAt = nextObjectives.findIndex((item) => (remoteOrder.get(item.id) ?? Number.MAX_SAFE_INTEGER) > remoteIndex)
+      nextObjectives = clone(nextObjectives)
+      nextObjectives.splice(insertAt < 0 ? nextObjectives.length : insertAt, 0, clone(remoteObjective))
+    }
+    const nextPlan = { ...current, version: saved.version, updatedBy: saved.updatedBy, updatedAt: saved.updatedAt, content: { objectives: nextObjectives } }
+    planRef.current = nextPlan
+    setPlan(nextPlan)
+    objectivesRef.current = nextObjectives
+    setObjectives(nextObjectives)
+    setPlans((items) => items.map((item) => item.id === saved.id ? {
+      ...item,
+      version: saved.version,
+      objectiveCount: nextObjectives.length,
+      krCount: nextObjectives.reduce((total, objective) => total + objective.krs.length, 0),
+      updatedAt: saved.updatedAt,
+    } : item))
+  }, [])
+
   const saveNow = useCallback(async () => {
     if (!remoteReady.current || !planRef.current) return
     if (saveInFlight.current) {
@@ -157,6 +183,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
     }
     saveInFlight.current = true
     let failed = false
+    const conflictedObjectives: string[] = []
     setSyncState({ kind: 'saving', message: '正在保存 Plan…' })
     try {
       do {
@@ -165,38 +192,50 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
         for (const objectiveId of pending) {
           const objective = objectivesRef.current.find((item) => item.id === objectiveId)
           const deleted = deletedObjectives.current.get(objectiveId)
-          if (objective) {
-            const saved = (objective.version ?? 0) === 0 && !planRef.current.content.objectives.some((item) => item.id === objectiveId)
-              ? await createOKRPlanObjective(planRef.current.id, objective)
-              : await updateOKRPlanObjective(planRef.current.id, objective)
-            dirtyObjectives.current.delete(objectiveId)
-            mergeSavedPlan(saved, objectiveId)
-          } else if (deleted) {
-            if (planRef.current.content.objectives.some((item) => item.id === objectiveId)) {
-              await deleteOKRPlanObjective(planRef.current.id, deleted)
+          try {
+            if (objective) {
+              const saved = (objective.version ?? 0) === 0 && !planRef.current.content.objectives.some((item) => item.id === objectiveId)
+                ? await createOKRPlanObjective(planRef.current.id, objective)
+                : await updateOKRPlanObjective(planRef.current.id, objective)
+              dirtyObjectives.current.delete(objectiveId)
+              mergeSavedPlan(saved, objectiveId)
+            } else if (deleted) {
+              if (planRef.current.content.objectives.some((item) => item.id === objectiveId)) {
+                await deleteOKRPlanObjective(planRef.current.id, deleted)
+              }
+              dirtyObjectives.current.delete(objectiveId)
+              deletedObjectives.current.delete(objectiveId)
+              mergeSavedPlan({ ...planRef.current, version: planRef.current.version + 1, updatedAt: new Date().toISOString() })
+            } else {
+              dirtyObjectives.current.delete(objectiveId)
             }
-            dirtyObjectives.current.delete(objectiveId)
-            deletedObjectives.current.delete(objectiveId)
-            mergeSavedPlan({ ...planRef.current, version: planRef.current.version + 1, updatedAt: new Date().toISOString() })
-          } else {
-            dirtyObjectives.current.delete(objectiveId)
+          } catch (error) {
+            if (error instanceof APIError && error.status === 409 && error.data) {
+              const remote = error.data as OKRPlan
+              const title = objective?.title || deleted?.title || objectiveId
+              replaceConflictedObjective(remote, objectiveId)
+              dirtyObjectives.current.delete(objectiveId)
+              deletedObjectives.current.delete(objectiveId)
+              conflictedObjectives.push(title)
+              continue
+            }
+            throw error
           }
         }
       } while (saveAgain.current || dirtyObjectives.current.size > 0)
-      setSyncState({ kind: 'saved', message: 'Plan 已保存' })
-    } catch (error) {
-      if (error instanceof APIError && error.status === 409 && error.data) {
-        failed = true
-        setSyncState({ kind: 'error', message: '这个 O 刚被其他人更新，请重新载入后再编辑。' })
-        return
+      if (conflictedObjectives.length > 0) {
+        setSyncState({ kind: 'error', message: `${conflictedObjectives.join('、')} 已被其他人更新，已只刷新冲突的 O；其他 O 已继续保存。` })
+      } else {
+        setSyncState({ kind: 'saved', message: 'Plan 已保存' })
       }
+    } catch (error) {
       failed = true
       setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '保存 Plan 失败。' })
     } finally {
       saveInFlight.current = false
       if (!failed && dirtyObjectives.current.size > 0) scheduleSaveRef.current()
     }
-  }, [mergeSavedPlan])
+  }, [mergeSavedPlan, replaceConflictedObjective])
 
   const scheduleSave = useCallback(() => {
     window.clearTimeout(saveTimer.current)
