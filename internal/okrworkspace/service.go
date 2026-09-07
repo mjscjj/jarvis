@@ -74,6 +74,12 @@ func (s *Service) CoreSubjectExists(ctx context.Context, subjectType, subjectID 
 		return false, fmt.Errorf("unsupported OKR subject type %q", subjectType)
 	}
 	var count int64
+	if objective, ok := model.(*domain.Objective); ok {
+		if err := s.db.WithContext(ctx).Model(objective).Where("id = ? AND plan_id = ''", subjectID).Count(&count).Error; err != nil {
+			return false, fmt.Errorf("find %s subject %s: %w", subjectType, subjectID, err)
+		}
+		return count > 0, nil
+	}
 	if err := s.db.WithContext(ctx).Model(model).Where("id = ?", subjectID).Count(&count).Error; err != nil {
 		return false, fmt.Errorf("find %s subject %s: %w", subjectType, subjectID, err)
 	}
@@ -93,7 +99,7 @@ func (s *Service) LatestCoreScope(ctx context.Context) (CoreScope, error) {
 
 func (s *Service) ListQuarters(ctx context.Context) ([]string, error) {
 	var quarters []string
-	if err := s.db.WithContext(ctx).Model(&domain.Objective{}).Distinct().Where("quarter <> ''").Order("quarter DESC").Pluck("quarter", &quarters).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&domain.Objective{}).Distinct().Where("quarter <> '' AND plan_id = ''").Order("quarter DESC").Pluck("quarter", &quarters).Error; err != nil {
 		return nil, fmt.Errorf("list OKR quarters: %w", err)
 	}
 	for _, quarter := range quarters {
@@ -433,7 +439,7 @@ func (s *Service) weeklyBoard(ctx context.Context, quarter, week string, include
 		return Board{}, err
 	}
 	var objectives []domain.Objective
-	if err := s.db.WithContext(ctx).Where("quarter = ?", quarter).Order("sort_order, id").Find(&objectives).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("quarter = ? AND plan_id = ''", quarter).Order("sort_order, id").Find(&objectives).Error; err != nil {
 		return Board{}, fmt.Errorf("list objectives: %w", err)
 	}
 	weeks, previousWeek, err := s.weeks(ctx, quarter, week)
@@ -493,7 +499,7 @@ func (s *Service) coreBoard(ctx context.Context, quarter string, includeBiz bool
 		return Board{}, err
 	}
 	var objectives []domain.Objective
-	if err := s.db.WithContext(ctx).Where("quarter = ?", quarter).Order("sort_order, id").Find(&objectives).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("quarter = ? AND plan_id = ''", quarter).Order("sort_order, id").Find(&objectives).Error; err != nil {
 		return Board{}, fmt.Errorf("list objectives: %w", err)
 	}
 	result := Board{Quarter: quarter, Week: "", TemplateKey: domain.WeekTemplateClassic, AvailableQuarters: quarters, AvailableWeeks: []string{}, Objectives: make([]ObjectiveView, 0, len(objectives))}
@@ -537,7 +543,7 @@ func (s *Service) ReminderPreview(ctx context.Context, quarter, week string) (Re
 		Recipients: []ReminderRecipient{},
 	}
 	var objectiveIDs []string
-	if err := s.db.WithContext(ctx).Model(&domain.Objective{}).Where("quarter = ?", quarter).Pluck("id", &objectiveIDs).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&domain.Objective{}).Where("quarter = ? AND plan_id = ''", quarter).Pluck("id", &objectiveIDs).Error; err != nil {
 		return ReminderPreview{}, fmt.Errorf("list reminder objectives: %w", err)
 	}
 	if len(objectiveIDs) == 0 {
@@ -704,7 +710,13 @@ func (s *Service) getWeeklyKR(ctx context.Context, id, week string, includeBiz b
 	}
 	var objective domain.Objective
 	if err := s.db.WithContext(ctx).First(&objective, "id = ?", record.ObjectiveID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return KRView{}, ErrNotFound
+		}
 		return KRView{}, fmt.Errorf("get objective for kr: %w", err)
+	}
+	if objective.PlanID != "" {
+		return KRView{}, ErrNotFound
 	}
 	_, previousWeek, err := s.weeks(ctx, objective.Quarter, week)
 	if err != nil {
@@ -721,6 +733,15 @@ func (s *Service) GetCoreKR(ctx context.Context, id string) (KRView, error) {
 		}
 		return KRView{}, fmt.Errorf("get kr: %w", err)
 	}
+	if record.ObjectiveID != "" {
+		var objective domain.Objective
+		if err := s.db.WithContext(ctx).First(&objective, "id = ? AND plan_id = ''", record.ObjectiveID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return KRView{}, ErrNotFound
+			}
+			return KRView{}, fmt.Errorf("get objective for core KR: %w", err)
+		}
+	}
 	return s.loadKRDefinition(ctx, record, false)
 }
 
@@ -731,6 +752,15 @@ func (s *Service) GetBizCoreKR(ctx context.Context, id string) (KRView, error) {
 			return KRView{}, ErrNotFound
 		}
 		return KRView{}, fmt.Errorf("get Biz KR: %w", err)
+	}
+	if record.ObjectiveID != "" {
+		var objective domain.Objective
+		if err := s.db.WithContext(ctx).First(&objective, "id = ? AND plan_id = ''", record.ObjectiveID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return KRView{}, ErrNotFound
+			}
+			return KRView{}, fmt.Errorf("get objective for Biz KR: %w", err)
+		}
 	}
 	return s.loadKRDefinition(ctx, record, true)
 }
@@ -1042,6 +1072,22 @@ func (s *Service) replaceKRCore(ctx context.Context, id string, input ReplaceKRI
 }
 
 func updateKRVersion(tx *gorm.DB, id string, expectedVersion int32, values map[string]any) error {
+	var record domain.KR
+	if err := tx.Select("objective_id").First(&record, "id = ?", id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("get kr scope: %w", err)
+	}
+	if record.ObjectiveID != "" {
+		var count int64
+		if err := tx.Model(&domain.Objective{}).Where("id = ? AND plan_id = ''", record.ObjectiveID).Count(&count).Error; err != nil {
+			return fmt.Errorf("check kr scope: %w", err)
+		}
+		if count == 0 {
+			return ErrNotFound
+		}
+	}
 	values["version"] = gorm.Expr("version + 1")
 	result := tx.Model(&domain.KR{}).Where("id = ? AND version = ?", id, expectedVersion).Updates(values)
 	if result.Error != nil {
@@ -1158,7 +1204,7 @@ func (s *Service) createKR(ctx context.Context, objectiveID, title string, owner
 		return "", fmt.Errorf("objective id and kr title are required")
 	}
 	var objective domain.Objective
-	if err := s.db.WithContext(ctx).First(&objective, "id = ?", objectiveID).Error; err != nil {
+	if err := s.db.WithContext(ctx).First(&objective, "id = ? AND plan_id = ''", objectiveID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return "", ErrNotFound
 		}
@@ -1194,7 +1240,7 @@ func (s *Service) CreateObjective(ctx context.Context, input CreateObjectiveInpu
 		return ObjectiveView{}, fmt.Errorf("objective title is required")
 	}
 	var maxSort int
-	if err := s.db.WithContext(ctx).Model(&domain.Objective{}).Where("quarter = ?", input.Quarter).Select("COALESCE(MAX(sort_order), -1)").Scan(&maxSort).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&domain.Objective{}).Where("quarter = ? AND plan_id = ''", input.Quarter).Select("COALESCE(MAX(sort_order), -1)").Scan(&maxSort).Error; err != nil {
 		return ObjectiveView{}, fmt.Errorf("get objective sort order: %w", err)
 	}
 	now := time.Now().UTC()
@@ -1212,7 +1258,7 @@ func (s *Service) UpdateObjective(ctx context.Context, id string, input UpdateOb
 	if id == "" || input.Title == "" {
 		return ObjectiveView{}, fmt.Errorf("objective id and title are required")
 	}
-	result := s.db.WithContext(ctx).Model(&domain.Objective{}).Where("id = ?", id).Update("title", input.Title)
+	result := s.db.WithContext(ctx).Model(&domain.Objective{}).Where("id = ? AND plan_id = ''", id).Updates(map[string]any{"title": input.Title, "version": gorm.Expr("version + 1")})
 	if result.Error != nil {
 		return ObjectiveView{}, fmt.Errorf("update objective: %w", result.Error)
 	}
@@ -1220,7 +1266,7 @@ func (s *Service) UpdateObjective(ctx context.Context, id string, input UpdateOb
 		return ObjectiveView{}, ErrNotFound
 	}
 	var record domain.Objective
-	if err := s.db.WithContext(ctx).First(&record, "id = ?", id).Error; err != nil {
+	if err := s.db.WithContext(ctx).First(&record, "id = ? AND plan_id = ''", id).Error; err != nil {
 		return ObjectiveView{}, fmt.Errorf("read updated objective: %w", err)
 	}
 	return ObjectiveView{ID: record.ID, Title: record.Title, KRs: []KRView{}}, nil
@@ -1232,7 +1278,7 @@ func (s *Service) DeleteObjective(ctx context.Context, id string) error {
 		return fmt.Errorf("objective id is required")
 	}
 	var record domain.Objective
-	if err := s.db.WithContext(ctx).First(&record, "id = ?", id).Error; err != nil {
+	if err := s.db.WithContext(ctx).First(&record, "id = ? AND plan_id = ''", id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrNotFound
 		}
@@ -1278,6 +1324,15 @@ func (s *Service) DeleteKR(ctx context.Context, id string, input DeleteKRInput) 
 				return ErrConflict
 			}
 			return ErrNotFound
+		}
+		if record.ObjectiveID != "" {
+			var count int64
+			if err := tx.Model(&domain.Objective{}).Where("id = ? AND plan_id = ''", record.ObjectiveID).Count(&count).Error; err != nil {
+				return fmt.Errorf("check KR scope for delete: %w", err)
+			}
+			if count == 0 {
+				return ErrNotFound
+			}
 		}
 		var points []domain.KRPoint
 		if err := tx.Where("kr_id = ?", id).Find(&points).Error; err != nil {
@@ -1589,7 +1644,7 @@ func (s *Service) MeegoBatchPreview(ctx context.Context, quarter, week string) (
 	result := MeegoBatchPreview{Quarter: quarter, Week: week, Mode: "preview_only", WriteEnabled: false, Items: []MeegoBatchPreviewItem{}}
 
 	var objectives []domain.Objective
-	if err := s.db.WithContext(ctx).Where("quarter = ?", quarter).Order("sort_order, id").Find(&objectives).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("quarter = ? AND plan_id = ''", quarter).Order("sort_order, id").Find(&objectives).Error; err != nil {
 		return MeegoBatchPreview{}, fmt.Errorf("list Meego preview objectives: %w", err)
 	}
 	for _, objective := range objectives {

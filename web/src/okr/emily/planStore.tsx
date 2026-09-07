@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { APIError, createOKRPlan, deleteOKRPlan, getEnums, getOKRPlan, listOKRPlans, replaceOKRPlan } from './api'
+import { APIError, createOKRPlan, createOKRPlanObjective, deleteOKRPlan, deleteOKRPlanObjective, getEnums, getOKRPlan, listOKRPlans, reorderOKRPlanObjectives, updateOKRPlanObjective } from './api'
 import { BoardContext, uid, type BoardApi, type SyncState } from './board'
 import { BUSINESS_CATEGORY_TAG, PRIORITY_TAG, replaceSingleTag } from './hierarchy'
 import type { EnumValues, Kr, KrOwner, KrPriority, MetricLine, Objective, OKRPlan, OKRPlanSummary, Point, WeekTemplateKey } from './types'
@@ -66,6 +66,11 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
   const planRef = useRef<OKRPlan | undefined>(undefined)
   const objectivesRef = useRef<Objective[]>([])
   const saveTimer = useRef(0)
+  const dirtyObjectives = useRef(new Set<string>())
+  const deletedObjectives = useRef(new Map<string, Objective>())
+  const saveInFlight = useRef(false)
+  const saveAgain = useRef(false)
+  const scheduleSaveRef = useRef<() => void>(() => undefined)
   const remoteReady = useRef(false)
 
   const publishPlan = useCallback((next?: OKRPlan) => {
@@ -91,6 +96,8 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
       setPlans(list.plans)
       setEnums(remoteEnums)
       publishPlan(loadedPlan)
+      dirtyObjectives.current.clear()
+      deletedObjectives.current.clear()
       remoteReady.current = true
       setSyncState({ kind: 'ready', message: loadedPlan ? 'OKR Plan 已加载' : '当前季度暂无 Plan' })
       return { list, plan: loadedPlan }
@@ -104,6 +111,8 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
     return () => {
       window.clearTimeout(timer)
       window.clearTimeout(saveTimer.current)
+      dirtyObjectives.current.clear()
+      deletedObjectives.current.clear()
     }
   }, [loadRemote])
 
@@ -119,45 +128,104 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
     void loadRemote(nextQuarter)
   }, [initialQuarter, loadRemote, syncState.kind])
 
+  const mergeSavedPlan = useCallback((saved: OKRPlan, objectiveId?: string) => {
+    const current = planRef.current
+    if (!current) return
+    const nextObjective = objectiveId ? saved.content.objectives.find((item) => item.id === objectiveId) : undefined
+    const nextObjectives = objectiveId && nextObjective
+      ? objectivesRef.current.map((item) => item.id === objectiveId ? { ...item, version: nextObjective.version } : item)
+      : objectivesRef.current
+    const nextPlan = { ...current, version: saved.version, updatedBy: saved.updatedBy, updatedAt: saved.updatedAt, content: { objectives: nextObjectives } }
+    planRef.current = nextPlan
+    setPlan(nextPlan)
+    objectivesRef.current = nextObjectives
+    setObjectives(nextObjectives)
+    setPlans((items) => items.map((item) => item.id === saved.id ? {
+      ...item,
+      version: saved.version,
+      objectiveCount: nextObjectives.length,
+      krCount: nextObjectives.reduce((total, objective) => total + objective.krs.length, 0),
+      updatedAt: saved.updatedAt,
+    } : item))
+  }, [])
+
   const saveNow = useCallback(async () => {
     if (!remoteReady.current || !planRef.current) return
-    const snapshot: OKRPlan = { ...planRef.current, content: { objectives: clone(objectivesRef.current) } }
+    if (saveInFlight.current) {
+      saveAgain.current = true
+      return
+    }
+    saveInFlight.current = true
+    let failed = false
     setSyncState({ kind: 'saving', message: '正在保存 Plan…' })
     try {
-      const saved = await replaceOKRPlan({ id: snapshot.id, expectedVersion: snapshot.version, title: snapshot.title, content: snapshot.content })
-      publishPlan(saved)
-      setPlans((items) => items.map((item) => item.id === saved.id ? {
-        id: saved.id,
-        quarter: saved.quarter,
-        title: saved.title,
-        version: saved.version,
-        objectiveCount: saved.content.objectives.length,
-        krCount: saved.content.objectives.reduce((total, objective) => total + objective.krs.length, 0),
-        updatedAt: saved.updatedAt,
-      } : item))
+      do {
+        saveAgain.current = false
+        const pending = Array.from(dirtyObjectives.current)
+        for (const objectiveId of pending) {
+          const objective = objectivesRef.current.find((item) => item.id === objectiveId)
+          const deleted = deletedObjectives.current.get(objectiveId)
+          if (objective) {
+            const saved = (objective.version ?? 0) === 0 && !planRef.current.content.objectives.some((item) => item.id === objectiveId)
+              ? await createOKRPlanObjective(planRef.current.id, objective)
+              : await updateOKRPlanObjective(planRef.current.id, objective)
+            dirtyObjectives.current.delete(objectiveId)
+            mergeSavedPlan(saved, objectiveId)
+          } else if (deleted) {
+            if (planRef.current.content.objectives.some((item) => item.id === objectiveId)) {
+              await deleteOKRPlanObjective(planRef.current.id, deleted)
+            }
+            dirtyObjectives.current.delete(objectiveId)
+            deletedObjectives.current.delete(objectiveId)
+            mergeSavedPlan({ ...planRef.current, version: planRef.current.version + 1, updatedAt: new Date().toISOString() })
+          } else {
+            dirtyObjectives.current.delete(objectiveId)
+          }
+        }
+      } while (saveAgain.current || dirtyObjectives.current.size > 0)
       setSyncState({ kind: 'saved', message: 'Plan 已保存' })
     } catch (error) {
       if (error instanceof APIError && error.status === 409 && error.data) {
-        const current = error.data as OKRPlan
-        publishPlan(current)
-        setSyncState({ kind: 'error', message: '这个 Plan 刚被其他人更新，已载入最新版本。' })
+        failed = true
+        setSyncState({ kind: 'error', message: '这个 O 刚被其他人更新，请重新载入后再编辑。' })
         return
       }
+      failed = true
       setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '保存 Plan 失败。' })
+    } finally {
+      saveInFlight.current = false
+      if (!failed && dirtyObjectives.current.size > 0) scheduleSaveRef.current()
     }
-  }, [publishPlan])
+  }, [mergeSavedPlan])
 
   const scheduleSave = useCallback(() => {
     window.clearTimeout(saveTimer.current)
     saveTimer.current = window.setTimeout(() => void saveNow(), SAVE_DELAY_MS)
   }, [saveNow])
 
+  useEffect(() => {
+    scheduleSaveRef.current = scheduleSave
+  }, [scheduleSave])
+
   const mutate = useCallback((fn: (draft: Objective[]) => void) => {
     if (!planRef.current) return
-    const draft = clone(objectivesRef.current)
+    const before = objectivesRef.current
+    const draft = clone(before)
     fn(draft)
     objectivesRef.current = draft
     setObjectives(draft)
+    const beforeByID = new Map(before.map((item) => [item.id, item]))
+    const afterIDs = new Set(draft.map((item) => item.id))
+    for (const objective of draft) {
+      const previous = beforeByID.get(objective.id)
+      if (!previous || JSON.stringify(previous) !== JSON.stringify(objective)) dirtyObjectives.current.add(objective.id)
+    }
+    for (const objective of before) {
+      if (!afterIDs.has(objective.id)) {
+        dirtyObjectives.current.add(objective.id)
+        deletedObjectives.current.set(objective.id, objective)
+      }
+    }
     scheduleSave()
   }, [scheduleSave])
 
@@ -192,6 +260,8 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
       setSyncState({ kind: 'loading', message: '正在读取 OKR Plan…' })
       getOKRPlan(id).then((loaded) => {
         publishPlan(loaded)
+        dirtyObjectives.current.clear()
+        deletedObjectives.current.clear()
         setSyncState({ kind: 'ready', message: 'OKR Plan 已加载' })
       }).catch((error) => setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '读取 OKR Plan 失败。' }))
     },
@@ -205,6 +275,8 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
         setAvailableQuarters(list.availableQuarters)
         setPlans(list.plans)
         publishPlan(created)
+        dirtyObjectives.current.clear()
+        deletedObjectives.current.clear()
         setSyncState({ kind: 'saved', message: 'Plan 已新建' })
       } catch (error) {
         setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '新建 Plan 失败。' })
@@ -268,13 +340,25 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
       })
     },
     swapObjectives: async (id, targetId) => {
-      mutate((draft) => {
-        const from = draft.findIndex((item) => item.id === id)
-        const to = draft.findIndex((item) => item.id === targetId)
-        if (from < 0 || to < 0) return
-        const [item] = draft.splice(from, 1)
-        draft.splice(to, 0, item)
-      })
+      const current = objectivesRef.current
+      const from = current.findIndex((item) => item.id === id)
+      const to = current.findIndex((item) => item.id === targetId)
+      if (from < 0 || to < 0 || !planRef.current) return
+      const ids = current.map((item) => item.id)
+      const [item] = ids.splice(from, 1)
+      ids.splice(to, 0, item)
+      setSyncState({ kind: 'saving', message: '正在调整顺序…' })
+      try {
+        await reorderOKRPlanObjectives(planRef.current.id, ids)
+        const byId = new Map(current.map((objective) => [objective.id, objective]))
+        const next = ids.map((objectiveID) => byId.get(objectiveID)).filter((objective): objective is Objective => Boolean(objective))
+        objectivesRef.current = next
+        setObjectives(next)
+        setSyncState({ kind: 'saved', message: '顺序已保存' })
+      } catch (error) {
+        setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '调整顺序失败。' })
+        throw error
+      }
     },
     swapKrs: async (objectiveId, krId, targetId) => {
       mutate((draft) => {

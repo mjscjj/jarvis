@@ -22,7 +22,7 @@ func (s *Service) ReorderObjectives(ctx context.Context, quarter string, ids []s
 	}
 	db := s.db.WithContext(ctx)
 	var records []domain.Objective
-	if err := db.Where("quarter = ?", quarter).Find(&records).Error; err != nil {
+	if err := db.Where("quarter = ? AND plan_id = ''", quarter).Find(&records).Error; err != nil {
 		return nil, fmt.Errorf("list objectives for reorder: %w", err)
 	}
 	known := make(map[string]struct{}, len(records))
@@ -34,7 +34,7 @@ func (s *Service) ReorderObjectives(ctx context.Context, quarter string, ids []s
 		return nil, err
 	}
 	for index, id := range ordered {
-		if err := db.Model(&domain.Objective{}).Where("id = ?", id).Update("sort_order", index).Error; err != nil {
+		if err := db.Model(&domain.Objective{}).Where("id = ? AND plan_id = ''", id).Update("sort_order", index).Error; err != nil {
 			return nil, fmt.Errorf("write objective sort order: %w", err)
 		}
 	}
@@ -53,6 +53,9 @@ func (s *Service) ReorderKRs(ctx context.Context, objectiveID string, ids []stri
 			return nil, ErrNotFound
 		}
 		return nil, fmt.Errorf("get objective for reorder: %w", err)
+	}
+	if objective.PlanID != "" {
+		return nil, ErrNotFound
 	}
 	var records []domain.KR
 	if err := db.Where("objective_id = ?", objectiveID).Find(&records).Error; err != nil {

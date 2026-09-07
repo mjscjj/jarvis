@@ -222,6 +222,9 @@ func (s *Service) progressPointOwner(ctx context.Context, pointID string) (domai
 	if err := s.db.WithContext(ctx).First(&objective, "id = ?", kr.ObjectiveID).Error; err != nil {
 		return domain.KRPoint{}, domain.KR{}, domain.Objective{}, fmt.Errorf("get progress objective: %w", err)
 	}
+	if objective.PlanID != "" {
+		return domain.KRPoint{}, domain.KR{}, domain.Objective{}, ErrNotFound
+	}
 	return point, kr, objective, nil
 }
 
@@ -236,6 +239,9 @@ func (s *Service) krObjective(ctx context.Context, krID string) (domain.KR, doma
 	var objective domain.Objective
 	if err := s.db.WithContext(ctx).First(&objective, "id = ?", kr.ObjectiveID).Error; err != nil {
 		return domain.KR{}, domain.Objective{}, fmt.Errorf("get weekly report objective: %w", err)
+	}
+	if objective.PlanID != "" {
+		return domain.KR{}, domain.Objective{}, ErrNotFound
 	}
 	return kr, objective, nil
 }

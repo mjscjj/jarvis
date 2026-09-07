@@ -206,6 +206,7 @@ export interface FeishuDocumentResult {
 export interface Objective {
   id: string
   title: string
+  version?: number
   krs: Kr[]
 }
 
