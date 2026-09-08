@@ -97,6 +97,7 @@ func TestOKRWeeklyReminderUsesBroadcastDelivery(t *testing.T) {
 		"`feishu-broadcast` Skill", "Jarvis通知机器人", "企业邮箱", "不得搜索、复用或创建助手群",
 		"`Platform Team Weekly Catch Up`", "`yield-until`", "前一个自然日的 19:30", "前 4 小时",
 		"`[Core Group] Platform Team`", "`feishu-send-message` Skill", "按 O-KR 维度", "请尽快更新：https://emily.bytedance.net/#/weekly-report?quarter=2026-Q3&tab=review-fill",
+		"<at user_id=\"...\">姓名</at>", "mentions[]", "禁止只写普通文本 `@姓名`",
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("OKR weekly reminder prompt missing broadcast contract %q:\n%s", want, prompt)

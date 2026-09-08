@@ -41,7 +41,7 @@ function NewPlanPanel({ onClose }: { onClose: () => void }) {
         <div className="mt-0.5 text-[10px] text-slate-400">创建独立草稿，不会改动正式 OKR。</div>
       </div>
       <input value={targetQuarter} onChange={(event) => setTargetQuarter(event.target.value)} placeholder="2026-Q3" aria-label="季度" className="h-9 w-28 rounded-lg border border-slate-200 bg-white px-3 text-xs outline-none focus:border-indigo-400" />
-      <input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submit(); if (event.key === 'Escape') onClose() }} placeholder="Plan 名称" aria-label="Plan 名称" className="h-9 min-w-64 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-xs outline-none focus:border-indigo-400" />
+      <input value={title} onChange={(event) => setTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submit(); if (event.key === 'Escape') onClose() }} placeholder="Plan 名称" aria-label="Plan 名称" className="h-9 min-w-64 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-xs outline-none focus:border-indigo-400" />
       <button type="button" onClick={() => void submit()} disabled={!targetQuarter.trim() || !title.trim() || syncState.kind === 'saving'} className="h-9 rounded-lg bg-indigo-600 px-4 text-xs font-medium text-white disabled:opacity-40">确认新建</button>
       <button type="button" onClick={onClose} className="h-9 px-2 text-xs text-slate-400">取消</button>
     </section>

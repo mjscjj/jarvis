@@ -310,7 +310,7 @@ export default function App({
 				{weekNotice && <div className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-[10px] text-blue-700">{weekNotice}</div>}
 				{shareNotice && <div className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-[10px] text-blue-700">
 					<div>{shareNotice}</div>
-					{shareLink && <input aria-label="分享链接" value={shareLink} readOnly autoFocus onFocus={(event) => event.currentTarget.select()} onClick={(event) => event.currentTarget.select()} className="mt-2 h-8 w-full rounded-md border border-blue-200 bg-white px-2 text-[11px] text-slate-700 outline-none" />}
+					{shareLink && <input aria-label="分享链接" value={shareLink} readOnly onFocus={(event) => event.currentTarget.select()} onClick={(event) => event.currentTarget.select()} className="mt-2 h-8 w-full rounded-md border border-blue-200 bg-white px-2 text-[11px] text-slate-700 outline-none" />}
 				</div>}
 				<SyncNotice />
 				{week ? <>

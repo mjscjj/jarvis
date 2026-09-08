@@ -26,7 +26,7 @@
 ## 第二轮：群内 O-KR 汇总
 
 - 重新计算尚未解决的问题，按 Objective 当前顺序分组，组内按 KR 当前顺序排列。同一 KR 的多类问题合并为一行，标签顺序固定为“进展缺失 / 核心数据缺失 / 评分缺失 / 跟上周内容一致”。
-- 每条 KR 后面真实 `@` 该 KR 与 Point 的问题负责人，同一人在同一 KR 内只 `@` 一次；不额外 `@` principal，不用 `@all`。
+- 每条 KR 后面真实 `@` 该 KR 与 Point 的问题负责人，同一人在同一 KR 内只 `@` 一次；必须把每个负责人的 `open_id` 渲染为飞书 `<at user_id="...">姓名</at>`，禁止只写普通文本 `@姓名`。不额外 `@` principal，不用 `@all`。
 - 最终文案使用以下格式，最后一行必须原样保留：
 
 ```text
@@ -38,6 +38,6 @@
 请尽快更新：https://emily.bytedance.net/#/weekly-report?quarter=2026-Q3&tab=review-fill
 ```
 
-- 发送前读取 `feishu-send-message` Skill，用 Jarvis Bot 对固定 `chat_id` 主动发送一条群公告，使用稳定幂等键并回读消息。没有问题时不发空消息。
+- 发送前读取 `feishu-send-message` Skill，用 Jarvis Bot 对固定 `chat_id` 主动发送一条群公告，使用稳定幂等键并回读消息；回读的 `mentions[]` 必须完整覆盖本轮负责人 `open_id`，否则本轮视为未确认发送并保留原始差异。没有问题时不发空消息。
 
 每次等待都把会议 `event_id`、当前阶段、已完成轮次和下次目标时间写入 `progress_summary` 与 waiting reason。完成时报告会议实例与两轮计划/实际时间、两轮 Board 范围和四类去重 KR 数、两轮成功/失败/跳过项、消息回读与覆盖缺口。
