@@ -26,6 +26,7 @@ var backgroundColumns = []string{
 // service; the interface keeps background decoupled from capture at compile
 // time. A nil trigger means "no immediate scan" (the cron cycle still covers it).
 type RelatedScanTrigger interface {
+	ValidateScanChat(ctx context.Context, chatID string) error
 	ScanChatNow(ctx context.Context, chatID string) error
 }
 
@@ -242,6 +243,11 @@ func (s *GroupBackgroundService) UpdateBackground(ctx context.Context, id uint64
 	}
 	if err != nil {
 		return nil, fmt.Errorf("load group id=%d: %w", id, err)
+	}
+	if s.trigger != nil && previous.ChatMode == "p2p" && !previous.RelatedGroup && in.RelatedGroup {
+		if err := s.trigger.ValidateScanChat(ctx, previous.ChatID); err != nil {
+			return nil, invalid(err)
+		}
 	}
 
 	pinned := in.Pinned

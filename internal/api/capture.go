@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -54,6 +55,10 @@ func ScanChatManually(svc *capture.Service) app.HandlerFunc {
 			return
 		}
 		if err := svc.ScanChatNow(ctx, chatID); err != nil {
+			if errors.Is(err, capture.ErrP2PScanDisabled) {
+				writeAPIError(c, consts.StatusForbidden, 40330, err)
+				return
+			}
 			writeAPIError(c, consts.StatusInternalServerError, 50032, fmt.Errorf("scan chat failed: %s", strings.TrimSpace(err.Error())))
 			return
 		}

@@ -43,6 +43,7 @@ import (
 	"jarvis/internal/proactive"
 	"jarvis/internal/progress"
 	"jarvis/internal/scheduledtask"
+	"jarvis/internal/security"
 	"jarvis/internal/semantic"
 	"jarvis/internal/sharedmem"
 	"jarvis/internal/skill"
@@ -220,6 +221,7 @@ func main() {
 		SearchOverlap:       10 * time.Minute,
 		ActivationContext:   time.Duration(cfg.Extract.ContextWindowMinutes) * time.Minute,
 		P2PActivationWindow: time.Duration(cfg.Capture.P2PWindowMinutes) * time.Minute,
+		P2PScanEnabled:      cfg.Capture.P2PScanEnabled,
 		AutoRelatedP2PTopN:  cfg.Capture.AutoRelatedP2PTopN,
 	})
 	if err != nil {
@@ -916,6 +918,11 @@ func main() {
 	if err != nil {
 		fatalf("initialize ByteDance SSO service failed: %v", err)
 	}
+	securityAuditService, err := security.NewAuditService(db)
+	if err != nil {
+		fatalf("initialize security audit service failed: %v", err)
+	}
+	h.Use(securityAuditService.Middleware(authService))
 	h.Use(authn.BrowserMiddleware(authService))
 	runtimeSettingsService, err := config.NewRuntimeSettingsService(*configPath, cfg)
 	if err != nil {
@@ -963,6 +970,7 @@ func main() {
 		FactTimelineLoc: location,
 		Debug:           debugService, Logs: logReader, Chat: chatService, Capture: captureService,
 		RuntimeSettings:    runtimeSettingsService,
+		SecurityAudit:      securityAuditService,
 		ContextAssembler:   contextAssembler,
 		CardAsks:           cardAskProcessor,
 		CardApprovalSecret: cfg.CardApproval.RelaySecret,

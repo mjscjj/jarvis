@@ -7,7 +7,7 @@ identity:
   display_name: "Jarvis"
 
 server:
-  addr: "0.0.0.0:18800"
+  addr: "127.0.0.1:18800"
   web_root: "web/dist"
   log_files:                              # 调试面板尾读并归并的运行日志；stderr 里有各 cron 运行结果，必须一起读
     - "var/log/jarvis-server.log"
@@ -87,6 +87,8 @@ capture:
   timezone: "Asia/Shanghai"
   discover_schedule: "@every 6h"
   scan_schedule: "@every 2m"
+  # 是否允许 Jarvis 主动扫描单聊消息；不影响 CC Connect 已接管消息的路由落库。
+  p2p_scan_enabled: false
   # 私聊首次进入监听时只回看最近 15 分钟；与 M3 的通用上下文窗口独立。
   p2p_activation_window_minutes: 15
   # discover 时按 active_time 轮换自动监听的内部真人私聊：保留当前最活跃的前 N 个。

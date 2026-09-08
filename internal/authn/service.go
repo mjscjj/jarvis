@@ -19,13 +19,20 @@ const (
 	StatusAuthenticated   = "authenticated"
 	StatusUnauthenticated = "unauthenticated"
 	StatusPending         = "pending"
+
+	isolatedLoginProfile = "jarvis-web"
+	loginFlowTTL         = 15 * time.Minute
 )
 
-var ErrPending = errors.New("authentication is still pending")
+var (
+	ErrPending         = errors.New("authentication is still pending")
+	ErrLoginInProgress = errors.New("another remote login is already pending")
+)
 
 type User struct {
-	Username string `json:"username"`
-	Email    string `json:"email"`
+	Username    string `json:"username"`
+	Email       string `json:"email"`
+	IsPrincipal bool   `json:"-"`
 }
 
 type View struct {
@@ -52,9 +59,12 @@ func (execRunner) Run(ctx context.Context, bin string, args ...string) ([]byte, 
 }
 
 type flow struct {
-	token string
-	url   string
-	code  string
+	token       string
+	url         string
+	code        string
+	profile     string
+	isPrincipal bool
+	expiresAt   time.Time
 }
 
 type session struct {
@@ -71,6 +81,8 @@ type Service struct {
 	mu       sync.Mutex
 	flows    map[string]flow
 	sessions map[string]session
+
+	isolatedLoginMu sync.Mutex
 }
 
 func NewService(bin string, sessionTTL time.Duration) (*Service, error) {
@@ -110,20 +122,47 @@ func (s *Service) SessionMaxAge() int {
 }
 
 func (s *Service) Login(ctx context.Context) (LoginResult, error) {
-	user, authenticated, err := s.probe(ctx)
+	user, authenticated, err := s.probe(ctx, "")
 	if err != nil {
 		return LoginResult{}, err
 	}
 	if authenticated {
+		user.IsPrincipal = true
 		return s.startSession(user)
 	}
+	return s.beginLogin(ctx, "", true)
+}
 
+// LoginIsolated reuses one cleared profile so remote browsers cannot reuse the
+// process owner's identity or create unbounded profile directories.
+func (s *Service) LoginIsolated(ctx context.Context) (LoginResult, error) {
+	s.isolatedLoginMu.Lock()
+	defer s.isolatedLoginMu.Unlock()
+
+	s.mu.Lock()
+	s.pruneExpiredFlowsLocked()
+	for _, pendingFlow := range s.flows {
+		if !pendingFlow.isPrincipal {
+			s.mu.Unlock()
+			return LoginResult{}, ErrLoginInProgress
+		}
+	}
+	s.mu.Unlock()
+
+	raw, err := s.runProfile(ctx, isolatedLoginProfile, "auth", "logout")
+	if err != nil {
+		return LoginResult{}, commandError("clear isolated ByteDance SSO profile", raw, err)
+	}
+	return s.beginLogin(ctx, isolatedLoginProfile, false)
+}
+
+func (s *Service) beginLogin(ctx context.Context, profile string, isPrincipal bool) (LoginResult, error) {
 	// Jarvis consumes bytedcli's resumable ByteCloud device-flow contract:
 	// --begin returns a completion token and verification URL, then --complete
 	// finishes the same flow. --session is a different browser-session flow and
 	// may legitimately return success without either value when it reuses an
 	// existing session.
-	raw, err := s.run(ctx, "--json", "auth", "login", "--begin")
+	raw, err := s.runProfile(ctx, profile, "auth", "login", "--begin")
 	if err != nil {
 		return LoginResult{}, commandError("start ByteDance SSO", raw, err)
 	}
@@ -139,7 +178,12 @@ func (s *Service) Login(ctx context.Context) (LoginResult, error) {
 		return LoginResult{}, fmt.Errorf("create SSO flow ID: %w", err)
 	}
 	s.mu.Lock()
-	s.flows[flowID] = flow{token: token, url: url, code: code}
+	s.pruneExpiredFlowsLocked()
+	s.flows[flowID] = flow{
+		token: token, url: url, code: code,
+		profile: profile, isPrincipal: isPrincipal,
+		expiresAt: s.now().Add(loginFlowTTL),
+	}
 	s.mu.Unlock()
 	return LoginResult{View: View{
 		Status: StatusPending, VerificationURL: stringPointer(url),
@@ -148,30 +192,55 @@ func (s *Service) Login(ctx context.Context) (LoginResult, error) {
 }
 
 func (s *Service) Complete(ctx context.Context, flowID string) (LoginResult, error) {
-	s.mu.Lock()
-	pendingFlow, ok := s.flows[strings.TrimSpace(flowID)]
-	s.mu.Unlock()
+	flowID = strings.TrimSpace(flowID)
+	pendingFlow, ok := s.pendingFlow(flowID)
 	if !ok {
 		return LoginResult{}, fmt.Errorf("SSO flow not found or expired")
 	}
+	if !pendingFlow.isPrincipal {
+		s.isolatedLoginMu.Lock()
+		defer s.isolatedLoginMu.Unlock()
+		pendingFlow, ok = s.pendingFlow(flowID)
+		if !ok {
+			return LoginResult{}, fmt.Errorf("SSO flow not found or expired")
+		}
+	}
 
-	raw, err := s.run(ctx, "--json", "auth", "login", "--complete", pendingFlow.token)
+	raw, err := s.runProfile(ctx, pendingFlow.profile, "auth", "login", "--complete", pendingFlow.token)
 	if err != nil {
 		if hasErrorCode(raw, "AUTHORIZATION_PENDING", "SLOW_DOWN") {
 			return LoginResult{}, ErrPending
 		}
+		s.deleteFlow(flowID)
 		return LoginResult{}, commandError("complete ByteDance SSO", raw, err)
 	}
-	user, authenticated, err := s.probe(ctx)
+	user, authenticated, err := s.probe(ctx, pendingFlow.profile)
 	if err != nil {
+		s.deleteFlow(flowID)
 		return LoginResult{}, err
 	}
 	if !authenticated {
 		return LoginResult{}, ErrPending
 	}
-	s.mu.Lock()
-	delete(s.flows, strings.TrimSpace(flowID))
-	s.mu.Unlock()
+	if pendingFlow.isPrincipal {
+		user.IsPrincipal = true
+	} else {
+		principal, principalAuthenticated, probeErr := s.probe(ctx, "")
+		if probeErr != nil {
+			s.deleteFlow(flowID)
+			return LoginResult{}, fmt.Errorf("verify principal identity: %w", probeErr)
+		}
+		if !principalAuthenticated {
+			s.deleteFlow(flowID)
+			return LoginResult{}, fmt.Errorf("verify principal identity: server identity is not authenticated")
+		}
+		user.IsPrincipal = sameUser(user, principal)
+		if raw, logoutErr := s.runProfile(ctx, pendingFlow.profile, "auth", "logout"); logoutErr != nil {
+			s.deleteFlow(flowID)
+			return LoginResult{}, commandError("clear isolated ByteDance SSO profile", raw, logoutErr)
+		}
+	}
+	s.deleteFlow(flowID)
 	return s.startSession(user)
 }
 
@@ -199,6 +268,29 @@ func (s *Service) Logout(token string) {
 	s.mu.Unlock()
 }
 
+func (s *Service) deleteFlow(flowID string) {
+	s.mu.Lock()
+	delete(s.flows, flowID)
+	s.mu.Unlock()
+}
+
+func (s *Service) pendingFlow(flowID string) (flow, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pruneExpiredFlowsLocked()
+	pendingFlow, ok := s.flows[flowID]
+	return pendingFlow, ok
+}
+
+func (s *Service) pruneExpiredFlowsLocked() {
+	now := s.now()
+	for flowID, pendingFlow := range s.flows {
+		if !pendingFlow.expiresAt.After(now) {
+			delete(s.flows, flowID)
+		}
+	}
+}
+
 func (s *Service) startSession(user User) (LoginResult, error) {
 	token, err := randomToken()
 	if err != nil {
@@ -213,8 +305,8 @@ func (s *Service) startSession(user User) (LoginResult, error) {
 	}, nil
 }
 
-func (s *Service) probe(ctx context.Context) (User, bool, error) {
-	raw, err := s.run(ctx, "--json", "auth", "status")
+func (s *Service) probe(ctx context.Context, profile string) (User, bool, error) {
+	raw, err := s.runProfile(ctx, profile, "auth", "status")
 	if err != nil {
 		return User{}, false, commandError("read ByteDance SSO status", raw, err)
 	}
@@ -245,6 +337,23 @@ func (s *Service) run(ctx context.Context, args ...string) ([]byte, error) {
 	runCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	return s.runner.Run(runCtx, s.bin, args...)
+}
+
+func (s *Service) runProfile(ctx context.Context, profile string, args ...string) ([]byte, error) {
+	command := make([]string, 0, len(args)+3)
+	if profile != "" {
+		command = append(command, "--profile", profile)
+	}
+	command = append(command, "--json")
+	command = append(command, args...)
+	return s.run(ctx, command...)
+}
+
+func sameUser(left, right User) bool {
+	if left.Username != "" && right.Username != "" {
+		return strings.EqualFold(left.Username, right.Username)
+	}
+	return left.Email != "" && right.Email != "" && strings.EqualFold(left.Email, right.Email)
 }
 
 func randomToken() (string, error) {

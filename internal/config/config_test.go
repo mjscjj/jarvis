@@ -93,6 +93,7 @@ func TestValidate(t *testing.T) {
 			Timezone:         "Asia/Shanghai",
 			DiscoverSchedule: "@every 6h",
 			ScanSchedule:     "@every 5m",
+			P2PScanEnabled:   true,
 			P2PWindowMinutes: 15,
 		},
 		FactEngine:    validFactEngineConfig(),
@@ -266,7 +267,7 @@ func TestValidateExtractEnabled(t *testing.T) {
 		Capture: CaptureConfig{
 			PageSize: 50, ScanWorkers: 2, HotAgeHours: 6, WarmAgeHours: 168,
 			Timezone: "Asia/Shanghai", DiscoverSchedule: "@every 6h", ScanSchedule: "@every 5m",
-			P2PWindowMinutes: 15,
+			P2PScanEnabled: true, P2PWindowMinutes: 15,
 		},
 		FactEngine:    validFactEngineConfig(),
 		Proactive:     validProactiveConfig(),

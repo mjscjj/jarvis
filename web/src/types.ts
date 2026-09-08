@@ -1127,6 +1127,44 @@ export interface RuntimeSettingsView {
   override_path: string
 }
 
+export interface SecuritySettings {
+  p2p_scan_enabled: boolean
+}
+
+export interface SecurityCapability {
+  enforceable: boolean
+  enabled: boolean
+  message: string
+}
+
+export interface SecuritySettingsView {
+  settings: SecuritySettings
+  restart_required: boolean
+  l4_document_read: SecurityCapability
+}
+
+export type AccessAuditActorKind = 'principal' | 'other_user' | 'local_agent' | 'unknown_remote'
+export type AccessAuditOperation = 'read' | 'write'
+
+export interface AccessAuditEvent {
+  id: number
+  occurred_at: string
+  actor_kind: AccessAuditActorKind
+  actor_id: string
+  operation: AccessAuditOperation
+  method: string
+  route: string
+  resource_type: string
+  resource_id: string | null
+  status_code: number
+  request_id: string
+  remote_address: string
+}
+
+export interface AccessAuditEventList {
+  items: AccessAuditEvent[]
+}
+
 export interface AgentIdentity {
   display_name: string
 }

@@ -278,6 +278,7 @@ func newPrincipalActivityService(
 		SearchOverlap:       10 * time.Minute,
 		ActivationContext:   2 * time.Hour,
 		P2PActivationWindow: 15 * time.Minute,
+		P2PScanEnabled:      true,
 		AutoRelatedP2PTopN:  30,
 	})
 	if err != nil {

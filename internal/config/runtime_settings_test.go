@@ -96,6 +96,7 @@ capture:
   timezone: "Asia/Shanghai"
   discover_schedule: "@every 6h"
   scan_schedule: "@every 5m"
+  p2p_scan_enabled: true
   p2p_activation_window_minutes: 15
 codex:
   bin: "traex"
@@ -137,6 +138,8 @@ scheduled_task:
 func TestRuntimeSettingsUpdateWritesOverlayAndRequiresRestart(t *testing.T) {
 	configPath := writeRuntimeSettingsTestConfig(t)
 	if err := os.WriteFile(RuntimeOverridePath(configPath), []byte(`
+server:
+  addr: 127.0.0.1:18801
 card_approval:
   enabled: true
   principal_open_id: ou_principal
@@ -221,11 +224,14 @@ dailydigest:
 	}
 	if reloaded.Identity.DisplayName != "小贾" || reloaded.Codex.Bin != "codex" || reloaded.Execute.Bin != "traex" ||
 		reloaded.Execute.Concurrency != 4 || reloaded.Extract.Schedule != "@every 2m" || reloaded.Extract.Concurrency != 4 ||
-		reloaded.Capture.ScanWorkers != 6 || reloaded.Capture.P2PWindowMinutes != 25 ||
+		reloaded.Capture.ScanWorkers != 6 || !reloaded.Capture.P2PScanEnabled || reloaded.Capture.P2PWindowMinutes != 25 ||
 		reloaded.FactEngine.ReasoningEffort != "high" || reloaded.FactEngine.WindowMaxMessages != 80 ||
 		reloaded.Proactive.Schedule != "@every 2h" || reloaded.Proactive.StartupDelaySeconds != 180 ||
 		reloaded.LarkCLI.RateLimit != 7.5 || reloaded.DailyDigest.GroupConcurrency != 4 {
 		t.Fatalf("reloaded config = %#v", reloaded)
+	}
+	if reloaded.Server.Addr != "127.0.0.1:18801" {
+		t.Fatalf("server address was not preserved: %q", reloaded.Server.Addr)
 	}
 	if got := reloaded.CardApproval; !got.Enabled ||
 		got.PrincipalOpenID != "ou_principal" ||
@@ -296,6 +302,46 @@ func TestRuntimeSettingsUpdateRejectsInvalidSchedule(t *testing.T) {
 	}
 	if _, err := os.Stat(RuntimeOverridePath(configPath)); !os.IsNotExist(err) {
 		t.Fatalf("invalid update wrote override: %v", err)
+	}
+}
+
+func TestSecuritySettingsUpdateOwnsOnlyP2PScan(t *testing.T) {
+	configPath := writeRuntimeSettingsTestConfig(t)
+	if err := os.WriteFile(RuntimeOverridePath(configPath), []byte(`
+server:
+  addr: 127.0.0.1:18801
+`), 0o600); err != nil {
+		t.Fatalf("write runtime override: %v", err)
+	}
+	active, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	service, err := NewRuntimeSettingsService(configPath, active)
+	if err != nil {
+		t.Fatalf("NewRuntimeSettingsService() error = %v", err)
+	}
+
+	view, err := service.UpdateSecurity(context.Background(), SecuritySettings{P2PScanEnabled: false})
+	if err != nil {
+		t.Fatalf("UpdateSecurity() error = %v", err)
+	}
+	if view.Settings.P2PScanEnabled || !view.RestartRequired {
+		t.Fatalf("security view = %#v", view)
+	}
+
+	reloaded, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() after security update error = %v", err)
+	}
+	if reloaded.Capture.P2PScanEnabled {
+		t.Fatal("p2p scan remained enabled")
+	}
+	if reloaded.Capture.ScanSchedule != active.Capture.ScanSchedule ||
+		reloaded.Execute.Model != active.Execute.Model ||
+		reloaded.Proactive.Schedule != active.Proactive.Schedule ||
+		reloaded.Server.Addr != active.Server.Addr {
+		t.Fatalf("security update changed unrelated runtime settings: %#v", reloaded)
 	}
 }
 
