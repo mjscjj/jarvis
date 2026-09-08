@@ -237,6 +237,7 @@ interface ChatSessionProps {
   open: boolean
   active: boolean
   workspace: ChatWorkspace
+  workspaceBar?: ReactNode
   workspaceActions?: ReactNode
   onWorkspaceChange: (id: string, change: Partial<ChatWorkspace>) => void
 }
@@ -270,7 +271,7 @@ function loadWorkspaces(): ChatWorkspace[] {
   return [defaultWorkspace(1, window.localStorage.getItem(LEGACY_CHAT_THREAD_STORAGE_KEY))]
 }
 
-function ChatSession({ open, active, workspace, workspaceActions, onWorkspaceChange }: ChatSessionProps) {
+function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, onWorkspaceChange }: ChatSessionProps) {
   const { name: agentName, shortName: agentShortName } = useAgentIdentity()
   const { context } = usePageContext()
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -870,6 +871,7 @@ function ChatSession({ open, active, workspace, workspaceActions, onWorkspaceCha
       </div>
       {activeThread && <div className="chat-active-thread" title={activeThread.title}>{activeThread.title}</div>}
     </header>
+    {workspaceBar}
     <div
       className="chat-messages"
       ref={listRef}
@@ -1087,7 +1089,6 @@ export default function Chat({ open, expanded, onToggleExpanded, onClose }: Chat
   </div>
 
   return <div className="chat-workspace">
-    {workspaceBar}
     <div className="chat-workspace-stack">
       {workspaces.map((workspace) => {
         const active = workspace.id === activeWorkspaceId
@@ -1096,6 +1097,7 @@ export default function Chat({ open, expanded, onToggleExpanded, onClose }: Chat
             open={open}
             active={active}
             workspace={workspace}
+            workspaceBar={active ? workspaceBar : undefined}
             workspaceActions={active ? workspaceActions : undefined}
             onWorkspaceChange={updateWorkspace}
           />
