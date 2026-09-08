@@ -87,6 +87,40 @@ func TestOKRPlanRoutesUseOwnLifecycle(t *testing.T) {
 	if objectiveResponse.StatusCode() != 201 {
 		t.Fatalf("create objective status=%d body=%s", objectiveResponse.StatusCode(), objectiveResponse.Body())
 	}
+	reorderBody := `{"ids":["plan-o"]}`
+	reorderResponse := ut.PerformRequest(h.Engine, "PUT", "/api/biz-okr/plans/"+created.Data.ID+"/objectives/order", &ut.Body{Body: strings.NewReader(reorderBody), Len: len(reorderBody)}).Result()
+	if reorderResponse.StatusCode() != 200 {
+		t.Fatalf("reorder objective status=%d body=%s", reorderResponse.StatusCode(), reorderResponse.Body())
+	}
+	var reordered struct {
+		Data okrworkspace.PlanView `json:"data"`
+	}
+	if err := json.Unmarshal(reorderResponse.Body(), &reordered); err != nil {
+		t.Fatal(err)
+	}
+	if reordered.Data.ID != created.Data.ID || len(reordered.Data.Objectives) != 1 || reordered.Data.Objectives[0].ID != "plan-o" {
+		t.Fatalf("reordered plan response = %+v", reordered.Data)
+	}
+
+	commentsResponse := ut.PerformRequest(h.Engine, "GET", "/api/biz-okr/plans/"+created.Data.ID+"/comments", nil).Result()
+	if commentsResponse.StatusCode() != 200 {
+		t.Fatalf("list plan comments status=%d body=%s", commentsResponse.StatusCode(), commentsResponse.Body())
+	}
+	commentBody := `{"target_type":"kr","target_id":"plan-kr","target_title":"计划 KR","content":"补充口径"}`
+	commentResponse := ut.PerformRequest(h.Engine, "POST", "/api/biz-okr/plans/"+created.Data.ID+"/comments", &ut.Body{Body: strings.NewReader(commentBody), Len: len(commentBody)}).Result()
+	if commentResponse.StatusCode() != 200 {
+		t.Fatalf("create plan comment status=%d body=%s", commentResponse.StatusCode(), commentResponse.Body())
+	}
+	commentsResponse = ut.PerformRequest(h.Engine, "GET", "/api/biz-okr/plans/"+created.Data.ID+"/comments", nil).Result()
+	var comments struct {
+		Data okrworkspace.CommentList `json:"data"`
+	}
+	if err := json.Unmarshal(commentsResponse.Body(), &comments); err != nil {
+		t.Fatal(err)
+	}
+	if comments.Data.PlanID != created.Data.ID || comments.Data.Count != 1 || len(comments.Data.Comments) != 1 {
+		t.Fatalf("listed plan comments = %+v", comments.Data)
+	}
 
 	listResponse := ut.PerformRequest(h.Engine, "GET", "/api/biz-okr/plans?quarter=2026-Q3", nil).Result()
 	if listResponse.StatusCode() != 200 {

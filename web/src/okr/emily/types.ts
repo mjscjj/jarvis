@@ -247,10 +247,16 @@ export interface OKRActivityEntry {
   summary: string
 }
 
+export interface CommentMention {
+  openId: string
+  name: string
+}
+
 export interface PageComment {
   id: string
+  planId?: string
   parentId?: string
-  targetType: 'page' | 'kr' | 'metric' | 'point' | 'entry' | 'follow_up'
+  targetType: 'page' | 'objective' | 'kr' | 'metric' | 'point' | 'entry' | 'follow_up'
   targetId?: string
   targetTitle?: string
   selectedText?: string
@@ -261,6 +267,9 @@ export interface PageComment {
   authorOpenId?: string
   authorName: string
   content: string
+  mentions: CommentMention[]
+  images?: ImageRef[]
+  notificationErrors?: string[]
   todo: boolean
   resolved: boolean
   createdAt: string
@@ -270,7 +279,8 @@ export interface PageComment {
 
 export interface PageCommentList {
   quarter: string
-  week: string
+  week?: string
+  planId?: string
   count: number
   comments: PageComment[]
 }
@@ -307,6 +317,7 @@ export interface CommentTarget {
   type: PageComment['targetType']
   id: string
   title: string
+  commentId?: string
   context?: string
   selection?: TextSelection
 }

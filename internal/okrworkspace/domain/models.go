@@ -369,27 +369,40 @@ type KROwner struct {
 
 func (KROwner) TableName() string { return "okr_workspace_kr_owner" }
 
-// PageComment is a lightweight document-style discussion thread scoped to a
-// weekly OKR page. ParentID is empty for a root comment and points to another
-// PageComment for a reply. Target fields leave room for comments anchored to a
-// KR or point without coupling the discussion lifecycle to those aggregates.
+// CommentMention is an explicit Feishu identity selected by the commenter.
+// Name is a display snapshot; OpenID belongs to the main Jarvis App and is
+// normalized to enterprise email before the notification App sends. Keeping
+// the pair distinguishes a real mention from somebody merely typing "@name".
+type CommentMention struct {
+	OpenID string `json:"open_id"`
+	Name   string `json:"name"`
+}
+
+// PageComment is a lightweight document-style discussion thread scoped either
+// to a weekly OKR page or to one Biz OKR Plan. A non-empty PlanID denotes the
+// latter and leaves Week empty; historical weekly rows keep PlanID empty.
+// ParentID is empty for a root comment and points to another PageComment for a
+// reply. Target fields keep discussion history independent from target edits.
 type PageComment struct {
-	ID              string `gorm:"primaryKey;size:64"`
-	Quarter         string `gorm:"not null;index:idx_page_comment_scope,priority:1"`
-	Week            string `gorm:"not null;index:idx_page_comment_scope,priority:2"`
-	ParentID        string `gorm:"not null;default:'';index"`
-	TargetType      string `gorm:"not null;size:24;default:'page'"`
-	TargetID        string `gorm:"not null;size:96;default:''"`
-	TargetTitle     string `gorm:"not null;default:''"`
-	SelectedText    string `gorm:"not null;type:text;default:''"`
-	SelectionStart  int    `gorm:"not null;default:0"`
-	SelectionEnd    int    `gorm:"not null;default:0"`
-	SelectionPrefix string `gorm:"not null;type:text;default:''"`
-	SelectionSuffix string `gorm:"not null;type:text;default:''"`
-	AuthorOpenID    string `gorm:"not null;default:'';index"`
-	AuthorUnionID   string `gorm:"not null;default:'';index"`
-	AuthorName      string `gorm:"not null;default:''"`
-	Content         string `gorm:"not null;type:text"`
+	ID              string           `gorm:"primaryKey;size:64"`
+	Quarter         string           `gorm:"not null;index:idx_page_comment_scope,priority:1"`
+	Week            string           `gorm:"not null;index:idx_page_comment_scope,priority:2"`
+	PlanID          string           `gorm:"not null;default:'';index:idx_page_comment_plan"`
+	ParentID        string           `gorm:"not null;default:'';index"`
+	TargetType      string           `gorm:"not null;size:24;default:'page'"`
+	TargetID        string           `gorm:"not null;size:96;default:''"`
+	TargetTitle     string           `gorm:"not null;default:''"`
+	SelectedText    string           `gorm:"not null;type:text;default:''"`
+	SelectionStart  int              `gorm:"not null;default:0"`
+	SelectionEnd    int              `gorm:"not null;default:0"`
+	SelectionPrefix string           `gorm:"not null;type:text;default:''"`
+	SelectionSuffix string           `gorm:"not null;type:text;default:''"`
+	AuthorOpenID    string           `gorm:"not null;default:'';index"`
+	AuthorUnionID   string           `gorm:"not null;default:'';index"`
+	AuthorName      string           `gorm:"not null;default:''"`
+	Content         string           `gorm:"not null;type:text"`
+	Mentions        []CommentMention `gorm:"serializer:json;type:text"`
+	Images          []ImageRef       `gorm:"serializer:json;type:text"`
 	// Todo promotes a meeting comment into the weekly follow-up summary. It
 	// remains a comment attribute so there is only one source of truth.
 	Todo      bool      `gorm:"not null;default:false"`

@@ -9,3 +9,21 @@ export function swappedOrder(ids: string[], id: string, targetId: string): strin
   next[to] = id
   return next
 }
+
+// A hierarchy row can show only the Objectives matching the active business,
+// priority, owner, or text filters. Reordering that row still writes the one
+// canonical Plan order, so visible Objectives exchange only the slots already
+// occupied by visible Objectives; hidden siblings retain their exact slots.
+export function mergeVisibleObjectiveOrder(allIds: string[], visibleIds: string[]): string[] {
+	const allSet = new Set(allIds)
+	const visibleSet = new Set(visibleIds)
+	if (visibleSet.size !== visibleIds.length || visibleIds.some((id) => !allSet.has(id))) {
+		throw new Error('目标顺序已经变化，请重新载入后再试。')
+	}
+	const expectedVisible = allIds.filter((id) => visibleSet.has(id))
+	if (expectedVisible.length !== visibleIds.length) {
+		throw new Error('目标顺序已经变化，请重新载入后再试。')
+	}
+	let visibleIndex = 0
+	return allIds.map((id) => visibleSet.has(id) ? visibleIds[visibleIndex++] : id)
+}

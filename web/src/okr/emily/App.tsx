@@ -8,7 +8,7 @@ import { HelpFab } from './components/HelpFab'
 import { WeeklyFocus } from './components/WeeklyFocus'
 import { WeeklyTools } from './components/WeeklyTools'
 import { QuarterSelect } from './components/QuarterSelect'
-import { CommentInteractionProvider } from './commenting'
+import { CommentInteractionProvider, commentTargetElementId, scrollToCommentSource } from './commenting'
 import type { PendingCommentSelection } from './commenting'
 import { commentTargetFromThread } from './comments'
 import type { CommentTarget, PageComment } from './types'
@@ -76,19 +76,24 @@ export default function App({
   workspace,
   onWorkspaceChange,
   onShareTabChange,
+  initialCommentId = '',
   shared = false,
 }: {
 	workspace: WeeklyWorkspace
 	onWorkspaceChange: (workspace: WeeklyWorkspace) => void
 	onShareTabChange?: (tab: WeeklyShareTab) => void
+  initialCommentId?: string
   shared?: boolean
 }) {
 	const { dataset, view } = workspace
-	const { reset, syncState, quarter, week, availableWeeks, setWeek, setWeeklyScope, deleteWeeklyScope } = useBoard()
-  const [commentsOpen, setCommentsOpen] = useState(false)
+	const { reset, syncState, objectives, quarter, week, availableWeeks, setWeek, setWeeklyScope, deleteWeeklyScope } = useBoard()
+  const [commentsOpen, setCommentsOpen] = useState(Boolean(initialCommentId))
+  const [reviewingComments, setReviewingComments] = useState(false)
+  const [focusedComment, setFocusedComment] = useState<PageComment>()
   const [commentCount, setCommentCount] = useState(0)
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({})
   const [comments, setComments] = useState<PageComment[]>([])
+  const [followUpCommentOrder, setFollowUpCommentOrder] = useState<string[]>([])
   const [commentTarget, setCommentTarget] = useState<CommentTarget>()
   const [pendingCommentSelection, setPendingCommentSelection] = useState<PendingCommentSelection>()
   const [openingWeek, setOpeningWeek] = useState(false)
@@ -151,13 +156,14 @@ export default function App({
 	}
 
   useEffect(() => {
-			if (!meetingLike) {
-				setCommentTarget(undefined)
-			}
-			setPendingCommentSelection(undefined)
-		}, [meetingLike])
+		setCommentTarget(undefined)
+		setReviewingComments(false)
+		setFocusedComment(undefined)
+		setPendingCommentSelection(undefined)
+	}, [dataset, view])
 
 	useEffect(() => setConfirmDeleteWeek(false), [quarter, week])
+	useEffect(() => setFollowUpCommentOrder([]), [quarter, week])
 
   useEffect(() => {
     const clearPendingSelection = (event: Event) => {
@@ -196,14 +202,27 @@ export default function App({
   const openComments = (target?: CommentTarget) => {
     setPendingCommentSelection(undefined)
     window.getSelection()?.removeAllRanges()
+    setReviewingComments(false)
+    setFocusedComment(undefined)
     setCommentTarget(target)
     setCommentsOpen(true)
   }
 
   const toggleComments = () => {
-    if (commentsOpen) setCommentsOpen(false)
-    else openComments()
+    if (commentsOpen) {
+      setCommentsOpen(false)
+      setReviewingComments(false)
+      setFocusedComment(undefined)
+      return
+    }
+    openComments()
   }
+
+  useEffect(() => {
+    if (!focusedComment) return
+    const timeout = window.setTimeout(() => scrollToCommentSource(focusedComment), 80)
+    return () => window.clearTimeout(timeout)
+  }, [focusedComment])
 
   const copyShareLink = async () => {
     setShareNotice('')
@@ -280,7 +299,7 @@ export default function App({
         </div>
       </header>
 
-			<main className={`mx-auto max-w-[1320px] px-4 py-4 transition-[padding] sm:px-6 ${commentsOpen ? 'lg:pr-[420px]' : ''}`}>
+			<main id={week ? commentTargetElementId({ type: 'page', id: `${quarter}:${week}` }) : undefined} className={`mx-auto max-w-[1320px] px-4 py-4 transition-[padding] sm:px-6 ${commentsOpen ? 'lg:pr-[420px]' : ''}`}>
 				{openingWeek && <section className={`mb-3 flex flex-wrap items-center gap-2 rounded-xl border p-3 ${reviewDataset ? 'border-violet-100 bg-violet-50/60' : 'border-blue-100 bg-blue-50/60'}`}>
 					<div className="mr-2"><div className="text-xs font-semibold text-slate-700">新建{lifecycleName}周次</div><div className="mt-0.5 text-[10px] text-slate-400">{reviewDataset ? '只创建空 Review 周，不会影响普通周报。' : '只创建空周，不复制进展，也不会立即发送提醒。'}</div></div>
 					<input value={newQuarter} onChange={(event) => setNewQuarter(event.target.value)} placeholder="2026-Q3" aria-label="季度" className="h-9 w-28 rounded-lg border border-slate-200 bg-white px-3 text-xs outline-none focus:border-blue-400" />
@@ -317,8 +336,8 @@ export default function App({
 					{/* Meego 差异和催办预览是维护动作，分享链接的收件人只负责填写，
 					    不该看到它们。 */}
 					{!shared && <WeeklyTools onOpenPoint={openPoint} readOnly={view !== 'fill'} />}
-            <CommentInteractionProvider value={{ selected: commentTarget, comments, counts: commentCounts, pendingSelection: pendingCommentSelection, setPendingSelection: setPendingCommentSelection, select: openComments }}>
-              <WeeklyFocus comments={comments} readOnly={view !== 'fill'} statusEditable={reviewDataset && meetingLike} onOpenComment={(comment) => openComments(commentTargetFromThread(comment))} />
+            <CommentInteractionProvider value={{ enabled: true, selected: commentTarget, focused: focusedComment, comments, counts: commentCounts, pendingSelection: pendingCommentSelection, setPendingSelection: setPendingCommentSelection, select: openComments }}>
+              <WeeklyFocus comments={comments} readOnly={view !== 'fill'} statusEditable={reviewDataset && meetingLike} onOpenComment={(comment) => openComments(commentTargetFromThread(comment))} onCommentOrderChange={setFollowUpCommentOrder} />
               <div className={`transition-opacity ${busy ? 'pointer-events-none opacity-55' : ''}`}>
 						{view === 'meeting' ? <MeetingView /> : <KrTable definitionsReadOnly showObjectiveHeader />}
               </div>
@@ -333,7 +352,7 @@ export default function App({
             </div>
 			</> : <section className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center"><div className="text-sm font-semibold text-slate-700">当前季度暂无{lifecycleName}</div><div className="mt-1 text-xs text-slate-400">{managesWeeks ? `点击顶部“新建${lifecycleName}”创建一个空周。` : `请先在“${lifecycleName}填写”中新建一个空周。`}</div></section>}
 		</main>
-			{week && <CommentDrawer open={commentsOpen} quarter={quarter} week={week} target={commentTarget} meetingMode={meetingLike} onShowAll={() => setCommentTarget(undefined)} onClose={() => setCommentsOpen(false)} onCountChange={setCommentCount} onCountsChange={setCommentCounts} onCommentsChange={setComments} />}
+			{week && <CommentDrawer open={commentsOpen} reviewEnabled reviewing={reviewingComments} quarter={quarter} week={week} sourceTab={okrTabForWeeklyWorkspace(workspace)} objectives={objectives} followUpOrder={followUpCommentOrder} target={commentTarget} focusCommentId={initialCommentId} todoEnabled={meetingLike} onStartReview={() => { setCommentTarget(undefined); setReviewingComments(true) }} onShowAll={() => { setReviewingComments(false); setFocusedComment(undefined); setCommentTarget(undefined) }} onClose={() => { setCommentsOpen(false); setReviewingComments(false); setFocusedComment(undefined) }} onFocusCommentChange={setFocusedComment} onCountChange={setCommentCount} onCountsChange={setCommentCounts} onCommentsChange={setComments} />}
 			<HelpFab />
     </div>
   )

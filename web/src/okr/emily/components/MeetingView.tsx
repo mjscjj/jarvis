@@ -1,10 +1,10 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent, ReactNode } from 'react'
 import { createFeishuDocument } from '../api'
 import { useBoard } from '../board'
-import { commentTargetFromThread, commentTargetKey } from '../comments'
-import { useCommentInteraction } from '../commenting'
-import { buildAllBusinessNavigation, buildKRHierarchy, priorityLabel, priorityOf } from '../hierarchy'
+import { commentTargetFromThread, commentTargetKey, findCommentTargetLocation } from '../comments'
+import { commentSelectionElementId, commentTargetElementId, scrollToCommentSource, useCommentInteraction } from '../commenting'
+import { buildAllBusinessNavigation, buildKRHierarchy, businessCategoryOf, priorityLabel, priorityOf } from '../hierarchy'
 import { hasOwner, splitOwnerNames } from '../people'
 import { collapseAllIds, KINDS } from '../rows'
 import { buildFullMeetingMarkdown } from '../meetingMarkdown'
@@ -52,18 +52,20 @@ function compactTitle(value: string, length = 90) {
 function Commentable({ target, children, className = '' }: { target: CommentTarget; children: ReactNode; className?: string }) {
   const interaction = useCommentInteraction()
   const count = interaction.counts[commentTargetKey(target)] ?? 0
-  const selected = interaction.selected && commentTargetKey(interaction.selected) === commentTargetKey(target)
+  const selected = !interaction.focused && interaction.selected && commentTargetKey(interaction.selected) === commentTargetKey(target)
+  const focused = interaction.focused && commentTargetKey(interaction.focused) === commentTargetKey(target)
   const select = () => {
     interaction.select(target)
   }
   return (
     <div
+      id={commentTargetElementId(target)}
       onClick={(event) => {
         event.stopPropagation()
         if (window.getSelection()?.toString().trim()) return
         select()
       }}
-      className={`group/commentable relative cursor-pointer transition-[background-color,box-shadow] hover:bg-indigo-50/70 ${selected ? 'bg-indigo-50/80 ring-2 ring-inset ring-indigo-500' : ''} ${className}`}
+      className={`group/commentable relative cursor-pointer transition-[background-color,box-shadow] hover:bg-indigo-50/70 ${selected || focused ? 'bg-indigo-50/80 ring-2 ring-inset ring-indigo-500' : ''} ${className}`}
     >
       {children}
       {count > 0 && <span className="ml-auto shrink-0 rounded-full bg-indigo-50 px-1.5 py-0.5 text-[9px] font-medium text-indigo-600">{count} 条评论</span>}
@@ -124,10 +126,11 @@ function HighlightedText({ target, text }: { target: CommentTarget; text: string
     if (range.start > cursor) parts.push(text.slice(cursor, range.start))
     parts.push(
       <mark
+        id={commentSelectionElementId(range.comment.id)}
         key={range.comment.id}
         title={`${1 + range.comment.replies.length} 条讨论`}
         onClick={(event) => { event.stopPropagation(); interaction.select(commentTargetFromThread(range.comment)) }}
-        className="cursor-pointer rounded-sm bg-amber-100 px-0.5 text-inherit ring-1 ring-amber-200 hover:bg-amber-200"
+        className={`cursor-pointer rounded-sm px-0.5 text-inherit ring-1 hover:bg-amber-200 ${interaction.focused?.id === range.comment.id ? 'bg-indigo-200 ring-indigo-400' : 'bg-amber-100 ring-amber-200'}`}
       >{text.slice(range.start, range.end)}</mark>,
     )
     cursor = range.end
@@ -171,9 +174,13 @@ function MeetingEntry({ entry }: { entry: Entry }) {
       <span className="pt-px"><StatusSelect value={entry.status} onChange={() => undefined} readOnly /></span>
       <div className="min-w-0 flex-1 text-[13px] leading-[19px] text-slate-700">
         <div><HighlightedText target={target} text={entry.text} /></div>
-        {(entry.docs.length > 0 || entry.images.length > 0) && (
-          <div className="mt-1 flex flex-wrap items-center gap-1">
+        {entry.docs.length > 0 && (
+          <div className="mt-1">
             <Links value={entry.docs} onChange={() => undefined} readOnly />
+          </div>
+        )}
+        {entry.images.length > 0 && (
+          <div className="mt-1 flex flex-wrap items-start gap-1">
             <Images value={entry.images} onChange={() => undefined} readOnly maxDisplayWidth={280} />
           </div>
         )}
@@ -233,10 +240,13 @@ function KindGroup({ objectiveId, krId, kind, points, closed, toggle, reviewMode
 
 function MeetingObjectiveSection({ objective, closed, toggle, reviewMode }: { objective: Objective; closed: Set<string>; toggle: (id: string) => void; reviewMode: boolean }) {
   const { setKrScore } = useBoard()
+  const commentInteraction = useCommentInteraction()
+  const target: CommentTarget = { type: 'objective', id: objective.id, title: objective.title }
+  const focused = commentInteraction.focused && commentTargetKey(commentInteraction.focused) === commentTargetKey(target)
   const objectiveOpen = !closed.has(objective.id)
   return (
     <section className="space-y-1.5">
-      <div className="flex items-center gap-2 rounded-r-lg border-l-4 border-blue-600 bg-blue-50 px-2.5 py-1.5">
+      <div id={commentTargetElementId(target)} className={`flex items-center gap-2 rounded-r-lg border-l-4 border-blue-600 bg-blue-50 px-2.5 py-1.5 ${focused ? 'ring-2 ring-inset ring-indigo-500' : ''}`}>
         <FoldButton open={objectiveOpen} onToggle={() => toggle(objective.id)} label="目标" />
         <h2 className="min-w-0 flex-1 text-[14px] font-bold text-blue-800">{objective.title}</h2>
         <span className="rounded-full border border-blue-100 bg-white/80 px-2 py-0.5 text-[10px] text-blue-600">{objective.krs.length} 条 KR</span>
@@ -275,10 +285,14 @@ function MeetingObjectiveSection({ objective, closed, toggle, reviewMode }: { ob
                         const target: CommentTarget = { type: 'metric', id: metric.id, title: compactTitle(metric.text) }
                         return (
                           <Commentable key={metric.id} target={target} className="flex min-h-7 items-start gap-2 px-1.5 py-0.5 text-[12px] leading-[18px] text-slate-800">
-                            <div className="min-w-0 flex-1 font-medium">
-                              <HighlightedText target={target} text={metric.text} />
+                            <div className="min-w-0 flex-1">
+                              <div className="font-medium"><HighlightedText target={target} text={metric.text} /></div>
+                              {(metric.images?.length ?? 0) > 0 && (
+                                <div className="mt-1 flex flex-wrap items-start gap-1">
+                                  <Images value={metric.images ?? []} onChange={() => undefined} readOnly maxDisplayWidth={360} />
+                                </div>
+                              )}
                             </div>
-                            {(metric.images?.length ?? 0) > 0 && <Images value={metric.images ?? []} onChange={() => undefined} readOnly maxDisplayWidth={360} />}
                           </Commentable>
                         )
                       })}
@@ -300,6 +314,7 @@ function MeetingObjectiveSection({ objective, closed, toggle, reviewMode }: { ob
 
 export function MeetingView() {
   const { objectives, quarter, week, templateKey } = useBoard()
+  const commentInteraction = useCommentInteraction()
   // Review-only affordances follow the loaded week's template, not the tab, so
   // a week can never be rendered in the other ceremony's format.
   const reviewMode = isReviewTemplate(templateKey)
@@ -321,7 +336,30 @@ export function MeetingView() {
   const activeBusiness = meetingOverview ? allBusiness : navigation.find((business) => business.value === activeBusinessValue) ?? navigation[0]
   const activePriority = activeBusiness?.priorities.find((priority) => priority.value === activePriorityValue) ?? activeBusiness?.priorities[0]
 	const activeObjective = activePriority?.objectives.find((objective) => objective.id === activeObjectiveId) ?? activePriority?.objectives[0]
-	const visible = activeObjective ? [activeObjective] : []
+  const visible = activeObjective ? [activeObjective] : []
+
+  useEffect(() => {
+    const comment = commentInteraction.focused
+    if (!comment) return
+    const location = findCommentTargetLocation(objectives, comment)
+    if (!location) return
+    const navigationKr = location.kr ?? location.objective.krs[0]
+    setOwnerFilter('')
+    if (navigationKr) {
+      setActiveBusinessValue(businessCategoryOf(navigationKr))
+      setActivePriorityValue(priorityOf(navigationKr))
+    }
+    setActiveObjectiveId(location.objective.id)
+    setClosed((previous) => {
+      const next = new Set(previous)
+      next.delete(location.objective.id)
+      if (location.kr) next.delete(location.kr.id)
+      if (location.point) next.delete(location.point.id)
+      return next
+    })
+    const timeout = window.setTimeout(() => scrollToCommentSource(comment), 0)
+    return () => window.clearTimeout(timeout)
+  }, [commentInteraction.focused, objectives])
   const toggle = (id: string) => setClosed((previous) => {
     const next = new Set(previous)
     if (next.has(id)) next.delete(id)

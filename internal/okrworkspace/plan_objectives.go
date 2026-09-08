@@ -141,14 +141,14 @@ func (s *Service) DeletePlanObjective(ctx context.Context, planID, objectiveID s
 	return s.bumpPlan(ctx, planID, actor)
 }
 
-func (s *Service) ReorderPlanObjectives(ctx context.Context, planID string, ids []string, actor string) error {
+func (s *Service) ReorderPlanObjectives(ctx context.Context, planID string, ids []string, actor string) (PlanView, error) {
 	planID = strings.TrimSpace(planID)
 	if planID == "" {
-		return fmt.Errorf("plan id is required")
+		return PlanView{}, fmt.Errorf("plan id is required")
 	}
 	var records []domain.Objective
 	if err := s.db.WithContext(ctx).Where("plan_id = ?", planID).Find(&records).Error; err != nil {
-		return fmt.Errorf("list plan objectives for reorder: %w", err)
+		return PlanView{}, fmt.Errorf("list plan objectives for reorder: %w", err)
 	}
 	known := make(map[string]struct{}, len(records))
 	for _, record := range records {
@@ -156,14 +156,17 @@ func (s *Service) ReorderPlanObjectives(ctx context.Context, planID string, ids 
 	}
 	ordered, err := completeOrder(ids, known, fmt.Sprintf("plan %s", planID))
 	if err != nil {
-		return err
+		return PlanView{}, err
 	}
 	for index, id := range ordered {
 		if err := s.db.WithContext(ctx).Model(&domain.Objective{}).Where("id = ? AND plan_id = ?", id, planID).Updates(map[string]any{"sort_order": index, "updated_at": time.Now().UTC()}).Error; err != nil {
-			return fmt.Errorf("write plan objective order: %w", err)
+			return PlanView{}, fmt.Errorf("write plan objective order: %w", err)
 		}
 	}
-	return s.bumpPlan(ctx, planID, actor)
+	if err := s.bumpPlan(ctx, planID, actor); err != nil {
+		return PlanView{}, err
+	}
+	return s.GetPlan(ctx, planID)
 }
 
 func (s *Service) bumpPlan(ctx context.Context, planID, actor string) error {

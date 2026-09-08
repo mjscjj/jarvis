@@ -8,7 +8,7 @@ import { uploadImage } from '../api'
 import { uid } from '../board'
 import { useBoard } from '../board'
 import { commentTargetFromThread, commentTargetKey } from '../comments'
-import { useCommentInteraction } from '../commenting'
+import { CommentTargetButton, commentTargetElementId, useCommentInteraction } from '../commenting'
 import { imageFilesFromClipboard } from '../imagePaste'
 import { DOT_CLASS, TONE_CLASS, TONE_TEXT_CLASS, statusOf } from '../template'
 import type { CommentTarget, DocLink, ImageRef, Status } from '../types'
@@ -164,6 +164,7 @@ export function Text({
   const selectionTargetKey = commentTarget ? commentTargetKey(commentTarget) : ''
   const pendingSelection = commentInteraction.pendingSelection?.targetKey === selectionTargetKey ? commentInteraction.pendingSelection.selection : undefined
   const selectionThreads = commentTarget ? commentInteraction.comments.filter((comment) => comment.selectedText && commentTargetKey(comment) === commentTargetKey(commentTarget)) : []
+  const focusedComment = commentTarget && commentInteraction.focused && commentTargetKey(commentInteraction.focused) === selectionTargetKey ? commentInteraction.focused : undefined
 
   useLayoutEffect(() => {
     const el = ref.current
@@ -171,6 +172,16 @@ export function Text({
     el.style.height = 'auto'
     el.style.height = `${el.scrollHeight}px`
   }, [local])
+
+  useEffect(() => {
+    const element = ref.current
+    if (!element || !focusedComment?.selectedText) return
+    const start = focusedComment.selectionStart ?? -1
+    const end = focusedComment.selectionEnd ?? -1
+    if (start < 0 || end <= start || local.slice(start, end) !== focusedComment.selectedText) return
+    element.focus({ preventScroll: true })
+    element.setSelectionRange(start, end)
+  }, [focusedComment, local])
 
   const captureSelection = () => {
     const element = ref.current
@@ -201,6 +212,7 @@ export function Text({
 
   return <>
     <textarea
+      id={commentTarget ? commentTargetElementId(commentTarget) : undefined}
       ref={ref}
       rows={1}
       value={local}
@@ -213,7 +225,7 @@ export function Text({
         const end = event.currentTarget.selectionEnd
         event.currentTarget.setSelectionRange(end, end)
       }}
-      className={`resize-none rounded border border-transparent bg-transparent px-1 py-0.5 leading-relaxed outline-none transition-colors ${readOnly ? 'cursor-default' : 'hover:border-slate-200 focus:border-blue-400 focus:bg-white'} ${
+      className={`resize-none rounded border border-transparent bg-transparent px-1 py-0.5 leading-relaxed outline-none transition-colors ${focusedComment ? 'border-indigo-400 bg-indigo-50 ring-2 ring-indigo-200' : ''} ${readOnly ? 'cursor-default' : 'hover:border-slate-200 focus:border-blue-400 focus:bg-white'} ${
         fit ? 'w-auto max-w-full min-w-24' : 'w-full'
       } ${className}`}
     />
@@ -238,6 +250,7 @@ export function Text({
         className="shrink-0 self-start whitespace-nowrap rounded-md bg-amber-50 px-1.5 py-1 text-[9px] font-medium text-amber-700 ring-1 ring-amber-200 hover:bg-amber-100"
       >{selectionThreads.length} 处划词</button>
     )}
+    {!pendingSelection && selectionThreads.length === 0 && commentTarget && <CommentTargetButton target={{ ...commentTarget, title: local }} className="self-start" />}
   </>
 }
 
@@ -382,6 +395,7 @@ export function usePastedImageUpload(onUploaded: (images: ImageRef[]) => void, d
 
   return {
     onPaste,
+    upload: (files: File[]) => void upload(files),
     uploading,
     uploadError,
     canRetry: failedFiles.length > 0 && !uploading,

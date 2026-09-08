@@ -521,6 +521,17 @@ func main() {
 		}
 	}
 	if bizOKRModuleEnabled {
+		broadcastSender, notifierErr := larkcli.NewBroadcastSender(startupCtx, larkClient, os.Getenv("JARVIS_BROADCAST_LARK_PROFILE"))
+		if notifierErr != nil {
+			fatalf("initialize Feishu broadcast sender failed: %v", notifierErr)
+		}
+		commentMentionNotifier, notifierErr := okrworkspace.NewBotCommentMentionNotifier(broadcastSender, cfg.Server.PublicBaseURL)
+		if notifierErr != nil {
+			fatalf("initialize OKR comment mention notifier failed: %v", notifierErr)
+		}
+		if err := okrWorkspaceService.SetCommentMentionNotifier(commentMentionNotifier); err != nil {
+			fatalf("wire OKR comment mention notifier failed: %v", err)
+		}
 		var okrIdentityProvider okrAuth.Provider
 		if okrModuleConfig.Identity.Enabled {
 			okrIdentityProvider, err = okrAuth.NewFeishuProvider(

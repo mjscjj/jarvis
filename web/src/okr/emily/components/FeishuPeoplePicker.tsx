@@ -7,7 +7,7 @@ import { addOrResolveOwner, joinOwnerNames, ownerIdentityKey, ownerOptions, spli
 import type { Kr, KrOwner, PersonSearchItem, Point } from '../types'
 import { PersonAvatar } from './PersonAvatar'
 
-export function FeishuPeoplePickerInput({ owners, options, onChange }: { owners: KrOwner[]; options: KrOwner[]; onChange: (owners: KrOwner[]) => void }) {
+export function FeishuPeoplePickerInput({ owners, options, onChange, compact = false }: { owners: KrOwner[]; options: KrOwner[]; onChange: (owners: KrOwner[]) => void; compact?: boolean }) {
   const root = useRef<HTMLSpanElement>(null)
   const panel = useRef<HTMLSpanElement>(null)
   const input = useRef<HTMLInputElement>(null)
@@ -116,23 +116,30 @@ export function FeishuPeoplePickerInput({ owners, options, onChange }: { owners:
 	const visibleResults = searching ? remoteResults.filter((item) => !selectedOpenIds.has(item.openId)) : localResults
 
   return (
-    <span ref={root} className="relative inline-flex shrink-0 flex-wrap items-center gap-1">
+    <span ref={root} className={`group/people relative inline-flex shrink-0 items-center ${compact ? '-space-x-1' : 'flex-wrap gap-1'}`}>
       {owners.map((owner, index) => (
-			<span key={`${ownerIdentityKey(owner)}:${index}`} title={owner.openId ? undefined : '身份未解析，请搜索飞书联系人后重新选择'} className={`group/person inline-flex h-5 items-center gap-1 rounded-full pr-1.5 pl-1 text-[10px] ring-1 ${owner.openId ? 'bg-slate-50 text-slate-600 ring-slate-200' : 'bg-amber-50 text-amber-700 ring-amber-200'}`}>
-				<PersonAvatar name={owner.name} openId={owner.openId} tone={owner.openId ? 'bg-slate-300' : 'bg-amber-400'} />
-				{owner.name}
-				<button type="button" onClick={() => remove(index)} title="移除人员" className="text-slate-300 hover:text-red-500">×</button>
-			</span>
+        compact ? <span key={`${ownerIdentityKey(owner)}:${index}`} title={owner.name} className={`relative inline-flex size-6 items-center justify-center rounded-full ring-2 ring-white ${owner.openId ? 'bg-slate-50' : 'bg-amber-50'}`}>
+          <PersonAvatar name={owner.name} openId={owner.openId} size="size-5 text-[8px]" tone={owner.openId ? 'bg-slate-300' : 'bg-amber-400'} />
+        </span> : <span key={`${ownerIdentityKey(owner)}:${index}`} title={owner.openId ? undefined : '身份未解析，请搜索飞书联系人后重新选择'} className={`group/person inline-flex h-5 items-center gap-1 rounded-full pr-1.5 pl-1 text-[10px] ring-1 ${owner.openId ? 'bg-slate-50 text-slate-600 ring-slate-200' : 'bg-amber-50 text-amber-700 ring-amber-200'}`}>
+          <PersonAvatar name={owner.name} openId={owner.openId} tone={owner.openId ? 'bg-slate-300' : 'bg-amber-400'} />
+          {owner.name}
+          <button type="button" onClick={() => remove(index)} title="移除人员" className="text-slate-300 hover:text-red-500">×</button>
+        </span>
       ))}
-      <button type="button" onClick={() => { if (open) setOpen(false); else openPicker() }} className="h-6 rounded-md border border-dashed border-slate-300 px-2 text-[10px] font-medium text-slate-400 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600">
-        + 人员
+      <button type="button" onClick={() => { if (open) setOpen(false); else openPicker() }} title={compact ? '管理关联人' : undefined} aria-label={compact ? '管理关联人' : undefined} className={`${compact ? 'ml-2 size-6 rounded-full px-0 text-sm' : 'h-6 rounded-md px-2 text-[10px]'} border border-dashed border-slate-300 font-medium text-slate-400 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600`}>
+        {compact ? '+' : '+ 人员'}
       </button>
+      {compact && owners.length > 0 && <span className="pointer-events-none invisible absolute top-full right-0 z-20 mt-1 whitespace-nowrap rounded-md bg-slate-800 px-2 py-1 text-[10px] text-white opacity-0 shadow-lg transition-opacity group-hover/people:visible group-hover/people:opacity-100">{owners.map((owner) => owner.name).join('、')}</span>}
       {open && createPortal(
         <span ref={panel} style={panelStyle} className="overflow-hidden rounded-lg border border-slate-200 bg-white text-left shadow-xl">
           <span className="block border-b border-slate-100 p-2">
             <span className="mb-1.5 flex items-center gap-1.5 text-[10px] font-medium text-slate-500"><span className="size-1.5 rounded-full bg-blue-500" />飞书联系人</span>
 			<input ref={input} value={peopleSearch.query} onChange={(event) => peopleSearch.setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') setOpen(false) }} placeholder="输入姓名或邮箱搜索" className="h-8 w-full rounded-md border border-slate-200 bg-slate-50 px-2.5 text-[11px] text-slate-700 outline-none focus:border-blue-400 focus:bg-white" />
           </span>
+          {compact && owners.length > 0 && <span className="block border-b border-slate-100 p-2">
+            <span className="mb-1.5 block text-[9px] text-slate-400">已关联</span>
+            <span className="flex flex-wrap gap-1">{owners.map((owner, index) => <span key={`${ownerIdentityKey(owner)}:${index}`} className="inline-flex h-6 items-center gap-1 rounded-full bg-slate-50 pr-1 pl-1.5 text-[10px] text-slate-600 ring-1 ring-slate-200"><PersonAvatar name={owner.name} openId={owner.openId} />{owner.name}<button type="button" onClick={() => remove(index)} title={`移除${owner.name}`} className="text-slate-300 hover:text-red-500">×</button></span>)}</span>
+          </span>}
           <span className="block max-h-64 overflow-auto p-1">
 			{peopleSearch.loading && <span className="block px-2 py-3 text-center text-[10px] text-slate-400">正在搜索飞书联系人…</span>}
 			{!peopleSearch.loading && visibleResults.map((person) => (
@@ -155,7 +162,7 @@ export function FeishuPeoplePickerInput({ owners, options, onChange }: { owners:
   )
 }
 
-export function FeishuPeoplePicker({ kr }: { kr: Kr }) {
+export function FeishuPeoplePicker({ kr, compact = false }: { kr: Kr; compact?: boolean }) {
 	const { objectives, setKrOwner } = useBoard()
 	const options = useMemo(() => ownerOptions(objectives), [objectives])
 	const people = useMemo(() => splitOwnerNames(kr.ownerName), [kr.ownerName])
@@ -163,7 +170,7 @@ export function FeishuPeoplePicker({ kr }: { kr: Kr }) {
 		if (kr.owners?.length) return kr.owners
 		return people.map((name, index) => ({ name, openId: index === 0 ? (kr.ownerOpenId ?? '') : '' }))
 	}, [kr.ownerOpenId, kr.owners, people])
-	return <FeishuPeoplePickerInput owners={owners} options={options} onChange={(nextOwners) => {
+	return <FeishuPeoplePickerInput owners={owners} options={options} compact={compact} onChange={(nextOwners) => {
 		const nextNames = joinOwnerNames(nextOwners.map((owner) => owner.name))
 		setKrOwner(kr.id, nextNames, nextOwners[0]?.openId ?? '', nextOwners)
 	}} />

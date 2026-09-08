@@ -33,6 +33,7 @@ export interface BoardApi {
 	deleteObjective: (id: string) => Promise<void>
 	// 交换相邻两行的位置；targetId 是调用方看得见的那一行。
 	swapObjectives: (id: string, targetId: string) => Promise<void>
+	reorderObjectives: (ids: string[]) => Promise<void>
 	swapKrs: (objectiveId: string, krId: string, targetId: string) => Promise<void>
 	createKr: (objectiveId: string, input: { title: string; owners?: KrOwner[]; businessCategory: string; priority: KrPriority }) => Promise<void>
   deleteKr: (krId: string) => Promise<void>

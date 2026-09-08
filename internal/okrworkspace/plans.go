@@ -299,8 +299,14 @@ func (s *Service) DeletePlan(ctx context.Context, id string) error {
 	if id == "" {
 		return fmt.Errorf("plan id is required")
 	}
+	if _, err := s.commentPlan(ctx, id); err != nil {
+		return err
+	}
 	if err := s.deletePlanDefinitionRows(ctx, id); err != nil {
 		return err
+	}
+	if err := s.db.WithContext(ctx).Where("plan_id = ?", id).Delete(&domain.PageComment{}).Error; err != nil {
+		return fmt.Errorf("delete OKR plan comments: %w", err)
 	}
 	result := s.db.WithContext(ctx).Delete(&domain.OKRPlan{}, "id = ?", id)
 	if result.Error != nil {

@@ -16,6 +16,7 @@ import { WeeklyScoreControl } from './WeeklyScoreControl'
 import { HierarchyNav } from './HierarchyNav'
 import { Images, Links, StatusSelect, Text, usePastedImageUpload } from './ui'
 import { OwnerFilterPicker } from './OwnerFilterPicker'
+import { CommentSurfaceHint, commentTargetElementId, useCommentSurface } from '../commenting'
 
 function Caret({ open, onToggle, label }: { open: boolean; onToggle: () => void; label: string }) {
   return (
@@ -134,6 +135,8 @@ function HistoryPreview({ point }: { point: Point }) {
 
 function MetricRow({ krId, metric, readOnly, onRemove }: { krId: string; metric: MetricLine; readOnly: boolean; onRemove: () => void }) {
   const { patchMetric } = useBoard()
+  const commentTarget = { type: 'metric' as const, id: metric.id, title: metric.text }
+  const commentSurface = useCommentSurface(commentTarget)
   const appendImages = useCallback((uploaded: ImageRef[]) => {
     patchMetric(krId, metric.id, { images: [...(metric.images ?? []), ...uploaded] })
   }, [krId, metric.id, metric.images, patchMetric])
@@ -141,11 +144,13 @@ function MetricRow({ krId, metric, readOnly, onRemove }: { krId: string; metric:
 
   return (
     <div
+      id={commentTargetElementId(commentTarget)}
       data-okr-metric-id={metric.id}
+      onClick={commentSurface.onClick}
       onPaste={readOnly ? undefined : paste.onPaste}
       tabIndex={readOnly ? -1 : 0}
       aria-busy={paste.uploading}
-      className="group/metric flex min-h-12 items-start gap-3 border-b border-slate-100 px-4 py-2.5 outline-none last:border-b-0 focus-within:bg-blue-50/30 focus:bg-blue-50/30"
+      className={`group/metric group/commentable flex min-h-12 items-start gap-3 border-b border-slate-100 px-4 py-2.5 outline-none last:border-b-0 focus-within:bg-blue-50/30 focus:bg-blue-50/30 ${commentSurface.enabled ? 'cursor-pointer hover:bg-indigo-50/70' : ''} ${commentSurface.selected || commentSurface.focused ? 'bg-indigo-50/80 ring-2 ring-inset ring-indigo-500' : ''}`}
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-start gap-3">
@@ -172,6 +177,7 @@ function MetricRow({ krId, metric, readOnly, onRemove }: { krId: string; metric:
       {!readOnly && (
         <button type="button" onClick={onRemove} title="删除这条核心数据" className="ml-auto shrink-0 rounded px-1.5 py-1 text-[10px] text-slate-300 transition-colors hover:bg-red-50 hover:text-red-600">删除</button>
       )}
+      <CommentSurfaceHint target={commentTarget} />
     </div>
   )
 }
@@ -290,7 +296,9 @@ function KrHeader({ objectiveId, kr, open, onToggle, readOnly, structureReadOnly
 }
 
 function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly, structureReadOnly, showProgress = true, showScore = false, scoreReadOnly = true, tagSuggestions, deleteWarning }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; readOnly: boolean; structureReadOnly: boolean; showProgress?: boolean; showScore?: boolean; scoreReadOnly?: boolean; tagSuggestions?: KrTag[]; deleteWarning: string }) {
-  const { setPointTitle, setPointKind, setPointMeegoLink, removePoint, addPointTag, removePointTag, setPointScore, week } = useBoard()
+  const { setPointTitle, setPointMeegoLink, removePoint, addPointTag, removePointTag, setPointScore, week } = useBoard()
+  const commentTarget = { type: 'point' as const, id: point.id, title: point.title }
+  const commentSurface = useCommentSurface(commentTarget)
   const [preview, setPreview] = useState<MeegoPreview>()
   const [previewError, setPreviewError] = useState('')
   const [previewing, setPreviewing] = useState(false)
@@ -313,28 +321,15 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly
   }
 
   return (
-    <div className="group/point">
+    <div id={commentTargetElementId(commentTarget)} onClick={commentSurface.onClick} className={`group/point group/commentable rounded-md transition-[background-color,box-shadow] ${commentSurface.enabled ? 'cursor-pointer hover:bg-indigo-50/70' : ''} ${commentSurface.selected || commentSurface.focused ? 'bg-indigo-50/80 ring-2 ring-inset ring-indigo-500' : ''}`}>
       <div className="flex items-start gap-2">
         {showProgress ? <Caret open={open} onToggle={onToggle} label="具体 KR" /> : <span className="w-4 shrink-0" />}
         <span className="mt-0.5 shrink-0 rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-600">KR{index + 1}</span>
-        {!structureReadOnly && (
-          <select
-            value={point.kind}
-            onChange={(event) => setPointKind(krId, point.id, event.target.value as PointKind)}
-            title="切换这条具体 KR 的分组"
-            aria-label="具体 KR 分组"
-            className="mt-0.5 h-6 shrink-0 rounded-md border border-slate-200 bg-white px-1.5 text-[10px] text-slate-600 outline-none focus:border-blue-400"
-          >
-            {KINDS.map((item) => <option key={item} value={item}>{KIND_LABEL[item]}</option>)}
-          </select>
-        )}
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-start gap-x-2 gap-y-1">
-            <span className="min-w-60 flex-1">
+          <div className="flex items-start gap-2">
+            <span className="flex min-w-0 flex-1 items-start gap-1">
               <Text value={point.title} onChange={(value) => setPointTitle(objectiveId, krId, point.id, value)} placeholder="具体 KR 点" className="text-[15px] font-semibold leading-6 text-slate-800" readOnly={readOnly} commentTarget={{ type: 'point', id: point.id, title: point.title }} />
             </span>
-            {!readOnly && <span className="pt-0.5"><PointPeoplePicker krId={krId} point={point} /></span>}
-            {readOnly && (point.owners?.length ?? 0) > 0 && <span aria-label="具体 KR 负责人" className="flex flex-wrap items-center justify-end gap-1">{point.owners?.map((owner, ownerIndex) => <KrOwnerBadge key={`${owner.openId || owner.name}:${ownerIndex}`} owner={owner} />)}</span>}
             {showScore && <span className="pt-0.5"><WeeklyScoreControl score={point.score} readOnly={scoreReadOnly} onChange={(score) => setPointScore(krId, point.id, score)} label="具体 KR 评分" /></span>}
             {showProgress && <span className="pt-1 text-xs text-slate-400">{doing} 进展 · {done} 已完成</span>}
           </div>
@@ -357,6 +352,8 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly
             <button type="button" onClick={() => setEditingMeego(true)} className="mt-1 text-[11px] text-slate-300 opacity-0 transition-opacity hover:text-blue-500 group-hover/point:opacity-100">+ 关联 Meego</button>
           )}
         </div>
+        {!readOnly && <span className="flex max-w-[45%] shrink-0 flex-wrap items-center justify-end gap-1 pt-0.5"><PointPeoplePicker krId={krId} point={point} /></span>}
+        {readOnly && (point.owners?.length ?? 0) > 0 && <span aria-label="具体 KR 负责人" className="flex max-w-[45%] shrink-0 flex-wrap items-center justify-end gap-1 pt-0.5">{point.owners?.map((owner, ownerIndex) => <KrOwnerBadge key={`${owner.openId || owner.name}:${ownerIndex}`} owner={owner} />)}</span>}
         {!structureReadOnly && (confirmDelete ? (
           <span className="flex shrink-0 items-center gap-1">
             <span className="text-[9px] leading-tight text-red-500">{deleteWarning}</span>
@@ -366,6 +363,7 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly
         ) : (
           <button type="button" onClick={() => setConfirmDelete(true)} title="删除这个具体 KR" className="shrink-0 text-slate-300 opacity-0 transition-opacity group-hover/point:opacity-100 hover:text-red-500">×</button>
         ))}
+        <CommentSurfaceHint target={commentTarget} />
       </div>
       {showProgress && (preview || previewError) && (
         <div className="mt-2 ml-8 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-500">
@@ -439,7 +437,8 @@ function PointGroup({ objectiveId, kr, kind, closed, toggle, definitionReadOnly,
   )
 }
 
-export function KrDefinitionDetails({ objectiveId, kr, tagSuggestions, deletePointWarning = '连同各周进展一起删除' }: { objectiveId: string; kr: Kr; tagSuggestions?: KrTag[]; deletePointWarning?: string }) {
+export function KrDefinitionDetails({ objectiveId, kr, tagSuggestions, deletePointWarning = '连同各周进展一起删除', compactEmptyPointGroups = false, cardBody = false }: { objectiveId: string; kr: Kr; tagSuggestions?: KrTag[]; deletePointWarning?: string; compactEmptyPointGroups?: boolean; cardBody?: boolean }) {
+  const { addPoint } = useBoard()
   const [closed, setClosed] = useState<Set<string>>(new Set())
   const toggle = (id: string) => setClosed((previous) => {
     const next = new Set(previous)
@@ -449,9 +448,9 @@ export function KrDefinitionDetails({ objectiveId, kr, tagSuggestions, deletePoi
   })
 
   return (
-    <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/55 p-3">
+    <div className={cardBody ? 'space-y-5 border-t border-slate-100 pt-4' : 'space-y-4 rounded-xl border border-slate-200 bg-slate-50/55 p-3'}>
       <MetricBox kr={kr} readOnly={false} />
-      {KINDS.map((kind) => (
+      {KINDS.filter((kind) => !compactEmptyPointGroups || kr.points.some((point) => point.kind === kind)).map((kind) => (
         <PointGroup
           key={kind}
           objectiveId={objectiveId}
@@ -467,6 +466,9 @@ export function KrDefinitionDetails({ objectiveId, kr, tagSuggestions, deletePoi
           deleteWarning={deletePointWarning}
         />
       ))}
+      {compactEmptyPointGroups && KINDS.some((kind) => !kr.points.some((point) => point.kind === kind)) && <div className="flex flex-wrap gap-2">
+        {KINDS.filter((kind) => !kr.points.some((point) => point.kind === kind)).map((kind) => <button key={kind} type="button" onClick={() => addPoint(objectiveId, kr.id, kind)} className="rounded-md border border-dashed border-slate-200 bg-white px-2.5 py-1.5 text-[10px] text-slate-400 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600">+ {KIND_LABEL[kind]}</button>)}
+      </div>}
     </div>
   )
 }

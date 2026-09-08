@@ -130,6 +130,46 @@ func TestPlanObjectiveWritesConflictOnlyWithinOneObjective(t *testing.T) {
 	}
 }
 
+func TestPlanObjectiveReorderReturnsPersistedCanonicalPlan(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := service.CreatePlan(t.Context(), CreatePlanInput{Quarter: "2026-Q3", Title: "reorder"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"o-a", "o-b", "o-c"} {
+		plan, err = service.CreatePlanObjective(t.Context(), plan.ID, PlanObjectiveView{ID: id, Title: id}, "creator")
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	reordered, err := service.ReorderPlanObjectives(t.Context(), plan.ID, []string{"o-c", "o-a", "o-b"}, "reorderer")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reordered.UpdatedBy != "reorderer" || reordered.Version != plan.Version+1 {
+		t.Fatalf("reordered plan metadata = %+v", reordered)
+	}
+	if got := []string{reordered.Objectives[0].ID, reordered.Objectives[1].ID, reordered.Objectives[2].ID}; got[0] != "o-c" || got[1] != "o-a" || got[2] != "o-b" {
+		t.Fatalf("reordered objectives = %v", got)
+	}
+
+	if _, err := service.ReorderPlanObjectives(t.Context(), plan.ID, []string{"o-a", "o-b"}, "stale"); err == nil {
+		t.Fatal("partial Plan order was accepted")
+	}
+	loaded, err := service.GetPlan(t.Context(), plan.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Objectives[0].ID != "o-c" || loaded.Objectives[1].ID != "o-a" || loaded.Objectives[2].ID != "o-b" {
+		t.Fatalf("invalid reorder changed persisted order: %+v", loaded.Objectives)
+	}
+}
+
 func TestPlanValidationRejectsStructuralPointTags(t *testing.T) {
 	db := openWorkspaceTestDB(t)
 	service, err := NewService(db)

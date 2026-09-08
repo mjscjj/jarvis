@@ -56,7 +56,7 @@ Jarvis 世界模型
 - API 前缀：`/api/biz-okr/*`。
 - 原子工具：`scripts/biz-okr-tools`。
 - 页面入口：`web/src/modules/registry.tsx` 注册的 `Biz OKR`（内部 key 为 `biz-okr`），复用当前 `web/src/okr/` 页面实现。
-- Biz 组合视图读取通用 OKR 和正式 Progress，再叠加标签、评分、评论与 Meego 信息；它不是第二份 OKR 真源。
+- Biz 组合视图读取通用 OKR 和正式 Progress，再叠加标签、评分、评论与 Meego 信息；它不是第二份 OKR 真源。评论复用同一张讨论表，但生命周期明确分为 `(quarter, week)` 周页面和 `plan_id` Plan 页面两种作用域；Plan 评论不会借用或污染任一周次。评论中的 `@` 同时保存可见原文和经人员选择器解析的主应用 `open_id`。只有创建评论时的显式 `@` 会触发通知；页面和 Owner 不再隐式扩大收件人，编辑只更新评论与 mention 数据。通知边界先用 principal 的只读人员查询将该 `open_id` 精确归一为企业邮箱，再固定由“Jarvis通知机器人”发送页面、周次/Plan、O、KR、具体 KR、对应原文、评论和 Emily 分享深链，并回读消息确认。不使用默认 Jarvis Bot，也不在身份解析失败时按姓名猜测。投递失败作为本次响应告警返回，不回滚评论。
 - Review 的结构化待跟进事项支持 `not_started`、`in_progress`、`done`、`abandoned` 四种状态；Review 会议页只开放状态编辑，其余字段保持只读。
 - 正式 Progress 的写入仍调用 `/api/okr/*`，写完再回读 Biz 组合视图，防止页面本地状态丢失 Biz 字段。
 

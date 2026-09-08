@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
-import { createComment, deleteComment, getComments, updateComment } from '../api'
-import { commentCountsByTarget, commentMatchesTarget, commentMessageCount } from '../comments'
-import type { CommentTarget, PageComment } from '../types'
+import type { ReactNode, RefObject } from 'react'
+import { createComment, createPlanComment, deleteComment, getComments, getPlanComments, updateComment } from '../api'
+import { scrollToCommentSource, scrollToCommentTarget } from '../commenting'
+import { buildCommentDocumentOrder, buildCommentOKRContextIndex, commentCountsByTarget, commentMatchesTarget, commentMessageCount, commentOKRContext, commentTargetKey, groupCommentsByTarget, sortCommentsByDocumentOrder } from '../comments'
+import type { CommentOKRContext } from '../comments'
+import type { CommentMention, CommentTarget, ImageRef, Objective, PageComment } from '../types'
+import { CommentContent, CommentMentionInput } from './CommentMentionInput'
+import type { CommentDraft } from './CommentMentionInput'
 import { PersonAvatar } from './PersonAvatar'
+import { Images, usePastedImageUpload } from './ui'
+
+const EMPTY_FOLLOW_UP_ORDER: readonly string[] = []
 
 function displayTime(value: string) {
   const date = new Date(value)
@@ -16,7 +23,7 @@ function displayTime(value: string) {
 }
 
 function targetLabel(type: PageComment['targetType']) {
-  return ({ page: '整页', kr: 'KR', metric: '核心数据', point: '具体 KR', entry: '进展条目', follow_up: '待跟进事项' } as const)[type]
+  return ({ page: '整页', objective: 'O', kr: 'KR', metric: '核心数据', point: '具体 KR', entry: '进展条目', follow_up: '待跟进事项' } as const)[type]
 }
 
 function Avatar({ name, openId, small = false }: { name: string; openId?: string; small?: boolean }) {
@@ -27,31 +34,79 @@ function wasEdited(comment: PageComment) {
   return new Date(comment.updatedAt).getTime() - new Date(comment.createdAt).getTime() > 1000
 }
 
-function EditableCommentBody({ comment, compact = false, footer, onEdit, onDelete }: {
+function notificationErrorText(comment: PageComment) {
+  return comment.notificationErrors?.join('；') ?? ''
+}
+
+function CommentEditorFields({ value, images, objectives, placeholder, rows, autoFocus, inputRef, disabled = false, onChange, onImagesChange, onSubmitShortcut }: {
+  value: CommentDraft
+  images: ImageRef[]
+  objectives: Objective[]
+  placeholder: string
+  rows: number
+  autoFocus?: boolean
+  inputRef?: RefObject<HTMLTextAreaElement | null>
+  disabled?: boolean
+  onChange: (value: CommentDraft) => void
+  onImagesChange: (images: ImageRef[]) => void
+  onSubmitShortcut: () => void
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const upload = usePastedImageUpload((uploaded) => onImagesChange([...images, ...uploaded].slice(0, 9)), disabled || images.length >= 9)
+  const chooseFiles = (files: FileList | null) => {
+    if (!files) return
+    upload.upload(Array.from(files).slice(0, Math.max(0, 9 - images.length)))
+  }
+  return (
+    <>
+      <CommentMentionInput value={value} objectives={objectives} placeholder={placeholder} rows={rows} autoFocus={autoFocus} inputRef={inputRef} onPaste={upload.onPaste} onChange={onChange} onSubmitShortcut={onSubmitShortcut} />
+      {(images.length > 0 || !disabled) && <div className="mt-2 flex flex-wrap items-end gap-2">
+        {images.length > 0 && <Images value={images} onChange={onImagesChange} pasteEnabled={false} maxDisplayWidth={300} />}
+        {!disabled && <>
+          <input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple className="hidden" onChange={(event) => { chooseFiles(event.currentTarget.files); event.currentTarget.value = '' }} />
+          <button type="button" disabled={upload.uploading || images.length >= 9} onClick={() => fileInputRef.current?.click()} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-medium text-slate-500 hover:border-indigo-200 hover:text-indigo-600 disabled:cursor-not-allowed disabled:opacity-40">{upload.uploading ? '上传中…' : images.length >= 9 ? '最多 9 张' : '添加图片'}</button>
+          <span className="text-[10px] text-slate-300">也可直接粘贴截图</span>
+        </>}
+        {upload.uploadError && <span className="text-[10px] text-red-500">{upload.uploadError}{upload.canRetry && <button type="button" onClick={upload.retry} className="ml-1 underline">重试</button>}</span>}
+      </div>}
+    </>
+  )
+}
+
+function EditableCommentBody({ comment, objectives, compact = false, footer, onEdit, onDelete }: {
   comment: PageComment
+  objectives: Objective[]
   compact?: boolean
   footer?: ReactNode
-  onEdit: (id: string, content: string) => Promise<void>
+  onEdit: (id: string, content: string, mentions: CommentMention[], images: ImageRef[]) => Promise<void>
   onDelete: (id: string) => Promise<void>
 }) {
   const [editing, setEditing] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
-  const [value, setValue] = useState(comment.content)
+  const [value, setValue] = useState<CommentDraft>({ content: comment.content, mentions: comment.mentions })
+  const [images, setImages] = useState<ImageRef[]>(comment.images ?? [])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  useEffect(() => { if (!editing) setValue(comment.content) }, [comment.content, editing])
+  useEffect(() => {
+    if (editing) return
+    setValue({ content: comment.content, mentions: comment.mentions })
+    setImages(comment.images ?? [])
+  }, [comment.content, comment.images, comment.mentions, editing])
 
   const save = async () => {
-    const content = value.trim()
-    if (!content || saving || content === comment.content) {
-      if (content === comment.content) setEditing(false)
+    const content = value.content.trim()
+    const mentionsUnchanged = value.mentions.length === comment.mentions.length
+      && value.mentions.every((mention, index) => mention.openId === comment.mentions[index]?.openId && mention.name === comment.mentions[index]?.name)
+    const imagesUnchanged = JSON.stringify(images) === JSON.stringify(comment.images ?? [])
+    if ((!content && images.length === 0) || saving || (content === comment.content && mentionsUnchanged && imagesUnchanged)) {
+      if (content === comment.content && mentionsUnchanged && imagesUnchanged) setEditing(false)
       return
     }
     setSaving(true)
     setError('')
     try {
-      await onEdit(comment.id, content)
+      await onEdit(comment.id, content, value.mentions, images)
       setEditing(false)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '评论修改失败')
@@ -75,11 +130,11 @@ function EditableCommentBody({ comment, compact = false, footer, onEdit, onDelet
   if (editing) {
     return (
       <div className="mt-1.5 rounded-lg border border-indigo-200 bg-white p-2">
-        <textarea autoFocus value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') void save() }} rows={compact ? 2 : 3} maxLength={2000} className="w-full resize-none bg-transparent text-[13px] leading-5 text-slate-700 outline-none" />
+        <CommentEditorFields autoFocus value={value} images={images} objectives={objectives} onChange={setValue} onImagesChange={setImages} onSubmitShortcut={() => void save()} placeholder="修改评论…" rows={compact ? 2 : 3} />
         {error && <div className="mb-1 text-[11px] text-red-600">{error}</div>}
         <div className="flex justify-end gap-1.5">
-          <button type="button" onClick={() => { setEditing(false); setValue(comment.content); setError('') }} className="rounded px-2 py-1 text-[11px] text-slate-500 hover:bg-slate-100">取消</button>
-          <button type="button" onClick={() => void save()} disabled={!value.trim() || saving} className="rounded-md bg-indigo-600 px-2.5 py-1 text-[11px] font-medium text-white disabled:bg-slate-300">{saving ? '保存中…' : '保存'}</button>
+          <button type="button" onClick={() => { setEditing(false); setValue({ content: comment.content, mentions: comment.mentions }); setImages(comment.images ?? []); setError('') }} className="rounded px-2 py-1 text-[11px] text-slate-500 hover:bg-slate-100">取消</button>
+          <button type="button" onClick={() => void save()} disabled={(!value.content.trim() && images.length === 0) || saving} className="rounded-md bg-indigo-600 px-2.5 py-1 text-[11px] font-medium text-white disabled:bg-slate-300">{saving ? '保存中…' : '保存'}</button>
         </div>
       </div>
     )
@@ -87,7 +142,9 @@ function EditableCommentBody({ comment, compact = false, footer, onEdit, onDelet
 
   return (
     <>
-      <p className={`whitespace-pre-wrap break-words text-slate-700 ${compact ? 'mt-0.5 text-[12px] leading-[18px]' : 'mt-1 text-[13px] leading-5'}`}>{comment.content}</p>
+      {comment.content && <p className={`whitespace-pre-wrap break-words text-slate-700 ${compact ? 'mt-0.5 text-[12px] leading-[18px]' : 'mt-1 text-[13px] leading-5'}`}><CommentContent content={comment.content} mentions={comment.mentions} /></p>}
+      {(comment.images?.length ?? 0) > 0 && <div className="mt-2"><Images value={comment.images ?? []} onChange={() => undefined} readOnly maxDisplayWidth={300} /></div>}
+      {notificationErrorText(comment) && <div className="mt-1 text-[10px] text-amber-700">评论已保存，但{notificationErrorText(comment)}</div>}
       <div className="mt-1.5 flex min-h-5 items-center gap-2 text-[11px]">
         {footer}
         <button type="button" onClick={() => { setEditing(true); setConfirmingDelete(false) }} className="font-medium text-slate-400 hover:text-indigo-600">编辑</button>
@@ -103,20 +160,43 @@ function EditableCommentBody({ comment, compact = false, footer, onEdit, onDelet
   )
 }
 
-function ReplyComposer({ comment, quarter, week, onCreated, onCancel }: { comment: PageComment; quarter: string; week: string; onCreated: (comment: PageComment) => void; onCancel: () => void }) {
-  const [value, setValue] = useState('')
+function CommentSourceCard({ source, context, onNavigate }: { source: PageComment | CommentTarget; context?: CommentOKRContext; onNavigate: () => void }) {
+  const isTarget = 'type' in source
+  const type = isTarget ? source.type : source.targetType
+  const title = isTarget ? source.title : source.targetTitle
+  const selectedText = isTarget ? source.selection?.text : source.selectedText
+  const showExactTarget = Boolean(title && type !== 'objective' && type !== 'kr')
+  return (
+    <button type="button" title="跳转到评论原文" onClick={onNavigate} className="block w-full rounded-lg border border-indigo-100 bg-indigo-50/60 px-2.5 py-2 text-left transition-colors hover:border-indigo-200 hover:bg-indigo-100/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-500">
+      <div className="mb-1.5 flex items-center gap-1 text-[10px] font-semibold text-indigo-500"><span>评论原文</span><span aria-hidden>↗</span></div>
+      <div className="space-y-1" aria-label="对应的 O、KR 和原文">
+        {context?.objective && <div className="flex min-w-0 items-start gap-1.5 text-[10px] leading-4 text-slate-600" title={context.objective.title}><span className="shrink-0 rounded border border-blue-200 bg-blue-50 px-1.5 font-semibold text-blue-700">O</span><span className="line-clamp-2 min-w-0">{context.objective.title}</span></div>}
+        {context?.kr && <div className="flex min-w-0 items-start gap-1.5 text-[10px] leading-4 text-slate-600" title={context.kr.title}><span className="shrink-0 rounded border border-violet-200 bg-violet-50 px-1.5 font-semibold text-violet-700">KR</span><span className="line-clamp-2 min-w-0">{context.kr.title}</span></div>}
+        {showExactTarget && <div className="flex min-w-0 items-start gap-1.5 text-[10px] leading-4 text-slate-600" title={title}><span className="shrink-0 rounded border border-slate-200 bg-white px-1.5 font-semibold text-slate-500">{targetLabel(type)}</span><span className="line-clamp-2 min-w-0">{title}</span></div>}
+        {selectedText && <blockquote className="mt-1.5 border-l-2 border-indigo-300 pl-2 text-[12px] font-medium leading-[18px] text-slate-700">“{selectedText}”</blockquote>}
+        {!context?.objective && !context?.kr && !showExactTarget && !selectedText && <div className="line-clamp-2 text-[11px] text-slate-600">{title || '整页评论'}</div>}
+      </div>
+    </button>
+  )
+}
+
+function ReplyComposer({ comment, objectives, createReply, onCreated, onCancel }: { comment: PageComment; objectives: Objective[]; createReply: (parentId: string, content: string, mentions: CommentMention[], images: ImageRef[]) => Promise<PageComment>; onCreated: (comment: PageComment) => void; onCancel: () => void }) {
+  const [value, setValue] = useState<CommentDraft>({ content: '', mentions: [] })
+  const [images, setImages] = useState<ImageRef[]>([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
   useEffect(() => inputRef.current?.focus(), [])
 
   const submit = async () => {
-    const content = value.trim()
-    if (!content || saving) return
+    const content = value.content.trim()
+    if ((!content && images.length === 0) || saving) return
     setSaving(true)
     setError('')
     try {
-      onCreated(await createComment({ quarter, week, parentId: comment.id, content }))
+      const created = await createReply(comment.id, content, value.mentions, images)
+      onCreated(created)
+      if (notificationErrorText(created)) setError(`回复已保存，但${notificationErrorText(created)}`)
       onCancel()
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '回复失败')
@@ -127,24 +207,26 @@ function ReplyComposer({ comment, quarter, week, onCreated, onCancel }: { commen
 
   return (
     <div className="mt-2 rounded-lg border border-indigo-100 bg-indigo-50/40 p-2">
-      <textarea ref={inputRef} value={value} onChange={(event) => setValue(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') void submit() }} placeholder={`回复 ${comment.authorName}`} rows={2} maxLength={2000} className="w-full resize-none bg-transparent text-[13px] leading-5 text-slate-700 outline-none placeholder:text-slate-400" />
+      <CommentEditorFields inputRef={inputRef} value={value} images={images} objectives={objectives} onChange={setValue} onImagesChange={setImages} onSubmitShortcut={() => void submit()} placeholder={`回复 ${comment.authorName}，输入 @ 选择提醒人`} rows={2} />
       {error && <div className="mb-1 text-[11px] text-red-600">{error}</div>}
       <div className="flex items-center justify-end gap-1.5">
         <button type="button" onClick={onCancel} className="rounded px-2 py-1 text-[11px] text-slate-500 hover:bg-white">取消</button>
-        <button type="button" onClick={() => void submit()} disabled={!value.trim() || saving} className="rounded-md bg-indigo-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300">{saving ? '回复中…' : '回复'}</button>
+        <button type="button" onClick={() => void submit()} disabled={(!value.content.trim() && images.length === 0) || saving} className="rounded-md bg-indigo-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300">{saving ? '回复中…' : '回复'}</button>
       </div>
     </div>
   )
 }
 
-function CommentThread({ comment, quarter, week, showTarget, meetingMode, onReply, onEdit, onPatch, onDelete }: {
+function CommentThread({ comment, objectives, createReply, showSource, okrContext, todoEnabled, onNavigateToSource, onReply, onEdit, onPatch, onDelete }: {
   comment: PageComment
-  quarter: string
-  week: string
-  showTarget: boolean
-  meetingMode: boolean
+  objectives: Objective[]
+  createReply: (parentId: string, content: string, mentions: CommentMention[], images: ImageRef[]) => Promise<PageComment>
+  showSource: boolean
+  okrContext?: CommentOKRContext
+  todoEnabled: boolean
+  onNavigateToSource: (comment: PageComment) => void
   onReply: (rootId: string, reply: PageComment) => void
-  onEdit: (id: string, content: string) => Promise<void>
+  onEdit: (id: string, content: string, mentions: CommentMention[], images: ImageRef[]) => Promise<void>
   onPatch: (id: string, patch: { todo?: boolean; resolved?: boolean }) => Promise<void>
   onDelete: (id: string) => Promise<void>
 }) {
@@ -164,18 +246,8 @@ function CommentThread({ comment, quarter, week, showTarget, meetingMode, onRepl
     }
   }
   return (
-    <article className={`border-b border-slate-100 px-4 py-3.5 last:border-b-0 ${comment.resolved ? 'bg-slate-50/60' : ''}`}>
-      {showTarget && comment.targetTitle && (
-        <div className="mb-2 flex items-start gap-1.5 rounded-md bg-slate-50 px-2 py-1.5 text-[11px] text-slate-500">
-          <span className="shrink-0 font-medium text-slate-400">{targetLabel(comment.targetType)}</span>
-          <span className="line-clamp-2 min-w-0">{comment.targetTitle}</span>
-        </div>
-      )}
-      {comment.selectedText && (
-        <blockquote className="mb-2 rounded-r-md border-l-2 border-indigo-300 bg-indigo-50/60 px-2 py-1.5 text-[11px] leading-[17px] text-slate-600">
-          “{comment.selectedText}”
-        </blockquote>
-      )}
+    <article id={`comment-${comment.id}`} className={`border-b border-slate-100 px-4 py-3.5 last:border-b-0 ${comment.resolved ? 'bg-slate-50/60' : ''}`}>
+      {showSource && <div className="mb-2.5"><CommentSourceCard source={comment} context={okrContext} onNavigate={() => onNavigateToSource(comment)} /></div>}
       <div className="flex items-start gap-2.5">
         <Avatar name={comment.authorName} openId={comment.authorOpenId} />
         <div className="min-w-0 flex-1">
@@ -186,27 +258,27 @@ function CommentThread({ comment, quarter, week, showTarget, meetingMode, onRepl
             {comment.todo && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">To do</span>}
             {comment.resolved && <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-600">已解决</span>}
             <span className="min-w-1 flex-1" />
-            {meetingMode && <button type="button" disabled={actionSaving} aria-pressed={comment.todo} onClick={() => void patch({ todo: !comment.todo })} className={`rounded-md border px-1.5 py-0.5 text-[9px] font-medium disabled:opacity-50 ${comment.todo ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-400 hover:border-amber-200 hover:text-amber-700'}`}>{comment.todo ? '取消 To do' : '标记 To do'}</button>}
+            {todoEnabled && <button type="button" disabled={actionSaving} aria-pressed={comment.todo} onClick={() => void patch({ todo: !comment.todo })} className={`rounded-md border px-1.5 py-0.5 text-[9px] font-medium disabled:opacity-50 ${comment.todo ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-400 hover:border-amber-200 hover:text-amber-700'}`}>{comment.todo ? '取消 To do' : '标记 To do'}</button>}
             <button type="button" disabled={actionSaving} onClick={() => void patch({ resolved: !comment.resolved })} className={`rounded-md border px-1.5 py-0.5 text-[9px] font-medium disabled:opacity-50 ${comment.resolved ? 'border-slate-200 text-slate-500' : 'border-indigo-200 bg-indigo-50 text-indigo-600'}`}>{comment.resolved ? '重新打开' : '标记解决'}</button>
           </div>
-          <EditableCommentBody comment={comment} onEdit={onEdit} onDelete={onDelete} footer={<button type="button" onClick={() => setReplying((value) => !value)} className="font-medium text-slate-400 hover:text-indigo-600">回复{comment.replies.length > 0 ? ` · ${comment.replies.length}` : ''}</button>} />
+          <EditableCommentBody comment={comment} objectives={objectives} onEdit={onEdit} onDelete={onDelete} footer={<button type="button" onClick={() => setReplying((value) => !value)} className="font-medium text-slate-400 hover:text-indigo-600">回复{comment.replies.length > 0 ? ` · ${comment.replies.length}` : ''}</button>} />
           {actionError && <div className="mt-1 text-[10px] text-red-600">{actionError}</div>}
 
           {comment.replies.length > 0 && (
             <div className="mt-2 space-y-2.5 border-l-2 border-slate-100 pl-3">
               {comment.replies.map((reply) => (
-                <div key={reply.id} className="flex items-start gap-2">
+                <div id={`comment-${reply.id}`} key={reply.id} className="flex items-start gap-2">
                   <Avatar name={reply.authorName} openId={reply.authorOpenId} small />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2"><span className="text-[11px] font-semibold text-slate-600">{reply.authorName}</span><time className="text-[10px] text-slate-400">{displayTime(reply.createdAt)}</time>{wasEdited(reply) && <span className="text-[9px] text-slate-300">已编辑</span>}</div>
-                    <EditableCommentBody comment={reply} compact onEdit={onEdit} onDelete={onDelete} />
+                    <EditableCommentBody comment={reply} objectives={objectives} compact onEdit={onEdit} onDelete={onDelete} />
                   </div>
                 </div>
               ))}
             </div>
           )}
 
-          {replying && <ReplyComposer comment={comment} quarter={quarter} week={week} onCreated={(reply) => onReply(comment.id, reply)} onCancel={() => setReplying(false)} />}
+          {replying && <ReplyComposer comment={comment} objectives={objectives} createReply={createReply} onCreated={(reply) => onReply(comment.id, reply)} onCancel={() => setReplying(false)} />}
         </div>
       </div>
     </article>
@@ -215,23 +287,36 @@ function CommentThread({ comment, quarter, week, showTarget, meetingMode, onRepl
 
 interface CommentDrawerProps {
   open: boolean
+  reviewEnabled?: boolean
+  reviewing?: boolean
   quarter: string
-  week: string
+  week?: string
+  planId?: string
+  sourceTab: string
+  scopeLabel?: string
+  objectives: Objective[]
+  followUpOrder?: readonly string[]
   target?: CommentTarget
-  meetingMode: boolean
+  focusCommentId?: string
+  todoEnabled?: boolean
+  onStartReview: () => void
   onShowAll: () => void
   onClose: () => void
+  onFocusCommentChange: (comment?: PageComment) => void
   onCountChange: (count: number) => void
   onCountsChange: (counts: Record<string, number>) => void
   onCommentsChange: (comments: PageComment[]) => void
 }
 
-export function CommentDrawer({ open, quarter, week, target, meetingMode, onShowAll, onClose, onCountChange, onCountsChange, onCommentsChange }: CommentDrawerProps) {
+export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, quarter, week = '', planId, sourceTab, scopeLabel, objectives, followUpOrder = EMPTY_FOLLOW_UP_ORDER, target, focusCommentId, todoEnabled = false, onStartReview, onShowAll, onClose, onFocusCommentChange, onCountChange, onCountsChange, onCommentsChange }: CommentDrawerProps) {
   const [comments, setComments] = useState<PageComment[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
-  const [draft, setDraft] = useState('')
+  const [draft, setDraft] = useState<CommentDraft>({ content: '', mentions: [] })
   const [error, setError] = useState('')
+  const [navigationNotice, setNavigationNotice] = useState('')
+  const [reviewCommentId, setReviewCommentId] = useState('')
+  const loadVersion = useRef(0)
 
   const publishSummary = useCallback((next: PageComment[]) => {
     onCountChange(commentMessageCount(next))
@@ -240,43 +325,81 @@ export function CommentDrawer({ open, quarter, week, target, meetingMode, onShow
   }, [onCommentsChange, onCountChange, onCountsChange])
 
   const load = useCallback(async () => {
+    const version = ++loadVersion.current
     setLoading(true)
     setError('')
     try {
-      const value = await getComments(quarter, week)
+      const value = planId ? await getPlanComments(planId) : await getComments(quarter, week)
+      if (version !== loadVersion.current) return
       setComments(value.comments)
       publishSummary(value.comments)
     } catch (reason) {
+      if (version !== loadVersion.current) return
       setError(reason instanceof Error ? reason.message : '评论加载失败')
     } finally {
-      setLoading(false)
+      if (version === loadVersion.current) setLoading(false)
     }
-  }, [publishSummary, quarter, week])
-
-  useEffect(() => { void load() }, [load])
-  useEffect(() => { setDraft('') }, [target?.id, target?.selection?.end, target?.selection?.start, target?.selection?.text, target?.type])
+  }, [planId, publishSummary, quarter, week])
 
   useEffect(() => {
-	if (!loading) publishSummary(comments)
+    setComments([])
+    publishSummary([])
+    void load()
+  }, [load, publishSummary])
+  useEffect(() => { setDraft({ content: '', mentions: [] }) }, [target?.id, target?.selection?.end, target?.selection?.start, target?.selection?.text, target?.type])
+
+  useEffect(() => {
+    if (!loading) publishSummary(comments)
   }, [comments, loading, publishSummary])
 
-  const visibleComments = useMemo(() => {
-    if (!target) return comments
-    return comments.filter((comment) => commentMatchesTarget(comment, target))
-  }, [comments, target])
+  useEffect(() => {
+    if (!open || loading || !focusCommentId) return
+    const frame = window.requestAnimationFrame(() => {
+      const element = document.getElementById(`comment-${focusCommentId}`)
+      element?.scrollIntoView({ block: 'center' })
+      element?.classList.add('ring-2', 'ring-inset', 'ring-indigo-300')
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [focusCommentId, loading, open])
+
+  const documentOrder = useMemo(() => buildCommentDocumentOrder(objectives, followUpOrder), [followUpOrder, objectives])
+  const visibleComments = useMemo(() => sortCommentsByDocumentOrder(
+    target ? comments.filter((comment) => commentMatchesTarget(comment, target)) : comments,
+    documentOrder,
+  ), [comments, documentOrder, target])
   const visibleCount = commentMessageCount(visibleComments)
+  const okrContextIndex = useMemo(() => buildCommentOKRContextIndex(objectives), [objectives])
+  const visibleGroups = useMemo(() => groupCommentsByTarget(visibleComments), [visibleComments])
+  const reviewComments = useMemo(() => sortCommentsByDocumentOrder(comments, documentOrder), [comments, documentOrder])
+  const reviewIndex = reviewComments.findIndex((comment) => comment.id === reviewCommentId)
+  const reviewComment = reviewIndex >= 0 ? reviewComments[reviewIndex] : undefined
+  const targetContext = target ? okrContextIndex[commentTargetKey(target)] : undefined
+
+  useEffect(() => {
+    if (!reviewing || !open) {
+      setReviewCommentId('')
+      return
+    }
+    if (loading || reviewComments.length === 0) return
+    setReviewCommentId((current) => reviewComments.some((comment) => comment.id === current) ? current : reviewComments[0].id)
+  }, [loading, open, reviewComments, reviewing])
+
+  useEffect(() => {
+    onFocusCommentChange(open && reviewing ? reviewComment : undefined)
+  }, [onFocusCommentChange, open, reviewComment, reviewing])
 
   const addRoot = async () => {
-    const content = draft.trim()
+    const content = draft.content.trim()
     if (!content || saving) return
     setSaving(true)
     setError('')
-    const activeTarget = target ?? { type: 'page' as const, id: `${quarter}:${week}`, title: `${week} OKR 页面` }
+    const activeTarget = target ?? (planId
+      ? { type: 'page' as const, id: planId, title: scopeLabel || 'Biz OKR Plan' }
+      : { type: 'page' as const, id: `${quarter}:${week}`, title: `${week} OKR 页面` })
     try {
-      const created = await createComment({
-        quarter,
-        week,
+      const input = {
         content,
+        mentions: draft.mentions,
         targetType: activeTarget.type,
         targetId: activeTarget.id,
         targetTitle: activeTarget.title,
@@ -285,9 +408,11 @@ export function CommentDrawer({ open, quarter, week, target, meetingMode, onShow
         selectionEnd: activeTarget.selection?.end,
         selectionPrefix: activeTarget.selection?.prefix,
         selectionSuffix: activeTarget.selection?.suffix,
-      })
+      }
+      const created = planId ? await createPlanComment(planId, input) : await createComment({ quarter, week, sourceTab, ...input })
       setComments((current) => [...current, created])
-      setDraft('')
+      setDraft({ content: '', mentions: [] })
+      if (notificationErrorText(created)) setError(`评论已保存，但${notificationErrorText(created)}`)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '评论发布失败')
     } finally {
@@ -295,12 +420,16 @@ export function CommentDrawer({ open, quarter, week, target, meetingMode, onShow
     }
   }
 
+  const createReply = useCallback((parentId: string, content: string, mentions: CommentMention[]) => (
+    planId ? createPlanComment(planId, { parentId, content, mentions }) : createComment({ quarter, week, sourceTab, parentId, content, mentions })
+  ), [planId, quarter, sourceTab, week])
+
   const addReply = (rootId: string, reply: PageComment) => {
     setComments((current) => current.map((comment) => comment.id === rootId ? { ...comment, replies: [...comment.replies, reply] } : comment))
   }
 
-  const editExistingComment = async (id: string, content: string) => {
-    const updated = await updateComment(id, { content })
+  const editExistingComment = async (id: string, content: string, mentions: CommentMention[]) => {
+    const updated = await updateComment(id, { content, mentions })
     setComments((current) => current.map((comment) => {
       if (comment.id === id) return { ...updated, replies: comment.replies }
       return { ...comment, replies: comment.replies.map((reply) => reply.id === id ? { ...updated, replies: [] } : reply) }
@@ -322,44 +451,108 @@ export function CommentDrawer({ open, quarter, week, target, meetingMode, onShow
       .map((comment) => ({ ...comment, replies: comment.replies.filter((reply) => reply.id !== id) })))
   }
 
+  const navigateToCommentSource = (comment: PageComment) => {
+    setNavigationNotice('')
+    onFocusCommentChange(comment)
+    window.setTimeout(() => {
+      const result = scrollToCommentSource(comment)
+      if (result === 'target' && comment.selectedText) setNavigationNotice('选中的原文已变化，已定位到所属内容')
+      if (result === 'missing') setNavigationNotice('原文已删除，或不在当前页面中')
+    }, 180)
+  }
+
+  const navigateToTargetSource = () => {
+    if (!target) return
+    const preferred = visibleComments.find((comment) => comment.id === target.commentId) ?? visibleComments[0]
+    if (preferred) {
+      navigateToCommentSource(preferred)
+      return
+    }
+    setNavigationNotice('')
+    const result = scrollToCommentTarget(target)
+    if (result === 'missing') setNavigationNotice('原文已删除，或不在当前页面中')
+  }
+
+  const renderThread = (comment: PageComment, showSource: boolean) => (
+    <CommentThread
+      key={comment.id}
+      comment={comment}
+      objectives={objectives}
+      createReply={createReply}
+      showSource={showSource}
+      okrContext={commentOKRContext(comment, okrContextIndex)}
+      todoEnabled={todoEnabled}
+      onNavigateToSource={navigateToCommentSource}
+      onReply={addReply}
+      onEdit={editExistingComment}
+      onPatch={patchExistingComment}
+      onDelete={removeExistingComment}
+    />
+  )
+
   return (
     <>
       {open && <button type="button" aria-label="关闭评论" onClick={onClose} className="fixed inset-0 z-40 bg-slate-900/20 sm:hidden" />}
       <aside aria-hidden={!open} className={`fixed inset-y-0 right-0 z-50 flex w-full max-w-[400px] flex-col border-l border-slate-200 bg-white shadow-[-12px_0_32px_rgba(15,23,42,0.10)] transition-transform duration-200 ${open ? 'translate-x-0' : 'translate-x-full'}`}>
         <header className="flex h-14 shrink-0 items-center gap-2 border-b border-slate-200 px-4">
           <div className="min-w-0">
-            <h2 className="truncate text-[14px] font-semibold text-slate-800">{target ? `${targetLabel(target.type)}评论` : '全部评论'}</h2>
-            <p className="text-[10px] text-slate-400">{week} · {visibleCount} 条讨论</p>
+            <h2 className="truncate text-[14px] font-semibold text-slate-800">{reviewing ? '逐条浏览' : target ? `${targetLabel(target.type)}评论` : '全部评论'}</h2>
+            <p className="text-[10px] text-slate-400">{reviewing && reviewComment
+              ? `第 ${reviewIndex + 1}/${reviewComments.length} 个讨论串`
+              : target
+                ? `${visibleComments.length} 个讨论串 · ${visibleCount} 条评论`
+                : `${scopeLabel || week} · ${visibleGroups.length} 个原文 · ${visibleCount} 条评论`}</p>
           </div>
-          {target && <button type="button" onClick={onShowAll} className="ml-auto rounded-md px-2 py-1 text-[11px] text-indigo-600 hover:bg-indigo-50">查看全部</button>}
-          {!target && <button type="button" onClick={() => void load()} className="ml-auto rounded-md px-2 py-1 text-[11px] text-slate-400 hover:bg-slate-100 hover:text-slate-600">刷新</button>}
+          {(reviewing || target) && <button type="button" onClick={onShowAll} className="ml-auto rounded-md px-2 py-1 text-[11px] text-indigo-600 hover:bg-indigo-50">查看全部</button>}
+          {!reviewing && !target && reviewEnabled && reviewComments.length > 0 && <button type="button" onClick={onStartReview} className="ml-auto rounded-md px-2 py-1 text-[11px] text-indigo-600 hover:bg-indigo-50">逐条浏览</button>}
+          {!reviewing && !target && <button type="button" onClick={() => void load()} className={`rounded-md px-2 py-1 text-[11px] text-slate-400 hover:bg-slate-100 hover:text-slate-600 ${!reviewEnabled || reviewComments.length === 0 ? 'ml-auto' : ''}`}>刷新</button>}
           <button type="button" onClick={onClose} aria-label="关闭评论" className="flex size-8 items-center justify-center rounded-lg text-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700">×</button>
         </header>
 
-        <div className="shrink-0 border-b border-slate-100 bg-slate-50/60 p-3">
-          {target && (
-            <div className="mb-2 rounded-lg border border-indigo-100 bg-indigo-50/60 px-2.5 py-2">
-              <div className="text-[10px] font-semibold text-indigo-500">正在评论 · {target.selection ? '选中文字' : targetLabel(target.type)}</div>
-              {target.selection ? (
-                <blockquote className="mt-1 border-l-2 border-indigo-300 pl-2 text-[12px] font-medium leading-[18px] text-slate-700">“{target.selection.text}”</blockquote>
-              ) : <div className="mt-0.5 line-clamp-3 text-[12px] leading-[18px] text-slate-700">{target.title}</div>}
-            </div>
-          )}
+        {!reviewing && <div className="shrink-0 border-b border-slate-100 bg-slate-50/60 p-3">
+          {target && <div className="mb-2"><CommentSourceCard source={target} context={targetContext} onNavigate={navigateToTargetSource} /></div>}
           <div className="rounded-xl border border-slate-200 bg-white p-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-              <textarea value={draft} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') void addRoot() }} placeholder={target ? '针对这段内容发表评论…' : '对本周页面发表评论…'} rows={3} maxLength={2000} className="w-full resize-none bg-transparent text-[13px] leading-5 text-slate-700 outline-none placeholder:text-slate-400" />
-              <div className="mt-1 flex items-center gap-2">
-                <span className="text-[10px] text-slate-300">⌘ + Enter 发布</span>
-                <button type="button" onClick={() => void addRoot()} disabled={!draft.trim() || saving} className="ml-auto rounded-md bg-indigo-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300">{saving ? '发布中…' : '发布评论'}</button>
-              </div>
+            <CommentMentionInput value={draft} objectives={objectives} onChange={setDraft} onSubmitShortcut={() => void addRoot()} placeholder={target ? '针对这段内容发表评论，输入 @ 选择提醒人…' : planId ? '对当前 Plan 发表评论，输入 @ 选择提醒人…' : '对本周页面发表评论，输入 @ 选择提醒人…'} rows={3} />
+            <div className="mt-1 flex items-center gap-2">
+              <span className="text-[10px] text-slate-300">Enter 发布 · Shift+Enter 换行</span>
+              <button type="button" onClick={() => void addRoot()} disabled={!draft.content.trim() || saving} className="ml-auto rounded-md bg-indigo-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300">{saving ? '发布中…' : '发布评论'}</button>
             </div>
+          </div>
           {error && <div className="mt-2 text-[11px] text-red-600">{error}</div>}
-        </div>
+        </div>}
+
+        {navigationNotice && <div role="status" className="shrink-0 border-b border-amber-100 bg-amber-50 px-4 py-2 text-[11px] text-amber-700">{navigationNotice}</div>}
 
         <div className="min-h-0 flex-1 overflow-y-auto">
-          {loading ? <div className="px-4 py-10 text-center text-xs text-slate-400">正在读取评论…</div> : visibleComments.length === 0 ? (
+          {loading ? <div className="px-4 py-10 text-center text-xs text-slate-400">正在读取评论…</div> : (reviewing ? reviewComments : visibleComments).length === 0 ? (
             <div className="px-8 py-16 text-center"><div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-full bg-slate-100 text-lg text-slate-400">💬</div><p className="text-[13px] font-medium text-slate-600">{target ? '这段内容还没有评论' : '还没有评论'}</p><p className="mt-1 text-[11px] text-slate-400">提出问题、补充背景或回复讨论</p></div>
-          ) : visibleComments.map((comment) => <CommentThread key={comment.id} comment={comment} quarter={quarter} week={week} showTarget={!target} meetingMode={meetingMode} onReply={addReply} onEdit={editExistingComment} onPatch={patchExistingComment} onDelete={removeExistingComment} />)}
+          ) : reviewing ? reviewComment ? (
+            renderThread(reviewComment, true)
+          ) : <div className="px-4 py-10 text-center text-xs text-slate-400">正在定位第一条评论…</div>
+          : target ? visibleComments.map((comment) => renderThread(comment, false))
+          : visibleGroups.map((group) => (
+            <section key={group.key} className="border-b-4 border-slate-100 last:border-b-0">
+              <div className="px-3 pt-3">
+                <CommentSourceCard source={group.comments[0]} context={commentOKRContext(group.comments[0], okrContextIndex)} onNavigate={() => navigateToCommentSource(group.comments[0])} />
+                <div className="px-1 pt-1.5 text-[10px] text-slate-400">{group.comments.length} 个讨论串 · {group.messageCount} 条评论</div>
+              </div>
+              {group.comments.map((comment) => renderThread(comment, false))}
+            </section>
+          ))}
         </div>
+        {reviewing && reviewComment && <footer className="shrink-0 border-t border-slate-200 bg-white p-3">
+          {reviewIndex < reviewComments.length - 1 ? (
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" disabled={reviewIndex === 0} onClick={() => setReviewCommentId(reviewComments[reviewIndex - 1].id)} className="h-10 rounded-lg border border-slate-200 bg-white text-[13px] font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">上一个</button>
+              <button type="button" onClick={() => setReviewCommentId(reviewComments[reviewIndex + 1].id)} className="h-10 rounded-lg bg-indigo-600 text-[13px] font-semibold text-white hover:bg-indigo-700">下一个</button>
+            </div>
+          ) : (
+            <div className="rounded-xl bg-emerald-50 p-3 text-center">
+              <div className="text-[13px] font-semibold text-emerald-700">已浏览完所有讨论串</div>
+              <button type="button" disabled={reviewIndex === 0} onClick={() => setReviewCommentId(reviewComments[reviewIndex - 1].id)} className="mt-2 h-9 w-full rounded-lg border border-emerald-200 bg-white text-[12px] font-medium text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-40">上一个</button>
+            </div>
+          )}
+        </footer>}
       </aside>
     </>
   )

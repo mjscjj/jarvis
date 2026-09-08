@@ -119,14 +119,14 @@ function Workspace({ moduleEnablement }: {
 	if (visibleTab === 'okr-plan') {
 		return (
 			<div id="okr-workspace-root" className="okr-workspace-root">
-				<PlanWorkspace initialQuarter={activeQuarter} onQuarterChange={syncPlanQuarter} shared={weeklyShare} onShareTabChange={changeShareTab} />
+				<PlanWorkspace initialQuarter={activeQuarter} initialPlanId={context.view_state.plan_id} initialCommentId={context.view_state.comment_id} onQuarterChange={syncPlanQuarter} shared={weeklyShare} onShareTabChange={changeShareTab} />
 			</div>
 		)
 	}
 
 	return (
 		<div id="okr-workspace-root" className="okr-workspace-root">
-			<BoardProvider key={boardKey} surface={surface} weekTemplateKey={weekTemplateKey} initialQuarter={activeQuarter} onQuarterChange={setSelectedQuarter}>
+			<BoardProvider key={boardKey} surface={surface} weekTemplateKey={weekTemplateKey} initialQuarter={activeQuarter} initialWeek={context.view_state.week} onQuarterChange={setSelectedQuarter}>
 				<PageContextSync surface={surface} />
 				{visibleTab === 'agent-flows' ? (
 					<AgentFlowsWorkspace
@@ -140,6 +140,7 @@ function Workspace({ moduleEnablement }: {
 						workspace={workspace!}
 						onWorkspaceChange={(next) => changeTab(okrTabForWeeklyWorkspace(next))}
 						onShareTabChange={changeShareTab}
+					initialCommentId={context.view_state.comment_id}
 					shared={weeklyShare}
 				/>
 			</PreviewReviewProvider>

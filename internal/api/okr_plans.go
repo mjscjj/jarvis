@@ -37,6 +37,65 @@ func GetOKRPlan(service *okrworkspace.Service) app.HandlerFunc {
 	}
 }
 
+func GetOKRPlanComments(service *okrworkspace.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		result, err := service.PlanComments(ctx, strings.TrimSpace(c.Param("plan_id")))
+		if errors.Is(err, okrworkspace.ErrNotFound) {
+			writeAPIError(c, consts.StatusNotFound, 40481, err)
+			return
+		}
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40081, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+type createPlanCommentRequest struct {
+	ParentID        string                        `json:"parent_id"`
+	TargetType      string                        `json:"target_type"`
+	TargetID        string                        `json:"target_id"`
+	TargetTitle     string                        `json:"target_title"`
+	SelectedText    string                        `json:"selected_text"`
+	SelectionStart  int                           `json:"selection_start"`
+	SelectionEnd    int                           `json:"selection_end"`
+	SelectionPrefix string                        `json:"selection_prefix"`
+	SelectionSuffix string                        `json:"selection_suffix"`
+	Content         string                        `json:"content"`
+	Mentions        []okrworkspace.CommentMention `json:"mentions"`
+	Images          []okrworkspace.CommentImage   `json:"images"`
+}
+
+func CreateOKRPlanComment(service *okrworkspace.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		identity := currentOKRIdentity(c)
+		var request createPlanCommentRequest
+		if err := decodeStrictJSON(c.Request.Body(), &request); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40082, err)
+			return
+		}
+		input := okrworkspace.CreateCommentInput{
+			ParentID: request.ParentID, TargetType: request.TargetType, TargetID: request.TargetID,
+			TargetTitle: request.TargetTitle, SelectedText: request.SelectedText,
+			SelectionStart: request.SelectionStart, SelectionEnd: request.SelectionEnd,
+			SelectionPrefix: request.SelectionPrefix, SelectionSuffix: request.SelectionSuffix,
+			AuthorOpenID: identity.OpenID, AuthorUnionID: identity.UnionID,
+			AuthorName: identity.Name, AuthorEmail: identity.Email, Content: request.Content, Mentions: request.Mentions, Images: request.Images,
+		}
+		result, err := service.CreatePlanComment(ctx, strings.TrimSpace(c.Param("plan_id")), input)
+		if errors.Is(err, okrworkspace.ErrNotFound) {
+			writeAPIError(c, consts.StatusNotFound, 40482, err)
+			return
+		}
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40082, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
 func CreateOKRPlan(service *okrworkspace.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		var input okrworkspace.CreatePlanInput
@@ -147,14 +206,15 @@ func ReorderOKRPlanObjectives(service *okrworkspace.Service) app.HandlerFunc {
 			return
 		}
 		planID := strings.TrimSpace(c.Param("plan_id"))
-		if err := service.ReorderPlanObjectives(ctx, planID, input.IDs, currentOKRIdentity(c).OpenID); errors.Is(err, okrworkspace.ErrNotFound) {
+		result, err := service.ReorderPlanObjectives(ctx, planID, input.IDs, currentOKRIdentity(c).OpenID)
+		if errors.Is(err, okrworkspace.ErrNotFound) {
 			writeAPIError(c, consts.StatusNotFound, 40480, err)
 			return
 		} else if err != nil {
 			writeAPIError(c, consts.StatusBadRequest, 40080, err)
 			return
 		}
-		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"ids": input.IDs}})
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
 	}
 }
 

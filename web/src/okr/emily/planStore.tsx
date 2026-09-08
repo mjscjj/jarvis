@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { APIError, createOKRPlan, createOKRPlanObjective, deleteOKRPlan, deleteOKRPlanObjective, getEnums, getOKRPlan, listOKRPlans, reorderOKRPlanObjectives, updateOKRPlanObjective } from './api'
 import { BoardContext, uid, type BoardApi, type SyncState } from './board'
 import { BUSINESS_CATEGORY_TAG, PRIORITY_TAG, replaceSingleTag } from './hierarchy'
+import { swappedOrder } from './ordering'
 import type { EnumValues, Kr, KrOwner, KrPriority, MetricLine, Objective, OKRPlan, OKRPlanSummary, Point, WeekTemplateKey } from './types'
 import { LIGHTS, STATUSES } from './template'
 
@@ -54,7 +55,7 @@ export function usePlanBoard() {
   return ctx
 }
 
-export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChange }: { children: ReactNode; initialQuarter?: string; onQuarterChange?: (quarter: string) => void }) {
+export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId = '', onQuarterChange }: { children: ReactNode; initialQuarter?: string; initialPlanId?: string; onQuarterChange?: (quarter: string) => void }) {
   const [quarter, setQuarterState] = useState(initialQuarter || currentQuarter())
   const [availableQuarters, setAvailableQuarters] = useState<string[]>(initialQuarter ? [initialQuarter] : [currentQuarter()])
   const [plans, setPlans] = useState<OKRPlanSummary[]>([])
@@ -69,6 +70,8 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
   const dirtyObjectives = useRef(new Set<string>())
   const deletedObjectives = useRef(new Map<string, Objective>())
   const objectiveRevisions = useRef(new Map<string, number>())
+  const objectiveOrderDirty = useRef(false)
+  const objectiveOrderRevision = useRef(0)
   const saveInFlight = useRef(false)
   const saveAgain = useRef(false)
   const scheduleSaveRef = useRef<() => void>(() => undefined)
@@ -100,6 +103,8 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
       dirtyObjectives.current.clear()
       deletedObjectives.current.clear()
       objectiveRevisions.current.clear()
+      objectiveOrderDirty.current = false
+      objectiveOrderRevision.current = 0
       remoteReady.current = true
       setSyncState({ kind: 'ready', message: loadedPlan ? 'Biz OKR Plan 已加载' : '当前季度暂无 Biz OKR Plan' })
       return { list, plan: loadedPlan }
@@ -109,13 +114,15 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
   }, [onQuarterChange, publishPlan])
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void loadRemote(), 0)
+    const timer = window.setTimeout(() => void loadRemote(initialQuarter, initialPlanId), 0)
     return () => {
       window.clearTimeout(timer)
       window.clearTimeout(saveTimer.current)
       dirtyObjectives.current.clear()
       deletedObjectives.current.clear()
       objectiveRevisions.current.clear()
+      objectiveOrderDirty.current = false
+      objectiveOrderRevision.current = 0
     }
   }, [loadRemote])
 
@@ -178,6 +185,22 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
     } : item))
   }, [])
 
+  const mergeSavedObjectiveOrder = useCallback((saved: OKRPlan) => {
+    const currentByID = new Map(objectivesRef.current.map((objective) => [objective.id, objective]))
+    const nextObjectives = saved.objectives.map((remoteObjective) => {
+      const current = currentByID.get(remoteObjective.id)
+      return current ? { ...current, version: remoteObjective.version } : remoteObjective
+    })
+    publishPlan({ ...saved, objectives: nextObjectives })
+    setPlans((items) => items.map((item) => item.id === saved.id ? {
+      ...item,
+      version: saved.version,
+      objectiveCount: nextObjectives.length,
+      krCount: nextObjectives.reduce((total, objective) => total + objective.krs.length, 0),
+      updatedAt: saved.updatedAt,
+    } : item))
+  }, [publishPlan])
+
   const saveNow = useCallback(async () => {
     if (!remoteReady.current || !planRef.current) return
     if (saveInFlight.current) {
@@ -186,8 +209,9 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
     }
     saveInFlight.current = true
     let failed = false
+    let reordered = false
     const conflictedObjectives: string[] = []
-    setSyncState({ kind: 'saving', message: '正在保存 Plan…' })
+    setSyncState({ kind: 'saving', message: dirtyObjectives.current.size === 0 && objectiveOrderDirty.current ? '正在调整顺序…' : '正在保存 Plan…' })
     try {
       do {
         saveAgain.current = false
@@ -232,20 +256,46 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
             throw error
           }
         }
-      } while (saveAgain.current || dirtyObjectives.current.size > 0)
+        if (objectiveOrderDirty.current && planRef.current) {
+          const revision = objectiveOrderRevision.current
+          let saved: OKRPlan
+          try {
+            saved = await reorderOKRPlanObjectives(planRef.current.id, objectivesRef.current.map((objective) => objective.id))
+          } catch (reorderError) {
+            try {
+              const remote = await getOKRPlan(planRef.current.id)
+              if (objectiveOrderRevision.current === revision && dirtyObjectives.current.size === 0) {
+                objectiveOrderDirty.current = false
+                objectiveOrderRevision.current = 0
+                publishPlan(remote)
+              }
+            } catch {
+              // Keep the intended local order retryable when even the readback fails.
+            }
+            throw reorderError
+          }
+          if (objectiveOrderRevision.current === revision) {
+            objectiveOrderDirty.current = false
+            reordered = true
+            mergeSavedObjectiveOrder(saved)
+          } else {
+            mergeSavedPlan(saved)
+          }
+        }
+      } while (saveAgain.current || dirtyObjectives.current.size > 0 || objectiveOrderDirty.current)
       if (conflictedObjectives.length > 0) {
         setSyncState({ kind: 'error', message: `${conflictedObjectives.join('、')} 已被其他人更新，已只刷新冲突的 O；其他 O 已继续保存。` })
       } else {
-        setSyncState({ kind: 'saved', message: 'Plan 已保存' })
+        setSyncState({ kind: 'saved', message: reordered ? '顺序已保存' : 'Plan 已保存' })
       }
     } catch (error) {
       failed = true
       setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '保存 Plan 失败。' })
     } finally {
       saveInFlight.current = false
-      if (!failed && dirtyObjectives.current.size > 0) scheduleSaveRef.current()
+      if (!failed && (dirtyObjectives.current.size > 0 || objectiveOrderDirty.current)) scheduleSaveRef.current()
     }
-  }, [mergeSavedPlan, replaceConflictedObjective])
+  }, [mergeSavedObjectiveOrder, mergeSavedPlan, publishPlan, replaceConflictedObjective])
 
   const scheduleSave = useCallback(() => {
     window.clearTimeout(saveTimer.current)
@@ -282,6 +332,24 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
     scheduleSave()
   }, [scheduleSave])
 
+  const queueObjectiveOrder = useCallback(async (ids: string[]) => {
+    const current = objectivesRef.current
+    if (!planRef.current || ids.length !== current.length) throw new Error('目标顺序已经变化，请重新载入后再试。')
+    const byID = new Map(current.map((objective) => [objective.id, objective]))
+    const next = ids.map((id) => byID.get(id)).filter((objective): objective is Objective => Boolean(objective))
+    if (next.length !== current.length || new Set(ids).size !== ids.length) throw new Error('目标顺序已经变化，请重新载入后再试。')
+    if (ids.every((id, index) => current[index]?.id === id)) return
+    objectivesRef.current = next
+    setObjectives(next)
+    const nextPlan = { ...planRef.current, objectives: next }
+    planRef.current = nextPlan
+    setPlan(nextPlan)
+    objectiveOrderDirty.current = true
+    objectiveOrderRevision.current += 1
+    window.clearTimeout(saveTimer.current)
+    await saveNow()
+  }, [saveNow])
+
   const api = useMemo<PlanBoardApi>(() => ({
     objectives,
     plan,
@@ -316,6 +384,8 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
         dirtyObjectives.current.clear()
         deletedObjectives.current.clear()
         objectiveRevisions.current.clear()
+        objectiveOrderDirty.current = false
+        objectiveOrderRevision.current = 0
         setSyncState({ kind: 'ready', message: 'Biz OKR Plan 已加载' })
       }).catch((error) => setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '读取 Biz OKR Plan 失败。' }))
     },
@@ -332,6 +402,8 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
         dirtyObjectives.current.clear()
         deletedObjectives.current.clear()
         objectiveRevisions.current.clear()
+        objectiveOrderDirty.current = false
+        objectiveOrderRevision.current = 0
         setSyncState({ kind: 'saved', message: 'Biz OKR Plan 已新建' })
       } catch (error) {
         setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '新建 Biz OKR Plan 失败。' })
@@ -396,25 +468,10 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
     },
     swapObjectives: async (id, targetId) => {
       const current = objectivesRef.current
-      const from = current.findIndex((item) => item.id === id)
-      const to = current.findIndex((item) => item.id === targetId)
-      if (from < 0 || to < 0 || !planRef.current) return
-      const ids = current.map((item) => item.id)
-      const [item] = ids.splice(from, 1)
-      ids.splice(to, 0, item)
-      setSyncState({ kind: 'saving', message: '正在调整顺序…' })
-      try {
-        await reorderOKRPlanObjectives(planRef.current.id, ids)
-        const byId = new Map(current.map((objective) => [objective.id, objective]))
-        const next = ids.map((objectiveID) => byId.get(objectiveID)).filter((objective): objective is Objective => Boolean(objective))
-        objectivesRef.current = next
-        setObjectives(next)
-        setSyncState({ kind: 'saved', message: '顺序已保存' })
-      } catch (error) {
-        setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '调整顺序失败。' })
-        throw error
-      }
+      if (!planRef.current) return
+      await queueObjectiveOrder(swappedOrder(current.map((item) => item.id), id, targetId))
     },
+    reorderObjectives: queueObjectiveOrder,
     swapKrs: async (objectiveId, krId, targetId) => {
       mutate((draft) => {
         const objective = draft.find((item) => item.id === objectiveId)
@@ -533,7 +590,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
     setPointScore: async () => undefined,
     reset: () => void loadRemote(),
     retry: () => {
-      if (remoteReady.current && dirtyObjectives.current.size > 0) void saveNow()
+      if (remoteReady.current && (dirtyObjectives.current.size > 0 || objectiveOrderDirty.current)) void saveNow()
       else void loadRemote()
     },
     resolveConflict: () => undefined,
@@ -543,7 +600,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', onQuarterChan
         if (index >= 0) objective.krs[index] = kr
       }
     }),
-  }), [availableQuarters, enums, loadRemote, mutate, objectives, plan, plans, publishPlan, quarter, saveNow, syncState])
+  }), [availableQuarters, enums, loadRemote, mutate, objectives, plan, plans, publishPlan, quarter, queueObjectiveOrder, saveNow, syncState])
 
   return (
     <PlanBoardContext.Provider value={api}>

@@ -340,18 +340,21 @@ func GetComments(service *okrworkspace.Service) app.HandlerFunc {
 }
 
 type createCommentRequest struct {
-	Quarter         string `json:"quarter"`
-	Week            string `json:"week"`
-	ParentID        string `json:"parent_id"`
-	TargetType      string `json:"target_type"`
-	TargetID        string `json:"target_id"`
-	TargetTitle     string `json:"target_title"`
-	SelectedText    string `json:"selected_text"`
-	SelectionStart  int    `json:"selection_start"`
-	SelectionEnd    int    `json:"selection_end"`
-	SelectionPrefix string `json:"selection_prefix"`
-	SelectionSuffix string `json:"selection_suffix"`
-	Content         string `json:"content"`
+	Quarter         string                        `json:"quarter"`
+	Week            string                        `json:"week"`
+	SourceTab       string                        `json:"source_tab"`
+	ParentID        string                        `json:"parent_id"`
+	TargetType      string                        `json:"target_type"`
+	TargetID        string                        `json:"target_id"`
+	TargetTitle     string                        `json:"target_title"`
+	SelectedText    string                        `json:"selected_text"`
+	SelectionStart  int                           `json:"selection_start"`
+	SelectionEnd    int                           `json:"selection_end"`
+	SelectionPrefix string                        `json:"selection_prefix"`
+	SelectionSuffix string                        `json:"selection_suffix"`
+	Content         string                        `json:"content"`
+	Mentions        []okrworkspace.CommentMention `json:"mentions"`
+	Images          []okrworkspace.CommentImage   `json:"images"`
 }
 
 func CreateComment(service *okrworkspace.Service) app.HandlerFunc {
@@ -363,11 +366,12 @@ func CreateComment(service *okrworkspace.Service) app.HandlerFunc {
 			return
 		}
 		input := okrworkspace.CreateCommentInput{
-			Quarter: request.Quarter, Week: request.Week, ParentID: request.ParentID,
+			Quarter: request.Quarter, Week: request.Week, SourceTab: request.SourceTab, ParentID: request.ParentID,
 			TargetType: request.TargetType, TargetID: request.TargetID, TargetTitle: request.TargetTitle,
 			SelectedText: request.SelectedText, SelectionStart: request.SelectionStart, SelectionEnd: request.SelectionEnd,
 			SelectionPrefix: request.SelectionPrefix, SelectionSuffix: request.SelectionSuffix,
 			AuthorOpenID: identity.OpenID, AuthorUnionID: identity.UnionID, AuthorName: identity.Name, Content: request.Content,
+			AuthorEmail: identity.Email, Mentions: request.Mentions, Images: request.Images,
 		}
 		result, err := service.CreateComment(ctx, input)
 		if errors.Is(err, okrworkspace.ErrNotFound) {

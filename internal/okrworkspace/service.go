@@ -25,13 +25,31 @@ var (
 	quarterPattern      = regexp.MustCompile(`^\d{4}-Q[1-4]$`)
 )
 
-type Service struct{ db *gorm.DB }
+type Service struct {
+	db              *gorm.DB
+	commentNotifier CommentMentionNotifier
+}
 
 func NewService(db *gorm.DB) (*Service, error) {
 	if db == nil {
 		return nil, fmt.Errorf("create kr service: db is nil")
 	}
 	return &Service{db: db}, nil
+}
+
+// SetCommentMentionNotifier wires the optional external delivery edge without
+// coupling comment persistence to one Feishu client implementation. Comments
+// without mentions remain usable in tests and installations that do not expose
+// the Biz collaboration surface.
+func (s *Service) SetCommentMentionNotifier(notifier CommentMentionNotifier) error {
+	if s == nil {
+		return fmt.Errorf("set comment mention notifier: service is nil")
+	}
+	if notifier == nil {
+		return fmt.Errorf("set comment mention notifier: notifier is nil")
+	}
+	s.commentNotifier = notifier
+	return nil
 }
 
 type Board struct {

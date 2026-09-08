@@ -1,5 +1,5 @@
 import { normalizeKRTitle } from './krTitle'
-import type { AuthStatus, Entry, EnumValues, FeishuDeviceLogin, FeishuDeviceLoginPoll, FeishuDocumentResult, FollowUpItem, FollowUpList, FollowUpStatus, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, OKRActivityEntry, OKRPlan, OKRPlanList, PageComment, PageCommentList, PersonAvatarItem, PointKind, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
+import type { AuthStatus, CommentMention, Entry, EnumValues, FeishuDeviceLogin, FeishuDeviceLoginPoll, FeishuDocumentResult, FollowUpItem, FollowUpList, FollowUpStatus, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, OKRActivityEntry, OKRPlan, OKRPlanList, PageComment, PageCommentList, PersonAvatarItem, PointKind, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
 
 interface Envelope<T> {
   code: number
@@ -124,8 +124,9 @@ export interface WeeklyReportWeekList {
 
 interface APIPageComment {
   id: string
+  plan_id?: string
   parent_id?: string
-  target_type: 'page' | 'kr' | 'metric' | 'point' | 'entry' | 'follow_up'
+  target_type: 'page' | 'objective' | 'kr' | 'metric' | 'point' | 'entry' | 'follow_up'
   target_id?: string
   target_title?: string
   selected_text?: string
@@ -136,6 +137,9 @@ interface APIPageComment {
   author_open_id?: string
   author_name: string
   content: string
+  mentions?: Array<{ open_id: string; name: string }>
+  images?: ImageRef[]
+  notification_errors?: string[]
   todo?: boolean
   resolved?: boolean
   created_at: string
@@ -145,7 +149,8 @@ interface APIPageComment {
 
 interface APIPageCommentList {
   quarter: string
-  week: string
+  week?: string
+  plan_id?: string
   count: number
   comments: APIPageComment[]
 }
@@ -687,11 +692,11 @@ export async function deleteOKRPlanObjective(planId: string, objective: Objectiv
   }
 }
 
-export async function reorderOKRPlanObjectives(planId: string, ids: string[]): Promise<void> {
-  await request(`/api/biz-okr/plans/${encodeURIComponent(planId)}/objectives/order`, {
+export async function reorderOKRPlanObjectives(planId: string, ids: string[]): Promise<OKRPlan> {
+  return fromAPIPlan(await request<APIPlan>(`/api/biz-okr/plans/${encodeURIComponent(planId)}/objectives/order`, {
     method: 'PUT',
     body: JSON.stringify({ ids }),
-  })
+  }))
 }
 
 export async function deleteOKRPlan(id: string): Promise<void> {
@@ -727,6 +732,7 @@ export async function getOKRActivities(input: {
 function fromAPIComment(value: APIPageComment): PageComment {
   return {
     id: value.id,
+    planId: value.plan_id,
     parentId: value.parent_id,
     targetType: value.target_type,
     targetId: value.target_id,
@@ -739,6 +745,9 @@ function fromAPIComment(value: APIPageComment): PageComment {
     authorOpenId: value.author_open_id,
     authorName: value.author_name,
     content: value.content,
+    mentions: (value.mentions ?? []).map((mention) => ({ openId: mention.open_id, name: mention.name })),
+    images: value.images ?? [],
+    notificationErrors: value.notification_errors,
     todo: value.todo ?? false,
     resolved: value.resolved ?? false,
     createdAt: value.created_at,
@@ -775,6 +784,11 @@ export async function getComments(quarter: string, week: string): Promise<PageCo
   const params = new URLSearchParams({ quarter, week })
   const value = await request<APIPageCommentList>(`/api/biz-okr/comments?${params}`)
   return { quarter: value.quarter, week: value.week, count: value.count, comments: value.comments.map(fromAPIComment) }
+}
+
+export async function getPlanComments(planId: string): Promise<PageCommentList> {
+  const value = await request<APIPageCommentList>(`/api/biz-okr/plans/${encodeURIComponent(planId)}/comments`)
+  return { quarter: value.quarter, planId: value.plan_id, count: value.count, comments: value.comments.map(fromAPIComment) }
 }
 
 function fromAPIFollowUp(value: APIFollowUpItem): FollowUpItem {
@@ -847,8 +861,11 @@ export async function deleteFollowUp(item: FollowUpItem): Promise<void> {
 export async function createComment(input: {
   quarter: string
   week: string
+  sourceTab: string
   parentId?: string
   content: string
+  mentions?: CommentMention[]
+  images?: ImageRef[]
   targetType?: PageComment['targetType']
   targetId?: string
   targetTitle?: string
@@ -863,6 +880,7 @@ export async function createComment(input: {
     body: JSON.stringify({
       quarter: input.quarter,
       week: input.week,
+      source_tab: input.sourceTab,
       parent_id: input.parentId ?? '',
       target_type: input.targetType ?? 'page',
       target_id: input.targetId ?? '',
@@ -873,6 +891,42 @@ export async function createComment(input: {
       selection_prefix: input.selectionPrefix ?? '',
       selection_suffix: input.selectionSuffix ?? '',
       content: input.content,
+      mentions: (input.mentions ?? []).map((mention) => ({ open_id: mention.openId, name: mention.name })),
+      images: input.images ?? [],
+    }),
+  })
+  return fromAPIComment(value)
+}
+
+export async function createPlanComment(planId: string, input: {
+  parentId?: string
+  content: string
+  mentions?: CommentMention[]
+  images?: ImageRef[]
+  targetType?: PageComment['targetType']
+  targetId?: string
+  targetTitle?: string
+  selectedText?: string
+  selectionStart?: number
+  selectionEnd?: number
+  selectionPrefix?: string
+  selectionSuffix?: string
+}): Promise<PageComment> {
+  const value = await request<APIPageComment>(`/api/biz-okr/plans/${encodeURIComponent(planId)}/comments`, {
+    method: 'POST',
+    body: JSON.stringify({
+      parent_id: input.parentId ?? '',
+      target_type: input.targetType ?? 'page',
+      target_id: input.targetId ?? '',
+      target_title: input.targetTitle ?? '',
+      selected_text: input.selectedText ?? '',
+      selection_start: input.selectionStart ?? 0,
+      selection_end: input.selectionEnd ?? 0,
+      selection_prefix: input.selectionPrefix ?? '',
+      selection_suffix: input.selectionSuffix ?? '',
+      content: input.content,
+      mentions: (input.mentions ?? []).map((mention) => ({ open_id: mention.openId, name: mention.name })),
+      images: input.images ?? [],
     }),
   })
   return fromAPIComment(value)
@@ -922,10 +976,13 @@ export async function logout(): Promise<void> {
   await request<{ logged_out: boolean }>('/api/biz-okr/auth/logout', { method: 'POST' })
 }
 
-export async function updateComment(id: string, patch: { content?: string; todo?: boolean; resolved?: boolean }): Promise<PageComment> {
+export async function updateComment(id: string, patch: { content?: string; mentions?: CommentMention[]; images?: ImageRef[]; todo?: boolean; resolved?: boolean }): Promise<PageComment> {
   const value = await request<APIPageComment>(`/api/biz-okr/comments/${encodeURIComponent(id)}`, {
     method: 'PUT',
-    body: JSON.stringify(patch),
+    body: JSON.stringify({
+      ...patch,
+      mentions: patch.mentions?.map((mention) => ({ open_id: mention.openId, name: mention.name })),
+    }),
   })
   return fromAPIComment(value)
 }

@@ -1,11 +1,39 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useBoard } from './board'
 import { PlanBoardProvider, usePlanBoard } from './planStore'
 import { QuarterSelect } from './components/QuarterSelect'
 import { ManagementView } from './components/ManagementView'
 import { WeeklyShareNav } from './components/WeeklyShareNav'
 import { ActivityLogButton } from './components/ActivityLogButton'
+import { CommentDrawer } from './components/CommentDrawer'
+import { CommentInteractionProvider, commentTargetElementId, scrollToCommentSource, type PendingCommentSelection } from './commenting'
+import type { CommentTarget, PageComment } from './types'
 import type { WeeklyShareTab } from './share'
+
+const PLAN_SCROLL_KEY_PREFIX = 'jarvis-okr-plan-scroll'
+
+function planScrollStorageKey(quarter: string, planId: string) {
+  return `${PLAN_SCROLL_KEY_PREFIX}:${quarter}:${planId}`
+}
+
+function readPlanScrollPosition(key: string): number | undefined {
+  try {
+    const saved = window.localStorage.getItem(key)
+    if (saved === null) return undefined
+    const position = Number(saved)
+    return Number.isFinite(position) && position >= 0 ? position : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function savePlanScrollPosition(key: string) {
+  try {
+    window.localStorage.setItem(key, String(window.scrollY))
+  } catch {
+    // 浏览位置只是体验增强，本地存储不可用时不影响 Plan 编辑。
+  }
+}
 
 function SyncNotice() {
   const { syncState, retry } = useBoard()
@@ -48,16 +76,130 @@ function NewPlanPanel({ onClose }: { onClose: () => void }) {
   )
 }
 
-function PlanCanvas({ shared = false, onShareTabChange }: { shared?: boolean; onShareTabChange?: (tab: WeeklyShareTab) => void }) {
+function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }: { initialCommentId?: string; shared?: boolean; onShareTabChange?: (tab: WeeklyShareTab) => void }) {
   const { plan, plans, quarter, syncState, selectPlan, deleteCurrentPlan } = usePlanBoard()
   const [creatingPlan, setCreatingPlan] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [commentsOpen, setCommentsOpen] = useState(Boolean(initialCommentId))
+  const [reviewingComments, setReviewingComments] = useState(false)
+  const [focusedComment, setFocusedComment] = useState<PageComment>()
+  const [commentCount, setCommentCount] = useState(0)
+  const [commentCounts, setCommentCounts] = useState<Record<string, number>>({})
+  const [comments, setComments] = useState<PageComment[]>([])
+  const [commentTarget, setCommentTarget] = useState<CommentTarget>()
+  const [pendingCommentSelection, setPendingCommentSelection] = useState<PendingCommentSelection>()
+  const attemptedScrollKey = useRef('')
+  const readyToSaveScrollKey = useRef('')
   const saving = syncState.kind === 'saving' || syncState.kind === 'loading'
+  const scrollStorageKey = plan ? planScrollStorageKey(quarter, plan.id) : ''
+
+  useEffect(() => {
+    setCommentTarget(undefined)
+    setReviewingComments(false)
+    setFocusedComment(undefined)
+    setPendingCommentSelection(undefined)
+    setComments([])
+    setCommentCount(0)
+    setCommentCounts({})
+    if (!plan && !initialCommentId) setCommentsOpen(false)
+  }, [plan?.id])
+
+  useEffect(() => {
+    const clearPendingSelection = (event: Event) => {
+      const target = event.target
+      if (target instanceof Element && target.closest('[data-comment-selection-trigger]')) return
+      setPendingCommentSelection(undefined)
+    }
+    const clearOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPendingCommentSelection(undefined)
+    }
+    document.addEventListener('pointerdown', clearPendingSelection)
+    document.addEventListener('focusin', clearPendingSelection)
+    document.addEventListener('keydown', clearOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', clearPendingSelection)
+      document.removeEventListener('focusin', clearPendingSelection)
+      document.removeEventListener('keydown', clearOnEscape)
+    }
+  }, [])
+
+  const openComments = (target?: CommentTarget) => {
+    setPendingCommentSelection(undefined)
+    window.getSelection()?.removeAllRanges()
+    setReviewingComments(false)
+    setFocusedComment(undefined)
+    setCommentTarget(target)
+    setCommentsOpen(true)
+  }
+
+  const toggleComments = () => {
+    if (commentsOpen) {
+      setCommentsOpen(false)
+      setReviewingComments(false)
+      setFocusedComment(undefined)
+      return
+    }
+    openComments()
+  }
+
+  useEffect(() => {
+    if (!focusedComment) return
+    const timeout = window.setTimeout(() => scrollToCommentSource(focusedComment), 80)
+    return () => window.clearTimeout(timeout)
+  }, [focusedComment])
+
+  useEffect(() => {
+    if (!scrollStorageKey) return
+    let pendingFrame = 0
+    const savePosition = () => {
+      if (readyToSaveScrollKey.current !== scrollStorageKey) return
+      window.cancelAnimationFrame(pendingFrame)
+      pendingFrame = window.requestAnimationFrame(() => savePlanScrollPosition(scrollStorageKey))
+    }
+    const savePositionNow = () => {
+      if (readyToSaveScrollKey.current === scrollStorageKey) savePlanScrollPosition(scrollStorageKey)
+    }
+    window.addEventListener('scroll', savePosition, { passive: true })
+    window.addEventListener('pagehide', savePositionNow)
+    return () => {
+      window.cancelAnimationFrame(pendingFrame)
+      window.removeEventListener('scroll', savePosition)
+      window.removeEventListener('pagehide', savePositionNow)
+    }
+  }, [scrollStorageKey])
+
+  useEffect(() => {
+    if (!scrollStorageKey || saving || attemptedScrollKey.current === scrollStorageKey) return
+    attemptedScrollKey.current = scrollStorageKey
+    if (initialCommentId) {
+      readyToSaveScrollKey.current = scrollStorageKey
+      return
+    }
+    const position = readPlanScrollPosition(scrollStorageKey)
+    if (position === undefined) {
+      readyToSaveScrollKey.current = scrollStorageKey
+      return
+    }
+    let secondFrame = 0
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        window.scrollTo({ top: position, behavior: 'auto' })
+        readyToSaveScrollKey.current = scrollStorageKey
+      })
+    })
+    return () => {
+      window.cancelAnimationFrame(firstFrame)
+      window.cancelAnimationFrame(secondFrame)
+      if (readyToSaveScrollKey.current !== scrollStorageKey && attemptedScrollKey.current === scrollStorageKey) {
+        attemptedScrollKey.current = ''
+      }
+    }
+  }, [initialCommentId, saving, scrollStorageKey])
 
   return (
     <>
       <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex min-h-14 max-w-[1580px] flex-wrap items-center gap-3 px-4 py-2 sm:px-6 lg:px-8">
+        <div className={`mx-auto flex min-h-14 max-w-[1580px] flex-wrap items-center gap-3 px-4 py-2 transition-[padding] sm:px-6 lg:px-8 ${commentsOpen ? 'lg:pr-[420px]' : ''}`}>
           <span className="flex size-8 items-center justify-center rounded-lg bg-emerald-600 text-xs font-semibold text-white shadow-sm">P</span>
           <div className="leading-tight">
             <h1 className="text-[14px] font-semibold tracking-tight text-slate-900">Emily · Biz OKR Plan</h1>
@@ -72,12 +214,22 @@ function PlanCanvas({ shared = false, onShareTabChange }: { shared?: boolean; on
               {plans.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
             </select>
             <ActivityLogButton surface="plan" quarter={quarter} planId={plan?.id} disabled={!plan} />
+            <button
+              type="button"
+              disabled={!plan}
+              onClick={toggleComments}
+              aria-label={commentsOpen ? '关闭评论' : '打开全部评论'}
+              className={`relative flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[10px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${commentsOpen ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-200 hover:text-indigo-600'}`}
+            >
+              <span aria-hidden>💬</span><span>评论</span>
+              {commentCount > 0 && <span className="min-w-4 rounded-full bg-indigo-600 px-1 text-center text-[9px] leading-4 text-white">{commentCount}</span>}
+            </button>
             <button type="button" onClick={() => { setConfirmDelete(false); setCreatingPlan((value) => !value) }} className="h-8 rounded-lg bg-emerald-600 px-3 text-[10px] font-medium text-white hover:bg-emerald-700">新建 Plan</button>
             <button type="button" disabled={!plan || saving} onClick={() => { setCreatingPlan(false); setConfirmDelete(true) }} className="h-8 rounded-lg border border-red-200 bg-red-50 px-3 text-[10px] font-medium text-red-700 hover:bg-red-100 disabled:opacity-40">删除 Plan</button>
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-[1580px] px-4 py-3 sm:px-6 sm:py-4 lg:px-8">
+      <main id={plan ? commentTargetElementId({ type: 'page', id: plan.id }) : undefined} className={`mx-auto max-w-[1580px] px-4 py-3 transition-[padding] sm:px-6 sm:py-4 lg:px-8 ${commentsOpen ? 'lg:pr-[420px]' : ''}`}>
         {creatingPlan && <NewPlanPanel onClose={() => setCreatingPlan(false)} />}
         {confirmDelete && plan && (
           <section className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3">
@@ -91,16 +243,23 @@ function PlanCanvas({ shared = false, onShareTabChange }: { shared?: boolean; on
         )}
         <SyncNotice />
         {plan ? (
-          <div className={`transition-opacity ${saving ? 'pointer-events-none opacity-55' : ''}`}>
-            <ManagementView
-              title=""
-              subtitle=""
-              showTags
-              deleteKrWarning="只删除这个 Plan 草稿里的 KR"
-				hierarchyNavigation
-				hierarchyScopeKey={`${quarter}:${plan.id}`}
-            />
-          </div>
+          <CommentInteractionProvider value={{ enabled: true, triggerMode: 'surface', selected: commentTarget, focused: focusedComment, comments, counts: commentCounts, pendingSelection: pendingCommentSelection, setPendingSelection: setPendingCommentSelection, select: openComments }}>
+            <div className={`transition-opacity ${saving ? 'pointer-events-none opacity-55' : ''}`}>
+              <ManagementView
+                title=""
+                subtitle=""
+                showTags
+                deleteKrWarning="只删除这个 Plan 草稿里的 KR"
+				  hierarchyNavigation
+				  hierarchyScopeKey={`${quarter}:${plan.id}`}
+				  cardHierarchy
+				  defaultExpandDetails
+				  hideStructuralFields
+				  compactEmptyPointGroups
+				  objectiveDragReorder
+              />
+            </div>
+          </CommentInteractionProvider>
         ) : (
           <section className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
             <div className="text-sm font-semibold text-slate-700">当前季度暂无 Biz OKR Plan</div>
@@ -108,24 +267,29 @@ function PlanCanvas({ shared = false, onShareTabChange }: { shared?: boolean; on
           </section>
         )}
       </main>
+      {plan && <CommentDrawer open={commentsOpen} reviewEnabled reviewing={reviewingComments} quarter={quarter} planId={plan.id} sourceTab="okr-plan" scopeLabel={plan.title} objectives={plan.objectives} target={commentTarget} focusCommentId={initialCommentId} onStartReview={() => { setCommentTarget(undefined); setReviewingComments(true) }} onShowAll={() => { setReviewingComments(false); setFocusedComment(undefined); setCommentTarget(undefined) }} onClose={() => { setCommentsOpen(false); setReviewingComments(false); setFocusedComment(undefined) }} onFocusCommentChange={setFocusedComment} onCountChange={setCommentCount} onCountsChange={setCommentCounts} onCommentsChange={setComments} />}
     </>
   )
 }
 
 export default function PlanApp({
   initialQuarter = '',
+  initialPlanId = '',
+  initialCommentId = '',
   onQuarterChange,
   shared = false,
   onShareTabChange,
 }: {
   initialQuarter?: string
+  initialPlanId?: string
+  initialCommentId?: string
   onQuarterChange?: (quarter: string) => void
   shared?: boolean
   onShareTabChange?: (tab: WeeklyShareTab) => void
 }) {
   return (
-    <PlanBoardProvider initialQuarter={initialQuarter} onQuarterChange={onQuarterChange}>
-      <PlanCanvas shared={shared} onShareTabChange={onShareTabChange} />
+    <PlanBoardProvider initialQuarter={initialQuarter} initialPlanId={initialPlanId} onQuarterChange={onQuarterChange}>
+      <PlanCanvas initialCommentId={initialCommentId} shared={shared} onShareTabChange={onShareTabChange} />
     </PlanBoardProvider>
   )
 }

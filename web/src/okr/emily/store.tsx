@@ -129,12 +129,14 @@ export function BoardProvider({
   surface = 'okr',
   weekTemplateKey = 'classic',
   initialQuarter = '',
+  initialWeek = '',
   onQuarterChange,
 }: {
   children: ReactNode
   surface?: BoardSurface
   weekTemplateKey?: WeekTemplateKey
   initialQuarter?: string
+  initialWeek?: string
   onQuarterChange?: (quarter: string) => void
 }) {
   const [objectives, setObjectives] = useState<Objective[]>([])
@@ -292,7 +294,7 @@ export function BoardProvider({
 
   useEffect(() => {
     const activeTimers = timers.current
-    const startupTimer = window.setTimeout(() => void loadRemote(), 0)
+    const startupTimer = window.setTimeout(() => void loadRemote(initialWeek, initialQuarter), 0)
     return () => {
       window.clearTimeout(startupTimer)
       for (const timer of activeTimers.values()) window.clearTimeout(timer)
@@ -464,6 +466,23 @@ export function BoardProvider({
       setSyncState({ kind: 'saving', message: '正在调整顺序…' })
       try {
         const order = await reorderObjectives(quarterRef.current, swappedOrder(objectivesRef.current.map((objective) => objective.id), id, targetId))
+        const byId = new Map(objectivesRef.current.map((objective) => [objective.id, objective]))
+        publish(order.map((objectiveId) => {
+          const objective = byId.get(objectiveId)
+          if (!objective) throw new Error('顺序里出现了页面上没有的目标，请重新载入。')
+          return objective
+        }))
+        setSyncState({ kind: 'saved', message: '顺序已保存' })
+      } catch (error) {
+        setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '调整顺序失败。' })
+        throw error
+      }
+    },
+
+    reorderObjectives: async (ids) => {
+      setSyncState({ kind: 'saving', message: '正在调整顺序…' })
+      try {
+        const order = await reorderObjectives(quarterRef.current, ids)
         const byId = new Map(objectivesRef.current.map((objective) => [objective.id, objective]))
         publish(order.map((objectiveId) => {
           const objective = byId.get(objectiveId)
