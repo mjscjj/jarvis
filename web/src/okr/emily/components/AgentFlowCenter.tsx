@@ -102,7 +102,7 @@ export function AgentFlowCenter({ weeklyEnabled, quarter }: { weeklyEnabled: boo
               <textarea value={draft} onChange={(event) => setDrafts((current) => ({ ...current, [selected.key]: event.target.value }))} spellCheck={false} className="min-h-[520px] flex-1 resize-y rounded-xl border border-slate-200 bg-slate-50/40 p-4 font-mono text-[11px] leading-5 text-slate-700 outline-none focus:border-cyan-300 focus:bg-white" />
               <div className="mt-3 rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-2 text-[10px] leading-5 text-slate-500">固定行动只保存行动标识、Prompt key 和执行时间；范围、对象、产出与验收由这份 Prompt 完整定义。审批、状态和回执继续走 Jarvis 通用能力。</div>
             </div>
-          </div> : <div className="py-16 text-center text-xs text-slate-400">没有注册的 Biz OKR Agent Prompt</div>}
+          </div> : <div className="py-16 text-center text-xs text-slate-400">没有注册的 OKR Agent Prompt</div>}
         </div>}
       </section>
     </div>

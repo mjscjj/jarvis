@@ -1,6 +1,6 @@
 ---
 name: okr-agent-orchestrator
-description: 根据 Biz OKR 中可编辑的业务 Prompt，动态组合 Jarvis、飞书、Meego 与 OKR/周报原子工具完成固定 Agent 行动或一次性目标。用于 KR 标签维护与批量打标、季度 OKR 草稿、区域或研发对齐、Report A/B/C、周报催填、进展巡检和 OKR Preview 评审。
+description: 根据 OKR 中可编辑的业务 Prompt，动态组合 Jarvis、飞书、Meego 与 OKR/周报原子工具完成固定 Agent 行动或一次性目标。用于 KR 标签维护与批量打标、季度 OKR 草稿、区域或研发对齐、Report A/B/C、周报催填、进展巡检和 OKR Preview 评审。
 module: biz-okr
 ---
 
@@ -37,7 +37,7 @@ ScheduledTask 触发时，`action_key` 只标识产品里的固定行动，`prom
 - 评论协作：`scripts/biz-okr-tools comments|create-comment|update-comment|delete-comment`；待跟进事项评论使用 `target_type=follow_up` 和事项稳定 ID，创建前先回读事项并保持季度、周次一致；
 - Review 待跟进事项：`follow-ups|get-follow-up|create-follow-up|update-follow-up|delete-follow-up`；状态只使用 `not_started|in_progress|done|abandoned`，分别表示未开始、进行中、已完成和废弃；Owner 使用已解析的飞书 `open_id + name`，写前回读条目版本；
 - Meego 差异：`meego-preview|point-meego-preview|record-meego-observation|confirm-meego-progress`；
-- 催填与材料：`reminder-preview|reminder-batches|create-reminder-batch|create-feishu-document`；
+- 催填按绑定 Prompt 读取目标周与上一有效周的完整 Biz Board；材料导出使用 `create-feishu-document`；
 - 已确认关系、Message、Clue、Fact、Page 和调度：`jarvis-tools`；
 - 飞书文档、表格、消息：先读对应 `lark-*` Skill，再用 `lark-cli`；
 - Meego：先用 `bytedcli --json --all-help` 发现当前版本的查询或写入命令。

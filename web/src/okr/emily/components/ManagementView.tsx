@@ -264,7 +264,7 @@ function ObjectiveEditorHeader({
 }
 
 export function ManagementView({
-	title = 'Biz OKR 管理',
+	title = 'OKR 管理',
 	subtitle = '标签可标在整条 KR，也可下钻到策略/产品要点；长标签完整换行展示',
 	showTags = true,
 	deleteKrWarning = '连同各周进展一起删除',

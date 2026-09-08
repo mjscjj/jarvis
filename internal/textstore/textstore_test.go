@@ -105,6 +105,33 @@ func TestOKRWeeklyReminderUsesBroadcastDelivery(t *testing.T) {
 	}
 }
 
+func TestWeeklyReportReminderSkillUsesTwoBoardsAndFinalPrompt(t *testing.T) {
+	content, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "weekly-report-reminder", "SKILL.md"))
+	if err != nil {
+		t.Fatalf("read weekly report reminder skill: %v", err)
+	}
+	skill := string(content)
+	for _, want := range []string{
+		"okr_agent_weekly_reminder",
+		"board --quarter '<quarter>' --week '<week>'",
+		"board --quarter '<quarter>' --week '<previous_week>'",
+		"`previous_week`",
+		"missing_progress_section",
+		"missing_core_section",
+		"missing_score_section",
+		"unchanged_section",
+	} {
+		if !strings.Contains(skill, want) {
+			t.Fatalf("weekly report reminder skill missing current contract %q:\n%s", want, skill)
+		}
+	}
+	for _, obsolete := range []string{"reminder-preview", "create-reminder-batch", "reminder-batches", "missing_items"} {
+		if strings.Contains(skill, obsolete) {
+			t.Fatalf("weekly report reminder skill still contains obsolete contract %q:\n%s", obsolete, skill)
+		}
+	}
+}
+
 func TestOKRAgentDefinitionsAreEditableMarkdown(t *testing.T) {
 	service := newTestService(t)
 	want := []string{

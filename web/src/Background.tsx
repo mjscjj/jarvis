@@ -1912,7 +1912,7 @@ export function Settings() {
                 <AppModules
                   moduleKeys={['biz-okr']}
                   title="业务应用"
-                  description="Biz OKR 提供业务打标、Plan、Review、周报与自动化。"
+                  description="OKR 提供业务打标、Plan、Review、周报与自动化。"
                 />
                 <SkillsPanel />
               </Space>
