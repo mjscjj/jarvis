@@ -9,7 +9,7 @@ import { uid } from '../board'
 import { useBoard } from '../board'
 import { commentTargetFromThread, commentTargetKey } from '../comments'
 import { useCommentInteraction } from '../commenting'
-import { imageFilesFromClipboard } from '../imagePaste'
+import { imageFilesFromClipboard, prepareImageForUpload } from '../imagePaste'
 import { DOT_CLASS, TONE_CLASS, TONE_TEXT_CLASS, statusOf } from '../template'
 import type { CommentTarget, DocLink, ImageRef, Status } from '../types'
 
@@ -349,7 +349,7 @@ export function usePastedImageUpload(onUploaded: (images: ImageRef[]) => void, d
     setUploadError('')
     setFailedFiles([])
     try {
-      const results = await Promise.allSettled(files.map(uploadImage))
+      const results = await Promise.allSettled(files.map(async (file) => uploadImage(await prepareImageForUpload(file))))
       const uploaded = results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : [])
       const failed = files.filter((_, index) => results[index]?.status === 'rejected')
       if (uploaded.length > 0) onUploaded(uploaded)
@@ -533,7 +533,7 @@ export function Images({
           {paste.uploading ? '上传中…' : focused ? '⌘V 粘贴截图' : '+ 图'}
         </span>}
         {!readOnly && pasteEnabled && paste.uploadError && <span className="text-[11px] text-red-500" title={paste.uploadError}>
-          上传失败{paste.canRetry && <button type="button" onClick={paste.retry} className="ml-1 underline">重试</button>}
+          {paste.uploadError}{paste.canRetry && <button type="button" onClick={paste.retry} className="ml-1 underline">重试</button>}
         </span>}
       </span>
 
