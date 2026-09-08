@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { canEditFollowUpStatus, FOLLOW_UP_STATUS_OPTIONS, isClosedFollowUp, sortFollowUpsByAssignDate } from '../src/okr/emily/followUps.ts'
+import { canEditFollowUpStatus, FOLLOW_UP_STATUS_CLASS, FOLLOW_UP_STATUS_OPTIONS, isClosedFollowUp, sortFollowUpsByAssignDate } from '../src/okr/emily/followUps.ts'
 
 test('follow-up statuses include abandoned and use the Review labels', () => {
   assert.deepEqual(FOLLOW_UP_STATUS_OPTIONS, [
@@ -14,6 +14,7 @@ test('follow-up statuses include abandoned and use the Review labels', () => {
   assert.equal(isClosedFollowUp('in_progress'), false)
   assert.equal(isClosedFollowUp('done'), true)
   assert.equal(isClosedFollowUp('abandoned'), true)
+  assert.equal(new Set(Object.values(FOLLOW_UP_STATUS_CLASS)).size, FOLLOW_UP_STATUS_OPTIONS.length)
 })
 
 test('Review meeting keeps the row read-only while allowing Todo status edits', () => {

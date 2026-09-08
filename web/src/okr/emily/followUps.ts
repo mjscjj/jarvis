@@ -7,6 +7,13 @@ export const FOLLOW_UP_STATUS_OPTIONS: ReadonlyArray<{ value: FollowUpStatus; la
   { value: 'abandoned', label: '废弃' },
 ]
 
+export const FOLLOW_UP_STATUS_CLASS: Record<FollowUpStatus, string> = {
+  not_started: 'border-slate-200 bg-slate-50 text-slate-600',
+  in_progress: 'border-blue-200 bg-blue-50 text-blue-700',
+  done: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  abandoned: 'border-amber-200 bg-amber-50 text-amber-700',
+}
+
 export function isClosedFollowUp(status: FollowUpStatus) {
   return status === 'done' || status === 'abandoned'
 }

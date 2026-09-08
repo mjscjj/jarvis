@@ -458,12 +458,12 @@ function ResizableImage({
       title={readOnly ? image.name : '拖右下角改大小'}
       className={`group/img relative inline-block max-w-full min-w-12 overflow-hidden rounded border border-slate-200 align-top ${readOnly ? '' : 'resize-x'}`}
     >
-      <img src={image.url} alt={image.name} className="block w-full" />
+      <img src={image.url} alt={image.name} onClick={onZoom} className="block w-full cursor-zoom-in" />
       <button
         type="button"
         onClick={onZoom}
         title="查看原图"
-        className="absolute top-0.5 left-0.5 hidden size-4 items-center justify-center rounded bg-slate-900/55 text-[9px] text-white group-hover/img:flex"
+        className="absolute top-1 left-1 hidden size-7 items-center justify-center rounded-md bg-slate-900/65 text-sm text-white shadow-sm hover:bg-slate-900/80 group-hover/img:flex"
       >
         ⤢
       </button>
@@ -504,6 +504,8 @@ export function Images({
   pasteEnabled?: boolean
 }) {
   const [zoom, setZoom] = useState<ImageRef | null>(null)
+  const [zoomScale, setZoomScale] = useState(1)
+  const [fitWidth, setFitWidth] = useState(0)
   const [focused, setFocused] = useState(false)
   const paste = usePastedImageUpload((uploaded) => onChange([...value, ...uploaded]), readOnly || !pasteEnabled)
 
@@ -512,6 +514,12 @@ export function Images({
     const [image] = next.splice(from, 1)
     next.splice(to, 0, image)
     onChange(next)
+  }
+
+  const openZoom = (image: ImageRef) => {
+    setZoom(image)
+    setZoomScale(1)
+    setFitWidth(0)
   }
 
   return (
@@ -533,7 +541,7 @@ export function Images({
             onRemove={() => onChange(value.filter((v) => v.id !== img.id))}
             onMoveLeft={index > 0 ? () => move(index, index - 1) : undefined}
             onMoveRight={index < value.length - 1 ? () => move(index, index + 1) : undefined}
-            onZoom={() => setZoom(img)}
+            onZoom={() => openZoom(img)}
             readOnly={readOnly}
             maxDisplayWidth={maxDisplayWidth}
           />
@@ -555,9 +563,33 @@ export function Images({
       {zoom && (
         <div
           onClick={() => setZoom(null)}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 p-8"
+          className="fixed inset-0 z-50 overflow-auto bg-slate-950/80 p-8 pt-20"
         >
-          <img src={zoom.url} alt={zoom.name} className="max-h-full max-w-full rounded shadow-2xl" />
+          <div onClick={(event) => event.stopPropagation()} className="fixed top-4 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-1 rounded-xl border border-white/15 bg-slate-900/90 p-1.5 text-white shadow-xl backdrop-blur">
+            <button type="button" aria-label="缩小图片" title="缩小" disabled={zoomScale <= 0.5} onClick={() => setZoomScale((scale) => Math.max(0.5, scale - 0.25))} className="flex size-8 items-center justify-center rounded-lg text-lg hover:bg-white/10 disabled:opacity-30">−</button>
+            <span className="min-w-12 text-center text-[11px] tabular-nums">{Math.round(zoomScale * 100)}%</span>
+            <button type="button" aria-label="放大图片" title="放大" disabled={zoomScale >= 3} onClick={() => setZoomScale((scale) => Math.min(3, scale + 0.25))} className="flex size-8 items-center justify-center rounded-lg text-lg hover:bg-white/10 disabled:opacity-30">＋</button>
+            <button type="button" onClick={() => setZoomScale(1)} className="h-8 rounded-lg px-2.5 text-[11px] hover:bg-white/10">适应屏幕</button>
+            <span className="mx-0.5 h-5 w-px bg-white/15" />
+            <button type="button" aria-label="关闭图片预览" title="关闭" onClick={() => setZoom(null)} className="flex size-8 items-center justify-center rounded-lg text-lg hover:bg-white/10">×</button>
+          </div>
+          <div className="flex min-h-full min-w-full items-center justify-center">
+            <img
+              src={zoom.url}
+              alt={zoom.name}
+              onClick={(event) => event.stopPropagation()}
+              onLoad={(event) => {
+                if (fitWidth > 0) return
+                const image = event.currentTarget
+                const availableWidth = Math.max(320, window.innerWidth - 64)
+                const availableHeight = Math.max(240, window.innerHeight - 128)
+                const fit = Math.min(1, availableWidth / image.naturalWidth, availableHeight / image.naturalHeight)
+                setFitWidth(Math.max(1, Math.round(image.naturalWidth * fit)))
+              }}
+              style={fitWidth > 0 ? { width: fitWidth * zoomScale } : undefined}
+              className="max-w-none flex-none rounded shadow-2xl"
+            />
+          </div>
         </div>
       )}
     </>

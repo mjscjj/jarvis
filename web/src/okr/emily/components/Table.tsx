@@ -569,6 +569,7 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
 	const { objectives, templateKey } = useBoard()
 	const showReview = showProgress && isReviewTemplate(templateKey)
 	const [closed, setClosed] = useState<Set<string>>(new Set())
+	const [contentQuery, setContentQuery] = useState('')
 	const [ownerFilters, setOwnerFilters] = useState<string[]>([])
 	const [activeBusinessValue, setActiveBusinessValue] = useState<string>()
 	const [activePriorityValue, setActivePriorityValue] = useState<string>()
@@ -584,9 +585,23 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
 		return owner ? [owner] : []
 	}), [ownerFilters, ownersByKey])
 	const hasOwnerFilter = ownerFilters.length > 0
+	const normalizedQuery = contentQuery.trim().toLocaleLowerCase()
 	const visibleObjectives = useMemo(() => objectives
-		.map((objective) => ({ ...objective, krs: objective.krs.filter((kr) => krHasAnyOwner(kr, selectedOwners)) }))
-		.filter((objective) => !hasOwnerFilter || objective.krs.length > 0), [hasOwnerFilter, objectives, selectedOwners])
+		.map((objective) => ({
+			...objective,
+			krs: objective.krs.filter((kr) => {
+				if (!krHasAnyOwner(kr, selectedOwners)) return false
+				if (!normalizedQuery || objective.title.toLocaleLowerCase().includes(normalizedQuery)) return true
+				const content = [
+					kr.title,
+					kr.metricNote,
+					...kr.metrics.map((metric) => metric.text),
+					...kr.points.flatMap((point) => [point.title, ...point.entries.map((entry) => entry.text), ...(point.previousEntries ?? []).map((entry) => entry.text)]),
+				].join('\n').toLocaleLowerCase()
+				return content.includes(normalizedQuery)
+			}),
+		}))
+		.filter((objective) => (!hasOwnerFilter && !normalizedQuery) || objective.krs.length > 0), [hasOwnerFilter, normalizedQuery, objectives, selectedOwners])
 	const navigation = useMemo(() => buildKRHierarchy(visibleObjectives), [visibleObjectives])
 	const overview = activeBusinessValue === undefined
 	const allBusiness = useMemo(() => buildAllBusinessNavigation(navigation), [navigation])
@@ -620,13 +635,11 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
     setClosed(collapseAllIds(activeObjective ? [activeObjective] : []))
   }, [activeObjective?.id, collapsedToKR])
 
-  return (
-    <div className={readOnly ? 'kr-table-readonly' : ''}>
-      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
-			{showReview && <PreviewReviewButton target={{ kind: 'all', title: '全部 OKR' }} label="AI评审" className="px-3" />}
-			<span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] text-slate-400">共 {totalKRCount} 条 KR{hasOwnerFilter ? `，已选 ${ownerFilters.length} 人后 ${visibleKRCount} 条` : ''}，当前方向 {activeKRCount} 条</span>
-		<span className="ml-auto" />
-		<OwnerFilterPicker
+	  return (
+	    <div className={readOnly ? 'kr-table-readonly' : ''}>
+	      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+			<input value={contentQuery} onChange={(event) => { setContentQuery(event.target.value); setActiveBusinessValue(undefined); setActivePriorityValue(undefined); setActiveObjectiveId('') }} aria-label="搜索 OKR 内容" placeholder="搜索 O / KR / 进展内容" className="h-7 min-w-48 rounded-md border border-slate-200 bg-white px-2.5 text-[10px] text-slate-600 outline-none transition-colors placeholder:text-slate-300 focus:border-blue-300 focus:ring-2 focus:ring-blue-50 sm:w-60" />
+			<OwnerFilterPicker
 			options={owners}
 			ownerCounts={ownerKRCounts}
 			selectedKeys={ownerFilters}
@@ -636,13 +649,14 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
 				setActivePriorityValue(undefined)
 				setActiveObjectiveId('')
 			}}
-		/>
-        <span className="font-medium text-slate-500">层级</span>
-        <div className="inline-flex overflow-hidden rounded-md border border-slate-200 bg-white">
-          <button type="button" onClick={() => setClosed(new Set())} className="px-2.5 py-1 text-slate-500 hover:bg-slate-50 hover:text-slate-700">全部展开</button>
-          <button type="button" onClick={collapseAll} className="border-l border-slate-200 px-2.5 py-1 text-slate-500 hover:bg-slate-50 hover:text-slate-700">折叠到 KR</button>
-        </div>
-      </div>
+			/>
+	        <div className="inline-flex overflow-hidden rounded-md border border-slate-200 bg-white">
+	          <button type="button" onClick={() => setClosed(new Set())} className="px-2.5 py-1 text-slate-500 hover:bg-slate-50 hover:text-slate-700">全部展开</button>
+	          <button type="button" onClick={collapseAll} className="border-l border-slate-200 px-2.5 py-1 text-slate-500 hover:bg-slate-50 hover:text-slate-700">折叠到 KR</button>
+	        </div>
+			<span className="ml-auto rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] text-slate-400">共 {totalKRCount} 条 KR{hasOwnerFilter || normalizedQuery ? `，筛选后 ${visibleKRCount} 条` : ''}，当前方向 {activeKRCount} 条</span>
+			{showReview && <PreviewReviewButton target={{ kind: 'all', title: '全部 OKR' }} label="AI评审" className="px-3" />}
+	      </div>
 		{showReview && <PreviewReviewPanel target={{ kind: 'all', title: '全部 OKR' }} className="mb-3" />}
 		<HierarchyNav
 			navigation={navigation}
