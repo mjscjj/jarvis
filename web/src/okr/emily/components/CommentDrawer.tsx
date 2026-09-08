@@ -313,6 +313,7 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [draft, setDraft] = useState<CommentDraft>({ content: '', mentions: [] })
+  const [draftImages, setDraftImages] = useState<ImageRef[]>([])
   const [error, setError] = useState('')
   const [navigationNotice, setNavigationNotice] = useState('')
   const [reviewCommentId, setReviewCommentId] = useState('')
@@ -346,7 +347,10 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
     publishSummary([])
     void load()
   }, [load, publishSummary])
-  useEffect(() => { setDraft({ content: '', mentions: [] }) }, [target?.id, target?.selection?.end, target?.selection?.start, target?.selection?.text, target?.type])
+  useEffect(() => {
+    setDraft({ content: '', mentions: [] })
+    setDraftImages([])
+  }, [target?.id, target?.selection?.end, target?.selection?.start, target?.selection?.text, target?.type])
 
   useEffect(() => {
     if (!loading) publishSummary(comments)
@@ -390,7 +394,7 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
 
   const addRoot = async () => {
     const content = draft.content.trim()
-    if (!content || saving) return
+    if ((!content && draftImages.length === 0) || saving) return
     setSaving(true)
     setError('')
     const activeTarget = target ?? (planId
@@ -400,6 +404,7 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
       const input = {
         content,
         mentions: draft.mentions,
+        images: draftImages,
         targetType: activeTarget.type,
         targetId: activeTarget.id,
         targetTitle: activeTarget.title,
@@ -412,6 +417,7 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
       const created = planId ? await createPlanComment(planId, input) : await createComment({ quarter, week, sourceTab, ...input })
       setComments((current) => [...current, created])
       setDraft({ content: '', mentions: [] })
+      setDraftImages([])
       if (notificationErrorText(created)) setError(`评论已保存，但${notificationErrorText(created)}`)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '评论发布失败')
@@ -420,16 +426,16 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
     }
   }
 
-  const createReply = useCallback((parentId: string, content: string, mentions: CommentMention[]) => (
-    planId ? createPlanComment(planId, { parentId, content, mentions }) : createComment({ quarter, week, sourceTab, parentId, content, mentions })
+  const createReply = useCallback((parentId: string, content: string, mentions: CommentMention[], images: ImageRef[]) => (
+    planId ? createPlanComment(planId, { parentId, content, mentions, images }) : createComment({ quarter, week, sourceTab, parentId, content, mentions, images })
   ), [planId, quarter, sourceTab, week])
 
   const addReply = (rootId: string, reply: PageComment) => {
     setComments((current) => current.map((comment) => comment.id === rootId ? { ...comment, replies: [...comment.replies, reply] } : comment))
   }
 
-  const editExistingComment = async (id: string, content: string, mentions: CommentMention[]) => {
-    const updated = await updateComment(id, { content, mentions })
+  const editExistingComment = async (id: string, content: string, mentions: CommentMention[], images: ImageRef[]) => {
+    const updated = await updateComment(id, { content, mentions, images })
     setComments((current) => current.map((comment) => {
       if (comment.id === id) return { ...updated, replies: comment.replies }
       return { ...comment, replies: comment.replies.map((reply) => reply.id === id ? { ...updated, replies: [] } : reply) }
@@ -512,10 +518,10 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
         {!reviewing && <div className="shrink-0 border-b border-slate-100 bg-slate-50/60 p-3">
           {target && <div className="mb-2"><CommentSourceCard source={target} context={targetContext} onNavigate={navigateToTargetSource} /></div>}
           <div className="rounded-xl border border-slate-200 bg-white p-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-            <CommentMentionInput value={draft} objectives={objectives} onChange={setDraft} onSubmitShortcut={() => void addRoot()} placeholder={target ? '针对这段内容发表评论，输入 @ 选择提醒人…' : planId ? '对当前 Plan 发表评论，输入 @ 选择提醒人…' : '对本周页面发表评论，输入 @ 选择提醒人…'} rows={3} />
+            <CommentEditorFields value={draft} images={draftImages} objectives={objectives} onChange={setDraft} onImagesChange={setDraftImages} onSubmitShortcut={() => void addRoot()} placeholder={target ? '针对这段内容发表评论，输入 @ 选择提醒人…' : planId ? '对当前 Plan 发表评论，输入 @ 选择提醒人…' : '对本周页面发表评论，输入 @ 选择提醒人…'} rows={3} />
             <div className="mt-1 flex items-center gap-2">
               <span className="text-[10px] text-slate-300">Enter 发布 · Shift+Enter 换行</span>
-              <button type="button" onClick={() => void addRoot()} disabled={!draft.content.trim() || saving} className="ml-auto rounded-md bg-indigo-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300">{saving ? '发布中…' : '发布评论'}</button>
+              <button type="button" onClick={() => void addRoot()} disabled={(!draft.content.trim() && draftImages.length === 0) || saving} className="ml-auto rounded-md bg-indigo-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300">{saving ? '发布中…' : '发布评论'}</button>
             </div>
           </div>
           {error && <div className="mt-2 text-[11px] text-red-600">{error}</div>}
