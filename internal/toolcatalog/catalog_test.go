@@ -16,15 +16,18 @@ func TestEveryStageExposesTheSameMachineCapabilities(t *testing.T) {
 			t.Fatalf("Block(%q): %v", stage, err)
 		}
 		for _, required := range []string{
-			"同一套工具能力", "参数、环境和权限硬校验",
+			"同一套工具能力", "参数和运行环境校验",
 			"query-messages", "get-message", "get-todo-event", "get-task-event", "query-captured-resources", "get-captured-resource",
 			"list-facts", "get-page", "update-page", "list-pages", "yield-until", "JARVIS_TASK_ID",
 			"get-shared-memory", "append-shared-memory", "set-shared-memory", "2000",
-			"JARVIS_AGENT_STAGE=proactive",
+			"JARVIS_AGENT_STAGE=proactive", "bytedcli --json <领域> --help", "不要加载全量帮助",
 		} {
 			if !strings.Contains(block, required) {
 				t.Fatalf("Block(%q) missing %q:\n%s", stage, required, block)
 			}
+		}
+		if strings.Contains(block, "--all-help") {
+			t.Fatalf("Block(%q) recommends eager bytedcli help:\n%s", stage, block)
 		}
 	}
 }

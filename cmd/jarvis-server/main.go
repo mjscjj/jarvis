@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"jarvis/internal/agentconfig"
+	"jarvis/internal/agentenv"
 	"jarvis/internal/agentidentity"
 	"jarvis/internal/api"
 	"jarvis/internal/ark"
@@ -114,6 +115,7 @@ func main() {
 	if err != nil {
 		fatalf("resolve config path failed: %v", err)
 	}
+	runtimeRoot := filepath.Dir(filepath.Dir(configPathAbsolute))
 	textFileService, err := textstore.NewService(filepath.Join(filepath.Dir(configPathAbsolute), "prompts"))
 	if err != nil {
 		fatalf("initialize text file service failed: %v", err)
@@ -174,6 +176,12 @@ func main() {
 		infof("sqlite schema migration completed")
 		return
 	}
+	if err := agentenv.ConfigureTools(runtimeRoot); err != nil {
+		fatalf("configure Agent tools failed: %v", err)
+	}
+	if err := os.Setenv("JARVIS_TIMEZONE", cfg.Capture.Timezone); err != nil {
+		fatalf("configure Agent timezone failed: %v", err)
+	}
 	progressService, err := progress.NewService(db)
 	if err != nil {
 		fatalf("initialize progress service failed: %v", err)
@@ -226,7 +234,7 @@ func main() {
 		Model:           cfg.FactEngine.Model,
 		ReasoningEffort: cfg.FactEngine.ReasoningEffort,
 		Sandbox:         cfg.FactEngine.Sandbox,
-		WorkspaceRoot:   filepath.Dir(filepath.Dir(configPathAbsolute)),
+		WorkspaceRoot:   runtimeRoot,
 		Timeout:         time.Duration(cfg.FactEngine.TimeoutSec) * time.Second,
 	})
 	if err != nil {
@@ -305,7 +313,7 @@ func main() {
 		Prompts:       runtimePrompts,
 		SharedMemory:  sharedMemoryService,
 		Sandbox:       cfg.Proactive.Sandbox,
-		WorkspaceRoot: filepath.Dir(filepath.Dir(configPathAbsolute)),
+		WorkspaceRoot: runtimeRoot,
 		Location:      location,
 		Engine:        cfg.Proactive.Bin,
 		Model:         cfg.Proactive.Model,
@@ -324,7 +332,7 @@ func main() {
 		Runner:        meetingSweepRunner,
 		Prompts:       runtimePrompts,
 		Sandbox:       cfg.MeetingSweep.Sandbox,
-		WorkspaceRoot: filepath.Dir(filepath.Dir(configPathAbsolute)),
+		WorkspaceRoot: runtimeRoot,
 		Location:      location,
 		Engine:        cfg.MeetingSweep.Bin,
 		Model:         cfg.MeetingSweep.Model,
@@ -343,13 +351,13 @@ func main() {
 		Runner:        morningBriefRunner,
 		Prompts:       runtimePrompts,
 		Sandbox:       cfg.MorningBrief.Sandbox,
-		WorkspaceRoot: filepath.Dir(filepath.Dir(configPathAbsolute)),
+		WorkspaceRoot: runtimeRoot,
 		Location:      location,
 	})
 	if err != nil {
 		fatalf("initialize morning brief worker failed: %v", err)
 	}
-	morningBriefReader, err := morningbrief.NewReader(filepath.Dir(filepath.Dir(configPathAbsolute)), location)
+	morningBriefReader, err := morningbrief.NewReader(runtimeRoot, location)
 	if err != nil {
 		fatalf("initialize morning brief reader failed: %v", err)
 	}
@@ -472,7 +480,7 @@ func main() {
 		PrincipalOpenID: cfg.Extract.PrincipalOpenID,
 		GitAuthor:       cfg.DailyDigest.GitAuthor,
 		RepoRoot:        cfg.Execute.RepoRoot,
-		WorkspaceRoot:   filepath.Dir(filepath.Dir(configPathAbsolute)),
+		WorkspaceRoot:   runtimeRoot,
 		PersonSkillDir:  filepath.Join(cfg.Skills.Root, "summarize-person-day"),
 		GroupSkillDir:   filepath.Join(cfg.Skills.Root, "feishu-group-daily-summary"),
 		SummarySandbox:  "danger-full-access",
@@ -913,8 +921,7 @@ func main() {
 	if err != nil {
 		fatalf("initialize runtime settings service failed: %v", err)
 	}
-	repoRoot := filepath.Dir(filepath.Dir(configPathAbsolute))
-	systemControlService, err := systemcontrol.NewService(filepath.Join(repoRoot, "scripts", "stop-jarvis.sh"), os.Getpid())
+	systemControlService, err := systemcontrol.NewService(filepath.Join(runtimeRoot, "scripts", "stop-jarvis.sh"), os.Getpid())
 	if err != nil {
 		fatalf("initialize system control service failed: %v", err)
 	}

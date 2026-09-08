@@ -451,12 +451,6 @@ func (s *Service) dispatch(ctx context.Context, row *domain.ScheduledTask, occur
 	}
 	task, err := s.submitter.Submit(ctx, input)
 	if err != nil {
-		if task != nil {
-			if updateErr := s.db.WithContext(ctx).Model(&domain.ScheduledTask{}).
-				Where("id = ?", row.ID).Update("last_task_id", task.ID).Error; updateErr != nil {
-				hlog.CtxErrorf(ctx, "scheduled task partial submission audit failed id=%d task_id=%d update_error=%+v original_error=%+v", row.ID, task.ID, updateErr, err)
-			}
-		}
 		s.fail(ctx, row.ID, err)
 		return err
 	}

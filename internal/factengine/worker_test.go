@@ -224,7 +224,7 @@ func TestBuildAgentSystemPromptAppendsCapabilityCatalogWithoutStagePolicy(t *tes
 	if err != nil {
 		t.Fatalf("buildAgentSystemPrompt: %v", err)
 	}
-	for _, want := range []string{"维护长期事实与当前世界状态", "当前阶段：factengine", "jarvis-tools", "参数、环境和权限硬校验"} {
+	for _, want := range []string{"维护长期事实与当前世界状态", "当前阶段：factengine", "jarvis-tools", "参数和运行环境校验"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, prompt)
 		}

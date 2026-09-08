@@ -41,7 +41,7 @@
         <mxCell id="node_byted_title" value="&lt;b&gt;bytedcli｜内部研发与平台信息&lt;/b&gt;" style="text;html=1;fontSize=14;fontColor=#2D3748;align=center;verticalAlign=middle;" parent="1" vertex="1">
           <mxGeometry x="470" y="730" width="460" height="28" as="geometry"/>
         </mxCell>
-        <mxCell id="node_byted_body" value="&amp;bull; 能力发现：--all-help / 子命令 --help&lt;br&gt;&amp;bull; 代码搜索&lt;br&gt;&amp;bull; Commit / MR / Issue&lt;br&gt;&amp;bull; 服务、数据与内部研发平台&lt;br&gt;&amp;bull; 根据任务动态选择具体命令，不把平台 API 写死进提示词" style="text;html=1;fontSize=10;fontColor=#68778D;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;" parent="1" vertex="1">
+        <mxCell id="node_byted_body" value="&amp;bull; 能力发现：根帮助 / 领域帮助 / 命令帮助&lt;br&gt;&amp;bull; 代码搜索&lt;br&gt;&amp;bull; Commit / MR / Issue&lt;br&gt;&amp;bull; 服务、数据与内部研发平台&lt;br&gt;&amp;bull; 根据任务动态选择具体命令，不把平台 API 写死进提示词" style="text;html=1;fontSize=10;fontColor=#68778D;align=left;verticalAlign=top;spacingLeft=8;spacingTop=4;" parent="1" vertex="1">
           <mxGeometry x="475" y="768" width="450" height="155" as="geometry"/>
         </mxCell>
 

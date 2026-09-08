@@ -579,16 +579,50 @@ func TestJarvisToolsCreateTaskIsProactiveOnlyAndForcesStrongTaskContract(t *test
 			t.Fatalf("payload still contains execution_mode: %#v", payload)
 		}
 		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
 		fmt.Fprint(w, `{"code":0,"data":{"id":19,"source_type":"proactive","status":"pending"}}`)
 	}))
 	defer server.Close()
-	payload := `{"title":"推进阻塞","action_type":"agent_task","target":"完成目标","background":{"why_now":"条件已满足"}}`
+	payload := `{"title":"推进阻塞","action_type":"agent_task","target":"完成目标","background":{"why_now":"条件已满足"},"source_payload":{"instruction":"完成目标"}}`
 	out, err := runJarvisTools(t, server.URL, []string{"JARVIS_AGENT_STAGE=proactive"}, "create-task", "--payload", payload)
 	if err != nil || !strings.Contains(out, `"id":19`) {
 		t.Fatalf("output = %s, error = %v", out, err)
 	}
 	if _, err := runJarvisTools(t, server.URL, []string{"JARVIS_AGENT_STAGE=execute"}, "create-task", "--payload", payload); err == nil {
 		t.Fatal("create-task succeeded outside proactive stage")
+	}
+}
+
+func TestJarvisToolsDateUsesConfiguredTimezoneAndFailsBeforeRequest(t *testing.T) {
+	var requests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if got := r.URL.Query().Get("from"); got != "2026-03-08T00:00:00-05:00" {
+			t.Fatalf("from = %q", got)
+		}
+		if got := r.URL.Query().Get("until"); got != "2026-03-09T00:00:00-04:00" {
+			t.Fatalf("until = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"code":0,"data":{"total":0,"page":1,"page_size":20,"items":[]}}`)
+	}))
+	defer server.Close()
+
+	configPath := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(configPath, []byte("capture:\n  timezone: America/New_York\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runJarvisTools(t, server.URL, nil, "list-tasks", "--date", "2026-03-08", "--config", configPath); err != nil {
+		t.Fatalf("valid date failed: %v", err)
+	}
+	if requests != 1 {
+		t.Fatalf("request count after valid date = %d", requests)
+	}
+	if _, err := runJarvisTools(t, server.URL, nil, "list-tasks", "--date", "2026-02-30", "--config", configPath); err == nil {
+		t.Fatal("invalid calendar date succeeded")
+	}
+	if requests != 1 {
+		t.Fatalf("invalid date sent an HTTP request; count = %d", requests)
 	}
 }
 
@@ -670,7 +704,7 @@ func runJarvisTools(t *testing.T, apiBase string, extraEnv []string, args ...str
 		t.Fatal(err)
 	}
 	command := exec.Command("bash", append([]string{script}, args...)...)
-	command.Env = sanitizedEnv(command.Environ(), "JARVIS_TASK_ID", "JARVIS_AGENT_STAGE")
+	command.Env = sanitizedEnv(command.Environ(), "JARVIS_TASK_ID", "JARVIS_AGENT_STAGE", "JARVIS_TIMEZONE")
 	command.Env = append(command.Env, extraEnv...)
 	if apiBase != "" {
 		command.Env = append(command.Env, "JARVIS_API_BASE="+apiBase)

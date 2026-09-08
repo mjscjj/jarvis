@@ -50,11 +50,14 @@ func TestQueryResourcesSQLite(t *testing.T) {
 	}
 	docURL := "https://example.com/doc"
 	runtimeSummary := "runtime 方案"
+	literalSummary := `字面量 100% a_b C:\tmp`
 	seed := []domain.ManagedResource{
 		{Title: "项目方案", ResourceType: "doc", URL: &docURL, ProjectID: &project.ID, IsActive: true, Summary: &runtimeSummary},
 		{Title: "Alice 的仓库", ResourceType: "repo", PersonID: &person.ID, IsActive: true},
 		{Title: "我的偏好清单", ResourceType: "note", LinkPrincipal: true, IsActive: true},
 		{Title: "停用资源", ResourceType: "link", ProjectID: &project.ID, IsActive: false},
+		{Title: "字面量资源", ResourceType: "note", IsActive: true, Summary: &literalSummary},
+		{Title: "通配对照", ResourceType: "note", IsActive: true, Summary: stringPointer("1000 axb")},
 	}
 	if err := tx.Create(&seed).Error; err != nil {
 		t.Fatalf("seed resources: %v", err)
@@ -80,6 +83,12 @@ func TestQueryResourcesSQLite(t *testing.T) {
 	if out.Count != 1 || out.Resources[0].Title != "项目方案" {
 		t.Fatalf("keyword filter result = %#v", out)
 	}
+	for _, keyword := range []string{"100%", "a_b", `C:\tmp`} {
+		out = invokeResources(t, tool, `{"project_id":null,"person_open_id":null,"principal_only":null,"keyword":`+strconv.Quote(keyword)+`,"limit":10}`)
+		if out.Count != 1 || out.Resources[0].Title != "字面量资源" {
+			t.Fatalf("literal keyword %q result = %#v", keyword, out)
+		}
+	}
 	out = invokeResources(t, tool, `{"project_id":null,"person_open_id":"ou_missing","principal_only":null,"keyword":null,"limit":10}`)
 	if out.Count != 0 {
 		t.Fatalf("missing person result = %#v", out)
@@ -88,6 +97,10 @@ func TestQueryResourcesSQLite(t *testing.T) {
 	if out.Count != 1 {
 		t.Fatalf("limit cap result = %#v", out)
 	}
+}
+
+func stringPointer(value string) *string {
+	return &value
 }
 
 func invokeResources(t *testing.T, tool *QueryResourcesTool, args string) queryResourcesResult {

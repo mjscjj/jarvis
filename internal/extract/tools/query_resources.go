@@ -152,7 +152,7 @@ func (t *QueryResourcesTool) Invoke(ctx context.Context, arguments json.RawMessa
 	}
 	if args.Keyword != nil && strings.TrimSpace(*args.Keyword) != "" {
 		like := "%" + likeEscape(strings.TrimSpace(*args.Keyword)) + "%"
-		query = query.Where("title LIKE ? OR summary LIKE ?", like, like)
+		query = query.Where(`title LIKE ? ESCAPE '\' OR summary LIKE ? ESCAPE '\'`, like, like)
 	}
 
 	var rows []domain.ManagedResource

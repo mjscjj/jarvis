@@ -11,12 +11,12 @@ description: 使用 lark-cli 通过 {{AGENT_NAME}} Bot 给个人或群聊发送�
 
 是否需要审批只服从 M5 当前注入的审批策略。调用本 Skill 之前，M5 必须已经确定准确目标、会话位置或原消息锚点、mention 对象和完整文案，并对这一次具体发送完成审批判断。
 
-- 需要审批：不执行本 Skill 的任何写命令，不另发文字提醒；只返回包含准确目标和完整文案的 proposal，审批卡片由 {{AGENT_NAME}} runtime 发送。
-- 不需要审批，或当前是 apply 阶段执行已经批准的 proposal：继续下面步骤。
+- 需要审批：不执行本 Skill 的任何写命令，不另发文字提醒；返回 `outcome=needs_human`，在 `question` 中写明准确目标和完整文案，卡片由 {{AGENT_NAME}} runtime 发送。
+- 不需要审批，或当前 Session 已收到 Principal 对这次具体发送的同意：继续下面步骤。
 
 ### 审批通知不由这个 Skill 发送
 
-不要用本 Skill 发送审批卡片或纯文字提醒。{{AGENT_NAME}} runtime 会先持久化提案和 `awaiting_approval`，再发送绑定当前 Task version 的确认／拒绝卡片。本 Skill 只负责任务本身需要的普通业务消息。
+不要用本 Skill 发送审批卡片或纯文字提醒。{{AGENT_NAME}} runtime 会先持久化 `question` 和 `needs_human` 状态，再发送绑定当前 Task version 的卡片；回答会恢复同一个 Session。本 Skill 只负责任务本身需要的普通业务消息。
 
 ## 1. 固定并核验 {{AGENT_NAME}} 身份
 

@@ -186,7 +186,7 @@ func TestRepositoryFeishuApprovalCardIsOwnedByServer(t *testing.T) {
 	for _, want := range []string{
 		"审批通知不由这个 Skill 发送",
 		"不要用本 Skill 发送审批卡片或纯文字提醒",
-		"先持久化提案",
+		"先持久化 `question` 和 `needs_human` 状态",
 		"绑定当前 Task version",
 	} {
 		if !strings.Contains(skill, want) {
@@ -197,6 +197,8 @@ func TestRepositoryFeishuApprovalCardIsOwnedByServer(t *testing.T) {
 		`"action": "jarvis_approval"`,
 		`--msg-type interactive`,
 		"卡片连续发送失败就退回",
+		"`awaiting_approval`",
+		"apply 阶段",
 	} {
 		if strings.Contains(skill, obsolete) {
 			t.Fatalf("Feishu message skill still contains obsolete approval-card rule %q:\n%s", obsolete, skill)
@@ -580,9 +582,15 @@ func TestReportCapabilitiesAvoidOKRAPIAndMorningBriefClosesSend(t *testing.T) {
 		"morning-brief-YYYYMMDD-HHMMSS",
 		"lark-cli im +messages-mget",
 		"读回成功",
+		"list-backlinks",
 	} {
 		if !strings.Contains(morning, want) {
 			t.Errorf("morning brief send contract is missing %q", want)
+		}
+	}
+	for _, obsolete := range []string{"awaiting_approval", "list-relations"} {
+		if strings.Contains(morning, obsolete) {
+			t.Errorf("morning brief still contains obsolete contract %q", obsolete)
 		}
 	}
 }

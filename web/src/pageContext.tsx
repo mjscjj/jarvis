@@ -21,7 +21,6 @@ const pageHashes: Record<string, string> = {
   tasks: '/work',
   progress: '/review',
   background: '/memory',
-  agents: '/agents',
   todos: '/manage/clues',
   'scheduled-tasks': '/manage/automations',
   plugins: '/plugins',
@@ -43,6 +42,9 @@ function routeFromHash(initialKey: string): HashRoute {
   const raw = window.location.hash.replace(/^#/, '')
   const [path, query = ''] = raw.split('?')
   const viewState = Object.fromEntries(new URLSearchParams(query).entries())
+  if (path === '/agents') {
+    return { key: 'settings', selection: null, viewState: { ...viewState, view: 'agents' } }
+  }
   const taskMatch = path.match(/^\/work\/task\/(\d+)$/)
   if (taskMatch) {
     const id = Number(taskMatch[1])
@@ -95,12 +97,19 @@ export function PageContextProvider({
   const [viewState, setViewStateState] = useState<Record<string, string>>(initialRoute.viewState)
 
   useEffect(() => {
-    if (!window.location.hash) writePageHash(initialKey, null, {}, true)
+    if (!window.location.hash) {
+      writePageHash(initialKey, null, {}, true)
+    } else if (window.location.hash.replace(/^#/, '').split('?')[0] === '/agents') {
+      writePageHash(initialRoute.key, initialRoute.selection, initialRoute.viewState, true)
+    }
     const syncFromHash = () => {
       const route = routeFromHash(initialKey)
       setActiveKeyState(route.key)
       setSelectionState(route.selection)
       setViewStateState(route.viewState)
+      if (window.location.hash.replace(/^#/, '').split('?')[0] === '/agents') {
+        writePageHash(route.key, route.selection, route.viewState, true)
+      }
     }
     window.addEventListener('hashchange', syncFromHash)
     return () => window.removeEventListener('hashchange', syncFromHash)

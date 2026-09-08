@@ -10,7 +10,7 @@
 - `internal/toolcatalog/catalog.go`
 - `./scripts/jarvis-tools --help`
 - `lark-cli skills list`
-- `bytedcli --json --all-help`
+- `bytedcli --help`，再按需读取领域和具体命令的 `--help`
 
 交付物：
 

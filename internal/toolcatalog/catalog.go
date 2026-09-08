@@ -31,7 +31,7 @@ func Block(stage string) (string, error) {
 	lines := []string{
 		"BEGIN_AVAILABLE_TOOLS（工具能力说明由工具层维护，不属于系统角色提示词。）",
 		"当前阶段：" + stage,
-		"各阶段看到同一套工具能力；允许执行哪些动作由当前阶段的系统提示词决定，命令自身仍会执行参数、环境和权限硬校验。",
+		"各阶段看到同一套工具能力；允许执行哪些动作由当前阶段的系统提示词决定，命令自身执行参数和运行环境校验。",
 		"- jarvis-tools：查询和维护 Jarvis 的项目、人物、关键事项、群背景、关系、资源、消息、共享记忆、Skills、线索、任务与定时触发。先运行 `jarvis-tools --help` 看能力分组，再按子命令 `--help` 获取参数和机器约束。",
 		"- 共享记忆只保存 Principal 明确要求长期记住的行为偏好；用 `get-shared-memory` 读取，`append-shared-memory` 追加，`set-shared-memory` 整理，总长度不超过 2000 字。",
 		"- list/query 命令返回紧凑摘要，get 命令返回单个对象详情；大段 prompt、run output、资源正文需要通过对应显式参数或 get 命令加载。",
@@ -43,7 +43,7 @@ func Block(stage string) (string, error) {
 		"- `yield-until` 需要 Task runner 注入 `JARVIS_TASK_ID`，创建归属当前 Task 的恢复触发；`create-scheduled-task` 创建独立触发。",
 		"- `create-task` / `start-task` / `update-task` / `close-task` 需要 `JARVIS_AGENT_STAGE=proactive`，其它阶段调用会被命令拒绝。",
 		"- lark-cli：查询或操作飞书。先用 `lark-cli skills list` 查看能力目录并选定域，再用 `lark-cli skills read <域名>` 查工作流、`lark-cli schema <method>` 查单 API 参数；匹配到飞书 Skill 时先读取 Skill。",
-		"- bytedcli：查询内部代码、commit、MR、issue 等研发信息。命令清单 `bytedcli --json --all-help`，单命令参数 `bytedcli --json <子命令路径> --help`。",
+		"- bytedcli：查询内部代码、commit、MR、issue 等研发信息。先用 `bytedcli --help` 查看领域，再用 `bytedcli --json <领域> --help` 查看该领域命令，最后用 `bytedcli --json <子命令路径> --help` 查看参数；不要加载全量帮助。",
 		"- git：查询和操作本地代码仓库。",
 	}
 	lines = append(lines, "END_AVAILABLE_TOOLS")
