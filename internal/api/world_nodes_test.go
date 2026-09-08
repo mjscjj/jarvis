@@ -46,6 +46,9 @@ func TestResolveWorldNodeReadsEachAuthoritativeModule(t *testing.T) {
 	if err := okrworkspace.Migrate(okrDB); err != nil {
 		t.Fatal(err)
 	}
+	if okrDB.Migrator().HasColumn(&okrdomain.OKRPlan{}, "content") {
+		t.Fatal("okr_workspace_plan must not contain legacy content column")
+	}
 	rows := []any{
 		&okrdomain.Objective{ID: "o-1", Quarter: "2026-Q3", Title: "正式目标"},
 		&okrdomain.KR{ID: "kr-1", ObjectiveID: "o-1", Title: "正式 KR"},
@@ -55,14 +58,11 @@ func TestResolveWorldNodeReadsEachAuthoritativeModule(t *testing.T) {
 		&okrdomain.KRPoint{ID: "plan-point-1", KRID: "plan-kr-1", Kind: okrdomain.PointKindProduct, Title: "规划 Point"},
 	}
 	now := time.Now().UTC()
-	plan := map[string]any{
-		"id": "plan-1", "quarter": "2026-Q4", "title": "业务规划",
-		"created_at": now, "updated_at": now,
+	plan := okrdomain.OKRPlan{
+		ID: "plan-1", Quarter: "2026-Q4", Title: "业务规划",
+		CreatedAt: now, UpdatedAt: now,
 	}
-	if okrDB.Migrator().HasColumn(&okrdomain.OKRPlan{}, "content") {
-		plan["content"] = []byte(`{"objectives":[]}`)
-	}
-	if err := okrDB.Table(okrdomain.OKRPlan{}.TableName()).Create(plan).Error; err != nil {
+	if err := okrDB.Create(&plan).Error; err != nil {
 		t.Fatal(err)
 	}
 	for _, row := range rows {

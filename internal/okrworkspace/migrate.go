@@ -124,6 +124,9 @@ func MigrateBizOKR(db *gorm.DB) error {
 	if db == nil {
 		return fmt.Errorf("migrate Biz OKR module: database is nil")
 	}
+	if db.Migrator().HasColumn(&domain.OKRPlan{}, "content") {
+		return fmt.Errorf("migrate Biz OKR module: legacy okr_workspace_plan.content column is unsupported")
+	}
 	if err := db.AutoMigrate(domain.BizModels()...); err != nil {
 		return fmt.Errorf("migrate Biz OKR module schema: %w", err)
 	}

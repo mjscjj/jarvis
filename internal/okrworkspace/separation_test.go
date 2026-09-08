@@ -593,6 +593,26 @@ func TestMigrateCoreBackfillsHistoricalProgressScopes(t *testing.T) {
 	}
 }
 
+func TestMigrateBizOKRRejectsLegacyPlanContentSchema(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE TABLE okr_workspace_plan (
+		id text PRIMARY KEY,
+		quarter text NOT NULL,
+		title text NOT NULL,
+		content JSON NOT NULL
+	)`).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	err = MigrateBizOKR(db)
+	if err == nil || err.Error() != "migrate Biz OKR module: legacy okr_workspace_plan.content column is unsupported" {
+		t.Fatalf("MigrateBizOKR error = %v", err)
+	}
+}
+
 func TestCoreWorkspaceSupportsFormalProgressWithoutBizSchema(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {

@@ -58,6 +58,7 @@ func TestOKRPlanRoutesUseOwnLifecycle(t *testing.T) {
 		status int
 	}{
 		{"unknown field", `{"quarter":"2026-Q3","title":"Plan","extra":true}`, 400},
+		{"legacy content field", `{"quarter":"2026-Q3","title":"Plan","content":{"objectives":[]}}`, 400},
 		{"bad quarter", `{"quarter":"Q3","title":"Plan"}`, 400},
 		{"empty title", `{"quarter":"2026-Q3","title":" "}`, 400},
 	} {
