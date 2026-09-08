@@ -52,6 +52,7 @@ type Dependencies struct {
 	Resources          *background.ResourceService
 	Pages              *background.PageService
 	Relations          *background.RelationService
+	WorldPurge         *background.WorldPurgeService
 	SharedMemory       *sharedmem.SharedMemoryService
 	WorkRules          *workrule.Service
 	TextFiles          *textstore.Service
@@ -130,6 +131,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	}
 	if deps.Relations == nil {
 		return fmt.Errorf("api relation service dependency is nil")
+	}
+	if deps.WorldPurge == nil {
+		return fmt.Errorf("api world purge service dependency is nil")
 	}
 	if deps.Resolve == nil {
 		return fmt.Errorf("api resolve service dependency is nil")
@@ -300,6 +304,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.GET("/api/relations", ListRelations(deps.Relations))
 	h.POST("/api/relations", UpsertRelation(deps.Relations))
 	h.DELETE("/api/relations/:relation_id", DeleteRelation(deps.Relations))
+	h.POST("/api/world/purge", PurgeWorldEntities(deps.WorldPurge))
 	h.GET("/api/world-nodes/:type/:id", ResolveWorldNode(deps.Pages, deps.OKRModule, deps.BizOKRModule))
 	// Principal（“我”）：单例 profile，读取 + upsert。
 	h.GET("/api/profile", GetProfile(deps.Profile))

@@ -19,7 +19,7 @@ func TestJarvisToolsHelpStatesDesignPrinciples(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Simple first", "Progressive loading", "query-captured-resources", "create-project", "list-key-matters", "touch-key-matter", "touch-resource", "get-page", "resolve-world-node", "update-page", "list-pages", "list-page-revisions", "list-backlinks", "list-relations", "create-relation", "get-world-progress", "create-world-progress", "update-world-progress"} {
+	for _, want := range []string{"Simple first", "Progressive loading", "query-captured-resources", "create-project", "list-key-matters", "touch-key-matter", "touch-resource", "get-page", "resolve-world-node", "update-page", "list-pages", "list-page-revisions", "list-backlinks", "list-relations", "create-relation", "purge-world-entities", "get-world-progress", "create-world-progress", "update-world-progress"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("help missing %q:\n%s", want, out)
 		}
@@ -340,6 +340,7 @@ func TestJarvisToolsWorldModelWritesUseSpecificEndpoints(t *testing.T) {
 		{"delete-resource", []string{"--id", "10"}, http.MethodDelete, "/api/resources/10"},
 		{"update-page", []string{"--type", "project", "--id", "7", "--content", "hello", "--if-unchanged-since", "2026-08-15T00:00:00Z"}, http.MethodPut, "/api/pages/project/7"},
 		{"create-relation", []string{"--payload", `{"source_type":"okr_kr","source_id":"kr-1","relation_type":"projects_to","target_type":"project","target_id":"7"}`}, http.MethodPost, "/api/relations"},
+		{"purge-world-entities", []string{"--payload", `{"entities":[{"type":"project","id":8,"expected_name":"copy"}]}`}, http.MethodPost, "/api/world/purge"},
 		{"append-facts-batch", []string{"--payload", `[{"subject_type":"project","subject_id":1,"description":"d1","source":"system"},{"subject_type":"project","subject_id":2,"description":"d2","source":"system"}]`}, http.MethodPost, "/api/facts/batch"},
 		{"create-world-progress", []string{"--payload", `{"expected_version":0,"subject_type":"okr_point","subject_id":"point-1","period_key":"2026-W36","signal":"yellow","summary":"waiting","evidence":{},"evidence_until":"2026-09-06T09:00:00Z"}`}, http.MethodPost, "/api/world-progress"},
 		{"update-world-progress", []string{"--id", "11", "--payload", `{"expected_version":0,"signal":"green","summary":"done","evidence":{},"evidence_until":"2026-09-06T10:00:00Z"}`}, http.MethodPut, "/api/world-progress/11"},

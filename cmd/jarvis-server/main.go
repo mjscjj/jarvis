@@ -626,6 +626,10 @@ func main() {
 	if err != nil {
 		fatalf("initialize entity relation service failed: %v", err)
 	}
+	worldPurgeService, err := background.NewWorldPurgeService(db)
+	if err != nil {
+		fatalf("initialize world purge service failed: %v", err)
+	}
 	overviewService, err := insight.NewOverviewService(db)
 	if err != nil {
 		fatalf("initialize overview service failed: %v", err)
@@ -1134,6 +1138,7 @@ func main() {
 		Resolve: resolveService, Profile: profileService, Resources: resourceService,
 		Pages:          pageService,
 		Relations:      relationService,
+		WorldPurge:     worldPurgeService,
 		SharedMemory:   sharedMemoryService,
 		WorkRules:      workRuleService,
 		TextFiles:      textFileService,

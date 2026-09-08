@@ -51,6 +51,7 @@
 - Facts：`GET/POST /api/facts`
 - World progress：`GET /api/world-progress` 按 `subject_type + subject_id + period_key` 精确读取，`GET /api/world-progress/period/:period_key` 批量读取一个周期，`GET /api/world-progress/:id` 按 ID 读取，`POST /api/world-progress` 创建，`PUT /api/world-progress/:id` 带 `expected_version` 做 CAS 更新。当前允许为已启用 OKR 模块中真实存在的 `okr_objective`、`okr_kr`、`okr_point` 写入；模块关闭后历史记录仍可读取。它是 Jarvis 的证据化周期判断，不是人工正式周报。
 - Entity relations：`GET/POST /api/relations`、`DELETE /api/relations/:relation_id`，保存带证据的通用跨模块实体映射
+- 世界实体硬清理：`POST /api/world/purge` 只接受带预期名称的显式 Project、KeyMatter、Person 清单；存在保留页面引用、非 OKR 关系、Group/Resource/Task/Todo、WorldProgress 或定时任务依赖时拒绝。它同时删除实体的 Relation、Fact 和 PageRevision，也可精确移除带成对 HTML 标记的生成内容块。
 - 实体长期事实页：`GET /api/pages`、`GET/PUT /api/pages/:type/:id`、`GET /api/pages/:type/:id/backlinks`。`PUT` 需带 `if_unchanged_since` 做 CAS，不匹配返回 409 并回带当前全文。
 
 `DELETE /api/key-matters/:key_matter_id` 的业务语义是闭环，`DELETE /api/projects/:project_id` 的业务语义是归档；都不是物理删除。

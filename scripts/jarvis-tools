@@ -83,6 +83,7 @@ subcommands:
   list-relations         List generic cross-module entity relations
   create-relation       Create or refresh one generic entity relation
   delete-relation       Delete one generic entity relation
+  purge-world-entities Physically delete reviewed disposable world entities
   append-fact            Record one fact about a project, group, person or other subject
   append-facts-batch     Record multiple facts from one JSON array
   list-facts             Read a subject's recorded facts, optionally for one day
@@ -161,6 +162,7 @@ EOF
       ;;
     create-relation) payload_help "create-relation" "Create or refresh one evidence-backed generic relation edge." ;;
     delete-relation) delete_id_help "delete-relation" "Delete one generic relation edge." ;;
+    purge-world-entities) payload_help "purge-world-entities" "Physically delete an explicit reviewed set of Project, KeyMatter and Person entities with their relations, facts and page revisions. This does not touch OKR data." ;;
     list-groups) cat <<'EOF'
 usage: jarvis-tools list-groups [--keyword TEXT] [--limit N] [--config PATH]
 Search compact Feishu group summaries. Use get-group for full background.
@@ -899,7 +901,7 @@ require_command_flag() {
     list-projects | list-key-matters) allowed+=" --keyword --limit" ;;
     get-project) allowed+=" --id --code" ;;
     get-key-matter | touch-key-matter | touch-resource) allowed+=" --id" ;;
-    create-project | create-key-matter | update-principal | create-person | create-resource | create-task | create-relation | create-world-progress) allowed+=" --payload" ;;
+    create-project | create-key-matter | update-principal | create-person | create-resource | create-task | create-relation | create-world-progress | purge-world-entities) allowed+=" --payload" ;;
     update-project | update-key-matter | update-group | update-person | update-resource) allowed+=" --id --payload" ;;
     archive-project | close-key-matter | delete-person | delete-resource) allowed+=" --id" ;;
     list-groups) allowed+=" --keyword --limit" ;;
@@ -2750,6 +2752,7 @@ case "$SUBCOMMAND" in
   list-relations)       cmd_list_relations "$@" ;;
   create-relation)      cmd_payload_create create-relation POST /api/relations "$@" ;;
   delete-relation)      cmd_delete_by_id delete-relation /api/relations "$@" ;;
+  purge-world-entities) cmd_payload_create purge-world-entities POST /api/world/purge "$@" ;;
   list-todos)           cmd_list_todos "$@" ;;
   get-todo)             cmd_get_todo "$@" ;;
   list-tasks)           cmd_list_tasks "$@" ;;
