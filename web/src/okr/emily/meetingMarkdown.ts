@@ -37,7 +37,7 @@ export function buildFullMeetingMarkdown(objectives: Objective[], quarter: strin
 		lines.push(`## ${escapeInline(objective.title)}`, '')
 		for (const kr of objective.krs) {
 			lines.push(`### ${escapeInline(kr.title)}`, '')
-			const meta = [kr.ownerName && `负责人：${escapeInline(kr.ownerName)}`, `优先级：${priorityLabel(priorityOf(kr))}`, preview && `评分：${kr.score ? kr.score.value.toFixed(1) : '未评分'}`].filter(Boolean)
+			const meta = [kr.ownerName && `负责人：${escapeInline(kr.ownerName)}`, `优先级：${priorityLabel(priorityOf(kr))}`, preview && `评分：${kr.score ? kr.score.value.toFixed(1) : '0分'}`].filter(Boolean)
 			if (meta.length > 0) lines.push(meta.join(' · '), '')
 			if (kr.metrics.length > 0) {
 				lines.push('#### 核心数据', '')
@@ -55,7 +55,7 @@ export function buildFullMeetingMarkdown(objectives: Objective[], quarter: strin
 				lines.push(`#### ${kind === 'strategy' ? '策略具体 KR' : '产品具体 KR'}`, '')
 				for (const [index, point] of points.entries()) {
 					lines.push(`##### KR${index + 1} ${escapeInline(point.title)}`, '')
-					if (preview) lines.push(`评分：${point.score ? point.score.value.toFixed(1) : '未评分'}`, '')
+					if (preview) lines.push(`评分：${point.score ? point.score.value.toFixed(1) : '0分'}`, '')
 					const groups = preview
 						? [{ title: '本周进展', entries: point.entries }]
 						: [

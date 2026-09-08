@@ -54,3 +54,19 @@ test('Preview 周导出评分并把全部状态合并为本周进展', () => {
   assert.match(output.content, /已经完成/)
   assert.doesNotMatch(output.content, /\n\*\*已完成\*\*\n/)
 })
+
+test('Preview 周把未填写的评分显示为 0 分', () => {
+  const sample = objective('o-preview-empty', '未填评分方向', '未填评分 KR')
+  sample.krs[0].points = [{
+    id: 'point-preview-empty',
+    kind: 'strategy',
+    title: '未填评分具体 KR',
+    entries: [],
+  }]
+
+  const output = buildFullMeetingMarkdown([sample], '2026-Q3', '2026-W37', 'okr_weekly_preview_v1')
+
+  assert.match(output.content, /优先级：未标注 · 评分：0分/)
+  assert.match(output.content, /##### KR1 未填评分具体 KR\n\n评分：0分/)
+  assert.doesNotMatch(output.content, /未评分/)
+})

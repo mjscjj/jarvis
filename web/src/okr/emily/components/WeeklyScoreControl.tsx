@@ -5,7 +5,7 @@ const SCORE_OPTIONS = Array.from({ length: 11 }, (_, index) => (index / 10).toFi
 
 export function WeeklyScoreControl({ score, onChange, readOnly = false, label = 'OKR 评分' }: { score?: WeeklyScore; onChange?: (score?: number) => Promise<void>; readOnly?: boolean; label?: string }) {
   const [busy, setBusy] = useState(false)
-  const display = score ? score.value.toFixed(1) : '未评分'
+  const display = score ? score.value.toFixed(1) : '0分'
 
   if (readOnly) {
     return <span aria-label={label} className="inline-flex h-6 shrink-0 items-center rounded-md border border-violet-200 bg-violet-50 px-1.5 text-[10px] font-semibold leading-none text-violet-700">评分 {display}</span>
@@ -28,7 +28,7 @@ export function WeeklyScoreControl({ score, onChange, readOnly = false, label = 
         }}
         className="bg-transparent text-[10px] font-semibold leading-none text-violet-700 outline-none disabled:opacity-50"
       >
-        <option value="">未评分</option>
+        <option value="">0分</option>
         {SCORE_OPTIONS.map((value) => <option key={value} value={value}>{value}</option>)}
       </select>
     </label>
