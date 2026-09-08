@@ -53,7 +53,7 @@ function CommentEditorFields({ value, images, objectives, placeholder, rows, aut
   onSubmitShortcut: () => void
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const upload = usePastedImageUpload((uploaded) => onImagesChange([...images, ...uploaded].slice(0, 9)), disabled || images.length >= 9)
+  const upload = usePastedImageUpload((uploaded) => onImagesChange([...images, ...uploaded]), disabled || images.length >= 9, 9 - images.length)
   useEffect(() => onUploadingChange?.(upload.uploading), [onUploadingChange, upload.uploading])
   const chooseFiles = (files: FileList | null) => {
     if (!files) return

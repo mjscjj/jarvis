@@ -351,20 +351,21 @@ export function Links({
 
 const DEFAULT_IMAGE_WIDTH = 180
 
-export function usePastedImageUpload(onUploaded: (images: ImageRef[]) => void, disabled = false) {
+export function usePastedImageUpload(onUploaded: (images: ImageRef[]) => void, disabled = false, maxFiles?: number) {
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState('')
   const [failedFiles, setFailedFiles] = useState<File[]>([])
 
   const upload = useCallback(async (files: File[]) => {
-    if (files.length === 0 || disabled || uploading) return
+    const selectedFiles = maxFiles === undefined ? files : files.slice(0, Math.max(0, maxFiles))
+    if (selectedFiles.length === 0 || disabled || uploading) return
     setUploading(true)
     setUploadError('')
     setFailedFiles([])
     try {
-      const results = await Promise.allSettled(files.map(uploadImage))
+      const results = await Promise.allSettled(selectedFiles.map(uploadImage))
       const uploaded = results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : [])
-      const failed = files.filter((_, index) => results[index]?.status === 'rejected')
+      const failed = selectedFiles.filter((_, index) => results[index]?.status === 'rejected')
       if (uploaded.length > 0) onUploaded(uploaded)
       if (failed.length > 0) {
         const firstFailure = results.find((result) => result.status === 'rejected')
@@ -375,12 +376,12 @@ export function usePastedImageUpload(onUploaded: (images: ImageRef[]) => void, d
         setUploadError(`${failed.length} 张图片上传失败${reason ? `：${reason}` : ''}`)
       }
     } catch (error) {
-      setFailedFiles(files)
+      setFailedFiles(selectedFiles)
       setUploadError(error instanceof Error ? error.message : '图片上传失败')
     } finally {
       setUploading(false)
     }
-  }, [disabled, onUploaded, uploading])
+  }, [disabled, maxFiles, onUploaded, uploading])
 
   const onPaste = useCallback((event: ClipboardEvent<HTMLElement>) => {
     const files = imageFilesFromClipboard(event.clipboardData.files)
