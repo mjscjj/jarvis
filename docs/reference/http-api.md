@@ -42,7 +42,7 @@
 - Projects：`GET/POST /api/projects`、`GET/PUT/DELETE /api/projects/:project_id`
 - Key matters：`GET/POST /api/key-matters`、`GET/PUT/DELETE /api/key-matters/:key_matter_id`、`POST .../touch`
 - Persons：`GET/POST /api/persons`、`GET/PUT/DELETE /api/persons/:person_id`
-- Feishu people：`GET /api/people/search?q=` 是全产品统一的飞书人员搜索入口。
+- Feishu people：`GET /api/people/search?q=` 是全产品统一的飞书人员搜索入口；`POST /api/persons/resolve` 保留给已加载的旧页面。
 - Groups：`GET /api/groups`、`PUT /api/groups/:group_id`
 - Principal：`GET/PUT /api/profile`
 - Managed resources：`GET/POST /api/resources`、`GET/PUT/DELETE /api/resources/:resource_id`
@@ -72,7 +72,7 @@
 - OKR Preview AI 评审：`POST /api/biz-okr/preview-review`，body 为 `{quarter, week, kind: all|kr|point, kr_id, point_id}`，同步返回 `{content}` Markdown。评审只出判断和建议、不写任何东西，所以不建 Task、不进审批链路、没有运行历史可轮询。Agent 按需使用 `okr-module-tools` 与 `biz-okr-tools` 回查。
 - Meego observation：`POST /api/biz-okr/meego-observations` 只保存 Agent 已通过 `bytedcli` 读取的结构化快照；HTTP handler 不查询 Meego，外部读取和匹配规则归 `weekly-report-progress-sync` Skill。
 - Biz OKR identity：`GET /api/biz-okr/me`；启用 `conf/okr-module.yaml` 的 `identity` 后，经 `POST /api/biz-okr/auth/feishu/device` 发起飞书设备授权、`POST /api/biz-okr/auth/feishu/device/:login_id/poll` 轮询并建立 HttpOnly session。用户 token 仍按 open_id 写到 `identity.token_dir`，`GET /api/biz-okr/feishu-identity?open_id=` 返回与 token 配对的 App ID 和文件位置。身份只服务 Biz 页面、评论署名和用户态文档读取，不进入通用 OKR 插件。
-- Biz OKR people：`GET /api/biz-okr/people/avatars?names=...` 服务 Biz 人员头像展示；人员搜索复用全局 `/api/people/search?q=`。
+- Biz OKR people：`GET /api/biz-okr/people/avatars?names=...` 服务 Biz 人员头像展示；新页面的人员搜索复用全局 `/api/people/search?q=`，原 `/people/search?q=` 保留给已加载的旧页面。
 - OKR images：`POST /api/okr/images` 上传 PNG/JPEG/GIF/WebP，返回可持久化的 `/okr-assets/<sha256>.<ext>`；图片落在 `conf/okr-module.yaml` 的 `upload_dir`。
 - 文档导出：`POST /api/biz-okr/feishu-documents`，由用户按钮触发，通过当前 Jarvis `lark-cli --as user` 创建 Markdown 飞书文档。新建文档继承的租户默认密级不允许组织内链接分享，飞书会以 91012 拒绝，所以创建后先按 `lark_cli.export_secure_label` 的标签名（在 `drive +secure-label-list` 里查 id）打一次密级，再设 `link_share_entity=tenant_editable` 并读回校验。标签没配、租户里查不到这个名字或密级写入失败都直接报错，不退回一篇不可分享的文档。
 

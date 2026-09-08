@@ -244,25 +244,50 @@ func CreatePerson(svc *background.PersonService) app.HandlerFunc {
 	}
 }
 
+// resolveFeishuPeople owns the one lark-cli lookup and error contract used by
+// the current endpoint and the two browser-cache compatibility adapters.
+func resolveFeishuPeople(ctx context.Context, c *app.RequestContext, svc *background.ResolveService, query string) *background.ResolveResult {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		writeAPIError(c, consts.StatusBadRequest, 40023, fmt.Errorf("people search query is required"))
+		return nil
+	}
+	result, err := svc.Resolve(ctx, query)
+	if err != nil {
+		if errors.Is(err, background.ErrInvalidInput) {
+			writeAPIError(c, consts.StatusBadRequest, 40023, err)
+			return nil
+		}
+		writeAPIError(c, consts.StatusBadGateway, 50210, fmt.Errorf("search feishu people failed: %s", strings.TrimSpace(err.Error())))
+		return nil
+	}
+	return result
+}
+
 // SearchFeishuPeople is the product-wide Feishu directory search endpoint.
-// Every people picker uses this handler so identity resolution has one HTTP
-// contract instead of separate World and OKR projections.
 func SearchFeishuPeople(svc *background.ResolveService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
-		query := strings.TrimSpace(c.Query("q"))
-		if query == "" {
-			writeAPIError(c, consts.StatusBadRequest, 40023, fmt.Errorf("q is required"))
+		result := resolveFeishuPeople(ctx, c, svc, c.Query("q"))
+		if result == nil {
 			return
 		}
-		result, err := svc.Resolve(ctx, query)
-		if err != nil {
-			if errors.Is(err, background.ErrInvalidInput) {
-				writeAPIError(c, consts.StatusBadRequest, 40023, err)
-				return
-			}
-			// A resolve failure means the lark-cli upstream failed; surface it
-			// as 502 rather than masking it as a generic server error.
-			writeAPIError(c, consts.StatusBadGateway, 50210, fmt.Errorf("search feishu people failed: %s", strings.TrimSpace(err.Error())))
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
+// ResolvePerson preserves the original World API for browser tabs that loaded
+// before the shared search endpoint shipped. It delegates to the same lookup.
+func ResolvePerson(svc *background.ResolveService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		var in struct {
+			Query string `json:"query"`
+		}
+		if err := decodeStrictJSON(c.Request.Body(), &in); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40021, err)
+			return
+		}
+		result := resolveFeishuPeople(ctx, c, svc, in.Query)
+		if result == nil {
 			return
 		}
 		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})

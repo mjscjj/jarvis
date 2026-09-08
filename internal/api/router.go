@@ -284,6 +284,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.PUT("/api/world-progress/:world_progress_id", UpdateWorldProgress(deps.WorldProgress))
 	h.GET("/api/persons", ListPersons(deps.Persons))
 	h.GET("/api/people/search", SearchFeishuPeople(deps.Resolve))
+	h.POST("/api/persons/resolve", ResolvePerson(deps.Resolve))
 	h.POST("/api/persons", CreatePerson(deps.Persons))
 	h.GET("/api/persons/:person_id", GetPerson(deps.Persons))
 	h.PUT("/api/persons/:person_id", UpdatePerson(deps.Persons))

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -84,6 +85,50 @@ func TestSearchFeishuPeopleUsesSharedResolverContract(t *testing.T) {
 	user := payload.Data.Candidates[0]
 	if user.OpenID != "ou_1" || user.Name != "李鑫" || user.Email != "lixin@example.com" || user.Department != "国际直播-公会" || user.IsExternal || !user.HasChatted {
 		t.Fatalf("user=%+v", user)
+	}
+}
+
+func TestLegacyPeopleSearchAdaptersUseSharedResolver(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		method    string
+		path      string
+		body      []byte
+		resultKey string
+	}{
+		{name: "world person resolve", method: "POST", path: "/api/persons/resolve", body: []byte(`{"query":"李鑫"}`), resultKey: "candidates"},
+		{name: "biz okr people search", method: "GET", path: "/api/biz-okr/people/search?q=%E6%9D%8E%E9%91%AB", resultKey: "users"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			searcher := &stubOKRPeopleSearcher{users: []larkcli.UserCandidate{{OpenID: "ou_1", LocalizedName: "李鑫"}}}
+			resolver := newTestOKRPeopleResolver(t, searcher)
+			h := server.New()
+			if test.method == "POST" {
+				h.POST("/api/persons/resolve", ResolvePerson(resolver))
+			} else {
+				h.GET("/api/biz-okr/people/search", SearchWorkspacePeople(resolver))
+			}
+			var body *ut.Body
+			if len(test.body) > 0 {
+				body = &ut.Body{Body: bytes.NewReader(test.body), Len: len(test.body)}
+			}
+			response := ut.PerformRequest(h.Engine, test.method, test.path, body).Result()
+			if response.StatusCode() != 200 {
+				t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())
+			}
+			var payload struct {
+				Data map[string]json.RawMessage `json:"data"`
+			}
+			if err := json.Unmarshal(response.Body(), &payload); err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := payload.Data[test.resultKey]; !ok {
+				t.Fatalf("data=%s, want key %q", response.Body(), test.resultKey)
+			}
+			if searcher.query != "李鑫" {
+				t.Fatalf("resolver query=%q, want 李鑫", searcher.query)
+			}
+		})
 	}
 }
 
