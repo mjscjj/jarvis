@@ -16,7 +16,7 @@ import (
 )
 
 // The weekly pages send this request while holding week-scoped metric values,
-// so the contract has to make wording and people the only reachable fields.
+// so the contract exposes only wording, people and existing point order.
 func TestKRDefinitionRouteEditsOnlyWordingAndPeople(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
@@ -28,7 +28,8 @@ func TestKRDefinitionRouteEditsOnlyWordingAndPeople(t *testing.T) {
 	rows := []any{
 		&domain.KR{ID: "kr-1", Title: "旧 KR 标题", MetricNote: "主干指标说明"},
 		&domain.KRMetric{ID: "metric-1", KRID: "kr-1", Text: "主干核心数据", Light: domain.LightGreen},
-		&domain.KRPoint{ID: "point-1", KRID: "kr-1", Kind: domain.PointKindStrategy, Title: "旧要点标题"},
+		&domain.KRPoint{ID: "point-1", KRID: "kr-1", Kind: domain.PointKindStrategy, Title: "旧要点标题", SortOrder: 0},
+		&domain.KRPoint{ID: "point-2", KRID: "kr-1", Kind: domain.PointKindStrategy, Title: "第二个要点", SortOrder: 1},
 		&domain.KROwner{KRID: "kr-1", OwnerKey: "old", Name: "旧负责人"},
 	}
 	for _, row := range rows {
@@ -72,7 +73,7 @@ func TestKRDefinitionRouteEditsOnlyWordingAndPeople(t *testing.T) {
 		}
 	}
 
-	body := `{"expected_version":0,"title":"新 KR 标题","owners":[{"open_id":"ou_new","name":"新负责人"}],"points":[{"id":"point-1","title":"新要点标题","owners":[{"open_id":"ou_point","name":"要点负责人"}]}]}`
+	body := `{"expected_version":0,"title":"新 KR 标题","owners":[{"open_id":"ou_new","name":"新负责人"}],"points":[{"id":"point-2","title":"第二个要点","owners":[]},{"id":"point-1","title":"新要点标题","owners":[{"open_id":"ou_point","name":"要点负责人"}]}]}`
 	response := ut.PerformRequest(h.Engine, "PUT", "/api/okr/krs/kr-1/definition", &ut.Body{Body: strings.NewReader(body), Len: len(body)}).Result()
 	if response.StatusCode() != 200 {
 		t.Fatalf("definition status=%d body=%s", response.StatusCode(), response.Body())
@@ -87,7 +88,7 @@ func TestKRDefinitionRouteEditsOnlyWordingAndPeople(t *testing.T) {
 	if view.Title != "新 KR 标题" || view.OwnerName != "新负责人" || view.Version != 1 {
 		t.Fatalf("wording and people were not applied: %+v", view)
 	}
-	if len(view.Points) != 1 || view.Points[0].Title != "新要点标题" || len(view.Points[0].Owners) != 1 || view.Points[0].Owners[0].Name != "要点负责人" {
+	if len(view.Points) != 2 || view.Points[0].ID != "point-2" || view.Points[1].Title != "新要点标题" || len(view.Points[1].Owners) != 1 || view.Points[1].Owners[0].Name != "要点负责人" {
 		t.Fatalf("point wording and people were not applied: %+v", view.Points)
 	}
 	if view.MetricNote != "主干指标说明" || len(view.Metrics) != 1 || view.Metrics[0].Text != "主干核心数据" {

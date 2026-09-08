@@ -4,7 +4,7 @@ import { BoardContext, uid, type BoardApi, type SyncState } from './board'
 import { definitionSignature } from './definition'
 import { findKrDraftIssue } from './draftValidation'
 import { BUSINESS_CATEGORY_TAG, PRIORITY_TAG, replaceSingleTag } from './hierarchy'
-import { swappedOrder } from './ordering'
+import { swappedOrder, swappedPointsWithinKind } from './ordering'
 import { LIGHTS, STATUSES } from './template'
 import type { Entry, EnumValues, Kr, Objective, Point, WeekTemplateKey, WeeklyScore } from './types'
 import { filterWeekCatalog, previousWeekInCatalog } from './weekCatalog'
@@ -646,6 +646,10 @@ export function BoardProvider({
       const lastSameKind = kr.points.map((item) => item.kind).lastIndexOf(kind)
       if (lastSameKind === -1) kr.points.push(point)
       else kr.points.splice(lastSameKind + 1, 0, point)
+    }),
+    swapPoints: (krId, pointId, targetId) => mutate(krId, (draft) => {
+      const kr = findKr(draft, krId)
+      if (kr) kr.points = swappedPointsWithinKind(kr.points, pointId, targetId)
     }),
     setPointKind: (krId, pointId, kind) => mutate(krId, (draft) => {
       const kr = findKr(draft, krId)

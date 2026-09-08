@@ -14,7 +14,7 @@ import { FeishuPeoplePicker, PointPeoplePicker } from './FeishuPeoplePicker'
 import { PersonAvatar } from './PersonAvatar'
 import { WeeklyScoreControl } from './WeeklyScoreControl'
 import { HierarchyNav } from './HierarchyNav'
-import { Images, Links, StatusSelect, Text, usePastedImageUpload } from './ui'
+import { Images, Links, MoveButtons, StatusSelect, Text, usePastedImageUpload } from './ui'
 import { OwnerFilterPicker } from './OwnerFilterPicker'
 import { CommentSurfaceHint, commentTargetElementId, useCommentSurface } from '../commenting'
 
@@ -263,7 +263,7 @@ function KrOwnerBadge({ owner }: { owner: KrOwner }) {
   )
 }
 
-function KrHeader({ objectiveId, kr, open, onToggle, readOnly, structureReadOnly, showScore, scoreReadOnly }: { objectiveId: string; kr: Kr; open: boolean; onToggle: () => void; readOnly: boolean; structureReadOnly: boolean; showScore: boolean; scoreReadOnly: boolean }) {
+function KrHeader({ objectiveId, kr, open, onToggle, onMoveUp, onMoveDown, readOnly, structureReadOnly, showScore, scoreReadOnly }: { objectiveId: string; kr: Kr; open: boolean; onToggle: () => void; onMoveUp?: () => void; onMoveDown?: () => void; readOnly: boolean; structureReadOnly: boolean; showScore: boolean; scoreReadOnly: boolean }) {
 	const { setKrTitle, setKrPriority, setKrScore } = useBoard()
 	const priority = priorityOf(kr)
 
@@ -280,6 +280,7 @@ function KrHeader({ objectiveId, kr, open, onToggle, readOnly, structureReadOnly
               {!readOnly && <FeishuPeoplePicker kr={kr} />}
               {readOnly && krOwners(kr).map((owner, index) => <KrOwnerBadge key={`${owner.openId || owner.name}:${index}`} owner={owner} />)}
             </div>
+            {!readOnly && <MoveButtons label="条 KR" onUp={onMoveUp} onDown={onMoveDown} />}
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-1.5 pl-1">
 			{!structureReadOnly ? (
@@ -295,7 +296,7 @@ function KrHeader({ objectiveId, kr, open, onToggle, readOnly, structureReadOnly
   )
 }
 
-function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly, structureReadOnly, showProgress = true, showScore = false, scoreReadOnly = true, tagSuggestions, deleteWarning }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; readOnly: boolean; structureReadOnly: boolean; showProgress?: boolean; showScore?: boolean; scoreReadOnly?: boolean; tagSuggestions?: KrTag[]; deleteWarning: string }) {
+function PointHeader({ objectiveId, krId, point, index, open, onToggle, onMoveUp, onMoveDown, readOnly, structureReadOnly, showProgress = true, showScore = false, scoreReadOnly = true, tagSuggestions, deleteWarning }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; onMoveUp?: () => void; onMoveDown?: () => void; readOnly: boolean; structureReadOnly: boolean; showProgress?: boolean; showScore?: boolean; scoreReadOnly?: boolean; tagSuggestions?: KrTag[]; deleteWarning: string }) {
   const { setPointTitle, setPointMeegoLink, removePoint, addPointTag, removePointTag, setPointScore, week } = useBoard()
   const commentTarget = { type: 'point' as const, id: point.id, title: point.title }
   const commentSurface = useCommentSurface(commentTarget)
@@ -354,6 +355,7 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly
         </div>
         {!readOnly && <span className="flex max-w-[45%] shrink-0 flex-wrap items-center justify-end gap-1 pt-0.5"><PointPeoplePicker krId={krId} point={point} /></span>}
         {readOnly && (point.owners?.length ?? 0) > 0 && <span aria-label="具体 KR 负责人" className="flex max-w-[45%] shrink-0 flex-wrap items-center justify-end gap-1 pt-0.5">{point.owners?.map((owner, ownerIndex) => <KrOwnerBadge key={`${owner.openId || owner.name}:${ownerIndex}`} owner={owner} />)}</span>}
+        {!readOnly && <MoveButtons label="条具体 KR" onUp={onMoveUp} onDown={onMoveDown} />}
         {!structureReadOnly && (confirmDelete ? (
           <span className="flex shrink-0 items-center gap-1">
             <span className="text-[9px] leading-tight text-red-500">{deleteWarning}</span>
@@ -379,7 +381,7 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, readOnly
   )
 }
 
-function PointBlock({ objectiveId, krId, point, index, open, onToggle, definitionReadOnly, structureReadOnly, progressReadOnly, showProgress, tagSuggestions, deleteWarning }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; definitionReadOnly: boolean; structureReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; tagSuggestions?: KrTag[]; deleteWarning: string }) {
+function PointBlock({ objectiveId, krId, point, index, open, onToggle, onMoveUp, onMoveDown, definitionReadOnly, structureReadOnly, progressReadOnly, showProgress, tagSuggestions, deleteWarning }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; onMoveUp?: () => void; onMoveDown?: () => void; definitionReadOnly: boolean; structureReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; tagSuggestions?: KrTag[]; deleteWarning: string }) {
   const { templateKey } = useBoard()
   // Review reports one combined lane; the classic weekly report splits 进展 and
   // 已完成. Both formats read the loaded week's template, never the tab.
@@ -389,7 +391,7 @@ function PointBlock({ objectiveId, krId, point, index, open, onToggle, definitio
   const reviewTarget = { kind: 'point' as const, objectiveId, krId, pointId: point.id, title: point.title }
   return (
     <article id={`point-${point.id}`} data-okr-target-kind="point" data-okr-objective-id={objectiveId} data-okr-kr-id={krId} data-okr-point-id={point.id} className="scroll-mt-5 border-l-2 border-slate-200 pl-3 sm:pl-4">
-      <PointHeader objectiveId={objectiveId} krId={krId} point={point} index={index} open={open} onToggle={onToggle} readOnly={definitionReadOnly} structureReadOnly={structureReadOnly} showProgress={showProgress} showScore={showReview} scoreReadOnly={progressReadOnly} tagSuggestions={tagSuggestions} deleteWarning={deleteWarning} />
+      <PointHeader objectiveId={objectiveId} krId={krId} point={point} index={index} open={open} onToggle={onToggle} onMoveUp={onMoveUp} onMoveDown={onMoveDown} readOnly={definitionReadOnly} structureReadOnly={structureReadOnly} showProgress={showProgress} showScore={showReview} scoreReadOnly={progressReadOnly} tagSuggestions={tagSuggestions} deleteWarning={deleteWarning} />
       {showReview && <div className="mt-1.5 flex justify-end pl-7"><PreviewReviewButton target={reviewTarget} label="AI评审" /></div>}
       {showReview && <PreviewReviewPanel target={reviewTarget} className="mt-1.5 ml-7" />}
       {open && showProgress && (review
@@ -417,7 +419,7 @@ function PointBlock({ objectiveId, krId, point, index, open, onToggle, definitio
 }
 
 function PointGroup({ objectiveId, kr, kind, closed, toggle, definitionReadOnly, structureReadOnly, progressReadOnly, showProgress, tagSuggestions, deleteWarning }: { objectiveId: string; kr: Kr; kind: PointKind; closed: Set<string>; toggle: (id: string) => void; definitionReadOnly: boolean; structureReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; tagSuggestions?: KrTag[]; deleteWarning: string }) {
-  const { addPoint } = useBoard()
+  const { addPoint, swapPoints } = useBoard()
   const points = kr.points.filter((point) => point.kind === kind)
   if (points.length === 0 && structureReadOnly) return null
 
@@ -430,7 +432,7 @@ function PointGroup({ objectiveId, kr, kind, closed, toggle, definitionReadOnly,
         {!structureReadOnly && <button type="button" onClick={() => addPoint(objectiveId, kr.id, kind)} className="text-xs text-slate-400 hover:text-blue-600">+ 一项</button>}
       </div>
       <div className="space-y-4">
-        {points.map((point, index) => <PointBlock key={point.id} objectiveId={objectiveId} krId={kr.id} point={point} index={index} open={!closed.has(point.id)} onToggle={() => toggle(point.id)} definitionReadOnly={definitionReadOnly} structureReadOnly={structureReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} tagSuggestions={tagSuggestions} deleteWarning={deleteWarning} />)}
+        {points.map((point, index) => <PointBlock key={point.id} objectiveId={objectiveId} krId={kr.id} point={point} index={index} open={!closed.has(point.id)} onToggle={() => toggle(point.id)} onMoveUp={index > 0 ? () => swapPoints(kr.id, point.id, points[index - 1].id) : undefined} onMoveDown={index < points.length - 1 ? () => swapPoints(kr.id, point.id, points[index + 1].id) : undefined} definitionReadOnly={definitionReadOnly} structureReadOnly={structureReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} tagSuggestions={tagSuggestions} deleteWarning={deleteWarning} />)}
         {points.length === 0 && <Empty>暂无{KIND_LABEL[kind]}</Empty>}
       </div>
     </section>
@@ -473,7 +475,7 @@ export function KrDefinitionDetails({ objectiveId, kr, tagSuggestions, deletePoi
   )
 }
 
-function KrCard({ objectiveId, kr, closed, toggle, readOnly, definitionsReadOnly, progressReadOnly, showProgress }: { objectiveId: string; kr: Kr; closed: Set<string>; toggle: (id: string) => void; readOnly: boolean; definitionsReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean }) {
+function KrCard({ objectiveId, kr, closed, toggle, onMoveUp, onMoveDown, readOnly, definitionsReadOnly, progressReadOnly, showProgress }: { objectiveId: string; kr: Kr; closed: Set<string>; toggle: (id: string) => void; onMoveUp?: () => void; onMoveDown?: () => void; readOnly: boolean; definitionsReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean }) {
   const { templateKey } = useBoard()
   const open = !closed.has(kr.id)
   // Wording and people live on the shared definition but a filling week may
@@ -486,7 +488,7 @@ function KrCard({ objectiveId, kr, closed, toggle, readOnly, definitionsReadOnly
   const reviewTarget = { kind: 'kr' as const, objectiveId, krId: kr.id, title: kr.title }
   return (
     <article data-okr-target-kind="kr" data-okr-objective-id={objectiveId} data-okr-kr-id={kr.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_2px_8px_rgba(31,35,40,0.035)]">
-	  <KrHeader objectiveId={objectiveId} kr={kr} open={open} onToggle={() => toggle(kr.id)} readOnly={readOnly} structureReadOnly={structureLocked} showScore={showScore} scoreReadOnly={readOnly || progressReadOnly} />
+	  <KrHeader objectiveId={objectiveId} kr={kr} open={open} onToggle={() => toggle(kr.id)} onMoveUp={onMoveUp} onMoveDown={onMoveDown} readOnly={readOnly} structureReadOnly={structureLocked} showScore={showScore} scoreReadOnly={readOnly || progressReadOnly} />
       {showScore && <div className="flex justify-end px-4 pt-2"><PreviewReviewButton target={reviewTarget} label="AI评审" /></div>}
       {showScore && <PreviewReviewPanel target={reviewTarget} className="mx-4 mt-2" />}
       {open && (
@@ -500,6 +502,7 @@ function KrCard({ objectiveId, kr, closed, toggle, readOnly, definitionsReadOnly
 }
 
 function ObjectiveSection({ objective, closed, toggle, readOnly, definitionsReadOnly, progressReadOnly, showProgress, showTitle = true }: { objective: Objective; closed: Set<string>; toggle: (id: string) => void; readOnly: boolean; definitionsReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; showTitle?: boolean }) {
+  const { swapKrs } = useBoard()
   const open = showTitle ? !closed.has(objective.id) : true
   return (
     <section>
@@ -508,7 +511,7 @@ function ObjectiveSection({ objective, closed, toggle, readOnly, definitionsRead
         <h2 className="text-[17px] font-semibold text-slate-800">{objective.title}</h2>
         <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs text-slate-400">{objective.krs.length} 个 KR</span>
       </div>}
-      {open && <div className="space-y-3">{objective.krs.map((kr) => <KrCard key={kr.id} objectiveId={objective.id} kr={kr} closed={closed} toggle={toggle} readOnly={readOnly} definitionsReadOnly={definitionsReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} />)}</div>}
+      {open && <div className="space-y-3">{objective.krs.map((kr, index) => <KrCard key={kr.id} objectiveId={objective.id} kr={kr} closed={closed} toggle={toggle} onMoveUp={index > 0 ? () => void swapKrs(objective.id, kr.id, objective.krs[index - 1].id) : undefined} onMoveDown={index < objective.krs.length - 1 ? () => void swapKrs(objective.id, kr.id, objective.krs[index + 1].id) : undefined} readOnly={readOnly} definitionsReadOnly={definitionsReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} />)}</div>}
     </section>
   )
 }

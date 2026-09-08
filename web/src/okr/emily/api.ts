@@ -1264,9 +1264,10 @@ async function progressRequest(path: string, init: RequestInit): Promise<Kr> {
 	}
 }
 
-// Writes only the wording and the people of the shared definition. The weekly
-// pages hold week-scoped metrics and lights, and this endpoint cannot receive
-// them, so filling a week can never overwrite the definition's own numbers.
+// Writes only the wording, people and existing point order of the shared
+// definition. The weekly pages hold week-scoped metrics and lights, and this
+// endpoint cannot receive them, so filling a week can never overwrite the
+// definition's own numbers.
 export async function replaceKRDefinition(kr: Kr): Promise<Kr> {
 	const body = {
 		expected_version: kr.version ?? 0,

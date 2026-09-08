@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { mergeVisibleObjectiveOrder, swappedOrder } from '../src/okr/emily/ordering.ts'
+import { mergeVisibleObjectiveOrder, swappedOrder, swappedPointsWithinKind } from '../src/okr/emily/ordering.ts'
 
 test('上移下移交换两行位置，其余行原位不动', () => {
   const ids = ['o-1', 'o-2', 'o-3', 'o-4']
@@ -18,6 +18,16 @@ test('筛选藏起来的行留在原位，被换的两行跨过它', () => {
 test('目标行不在顺序里直接报错，不静默乱排', () => {
   assert.throws(() => swappedOrder(['o-1', 'o-2'], 'o-1', 'o-missing'), /重新载入/)
   assert.throws(() => swappedOrder(['o-1', 'o-2'], 'o-missing', 'o-1'), /重新载入/)
+})
+
+test('具体 KR 只在同分组内换位，其他分组的顺序槽不动', () => {
+	const points = [
+		{ id: 's1', kind: 'strategy' },
+		{ id: 'p1', kind: 'product' },
+		{ id: 's2', kind: 'strategy' },
+	]
+	assert.deepEqual(swappedPointsWithinKind(points, 's1', 's2').map((point) => point.id), ['s2', 'p1', 's1'])
+	assert.throws(() => swappedPointsWithinKind(points, 's1', 'p1'), /同一分组/)
 })
 
 test('拖动筛选后的具体 O 只交换可见 O 占据的全量位置', () => {

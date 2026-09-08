@@ -12,6 +12,7 @@ import { TagEditor } from './TagEditor'
 import { CommentSurfaceHint, CommentTargetButton, commentTargetElementId, scrollToCommentSource, useCommentInteraction, useCommentSurface } from '../commenting'
 import { findCommentTargetLocation } from '../comments'
 import { mergeVisibleObjectiveOrder } from '../ordering'
+import { MoveButtons } from './ui'
 
 // 业务分类和优先级各自有专属控件（分类标签条、优先级下拉、每行的选择器），
 // 所以通用标签筛选和标签计数只涵盖其余标签，避免同一语义两个入口。
@@ -63,15 +64,6 @@ function BusinessCategoryField({ value, categories, onChange, allowEmpty = false
 		{options.map((category) => <option key={category} value={category}>{category}</option>)}
 		<option value="__new__">+ 新业务分类…</option>
 	</select>
-}
-
-// 上下移动只在这一页出现：填写和会议页按业务分类/优先级导航，顺序不是它们的语义。
-function MoveButtons({ label, onUp, onDown }: { label: string; onUp?: () => void; onDown?: () => void }) {
-	const style = 'h-5 w-5 rounded text-[10px] leading-none text-slate-400 transition-colors enabled:hover:bg-white enabled:hover:text-blue-600 disabled:opacity-25'
-	return <span className="inline-flex shrink-0 items-center">
-		<button type="button" disabled={!onUp} onClick={onUp} title={`上移这${label}`} aria-label={`上移这${label}`} className={style}>↑</button>
-		<button type="button" disabled={!onDown} onClick={onDown} title={`下移这${label}`} aria-label={`下移这${label}`} className={style}>↓</button>
-	</span>
 }
 
 function KrTagEditor({ kr, suggestions }: { kr: Kr; suggestions: KrTag[] }) {

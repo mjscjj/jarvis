@@ -36,6 +36,13 @@ test('措辞和人员的改动会被认成定义改动', () => {
   assert.notEqual(definitionSignature(baseline), definitionSignature(kr({ points: [{ ...point, owners: [] }] })))
 })
 
+test('具体 KR 顺序的改动会被认成定义改动', () => {
+	const first = kr().points[0]
+	const second = { ...first, id: 'p-2', title: '第二个策略要点' }
+	const baseline = kr({ points: [first, second] })
+	assert.notEqual(definitionSignature(baseline), definitionSignature(kr({ points: [second, first] })))
+})
+
 test('周次数据和标签的改动不会被当成定义改动', () => {
   const baseline = kr()
   // 指标文案和灯写进本周副本，标签只在管理与打标改；它们都不该触发主干写入。

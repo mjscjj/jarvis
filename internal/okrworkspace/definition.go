@@ -9,9 +9,10 @@ import (
 )
 
 // ReplaceKRDefinitionInput carries only the wording and the people of a KR and
-// of its existing concrete points. Metrics, labels and the set of points have
-// no representation here, so a week-scoped page can edit the shared definition
-// without any of its weekly values reaching the definition.
+// of its existing concrete points. The array order is the canonical point order
+// when the request contains the complete existing set. Metrics, labels and the
+// set of points have no representation here, so a week-scoped page can edit the
+// shared definition without any of its weekly values reaching the definition.
 type ReplaceKRDefinitionInput struct {
 	ExpectedVersion int32                 `json:"expected_version"`
 	Title           string                `json:"title"`
@@ -21,7 +22,7 @@ type ReplaceKRDefinitionInput struct {
 }
 
 // PointDefinitionView names one existing point to retitle or reassign. Points
-// left out of the request keep their current wording and people.
+// left out of the request keep their current wording, people and order.
 type PointDefinitionView struct {
 	ID     string      `json:"id"`
 	Title  string      `json:"title"`
@@ -65,6 +66,7 @@ func (s *Service) ReplaceKRDefinition(ctx context.Context, id string, input Repl
 		}
 		seen[point.ID] = struct{}{}
 	}
+	completePointOrder := len(input.Points) == len(records)
 	if err := updateKRVersion(db, id, input.ExpectedVersion, map[string]any{
 		"title": input.Title, "updated_by": input.UpdatedBy,
 	}); err != nil {
@@ -73,8 +75,12 @@ func (s *Service) ReplaceKRDefinition(ctx context.Context, id string, input Repl
 	if err := replaceKROwners(db, id, normalizeOwners(input.Owners)); err != nil {
 		return KRView{}, err
 	}
-	for _, point := range input.Points {
-		if err := db.Model(&domain.KRPoint{}).Where("id = ? AND kr_id = ?", point.ID, id).Update("title", point.Title).Error; err != nil {
+	for index, point := range input.Points {
+		updates := map[string]any{"title": point.Title}
+		if completePointOrder {
+			updates["sort_order"] = index
+		}
+		if err := db.Model(&domain.KRPoint{}).Where("id = ? AND kr_id = ?", point.ID, id).Updates(updates).Error; err != nil {
 			return KRView{}, fmt.Errorf("update point title: %w", err)
 		}
 		if err := replacePointOwners(db, point.ID, normalizeOwners(point.Owners)); err != nil {

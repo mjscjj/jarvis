@@ -54,6 +54,14 @@ function Popover({
   )
 }
 
+export function MoveButtons({ label, onUp, onDown }: { label: string; onUp?: () => void; onDown?: () => void }) {
+  const style = 'h-5 w-5 rounded text-[10px] leading-none text-slate-400 transition-colors enabled:hover:bg-white enabled:hover:text-blue-600 disabled:opacity-25'
+  return <span className="inline-flex shrink-0 items-center">
+    <button type="button" disabled={!onUp} onClick={onUp} title={`上移这${label}`} aria-label={`上移这${label}`} className={style}>↑</button>
+    <button type="button" disabled={!onDown} onClick={onDown} title={`下移这${label}`} aria-label={`下移这${label}`} className={style}>↓</button>
+  </span>
+}
+
 /** 状态下拉框。选「已完成」这条就归到「已完成」列。 */
 export function StatusSelect({
   value,

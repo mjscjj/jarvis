@@ -6,7 +6,7 @@ function ownerSignature(owners: KrOwner[] | undefined): string[] {
 
 // Names exactly the fields a filling week is allowed to push back onto the
 // shared definition: the wording and the people of the KR and of its existing
-// points. Metrics, lights, labels and progress belong to a week or to
+// points, plus the point array order. Metrics, lights, labels and progress belong to a week or to
 // 管理与打标, so a change there must not look like a definition edit.
 export function definitionSignature(kr: Kr): string {
   return JSON.stringify([

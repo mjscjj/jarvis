@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { APIError, createOKRPlan, createOKRPlanObjective, deleteOKRPlan, deleteOKRPlanObjective, getEnums, getOKRPlan, listOKRPlans, reorderOKRPlanObjectives, updateOKRPlanObjective } from './api'
 import { BoardContext, uid, type BoardApi, type SyncState } from './board'
 import { BUSINESS_CATEGORY_TAG, PRIORITY_TAG, replaceSingleTag } from './hierarchy'
-import { swappedOrder } from './ordering'
+import { swappedOrder, swappedPointsWithinKind } from './ordering'
 import type { EnumValues, Kr, KrOwner, KrPriority, MetricLine, Objective, OKRPlan, OKRPlanSummary, Point, WeekTemplateKey } from './types'
 import { LIGHTS, STATUSES } from './template'
 
@@ -569,6 +569,10 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
       const lastSameKind = kr.points.map((item) => item.kind).lastIndexOf(kind)
       if (lastSameKind === -1) kr.points.push(point)
       else kr.points.splice(lastSameKind + 1, 0, point)
+    }),
+    swapPoints: (krId, pointId, targetId) => mutate((draft) => {
+      const kr = findKr(draft, krId)
+      if (kr) kr.points = swappedPointsWithinKind(kr.points, pointId, targetId)
     }),
     setPointKind: (krId, pointId, kind) => mutate((draft) => {
       const kr = findKr(draft, krId)

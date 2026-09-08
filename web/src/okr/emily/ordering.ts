@@ -10,6 +10,16 @@ export function swappedOrder(ids: string[], id: string, targetId: string): strin
   return next
 }
 
+// 策略与产品是两个独立分组；箭头只能交换同组行，其他分组占用的顺序槽保持不动。
+export function swappedPointsWithinKind<T extends { id: string; kind: string }>(points: T[], id: string, targetId: string): T[] {
+	const point = points.find((item) => item.id === id)
+	const target = points.find((item) => item.id === targetId)
+	if (!point || !target) throw new Error('要调换的具体 KR 已不在当前顺序里，请重新载入。')
+	if (point.kind !== target.kind) throw new Error('具体 KR 只能在同一分组内调整顺序。')
+	const byID = new Map(points.map((item) => [item.id, item]))
+	return swappedOrder(points.map((item) => item.id), id, targetId).map((pointID) => byID.get(pointID)!)
+}
+
 // A hierarchy row can show only the Objectives matching the active business,
 // priority, owner, or text filters. Reordering that row still writes the one
 // canonical Plan order, so visible Objectives exchange only the slots already
