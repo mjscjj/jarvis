@@ -37,6 +37,7 @@ export function WeeklyFocus({ comments, onOpenComment, readOnly = false, statusE
   const [error, setError] = useState('')
   const [showDone, setShowDone] = useState(true)
   const [followUpsOpen, setFollowUpsOpen] = useState(true)
+  const [focusOpen, setFocusOpen] = useState(true)
 
   const incomplete = useMemo(() => {
     const missing = new Map<string, number>()
@@ -134,14 +135,24 @@ export function WeeklyFocus({ comments, onOpenComment, readOnly = false, statusE
 
   return (
     <section aria-label="本周重点关注" className="mb-4 rounded-xl border border-blue-100 bg-gradient-to-br from-white to-blue-50/35 p-3.5 shadow-[0_3px_12px_rgba(31,35,40,0.035)]">
-      <header className="mb-2.5 flex flex-wrap items-end gap-2 border-b border-slate-100 pb-2">
-        <div><span className="block text-[9px] font-bold tracking-[0.12em] text-blue-600">WEEKLY FOCUS</span><h2 className="text-[16px] font-semibold text-slate-900">本周重点关注</h2></div>
-        <div className="ml-auto flex items-center gap-2 text-[10px] text-slate-500">
+      <header className={`flex flex-wrap items-end gap-2 ${focusOpen ? 'mb-2.5 border-b border-slate-100 pb-2' : ''}`}>
+        <button
+          type="button"
+          aria-expanded={focusOpen}
+          aria-controls="weekly-focus-content"
+          title={focusOpen ? '收起本周重点关注' : '展开本周重点关注'}
+          onClick={() => setFocusOpen((open) => !open)}
+          className="flex items-center gap-1.5 rounded-md text-left hover:text-blue-700"
+        >
+          <svg viewBox="0 0 12 12" aria-hidden className={`size-3 shrink-0 text-slate-400 transition-transform ${focusOpen ? 'rotate-90' : ''}`}><path d="M4 2.2 L8.8 6 L4 9.8 Z" fill="currentColor" /></svg>
+          <span><span className="block text-[9px] font-bold tracking-[0.12em] text-blue-600">WEEKLY FOCUS</span><span className="block text-[16px] font-semibold text-slate-900">本周重点关注</span></span>
+        </button>
+        {focusOpen ? <div className="ml-auto flex items-center gap-2 text-[10px] text-slate-500">
           <label className="inline-flex items-center gap-1"><input type="checkbox" checked={showDone} onChange={(event) => setShowDone(event.target.checked)} />显示已完成/废弃</label>
           {!readOnly && <button type="button" onClick={() => void add()} disabled={Boolean(savingID)} className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 font-medium text-blue-700 disabled:opacity-40">+ 新增事项</button>}
-        </div>
+        </div> : <span className="ml-auto text-[10px] text-slate-400">{incomplete.length} 人未完成 · {items.filter((item) => !isClosedFollowUp(item.status)).length} 项待跟进</span>}
       </header>
-      <div className="space-y-2.5">
+      {focusOpen && <div id="weekly-focus-content" className="space-y-2.5">
         <div className="min-w-0 rounded-lg border border-slate-200 bg-white/85 p-2.5">
           <h3 className="mb-2 flex items-center justify-between text-[12px] font-semibold text-slate-700"><span>未完成 OKR</span><b className="text-[10px] font-medium text-slate-400">{incomplete.length} 人</b></h3>
           {incomplete.length > 0 ? <div className="flex flex-wrap gap-1.5">{incomplete.map((item) => <span key={item.name} title={`${item.count} 条 KR 尚未完整填写本周进展`} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 py-0.5 pr-2 pl-1 text-[10px] text-slate-600"><span className="flex size-4 items-center justify-center rounded-full bg-slate-200 text-[8px] font-semibold">{item.name.slice(0, 1)}</span>{item.name}{item.count > 1 && <b className="text-blue-600">{item.count}</b>}</span>)}</div> : <div className="text-[11px] text-slate-400">本周具体 KR 均已填写</div>}
@@ -195,7 +206,7 @@ export function WeeklyFocus({ comments, onOpenComment, readOnly = false, statusE
             {legacyTodos.length > 0 && <div className="mt-2 border-t border-slate-100 pt-2"><div className="mb-1 text-[10px] font-medium text-slate-500">会议评论待办</div><div className="grid gap-1">{legacyTodos.map((comment) => <button key={comment.id} type="button" title="打开对应评论" onClick={() => onOpenComment(comment)} className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-baseline gap-2 rounded-md bg-amber-50 px-2 py-1.5 text-left hover:bg-amber-100"><span className="truncate text-[11px] font-medium text-slate-700">{comment.content}</span><span className="max-w-56 truncate text-[10px] text-slate-400">{targetLabel(comment)}</span></button>)}</div></div>}
           </div>}
         </div>
-      </div>
+      </div>}
     </section>
   )
 }

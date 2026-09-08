@@ -132,7 +132,7 @@ function HistoryPreview({ point }: { point: Point }) {
   )
 }
 
-function MetricRow({ krId, metric, readOnly, structureReadOnly, onRemove }: { krId: string; metric: MetricLine; readOnly: boolean; structureReadOnly: boolean; onRemove: () => void }) {
+function MetricRow({ krId, metric, readOnly, onRemove }: { krId: string; metric: MetricLine; readOnly: boolean; onRemove: () => void }) {
   const { patchMetric } = useBoard()
   const appendImages = useCallback((uploaded: ImageRef[]) => {
     patchMetric(krId, metric.id, { images: [...(metric.images ?? []), ...uploaded] })
@@ -169,8 +169,8 @@ function MetricRow({ krId, metric, readOnly, structureReadOnly, onRemove }: { kr
           </div>
         )}
       </div>
-      {!structureReadOnly && (
-        <button type="button" onClick={onRemove} title="删除这一条" className="ml-auto text-slate-300 opacity-0 transition-opacity group-hover/metric:opacity-100 hover:text-red-500">×</button>
+      {!readOnly && (
+        <button type="button" onClick={onRemove} title="删除这条核心数据" className="ml-auto shrink-0 rounded px-1.5 py-1 text-[10px] text-slate-300 transition-colors hover:bg-red-50 hover:text-red-600">删除</button>
       )}
     </div>
   )
@@ -190,9 +190,9 @@ function EmptyMetric({ disabled, pasteEnabled, onCreate }: { disabled: boolean; 
   )
 }
 
-function MetricBox({ kr, readOnly, structureReadOnly = readOnly }: { kr: Kr; readOnly: boolean; structureReadOnly?: boolean }) {
+function MetricBox({ kr, readOnly }: { kr: Kr; readOnly: boolean }) {
   const { setMetricNote, addMetric, removeMetric, week } = useBoard()
-  const metricCanBeAdded = canAddMetric(readOnly, structureReadOnly, kr.metrics.length)
+  const metricCanBeAdded = canAddMetric(readOnly)
   const createMetric = (images: ImageRef[] = []) => {
     const metricId = addMetric(kr.id, { images })
     window.requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(`[data-okr-metric-id="${metricId}"] textarea`)?.focus())
@@ -210,7 +210,7 @@ function MetricBox({ kr, readOnly, structureReadOnly = readOnly }: { kr: Kr; rea
       </div>
       <div className="group/metrics rounded-lg border border-blue-100 bg-white/90">
         {kr.metrics.map((metric) => (
-          <MetricRow key={metric.id} krId={kr.id} metric={metric} readOnly={readOnly} structureReadOnly={structureReadOnly} onRemove={() => removeMetric(kr.id, metric.id)} />
+          <MetricRow key={metric.id} krId={kr.id} metric={metric} readOnly={readOnly} onRemove={() => removeMetric(kr.id, metric.id)} />
         ))}
         {kr.metrics.length === 0 && (
           <EmptyMetric disabled={!metricCanBeAdded} pasteEnabled={Boolean(week)} onCreate={createMetric} />
@@ -475,7 +475,8 @@ function KrCard({ objectiveId, kr, closed, toggle, readOnly, definitionsReadOnly
   const { templateKey } = useBoard()
   const open = !closed.has(kr.id)
   // Wording and people live on the shared definition but a filling week may
-  // edit them; adding or removing rows, and labelling, stay with 管理与打标.
+  // edit them. Decomposition rows and labels stay with 管理与打标; metric rows
+  // are a week-scoped snapshot and remain structurally editable while filling.
   const structureLocked = readOnly || definitionsReadOnly
   // Scores belong to a reporting week, so they show wherever that week's
   // progress shows, and only for the template that scores.
@@ -488,7 +489,7 @@ function KrCard({ objectiveId, kr, closed, toggle, readOnly, definitionsReadOnly
       {showScore && <PreviewReviewPanel target={reviewTarget} className="mx-4 mt-2" />}
       {open && (
         <div className="space-y-5 px-4 py-4">
-          <MetricBox kr={kr} readOnly={readOnly} structureReadOnly={structureLocked} />
+          <MetricBox kr={kr} readOnly={readOnly} />
           {KINDS.map((kind) => <PointGroup key={kind} objectiveId={objectiveId} kr={kr} kind={kind} closed={closed} toggle={toggle} definitionReadOnly={readOnly} structureReadOnly={structureLocked} progressReadOnly={readOnly || progressReadOnly} showProgress={showProgress} deleteWarning="连同各周进展一起删除" />)}
         </div>
       )}

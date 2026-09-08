@@ -3,14 +3,10 @@ import test from 'node:test'
 
 import { canAddMetric } from '../src/okr/emily/metricEditing.ts'
 
-test('Review fill can seed the first weekly metric without unlocking definition structure', () => {
-  assert.equal(canAddMetric(false, true, 0), true)
-  assert.equal(canAddMetric(false, true, 1), false)
+test('Review fill can add weekly metric rows without changing the definition', () => {
+  assert.equal(canAddMetric(false), true)
 })
 
-test('management can add metrics and meeting views stay read-only', () => {
-  assert.equal(canAddMetric(false, false, 0), true)
-  assert.equal(canAddMetric(false, false, 2), true)
-  assert.equal(canAddMetric(true, true, 0), false)
-  assert.equal(canAddMetric(true, false, 0), false)
+test('read-only and meeting views cannot add metric rows', () => {
+  assert.equal(canAddMetric(true), false)
 })

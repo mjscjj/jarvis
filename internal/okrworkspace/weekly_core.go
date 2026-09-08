@@ -13,10 +13,9 @@ import (
 
 // WeeklyKRCoreInput is the reusable OKR write contract for one week's core
 // data shown under one KR. It cannot change the KR title, owners, tags or
-// decomposition definitions. When neither the definition nor this week has a
-// metric yet, the week may seed its own first metric row. Canonical metric
-// definitions remain authoritative; only definition-less KRs preserve a
-// week-seeded metric ID across later writes.
+// decomposition definitions. Metrics are a week-scoped snapshot: the stable
+// definition seeds a new week, while later writes may add or remove rows
+// without changing the definition or another week.
 type WeeklyKRCoreInput struct {
 	ExpectedVersion int32        `json:"expected_version"`
 	Week            string       `json:"week"`
@@ -50,11 +49,7 @@ func (s *Service) ReplaceWeeklyKRCore(ctx context.Context, krID string, input We
 	if existingErr != nil && !errors.Is(existingErr, gorm.ErrRecordNotFound) {
 		return KRView{}, fmt.Errorf("get weekly core data: %w", existingErr)
 	}
-	allowedIDs, err := s.weeklyMetricIDs(ctx, krID, existing)
-	if err != nil {
-		return KRView{}, err
-	}
-	if err := validateWeeklyMetrics(input.Metrics, allowedIDs); err != nil {
+	if err := validateWeeklyMetrics(input.Metrics); err != nil {
 		return KRView{}, err
 	}
 	metrics := make([]domain.WeeklyMetric, 0, len(input.Metrics))
@@ -93,53 +88,17 @@ func (s *Service) ReplaceWeeklyKRCore(ctx context.Context, krID string, input We
 	return s.GetProgressKR(ctx, krID, input.Week)
 }
 
-func (s *Service) weeklyMetricIDs(ctx context.Context, krID string, existing domain.WeeklyKRCore) ([]string, error) {
-	var rows []domain.KRMetric
-	if err := s.db.WithContext(ctx).Where("kr_id = ?", krID).Order("sort_order, id").Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("list weekly core metric definitions: %w", err)
-	}
-	if len(rows) > 0 {
-		ids := make([]string, 0, len(rows))
-		for _, metric := range rows {
-			ids = append(ids, metric.ID)
+func validateWeeklyMetrics(metrics []MetricView) error {
+	seen := make(map[string]struct{}, len(metrics))
+	for _, metric := range metrics {
+		id := strings.TrimSpace(metric.ID)
+		if id == "" || !domain.ValidLight(metric.Light) || !weeklyMetricHasContent(metric) {
+			return fmt.Errorf("weekly core data metrics require ids, text or images, and a valid light")
 		}
-		return ids, nil
-	}
-	if existing.KRID != "" {
-		ids := make([]string, 0, len(existing.Metrics))
-		for _, metric := range existing.Metrics {
-			ids = append(ids, metric.ID)
+		if _, exists := seen[id]; exists {
+			return fmt.Errorf("weekly core data metrics require unique ids")
 		}
-		return ids, nil
-	}
-	return nil, nil
-}
-
-func validateWeeklyMetrics(metrics []MetricView, allowedIDs []string) error {
-	if len(allowedIDs) == 0 {
-		if len(metrics) > 1 {
-			return fmt.Errorf("weekly core data can seed only one metric when the definition has none")
-		}
-		seen := make(map[string]struct{}, len(metrics))
-		for _, metric := range metrics {
-			id := strings.TrimSpace(metric.ID)
-			if id == "" || !domain.ValidLight(metric.Light) || !weeklyMetricHasContent(metric) {
-				return fmt.Errorf("weekly core data metrics require ids, text or images, and a valid light")
-			}
-			if _, exists := seen[id]; exists {
-				return fmt.Errorf("weekly core data metrics require unique ids")
-			}
-			seen[id] = struct{}{}
-		}
-		return nil
-	}
-	if len(metrics) != len(allowedIDs) {
-		return fmt.Errorf("weekly core data must preserve the metric definitions")
-	}
-	for index, metric := range metrics {
-		if strings.TrimSpace(metric.ID) == "" || metric.ID != allowedIDs[index] || !domain.ValidLight(metric.Light) || !weeklyMetricHasContent(metric) {
-			return fmt.Errorf("weekly core data must preserve metric ids and require text or images with a valid light")
-		}
+		seen[id] = struct{}{}
 	}
 	return nil
 }

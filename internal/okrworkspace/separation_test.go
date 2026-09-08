@@ -306,7 +306,7 @@ func TestWeeklyCoreDataIsIsolatedByWeek(t *testing.T) {
 	}
 }
 
-func TestWeeklyCoreCanSeedFirstMetricWithoutChangingDefinitionOrOtherWeeks(t *testing.T) {
+func TestWeeklyCoreCanCustomizeMetricsWithoutChangingDefinitionOrOtherWeeks(t *testing.T) {
 	db := openWorkspaceTestDB(t)
 	objective := domain.Objective{ID: "o-weekly-empty-metric", Title: "增长", Quarter: "2026-Q3"}
 	kr := domain.KR{ID: "kr-weekly-empty-metric", ObjectiveID: objective.ID, Title: "提升转化"}
@@ -351,17 +351,21 @@ func TestWeeklyCoreCanSeedFirstMetricWithoutChangingDefinitionOrOtherWeeks(t *te
 		t.Fatalf("weekly metric changed OKR definition: %+v", got)
 	}
 
-	if _, err := service.ReplaceWeeklyKRCore(t.Context(), kr.ID, WeeklyKRCoreInput{
+	customized, err := service.ReplaceWeeklyKRCore(t.Context(), kr.ID, WeeklyKRCoreInput{
 		Week: "2026-W36", UpdatedBy: "ou_editor",
 		Metrics: []MetricView{
 			{ID: "weekly-metric-2", Text: "first", Light: domain.LightGreen},
 			{ID: "weekly-metric-3", Text: "second", Light: domain.LightGreen},
 		},
-	}); err == nil {
-		t.Fatal("seeding more than one weekly metric should fail")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(customized.Metrics) != 2 || customized.Metrics[0].ID != "weekly-metric-2" || customized.Metrics[1].ID != "weekly-metric-3" {
+		t.Fatalf("customized weekly metrics = %+v", customized.Metrics)
 	}
 	if _, err := service.ReplaceWeeklyKRCore(t.Context(), kr.ID, WeeklyKRCoreInput{
-		Week: "2026-W36", UpdatedBy: "ou_editor",
+		ExpectedVersion: customized.WeeklyCoreVersion, Week: "2026-W36", UpdatedBy: "ou_editor",
 		Metrics: []MetricView{{ID: "weekly-metric-empty", Light: domain.LightGreen}},
 	}); err == nil {
 		t.Fatal("empty weekly metric should fail")
@@ -401,10 +405,14 @@ func TestWeeklyCoreCanDropLegacyMetricOutsideCanonicalDefinition(t *testing.T) {
 	if cleaned.WeeklyCoreVersion != legacyCore.Version+1 || len(cleaned.Metrics) != 1 || cleaned.Metrics[0].ID != metric.ID {
 		t.Fatalf("cleaned weekly core = %+v", cleaned)
 	}
-	if _, err := service.ReplaceWeeklyKRCore(t.Context(), kr.ID, WeeklyKRCoreInput{
+	withoutMetrics, err := service.ReplaceWeeklyKRCore(t.Context(), kr.ID, WeeklyKRCoreInput{
 		ExpectedVersion: cleaned.WeeklyCoreVersion, Week: week.Week, UpdatedBy: "ou_editor", Metrics: []MetricView{},
-	}); err == nil {
-		t.Fatal("canonical metric should still be required")
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(withoutMetrics.Metrics) != 0 {
+		t.Fatalf("weekly core should allow removing canonical metrics: %+v", withoutMetrics.Metrics)
 	}
 }
 
