@@ -138,7 +138,7 @@ function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories, deta
   )
 }
 
-function NewKrRow({ objective, businessCategories, peopleOptions, onClose }: { objective: Objective; businessCategories: string[]; peopleOptions: KrOwner[]; onClose: () => void }) {
+function NewKrRow({ objective, businessCategories, peopleOptions, onClose, onCreated }: { objective: Objective; businessCategories: string[]; peopleOptions: KrOwner[]; onClose: () => void; onCreated: () => void }) {
 		const { createKr } = useBoard()
 		const [title, setTitle] = useState('')
 		const [owners, setOwners] = useState<KrOwner[]>([])
@@ -151,6 +151,7 @@ function NewKrRow({ objective, businessCategories, peopleOptions, onClose }: { o
     setCreating(true)
     try {
 				await createKr(objective.id, { title: title.trim(), owners, businessCategory: businessCategory.trim(), priority })
+      onCreated()
       onClose()
     } catch {
       setCreating(false)
@@ -249,7 +250,7 @@ function ObjectiveEditorHeader({
 						<path d="M4 2.2 L8.8 6 L4 9.8 Z" fill="currentColor" />
 					</svg>
 				</button>
-				<h3 className="min-w-0 flex-1 truncate text-[10px] font-semibold text-slate-500">{objective.title}</h3>
+				<h3 className="min-w-0 flex-1 truncate text-[12px] font-bold text-slate-800">{objective.title}</h3>
 				<span className="text-[9px] tabular-nums text-slate-400">{visibleKrCount}{visibleKrCount !== totalKrCount ? ` / ${totalKrCount}` : ''} 条</span>
 				<MoveButtons label="个 O" onUp={onMoveUp} onDown={onMoveDown} />
 				<button type="button" onClick={() => { setTitle(objective.title); setEditing(true) }} className="h-5 rounded-md px-1.5 text-[9px] text-slate-500 hover:bg-white hover:text-blue-600">重命名 O</button>
@@ -295,6 +296,7 @@ export function ManagementView({
   const [creatingObjective, setCreatingObjective] = useState(false)
   const [objectiveTitle, setObjectiveTitle] = useState('')
   const [objectiveQuarter, setObjectiveQuarter] = useState(quarter)
+	const [placementNotice, setPlacementNotice] = useState('')
 	const toolbarPriority = hierarchyNavigation ? '' : priority
 	const hasFilters = Boolean(query.trim() || owner || toolbarPriority || (showTags && tag) || businessCategory !== undefined || hierarchyPriority !== undefined || hierarchyObjectiveId)
 	const peopleOptions = useMemo(() => ownerOptions(objectives), [objectives])
@@ -371,6 +373,7 @@ export function ManagementView({
 			await createObjective({ quarter: targetQuarter, title })
 			setObjectiveTitle('')
 			setCreatingObjective(false)
+			setPlacementNotice(`已新建 O“${title}”，位于 OKR 列表最底部。`)
 		} catch {
 			// BoardProvider exposes the failure through the shared sync notice.
 		}
@@ -420,13 +423,13 @@ export function ManagementView({
       <section className="overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
         <div className="border-b border-slate-100 px-3.5 py-3">
           <div className="flex flex-wrap items-center gap-2">
-          <div className="mr-2">
+          {(title || subtitle) && <div className="mr-2">
             <div className="flex items-baseline gap-2">
               <h2 className="text-[13px] font-semibold text-slate-800">{title}</h2>
               <span className="text-[9px] tabular-nums text-slate-400">{resultCount} KR{showTags ? ` · ${tagCount} 标签` : ''}</span>
             </div>
-            <p className="mt-0.5 text-[10px] text-slate-400">{subtitle}</p>
-          </div>
+            {subtitle && <p className="mt-0.5 text-[10px] text-slate-400">{subtitle}</p>}
+          </div>}
           <div className="ml-auto rounded-lg bg-slate-50 px-2 py-1 text-[10px] text-slate-500">
             <span className="font-medium text-slate-700">{resultCount}</span> / {objectives.reduce((total, objective) => total + objective.krs.length, 0)} 条
           </div>
@@ -438,6 +441,7 @@ export function ManagementView({
 			<button type="button" onClick={() => void submitObjective()} disabled={!objectiveTitle.trim() || !objectiveQuarter.trim() || syncState.kind === 'saving'} className="h-8 rounded-lg bg-indigo-600 px-3 text-[10px] font-medium text-white disabled:opacity-40">创建目标</button>
 			<button type="button" onClick={() => setCreatingObjective(false)} className="h-8 px-2 text-[10px] text-slate-400">取消</button>
 		  </div>}
+		  {placementNotice && <div role="status" className="mt-3 flex items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-[10px] text-emerald-700"><span className="flex-1">{placementNotice}</span><button type="button" onClick={() => setPlacementNotice('')} className="text-emerald-500 hover:text-emerald-700">知道了</button></div>}
           <div className="mt-3 flex flex-wrap gap-1.5 rounded-xl border border-slate-200 bg-slate-50/70 p-2">
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索 O / KR 内容" className="h-8 min-w-48 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-[11px] outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-50 sm:max-w-72" />
             <select value={owner} onChange={(event) => setOwner(event.target.value)} className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] text-slate-600 outline-none focus:border-blue-400"><option value="">全部负责人</option>{owners.map((item) => <option key={item} value={item}>{item}</option>)}</select>
@@ -486,7 +490,7 @@ export function ManagementView({
                 onMoveDown={objectiveIndex < groups.length - 1 ? () => void swapObjectives(objective.id, groups[objectiveIndex + 1].id) : undefined}
               />
               {!collapsed.has(objective.id) && <div className="divide-y divide-slate-100">
-						{creatingObjectiveId === objective.id && <NewKrRow objective={objective} businessCategories={businessCategories} peopleOptions={peopleOptions} onClose={() => setCreatingObjectiveId('')} />}
+						{creatingObjectiveId === objective.id && <NewKrRow objective={objective} businessCategories={businessCategories} peopleOptions={peopleOptions} onClose={() => setCreatingObjectiveId('')} onCreated={() => setPlacementNotice(`已新建 KR，位于“O ${objective.title}”下的 KR 列表最底部。`)} />}
 						{objective.krs.map((kr, krIndex) => <KrEditorRow
 							key={kr.id}
 							objectiveId={objective.id}

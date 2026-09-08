@@ -22,7 +22,7 @@ export function WeeklyTools({ onOpenPoint, readOnly = false }: { onOpenPoint: (p
   return (
     <section className="mb-3 overflow-hidden rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
       <button type="button" onClick={() => { setOpen((current) => !current); if (open) setTool(undefined) }} className={`flex w-full items-center gap-3 px-3.5 py-2 text-left hover:bg-slate-50 ${open ? 'border-b border-slate-100' : ''}`}>
-        <div><h2 className="text-xs font-semibold text-slate-800">周报工具</h2><p className="mt-0.5 text-[10px] text-slate-400">Meego 原始差异与进展填写事实</p></div>
+        <h2 className="text-xs font-semibold text-slate-800">周报工具</h2>
         <span className={`ml-auto text-xs text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`}>⌄</span>
       </button>
       {open && <div className="grid grid-cols-2 gap-px bg-slate-100 sm:max-w-md">

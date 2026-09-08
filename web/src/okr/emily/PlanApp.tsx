@@ -93,8 +93,8 @@ function PlanCanvas({ shared = false, onShareTabChange }: { shared?: boolean; on
         {plan ? (
           <div className={`transition-opacity ${saving ? 'pointer-events-none opacity-55' : ''}`}>
             <ManagementView
-              title={plan.title}
-              subtitle={`Biz OKR Plan 草稿独立保存，当前版本 v${plan.version}；结构编辑与“管理与打标”一致，不影响正式 OKR。`}
+              title=""
+              subtitle=""
               showTags
               deleteKrWarning="只删除这个 Plan 草稿里的 KR"
 				hierarchyNavigation

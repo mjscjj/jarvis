@@ -1,6 +1,7 @@
 import type { CreateTaskInput, ScheduledTask, ScheduledTaskInput } from '../../types'
 
 export type OKRActionKey = 'remind_missing' | 'progress_sync' | 'meeting_summary' | 'publish_report'
+export type OKRActionCategory = 'notification' | 'material'
 
 export interface OKRActionDefinition {
   key: OKRActionKey
@@ -9,6 +10,7 @@ export interface OKRActionDefinition {
   description: string
   promptKey: string
   cadence: 'weekly' | 'interval'
+  category: OKRActionCategory
   weekday?: number
   time?: string
   intervalMinutes?: number
@@ -42,6 +44,7 @@ export const OKR_ACTIONS: OKRActionDefinition[] = [
     description: '周一定位 Platform Team 周会，会前先逐人私聊催填，再按 O-KR 维度群内汇总提醒。',
     promptKey: 'okr_agent_weekly_reminder',
     cadence: 'weekly',
+    category: 'notification',
     weekday: 1,
     time: '09:00',
     tone: 'amber',
@@ -53,6 +56,7 @@ export const OKR_ACTIONS: OKRActionDefinition[] = [
     description: '巡检 Meego 和消息证据，把客观变化写回世界模型。',
     promptKey: 'okr_agent_progress_sync',
     cadence: 'interval',
+    category: 'notification',
     intervalMinutes: 360,
     tone: 'blue',
   },
@@ -63,6 +67,7 @@ export const OKR_ACTIONS: OKRActionDefinition[] = [
     description: '根据最近两个有效周次生成双周会材料草稿。',
     promptKey: 'okr_agent_report_c',
     cadence: 'weekly',
+    category: 'material',
     weekday: 2,
     time: '10:00',
     tone: 'violet',
@@ -74,6 +79,7 @@ export const OKR_ACTIONS: OKRActionDefinition[] = [
     description: '生成中台周报并提交到 Prompt 约定的固定落点。',
     promptKey: 'okr_agent_report_b',
     cadence: 'weekly',
+    category: 'material',
     weekday: 2,
     time: '18:00',
     tone: 'emerald',

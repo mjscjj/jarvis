@@ -255,7 +255,6 @@ export default function App({
               {availableWeeks.map((item) => <option key={item} value={item}>{weekLabel(item)}</option>)}
             </select>
 	          </div>
-		          {reviewDataset && <span className="rounded-full border border-violet-200 bg-violet-50 px-2 py-1 text-[9px] font-semibold uppercase tracking-wide text-violet-700">Preview</span>}
 	          {managesWeeks && <button type="button" onClick={() => { setConfirmDeleteWeek(false); setNewQuarter(quarter || currentQuarter()); setNewWeek(currentISOWeek()); setOpeningWeek((value) => !value); setWeekNotice('') }} className={`h-8 whitespace-nowrap rounded-lg border px-2.5 text-[10px] font-medium ${reviewDataset ? 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100' : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'}`}>新建{lifecycleName}</button>}
 	          {managesWeeks && <button type="button" disabled={!week || deleteBlocked} onClick={() => { setConfirmDeleteWeek(true); setOpeningWeek(false); setWeekNotice('') }} className="h-8 whitespace-nowrap rounded-lg border border-red-200 bg-red-50 px-2.5 text-[10px] font-medium text-red-700 hover:bg-red-100 disabled:opacity-40">删除{lifecycleName}</button>}
 			<div className="ml-auto flex flex-wrap items-center justify-end gap-2.5">

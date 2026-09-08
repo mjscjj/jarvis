@@ -50,6 +50,17 @@ test('keeps the original four actions and binds each to one current prompt', () 
   assert.ok(OKR_ACTIONS.every((item) => item.promptKey.startsWith('okr_agent_')))
 })
 
+test('groups every fixed action into one of the two scheduling tabs', () => {
+  assert.deepEqual(
+    OKR_ACTIONS.filter((item) => item.category === 'notification').map((item) => item.key),
+    ['remind_missing', 'progress_sync'],
+  )
+  assert.deepEqual(
+    OKR_ACTIONS.filter((item) => item.category === 'material').map((item) => item.key),
+    ['meeting_summary', 'publish_report'],
+  )
+})
+
 test('weekly reminder starts its meeting-relative flow on Monday at 09:00', () => {
   const definition = actionDefinition('remind_missing')
   assert.equal(definition.cadence, 'weekly')

@@ -368,6 +368,46 @@ func TestWeeklyCoreCanSeedFirstMetricWithoutChangingDefinitionOrOtherWeeks(t *te
 	}
 }
 
+func TestWeeklyCoreCanDropLegacyMetricOutsideCanonicalDefinition(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	objective := domain.Objective{ID: "o-weekly-legacy-metric", Title: "增长", Quarter: "2026-Q3"}
+	kr := domain.KR{ID: "kr-weekly-legacy-metric", ObjectiveID: objective.ID, Title: "提升转化"}
+	metric := domain.KRMetric{ID: "metric-canonical", KRID: kr.ID, Text: "季度累计 100", Light: domain.LightGreen}
+	week := domain.WeeklyReportWeek{Quarter: objective.Quarter, Week: "2026-W36", OpenedBy: "test"}
+	legacyCore := domain.WeeklyKRCore{
+		KRID: kr.ID, Week: week.Week, Version: 4, UpdatedBy: "legacy",
+		Metrics: []domain.WeeklyMetric{
+			{ID: metric.ID, Text: "本周累计 120", Light: domain.LightYellow},
+			{ID: "metric-orphan", Text: "无效行，待删除", Light: domain.LightGreen},
+		},
+	}
+	for _, value := range []any{&objective, &kr, &metric, &week, &legacyCore} {
+		if err := db.Create(value).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cleaned, err := service.ReplaceWeeklyKRCore(t.Context(), kr.ID, WeeklyKRCoreInput{
+		ExpectedVersion: legacyCore.Version, Week: week.Week, UpdatedBy: "ou_editor",
+		Metrics: []MetricView{{ID: metric.ID, Text: "本周累计 120", Light: domain.LightYellow}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cleaned.WeeklyCoreVersion != legacyCore.Version+1 || len(cleaned.Metrics) != 1 || cleaned.Metrics[0].ID != metric.ID {
+		t.Fatalf("cleaned weekly core = %+v", cleaned)
+	}
+	if _, err := service.ReplaceWeeklyKRCore(t.Context(), kr.ID, WeeklyKRCoreInput{
+		ExpectedVersion: cleaned.WeeklyCoreVersion, Week: week.Week, UpdatedBy: "ou_editor", Metrics: []MetricView{},
+	}); err == nil {
+		t.Fatal("canonical metric should still be required")
+	}
+}
+
 func TestWeeklyReportWeekLifecycleDoesNotRequireProgress(t *testing.T) {
 	db := openWorkspaceTestDB(t)
 	objective := domain.Objective{ID: "o-week", Title: "增长", Quarter: "2026-Q3"}

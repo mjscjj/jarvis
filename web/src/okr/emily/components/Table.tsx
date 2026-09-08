@@ -620,7 +620,7 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
   return (
     <div className={readOnly ? 'kr-table-readonly' : ''}>
       <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
-			{showReview && <PreviewReviewButton target={{ kind: 'all', title: '全部 OKR' }} label="评审全部" className="px-3" />}
+			{showReview && <PreviewReviewButton target={{ kind: 'all', title: '全部 OKR' }} label="AI评审" className="px-3" />}
 			<span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] text-slate-400">共 {totalKRCount} 条 KR{hasOwnerFilter ? `，已选 ${ownerFilters.length} 人后 ${visibleKRCount} 条` : ''}，当前方向 {activeKRCount} 条</span>
 		<span className="ml-auto" />
 		<OwnerFilterPicker

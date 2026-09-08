@@ -148,9 +148,7 @@ export function WeeklyFocus({ comments, onOpenComment, readOnly = false, statusE
         </div>
         <div className="min-w-0 rounded-lg border border-slate-200 bg-white/85 p-2.5">
           <h3 className={`flex items-center justify-between gap-2 text-[12px] font-semibold text-slate-700 ${followUpsOpen ? 'mb-2' : ''}`}>
-            <span>待跟进事项</span>
             <span className="flex items-center gap-2">
-              <b className="text-[10px] font-medium text-slate-400">{items.filter((item) => !isClosedFollowUp(item.status)).length} 待跟进 / {items.length} 全部</b>
               <button
                 type="button"
                 aria-expanded={followUpsOpen}
@@ -160,7 +158,9 @@ export function WeeklyFocus({ comments, onOpenComment, readOnly = false, statusE
               >
                 {followUpsOpen ? '收起' : '展开'}
               </button>
+              <span>待跟进事项</span>
             </span>
+            <b className="text-[10px] font-medium text-slate-400">{items.filter((item) => !isClosedFollowUp(item.status)).length} 待跟进 / {items.length} 全部</b>
           </h3>
           {followUpsOpen && <div id="weekly-follow-ups-content">
             {error && <div className="mb-2 rounded-md bg-red-50 px-2 py-1.5 text-[10px] text-red-700">{error} <button type="button" onClick={() => void load()} className="underline">重试</button></div>}

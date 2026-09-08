@@ -14,8 +14,9 @@ import (
 // WeeklyKRCoreInput is the reusable OKR write contract for one week's core
 // data shown under one KR. It cannot change the KR title, owners, tags or
 // decomposition definitions. When neither the definition nor this week has a
-// metric yet, the week may seed its own first metric row; later writes preserve
-// that week's metric IDs.
+// metric yet, the week may seed its own first metric row. Canonical metric
+// definitions remain authoritative; only definition-less KRs preserve a
+// week-seeded metric ID across later writes.
 type WeeklyKRCoreInput struct {
 	ExpectedVersion int32        `json:"expected_version"`
 	Week            string       `json:"week"`
@@ -93,6 +94,17 @@ func (s *Service) ReplaceWeeklyKRCore(ctx context.Context, krID string, input We
 }
 
 func (s *Service) weeklyMetricIDs(ctx context.Context, krID string, existing domain.WeeklyKRCore) ([]string, error) {
+	var rows []domain.KRMetric
+	if err := s.db.WithContext(ctx).Where("kr_id = ?", krID).Order("sort_order, id").Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list weekly core metric definitions: %w", err)
+	}
+	if len(rows) > 0 {
+		ids := make([]string, 0, len(rows))
+		for _, metric := range rows {
+			ids = append(ids, metric.ID)
+		}
+		return ids, nil
+	}
 	if existing.KRID != "" {
 		ids := make([]string, 0, len(existing.Metrics))
 		for _, metric := range existing.Metrics {
@@ -100,15 +112,7 @@ func (s *Service) weeklyMetricIDs(ctx context.Context, krID string, existing dom
 		}
 		return ids, nil
 	}
-	var rows []domain.KRMetric
-	if err := s.db.WithContext(ctx).Where("kr_id = ?", krID).Order("sort_order, id").Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("list weekly core metric definitions: %w", err)
-	}
-	ids := make([]string, 0, len(rows))
-	for _, metric := range rows {
-		ids = append(ids, metric.ID)
-	}
-	return ids, nil
+	return nil, nil
 }
 
 func validateWeeklyMetrics(metrics []MetricView, allowedIDs []string) error {
