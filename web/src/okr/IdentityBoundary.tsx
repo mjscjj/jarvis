@@ -6,6 +6,8 @@ interface ActiveLogin extends FeishuDeviceLogin {
   retryAfterSeconds: number
 }
 
+const ACCOUNT_POSITION_KEY = 'jarvis-okr-account-position'
+
 export default function IdentityBoundary({ children }: { children: ReactNode }) {
   const [auth, setAuth] = useState<AuthStatus>()
   const [activeLogin, setActiveLogin] = useState<ActiveLogin>()
@@ -74,6 +76,13 @@ export default function IdentityBoundary({ children }: { children: ReactNode }) 
     }, Math.max(1, activeLogin.retryAfterSeconds) * 1000)
     return () => window.clearTimeout(timer)
   }, [activeLogin])
+
+  useEffect(() => {
+    // Older builds persisted a draggable absolute position. The account status
+    // is fixed again, so remove that stale browser state once and let layout
+    // remain the single source of truth for its placement.
+    window.localStorage.removeItem(ACCOUNT_POSITION_KEY)
+  }, [])
 
   const startLogin = async () => {
     setError('')
