@@ -138,6 +138,48 @@ func TestCommentContentPatchStillValidatesText(t *testing.T) {
 	}
 }
 
+func TestCommentSupportsUploadedImagesAndImageOnlyReplies(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	if err := db.Create(&domain.WeeklyReportWeek{Quarter: "2026-Q3", Week: "2026-W35", OpenedBy: "test"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	image := CommentImage{ID: "img-123", Name: "截图.png", URL: "/okr-assets/123.png", Width: 320}
+	root, err := service.CreateComment(t.Context(), CreateCommentInput{
+		Quarter: "2026-Q3", Week: "2026-W35", TargetType: "kr", TargetID: "kr1", Images: []CommentImage{image},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root.Content != "" || len(root.Images) != 1 || root.Images[0].ID != image.ID {
+		t.Fatalf("image-only root = %#v", root)
+	}
+	reply, err := service.CreateComment(t.Context(), CreateCommentInput{
+		Quarter: "2026-Q3", Week: "2026-W35", ParentID: root.ID, Images: []CommentImage{image},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reply.Images) != 1 || reply.TargetID != root.TargetID {
+		t.Fatalf("image-only reply = %#v", reply)
+	}
+	empty := []CommentImage{}
+	if _, err := service.UpdateComment(t.Context(), root.ID, UpdateCommentInput{Images: &empty}); err == nil || !strings.Contains(err.Error(), "content or image") {
+		t.Fatalf("removing the only image error = %v", err)
+	}
+	content := "补充文字"
+	updated, err := service.UpdateComment(t.Context(), root.ID, UpdateCommentInput{Content: &content, Images: &empty})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Content != content || len(updated.Images) != 0 {
+		t.Fatalf("updated comment = %#v", updated)
+	}
+}
+
 func TestFollowUpCommentRequiresAnExistingTargetInTheSameScope(t *testing.T) {
 	db := openWorkspaceTestDB(t)
 	for _, week := range []string{"2026-W35", "2026-W36"} {

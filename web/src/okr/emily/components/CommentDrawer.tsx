@@ -38,7 +38,7 @@ function notificationErrorText(comment: PageComment) {
   return comment.notificationErrors?.join('；') ?? ''
 }
 
-function CommentEditorFields({ value, images, objectives, placeholder, rows, autoFocus, inputRef, disabled = false, onChange, onImagesChange, onSubmitShortcut }: {
+function CommentEditorFields({ value, images, objectives, placeholder, rows, autoFocus, inputRef, disabled = false, onChange, onImagesChange, onUploadingChange, onSubmitShortcut }: {
   value: CommentDraft
   images: ImageRef[]
   objectives: Objective[]
@@ -49,10 +49,12 @@ function CommentEditorFields({ value, images, objectives, placeholder, rows, aut
   disabled?: boolean
   onChange: (value: CommentDraft) => void
   onImagesChange: (images: ImageRef[]) => void
+  onUploadingChange?: (uploading: boolean) => void
   onSubmitShortcut: () => void
 }) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const upload = usePastedImageUpload((uploaded) => onImagesChange([...images, ...uploaded].slice(0, 9)), disabled || images.length >= 9)
+  useEffect(() => onUploadingChange?.(upload.uploading), [onUploadingChange, upload.uploading])
   const chooseFiles = (files: FileList | null) => {
     if (!files) return
     upload.upload(Array.from(files).slice(0, Math.max(0, 9 - images.length)))
@@ -85,6 +87,7 @@ function EditableCommentBody({ comment, objectives, compact = false, footer, onE
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [value, setValue] = useState<CommentDraft>({ content: comment.content, mentions: comment.mentions })
   const [images, setImages] = useState<ImageRef[]>(comment.images ?? [])
+  const [imageUploading, setImageUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -99,7 +102,7 @@ function EditableCommentBody({ comment, objectives, compact = false, footer, onE
     const mentionsUnchanged = value.mentions.length === comment.mentions.length
       && value.mentions.every((mention, index) => mention.openId === comment.mentions[index]?.openId && mention.name === comment.mentions[index]?.name)
     const imagesUnchanged = JSON.stringify(images) === JSON.stringify(comment.images ?? [])
-    if ((!content && images.length === 0) || saving || (content === comment.content && mentionsUnchanged && imagesUnchanged)) {
+    if ((!content && images.length === 0) || saving || imageUploading || (content === comment.content && mentionsUnchanged && imagesUnchanged)) {
       if (content === comment.content && mentionsUnchanged && imagesUnchanged) setEditing(false)
       return
     }
@@ -130,11 +133,11 @@ function EditableCommentBody({ comment, objectives, compact = false, footer, onE
   if (editing) {
     return (
       <div className="mt-1.5 rounded-lg border border-indigo-200 bg-white p-2">
-        <CommentEditorFields autoFocus value={value} images={images} objectives={objectives} onChange={setValue} onImagesChange={setImages} onSubmitShortcut={() => void save()} placeholder="修改评论…" rows={compact ? 2 : 3} />
+        <CommentEditorFields autoFocus value={value} images={images} objectives={objectives} onChange={setValue} onImagesChange={setImages} onUploadingChange={setImageUploading} onSubmitShortcut={() => void save()} placeholder="修改评论…" rows={compact ? 2 : 3} />
         {error && <div className="mb-1 text-[11px] text-red-600">{error}</div>}
         <div className="flex justify-end gap-1.5">
           <button type="button" onClick={() => { setEditing(false); setValue({ content: comment.content, mentions: comment.mentions }); setImages(comment.images ?? []); setError('') }} className="rounded px-2 py-1 text-[11px] text-slate-500 hover:bg-slate-100">取消</button>
-          <button type="button" onClick={() => void save()} disabled={(!value.content.trim() && images.length === 0) || saving} className="rounded-md bg-indigo-600 px-2.5 py-1 text-[11px] font-medium text-white disabled:bg-slate-300">{saving ? '保存中…' : '保存'}</button>
+          <button type="button" onClick={() => void save()} disabled={(!value.content.trim() && images.length === 0) || saving || imageUploading} className="rounded-md bg-indigo-600 px-2.5 py-1 text-[11px] font-medium text-white disabled:bg-slate-300">{saving ? '保存中…' : imageUploading ? '图片上传中…' : '保存'}</button>
         </div>
       </div>
     )
@@ -183,6 +186,7 @@ function CommentSourceCard({ source, context, onNavigate }: { source: PageCommen
 function ReplyComposer({ comment, objectives, createReply, onCreated, onCancel }: { comment: PageComment; objectives: Objective[]; createReply: (parentId: string, content: string, mentions: CommentMention[], images: ImageRef[]) => Promise<PageComment>; onCreated: (comment: PageComment) => void; onCancel: () => void }) {
   const [value, setValue] = useState<CommentDraft>({ content: '', mentions: [] })
   const [images, setImages] = useState<ImageRef[]>([])
+  const [imageUploading, setImageUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const inputRef = useRef<HTMLTextAreaElement>(null)
@@ -190,7 +194,7 @@ function ReplyComposer({ comment, objectives, createReply, onCreated, onCancel }
 
   const submit = async () => {
     const content = value.content.trim()
-    if ((!content && images.length === 0) || saving) return
+    if ((!content && images.length === 0) || saving || imageUploading) return
     setSaving(true)
     setError('')
     try {
@@ -207,11 +211,11 @@ function ReplyComposer({ comment, objectives, createReply, onCreated, onCancel }
 
   return (
     <div className="mt-2 rounded-lg border border-indigo-100 bg-indigo-50/40 p-2">
-      <CommentEditorFields inputRef={inputRef} value={value} images={images} objectives={objectives} onChange={setValue} onImagesChange={setImages} onSubmitShortcut={() => void submit()} placeholder={`回复 ${comment.authorName}，输入 @ 选择提醒人`} rows={2} />
+      <CommentEditorFields inputRef={inputRef} value={value} images={images} objectives={objectives} onChange={setValue} onImagesChange={setImages} onUploadingChange={setImageUploading} onSubmitShortcut={() => void submit()} placeholder={`回复 ${comment.authorName}，输入 @ 选择提醒人`} rows={2} />
       {error && <div className="mb-1 text-[11px] text-red-600">{error}</div>}
       <div className="flex items-center justify-end gap-1.5">
         <button type="button" onClick={onCancel} className="rounded px-2 py-1 text-[11px] text-slate-500 hover:bg-white">取消</button>
-        <button type="button" onClick={() => void submit()} disabled={(!value.content.trim() && images.length === 0) || saving} className="rounded-md bg-indigo-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300">{saving ? '回复中…' : '回复'}</button>
+        <button type="button" onClick={() => void submit()} disabled={(!value.content.trim() && images.length === 0) || saving || imageUploading} className="rounded-md bg-indigo-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300">{saving ? '回复中…' : imageUploading ? '图片上传中…' : '回复'}</button>
       </div>
     </div>
   )
@@ -314,6 +318,7 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
   const [saving, setSaving] = useState(false)
   const [draft, setDraft] = useState<CommentDraft>({ content: '', mentions: [] })
   const [draftImages, setDraftImages] = useState<ImageRef[]>([])
+  const [draftImageUploading, setDraftImageUploading] = useState(false)
   const [error, setError] = useState('')
   const [navigationNotice, setNavigationNotice] = useState('')
   const [reviewCommentId, setReviewCommentId] = useState('')
@@ -394,7 +399,7 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
 
   const addRoot = async () => {
     const content = draft.content.trim()
-    if ((!content && draftImages.length === 0) || saving) return
+    if ((!content && draftImages.length === 0) || saving || draftImageUploading) return
     setSaving(true)
     setError('')
     const activeTarget = target ?? (planId
@@ -518,10 +523,10 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
         {!reviewing && <div className="shrink-0 border-b border-slate-100 bg-slate-50/60 p-3">
           {target && <div className="mb-2"><CommentSourceCard source={target} context={targetContext} onNavigate={navigateToTargetSource} /></div>}
           <div className="rounded-xl border border-slate-200 bg-white p-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-            <CommentEditorFields value={draft} images={draftImages} objectives={objectives} onChange={setDraft} onImagesChange={setDraftImages} onSubmitShortcut={() => void addRoot()} placeholder={target ? '针对这段内容发表评论，输入 @ 选择提醒人…' : planId ? '对当前 Plan 发表评论，输入 @ 选择提醒人…' : '对本周页面发表评论，输入 @ 选择提醒人…'} rows={3} />
+            <CommentEditorFields value={draft} images={draftImages} objectives={objectives} onChange={setDraft} onImagesChange={setDraftImages} onUploadingChange={setDraftImageUploading} onSubmitShortcut={() => void addRoot()} placeholder={target ? '针对这段内容发表评论，输入 @ 选择提醒人…' : planId ? '对当前 Plan 发表评论，输入 @ 选择提醒人…' : '对本周页面发表评论，输入 @ 选择提醒人…'} rows={3} />
             <div className="mt-1 flex items-center gap-2">
               <span className="text-[10px] text-slate-300">Enter 发布 · Shift+Enter 换行</span>
-              <button type="button" onClick={() => void addRoot()} disabled={(!draft.content.trim() && draftImages.length === 0) || saving} className="ml-auto rounded-md bg-indigo-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300">{saving ? '发布中…' : '发布评论'}</button>
+              <button type="button" onClick={() => void addRoot()} disabled={(!draft.content.trim() && draftImages.length === 0) || saving || draftImageUploading} className="ml-auto rounded-md bg-indigo-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300">{saving ? '发布中…' : draftImageUploading ? '图片上传中…' : '发布评论'}</button>
             </div>
           </div>
           {error && <div className="mt-2 text-[11px] text-red-600">{error}</div>}
