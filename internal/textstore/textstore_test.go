@@ -93,12 +93,16 @@ func TestOKRWeeklyReminderUsesBroadcastDelivery(t *testing.T) {
 		t.Fatalf("read OKR weekly reminder prompt: %v", err)
 	}
 	prompt := string(content)
-	for _, want := range []string{"`feishu-broadcast` Skill", "Jarvis通知机器人", "企业邮箱", "不得搜索、复用或创建助手群"} {
+	for _, want := range []string{
+		"`feishu-broadcast` Skill", "Jarvis通知机器人", "企业邮箱", "不得搜索、复用或创建助手群",
+		"`Platform Team Weekly Catch Up`", "`yield-until`", "前一个自然日的 19:30", "前 4 小时",
+		"`[Core Group] Platform Team`", "`feishu-send-message` Skill", "按 O-KR 维度", "请尽快更新：https://emily.bytedance.net/#/weekly-report?quarter=2026-Q3&tab=review-fill",
+	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("OKR weekly reminder prompt missing broadcast contract %q:\n%s", want, prompt)
 		}
 	}
-	for _, obsolete := range []string{"okr_review_reminder_channel_for", "`feishu-send-message` Skill", "群复用/新建数量"} {
+	for _, obsolete := range []string{"okr_review_reminder_channel_for", "群复用/新建数量"} {
 		if strings.Contains(prompt, obsolete) {
 			t.Fatalf("OKR weekly reminder prompt still contains assistant-group delivery %q:\n%s", obsolete, prompt)
 		}
@@ -113,6 +117,8 @@ func TestWeeklyReportReminderSkillUsesTwoBoardsAndFinalPrompt(t *testing.T) {
 	skill := string(content)
 	for _, want := range []string{
 		"okr_agent_weekly_reminder",
+		"lark-cli calendar +search-event",
+		"jarvis-tools yield-until",
 		"board --quarter '<quarter>' --week '<week>'",
 		"board --quarter '<quarter>' --week '<previous_week>'",
 		"`previous_week`",
@@ -120,6 +126,8 @@ func TestWeeklyReportReminderSkillUsesTwoBoardsAndFinalPrompt(t *testing.T) {
 		"missing_core_section",
 		"missing_score_section",
 		"unchanged_section",
+		"`feishu-send-message` Skill",
+		"<at user_id=\"...\">姓名</at>",
 	} {
 		if !strings.Contains(skill, want) {
 			t.Fatalf("weekly report reminder skill missing current contract %q:\n%s", want, skill)

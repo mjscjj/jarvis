@@ -494,7 +494,7 @@ func main() {
 		fatalf("wire Task feedback notifier failed: %v", err)
 	}
 	scheduledTaskService, err := scheduledtask.NewService(
-		db, taskSubmitter, agentExecutor, cfg.ScheduledTask.BatchLimit,
+		db, taskSubmitter, agentExecutor, cfg.ScheduledTask.BatchLimit, location,
 	)
 	if err != nil {
 		fatalf("initialize scheduled task service failed: %v", err)

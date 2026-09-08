@@ -39,7 +39,7 @@ export const OKR_ACTIONS: OKRActionDefinition[] = [
     key: 'remind_missing',
     title: '周报催填',
     shortLabel: '催',
-    description: '检查当周进展、核心数据、一级 KR 评分及与上周重复项，并逐人私聊提醒。',
+    description: '周一定位 Platform Team 周会，会前先逐人私聊催填，再按 O-KR 维度群内汇总提醒。',
     promptKey: 'okr_agent_weekly_reminder',
     cadence: 'weekly',
     weekday: 1,

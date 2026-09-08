@@ -50,6 +50,14 @@ test('keeps the original four actions and binds each to one current prompt', () 
   assert.ok(OKR_ACTIONS.every((item) => item.promptKey.startsWith('okr_agent_')))
 })
 
+test('weekly reminder starts its meeting-relative flow on Monday at 09:00', () => {
+  const definition = actionDefinition('remind_missing')
+  assert.equal(definition.cadence, 'weekly')
+  assert.equal(definition.weekday, 1)
+  assert.equal(definition.time, '09:00')
+  assert.match(definition.description, /O-KR/)
+})
+
 test('manual action creates an ordinary Agent Task without requiring a schedule', () => {
   const input = manualTaskInput(actionDefinition('remind_missing'))
   assert.equal(input.title, 'OKR · 周报催填')

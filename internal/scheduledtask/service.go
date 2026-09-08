@@ -120,7 +120,7 @@ func NewCRUDService(db *gorm.DB) (*Service, error) {
 	return &Service{db: db, now: time.Now, location: time.Local}, nil
 }
 
-func NewService(db *gorm.DB, submitter TaskSubmitter, resumer TaskResumer, batchLimit int) (*Service, error) {
+func NewService(db *gorm.DB, submitter TaskSubmitter, resumer TaskResumer, batchLimit int, location *time.Location) (*Service, error) {
 	service, err := NewCRUDService(db)
 	if err != nil {
 		return nil, err
@@ -134,9 +134,13 @@ func NewService(db *gorm.DB, submitter TaskSubmitter, resumer TaskResumer, batch
 	if batchLimit <= 0 {
 		return nil, fmt.Errorf("scheduled task batch limit must be positive")
 	}
+	if location == nil {
+		return nil, fmt.Errorf("scheduled task location is nil")
+	}
 	service.submitter = submitter
 	service.resumer = resumer
 	service.batchLimit = batchLimit
+	service.location = location
 	return service, nil
 }
 

@@ -271,7 +271,7 @@ func TestOKRProgressScheduleMaterializesOneIndependentTask(t *testing.T) {
 		t.Fatalf("Migrate() error = %v", err)
 	}
 	submitter := &okrProgressSubmitter{}
-	service, err := NewService(db, submitter, okrProgressResumer{}, 10)
+	service, err := NewService(db, submitter, okrProgressResumer{}, 10, time.UTC)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
