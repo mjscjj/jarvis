@@ -43,14 +43,13 @@ type Config struct {
 
 // AuthConfig controls only the outer Jarvis Web browser gate. It does not
 // change Feishu identities owned by app modules or CLI tools. Enabled is a
-// pointer so configurations created before this field existed remain secure:
-// an omitted value means enabled.
+// pointer so an omitted value can retain the product default: disabled.
 type AuthConfig struct {
 	Enabled *bool `yaml:"enabled"`
 }
 
 func (c AuthConfig) IsEnabled() bool {
-	return c.Enabled == nil || *c.Enabled
+	return c.Enabled != nil && *c.Enabled
 }
 
 // IdentityConfig is the user-selected assistant identity. It is machine-local

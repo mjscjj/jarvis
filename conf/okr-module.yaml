@@ -15,10 +15,9 @@ preview_review:
   timeout_seconds: 300
 
 identity:
-  # Local MVP preview: ByteDance/Feishu SSO is unavailable in this
-  # environment, so this MVP branch uses the built-in Jarvis identity. Set it
-  # back to true when the login app works.
-  enabled: false
+  # Biz OKR uses its own low-sensitivity Feishu login instead of the optional
+  # outer Jarvis ByteDance SSO gate.
+  enabled: true
   # “Jarvis通知机器人”同时承载 Biz OKR 登录。这里仅签发登录用户自己的
   # user token；广播使用 lark-cli 中显式选择的通知 Bot profile，不直接读取
   # 这里的 secret，也不影响 lark-cli 当前默认的 Jarvis 主应用。
