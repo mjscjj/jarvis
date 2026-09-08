@@ -1,5 +1,5 @@
 import { normalizeKRTitle } from './krTitle'
-import type { AuthStatus, Entry, EnumValues, FeishuDeviceLogin, FeishuDeviceLoginPoll, FeishuDocumentResult, FollowUpItem, FollowUpList, FollowUpStatus, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, OKRActivityEntry, OKRPlan, OKRPlanList, PageComment, PageCommentList, PersonAvatarItem, PersonSearchResult, PointKind, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
+import type { AuthStatus, Entry, EnumValues, FeishuDeviceLogin, FeishuDeviceLoginPoll, FeishuDocumentResult, FollowUpItem, FollowUpList, FollowUpStatus, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, OKRActivityEntry, OKRPlan, OKRPlanList, PageComment, PageCommentList, PersonAvatarItem, PointKind, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
 
 interface Envelope<T> {
   code: number
@@ -1263,23 +1263,8 @@ export async function replaceKR(kr: Kr): Promise<Kr> {
   }
 }
 
-export async function searchPeople(query: string, signal?: AbortSignal): Promise<PersonSearchResult> {
-  const value = await request<{ users: Array<{ open_id: string; name: string; department: string; email: string; is_external: boolean; has_chatted: boolean }>; has_more: boolean }>(`/api/biz-okr/people/search?q=${encodeURIComponent(query)}`, { signal })
-  return {
-    users: value.users.map((item) => ({
-			openId: item.open_id,
-			name: item.name,
-			department: item.department,
-			email: item.email,
-			isExternal: item.is_external,
-			hasChatted: item.has_chatted,
-		})),
-    hasMore: value.has_more,
-  }
-}
-
-export async function getPeopleAvatars(names: string[]): Promise<PersonAvatarItem[]> {
-  const value = await request<{ people: Array<{ open_id: string; name: string; avatar_url: string }> }>(`/api/biz-okr/people/avatars?names=${encodeURIComponent(names.join(','))}`)
+export async function getPeopleAvatars(names: string[], signal?: AbortSignal): Promise<PersonAvatarItem[]> {
+  const value = await request<{ people: Array<{ open_id: string; name: string; avatar_url: string }> }>(`/api/biz-okr/people/avatars?names=${encodeURIComponent(names.join(','))}`, { signal })
   return value.people.map((item) => ({ openId: item.open_id, name: item.name, avatarUrl: item.avatar_url }))
 }
 

@@ -123,7 +123,6 @@ func RegisterBizOKRModuleRoutes(h *server.Hertz, deps BizOKRModuleDependencies) 
 	if deps.UserTokens != nil {
 		h.GET("/api/biz-okr/feishu-identity", requireEnabled, GetOKRFeishuIdentity(deps.UserTokens, deps.Tokens, deps.FeishuAppID))
 	}
-	h.GET("/api/biz-okr/people/search", requireEnabled, SearchWorkspacePeople(deps.People))
 	h.GET("/api/biz-okr/people/avatars", requireEnabled, GetWorkspacePeopleAvatars(deps.People))
 	h.GET("/api/biz-okr/activity", requireEnabled, GetOKRActivities(deps.Activity))
 	h.GET("/api/biz-okr/plans", requireEnabled, ListOKRPlans(deps.Workspace))

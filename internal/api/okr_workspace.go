@@ -56,33 +56,6 @@ func writeAPIConflict(c *app.RequestContext, code int, err error, current any) {
 	c.JSON(consts.StatusConflict, map[string]any{"code": code, "msg": err.Error(), "logid": observability.LogID(ctx), "data": current})
 }
 
-func SearchWorkspacePeople(svc *background.ResolveService) app.HandlerFunc {
-	return func(ctx context.Context, c *app.RequestContext) {
-		query := strings.TrimSpace(c.Query("q"))
-		if query == "" {
-			writeAPIError(c, consts.StatusBadRequest, 40070, fmt.Errorf("q is required"))
-			return
-		}
-		result, err := svc.Resolve(ctx, query)
-		if err != nil {
-			writeAPIError(c, consts.StatusBadGateway, 50270, fmt.Errorf("search feishu people failed: %w", err))
-			return
-		}
-		users := make([]map[string]any, 0, len(result.Candidates))
-		for _, candidate := range result.Candidates {
-			users = append(users, map[string]any{
-				"open_id":     candidate.OpenID,
-				"name":        candidate.Name,
-				"email":       candidate.Email,
-				"department":  candidate.Department,
-				"is_external": candidate.IsExternal,
-				"has_chatted": candidate.HasChatted,
-			})
-		}
-		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"users": users, "has_more": result.HasMore}})
-	}
-}
-
 // GetWorkspacePeopleAvatars resolves the avatars of the people already on the
 // board in one round trip, so the UI does not fire a lookup per owner chip.
 func GetWorkspacePeopleAvatars(svc *background.ResolveService) app.HandlerFunc {

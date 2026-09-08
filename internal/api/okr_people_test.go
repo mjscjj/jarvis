@@ -44,7 +44,7 @@ func newTestOKRPeopleResolver(t *testing.T, searcher *stubOKRPeopleSearcher) *ba
 	return resolver
 }
 
-func TestSearchWorkspacePeopleUsesFeishuResolver(t *testing.T) {
+func TestSearchFeishuPeopleUsesSharedResolverContract(t *testing.T) {
 	searcher := &stubOKRPeopleSearcher{
 		users: []larkcli.UserCandidate{{
 			OpenID: "ou_1", LocalizedName: "李鑫", EnterpriseEmail: "lixin@example.com",
@@ -53,9 +53,9 @@ func TestSearchWorkspacePeopleUsesFeishuResolver(t *testing.T) {
 		hasMore: true,
 	}
 	h := server.New()
-	h.GET("/api/okr/people/search", SearchWorkspacePeople(newTestOKRPeopleResolver(t, searcher)))
+	h.GET("/api/people/search", SearchFeishuPeople(newTestOKRPeopleResolver(t, searcher)))
 
-	response := ut.PerformRequest(h.Engine, "GET", "/api/okr/people/search?q=%E6%9D%8E%E9%91%AB", nil).Result()
+	response := ut.PerformRequest(h.Engine, "GET", "/api/people/search?q=%E6%9D%8E%E9%91%AB", nil).Result()
 	if response.StatusCode() != 200 {
 		t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())
 	}
@@ -64,24 +64,24 @@ func TestSearchWorkspacePeopleUsesFeishuResolver(t *testing.T) {
 	}
 	var payload struct {
 		Data struct {
-			Users []struct {
+			Candidates []struct {
 				OpenID     string `json:"open_id"`
 				Name       string `json:"name"`
 				Email      string `json:"email"`
 				Department string `json:"department"`
 				IsExternal bool   `json:"is_external"`
 				HasChatted bool   `json:"has_chatted"`
-			} `json:"users"`
+			} `json:"candidates"`
 			HasMore bool `json:"has_more"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(response.Body(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if !payload.Data.HasMore || len(payload.Data.Users) != 1 {
+	if !payload.Data.HasMore || len(payload.Data.Candidates) != 1 {
 		t.Fatalf("data=%+v", payload.Data)
 	}
-	user := payload.Data.Users[0]
+	user := payload.Data.Candidates[0]
 	if user.OpenID != "ou_1" || user.Name != "李鑫" || user.Email != "lixin@example.com" || user.Department != "国际直播-公会" || user.IsExternal || !user.HasChatted {
 		t.Fatalf("user=%+v", user)
 	}
@@ -140,19 +140,19 @@ func TestGetWorkspacePeopleAvatarsFailsFast(t *testing.T) {
 	}
 }
 
-func TestSearchWorkspacePeopleFailsFast(t *testing.T) {
+func TestSearchFeishuPeopleFailsFast(t *testing.T) {
 	for _, test := range []struct {
 		name     string
 		path     string
 		searcher *stubOKRPeopleSearcher
 		status   int
 	}{
-		{name: "blank query", path: "/api/okr/people/search?q=", searcher: &stubOKRPeopleSearcher{}, status: 400},
-		{name: "lark cli failure", path: "/api/okr/people/search?q=x", searcher: &stubOKRPeopleSearcher{err: fmt.Errorf("permission denied")}, status: 502},
+		{name: "blank query", path: "/api/people/search?q=", searcher: &stubOKRPeopleSearcher{}, status: 400},
+		{name: "lark cli failure", path: "/api/people/search?q=x", searcher: &stubOKRPeopleSearcher{err: fmt.Errorf("permission denied")}, status: 502},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			h := server.New()
-			h.GET("/api/okr/people/search", SearchWorkspacePeople(newTestOKRPeopleResolver(t, test.searcher)))
+			h.GET("/api/people/search", SearchFeishuPeople(newTestOKRPeopleResolver(t, test.searcher)))
 			response := ut.PerformRequest(h.Engine, "GET", test.path, nil).Result()
 			if response.StatusCode() != test.status {
 				t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())

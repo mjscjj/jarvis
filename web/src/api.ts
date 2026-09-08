@@ -485,8 +485,9 @@ export function listPersons(page = 1, pageSize = 100, signal?: AbortSignal): Pro
   return request<Paged<Person>>(`/api/persons?page=${page}&page_size=${pageSize}`, { signal })
 }
 
-export function resolvePerson(query: string): Promise<ResolveResult> {
-  return request<ResolveResult>('/api/persons/resolve', { method: 'POST', body: { query } })
+export function searchFeishuPeople(query: string, signal?: AbortSignal): Promise<ResolveResult> {
+  const params = new URLSearchParams({ q: query })
+  return request<ResolveResult>(`/api/people/search?${params.toString()}`, { signal })
 }
 
 export function createPerson(body: PersonCreateInput): Promise<Person> {

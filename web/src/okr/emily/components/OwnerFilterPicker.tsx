@@ -151,13 +151,13 @@ export function OwnerFilterPicker({ options, ownerCounts, selectedKeys, onChange
         aria-expanded={open}
         className={`inline-flex h-7 shrink-0 items-center gap-1 rounded-full border border-dashed px-2.5 text-[11px] font-medium transition-colors ${open ? 'border-blue-400 bg-blue-50 text-blue-600' : 'border-slate-300 bg-white text-slate-400 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600'}`}
       >
-        搜索负责人
+        筛选负责人
       </button>
       {open && createPortal(
-        <div ref={panel} role="dialog" aria-label="搜索负责人" style={panelStyle} className="flex overflow-hidden rounded-xl border border-slate-200 bg-white text-left shadow-lg">
+        <div ref={panel} role="dialog" aria-label="筛选负责人" style={panelStyle} className="flex overflow-hidden rounded-xl border border-slate-200 bg-white text-left shadow-lg">
           <div className="flex min-h-0 w-full flex-col">
             <div className="shrink-0 border-b border-slate-100 p-2.5">
-              <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-slate-600"><span className="size-1.5 rounded-full bg-blue-500" />搜索负责人</div>
+              <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-slate-600"><span className="size-1.5 rounded-full bg-blue-500" />筛选负责人</div>
               <input
                 ref={input}
                 value={query}

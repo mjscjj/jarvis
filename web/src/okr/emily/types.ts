@@ -164,11 +164,6 @@ export interface PersonSearchItem {
 	hasChatted: boolean
 }
 
-export interface PersonSearchResult {
-  users: PersonSearchItem[]
-  hasMore: boolean
-}
-
 export interface AuthUser {
   openId: string
   name: string

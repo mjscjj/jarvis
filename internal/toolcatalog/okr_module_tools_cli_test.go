@@ -65,7 +65,7 @@ func TestOKRModuleToolsExposeGenericReads(t *testing.T) {
 	}
 	runModuleTool(t, "biz-okr-tools", server.URL, "people-search", "--query", "张 三")
 	request = <-requests
-	if request.Method != http.MethodGet || request.Path != "/api/biz-okr/people/search" || !strings.Contains(request.Query, "q=") {
+	if request.Method != http.MethodGet || request.Path != "/api/people/search" || !strings.Contains(request.Query, "q=") {
 		t.Fatalf("people-search request = %+v", request)
 	}
 	runModuleTool(t, "okr-module-tools", server.URL, "board")

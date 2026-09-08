@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { getPeopleAvatars, searchPeople } from '../api'
+import { useFeishuPeopleSearch } from '../../../useFeishuPeopleSearch'
+import { getPeopleAvatars } from '../api'
 import { useBoard } from '../board'
 import { addOrResolveOwner, joinOwnerNames, ownerIdentityKey, ownerOptions, splitOwnerNames } from '../people'
 import type { Kr, KrOwner, PersonSearchItem, Point } from '../types'
@@ -11,19 +12,23 @@ export function FeishuPeoplePickerInput({ owners, options, onChange }: { owners:
   const panel = useRef<HTMLSpanElement>(null)
   const input = useRef<HTMLInputElement>(null)
   const [open, setOpen] = useState(false)
-  const [query, setQuery] = useState('')
-  const [results, setResults] = useState<PersonSearchItem[]>([])
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-	const [hasMore, setHasMore] = useState(false)
+	const peopleSearch = useFeishuPeopleSearch({ active: open, debounceMs: 280 })
 	const [resultAvatars, setResultAvatars] = useState<Record<string, string>>({})
 	const [panelStyle, setPanelStyle] = useState<React.CSSProperties>({ position: 'fixed', top: 0, left: 0 })
 	const selectedOpenIds = useMemo(() => new Set(owners.map((owner) => owner.openId).filter(Boolean)), [owners])
+	const remoteResults = useMemo<PersonSearchItem[]>(() => peopleSearch.candidates.map((person) => ({
+		openId: person.open_id,
+		name: person.name,
+		department: person.department,
+		email: person.email,
+		isExternal: person.is_external,
+		hasChatted: person.has_chatted,
+	})), [peopleSearch.candidates])
 
   const localResults = useMemo(() => options
-		.filter((item) => item.openId && !selectedOpenIds.has(item.openId) && (!query.trim() || item.name.toLowerCase().includes(query.trim().toLowerCase())))
+		.filter((item) => item.openId && !selectedOpenIds.has(item.openId) && (!peopleSearch.query.trim() || item.name.toLowerCase().includes(peopleSearch.query.trim().toLowerCase())))
 		.slice(0, 6)
-		.map((owner) => ({ openId: owner.openId, name: owner.name, department: '当前 OKR 负责人', email: '', isExternal: false, hasChatted: false })), [options, query, selectedOpenIds])
+		.map((owner) => ({ openId: owner.openId, name: owner.name, department: '当前 OKR 负责人', email: '', isExternal: false, hasChatted: false })), [options, peopleSearch.query, selectedOpenIds])
 
   useEffect(() => {
     if (!open) return
@@ -75,56 +80,31 @@ export function FeishuPeoplePickerInput({ owners, options, onChange }: { owners:
 	}, [open, owners.length, placePanel])
 
   useEffect(() => {
-    const clean = query.trim()
-    if (!open || !clean) {
-      setResults([])
-      setLoading(false)
-      setError('')
-			setHasMore(false)
+		const clean = peopleSearch.searchedQuery
+		if (!open || !clean) {
+			setResultAvatars({})
       return
     }
     const controller = new AbortController()
-		setResults([])
-		setHasMore(false)
 		setResultAvatars({})
-    const timer = window.setTimeout(() => {
-      setLoading(true)
-      setError('')
-      searchPeople(clean, controller.signal)
-			.then((value) => {
-				setResults(value.users)
-				setHasMore(value.hasMore)
-				// 头像接口本身就是按 query 搜人，用这一次查询覆盖整屏结果；
-				// 逐个结果按姓名查会同时占满 lark-cli 仅有的两个并发槽，把下一次搜索堵死。
-				void getPeopleAvatars([clean])
-					.then((people) => {
-						if (controller.signal.aborted) return
-						setResultAvatars(Object.fromEntries(people.filter((item) => item.openId && item.avatarUrl).map((item) => [item.openId, item.avatarUrl])))
-					})
-					.catch((reason) => console.warn('飞书头像读取失败', clean, reason))
+		// 头像接口本身就是按 query 搜人，用这一次查询覆盖整屏结果；
+		// 逐个结果按姓名查会同时占满 lark-cli 仅有的两个并发槽，把下一次搜索堵死。
+		void getPeopleAvatars([clean], controller.signal)
+			.then((people) => {
+				if (controller.signal.aborted) return
+				setResultAvatars(Object.fromEntries(people.filter((item) => item.openId && item.avatarUrl).map((item) => [item.openId, item.avatarUrl])))
 			})
-        .catch((reason) => {
-					if (!controller.signal.aborted) {
-						setResults([])
-						setHasMore(false)
-						setError(reason instanceof Error ? reason.message : '飞书人员搜索失败')
-					}
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) setLoading(false)
-        })
-    }, 280)
+			.catch((reason) => {
+				if (!controller.signal.aborted) console.warn('飞书头像读取失败', clean, reason)
+			})
     return () => {
-      window.clearTimeout(timer)
       controller.abort()
     }
-		// 已选中的人在渲染时过滤，不作为依赖：否则父组件每次重渲染（自动保存回写 board 就会）
-		// 都会重建 Set、打断进行中的搜索，而中断路径不会复位 loading，转圈就再也停不下来。
-  }, [open, query])
+  }, [open, peopleSearch.searchedQuery])
 
   const add = (person: PersonSearchItem) => {
 		onChange(addOrResolveOwner(owners, { openId: person.openId, name: person.name }))
-    setQuery('')
+		peopleSearch.reset()
     setOpen(false)
   }
 
@@ -132,8 +112,8 @@ export function FeishuPeoplePickerInput({ owners, options, onChange }: { owners:
 		onChange(owners.filter((_, ownerIndex) => ownerIndex !== index))
   }
 
-  const searching = Boolean(query.trim())
-  const visibleResults = searching ? results.filter((item) => !selectedOpenIds.has(item.openId)) : localResults
+	const searching = Boolean(peopleSearch.query.trim())
+	const visibleResults = searching ? remoteResults.filter((item) => !selectedOpenIds.has(item.openId)) : localResults
 
   return (
     <span ref={root} className="relative inline-flex shrink-0 flex-wrap items-center gap-1">
@@ -151,11 +131,11 @@ export function FeishuPeoplePickerInput({ owners, options, onChange }: { owners:
         <span ref={panel} style={panelStyle} className="overflow-hidden rounded-lg border border-slate-200 bg-white text-left shadow-xl">
           <span className="block border-b border-slate-100 p-2">
             <span className="mb-1.5 flex items-center gap-1.5 text-[10px] font-medium text-slate-500"><span className="size-1.5 rounded-full bg-blue-500" />飞书联系人</span>
-			<input ref={input} value={query} onChange={(event) => setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') setOpen(false) }} placeholder="输入姓名或邮箱搜索" className="h-8 w-full rounded-md border border-slate-200 bg-slate-50 px-2.5 text-[11px] text-slate-700 outline-none focus:border-blue-400 focus:bg-white" />
+			<input ref={input} value={peopleSearch.query} onChange={(event) => peopleSearch.setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') setOpen(false) }} placeholder="输入姓名或邮箱搜索" className="h-8 w-full rounded-md border border-slate-200 bg-slate-50 px-2.5 text-[11px] text-slate-700 outline-none focus:border-blue-400 focus:bg-white" />
           </span>
           <span className="block max-h-64 overflow-auto p-1">
-            {loading && <span className="block px-2 py-3 text-center text-[10px] text-slate-400">正在搜索飞书联系人…</span>}
-            {!loading && visibleResults.map((person) => (
+			{peopleSearch.loading && <span className="block px-2 py-3 text-center text-[10px] text-slate-400">正在搜索飞书联系人…</span>}
+			{!peopleSearch.loading && visibleResults.map((person) => (
               <button key={person.openId || person.name} type="button" onClick={() => add(person)} className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-slate-50">
                 <PersonAvatar name={person.name} openId={person.openId} ownUrl={searching ? resultAvatars[person.openId] ?? '' : undefined} size="size-7 text-[10px]" tone="bg-slate-400" />
                 <span className="min-w-0">
@@ -164,9 +144,9 @@ export function FeishuPeoplePickerInput({ owners, options, onChange }: { owners:
                 </span>
               </button>
             ))}
-			{!loading && query.trim() && visibleResults.length === 0 && !error && <span className="block px-2 py-3 text-center text-[10px] text-slate-400">未找到飞书联系人，请补全姓名或改用邮箱</span>}
-			{!loading && hasMore && !error && <span className="block px-2 py-2 text-[10px] leading-4 text-amber-600">结果较多，请补全姓名或改用邮箱缩小范围</span>}
-			{!loading && error && <span className="block px-2 py-2 text-[10px] leading-4 text-red-600">{error}</span>}
+			{!peopleSearch.loading && peopleSearch.hasSearched && visibleResults.length === 0 && !peopleSearch.error && <span className="block px-2 py-3 text-center text-[10px] text-slate-400">未找到飞书联系人，请补全姓名或改用邮箱</span>}
+			{!peopleSearch.loading && peopleSearch.hasMore && !peopleSearch.error && <span className="block px-2 py-2 text-[10px] leading-4 text-amber-600">结果较多，请补全姓名或改用邮箱缩小范围</span>}
+			{!peopleSearch.loading && peopleSearch.error && <span className="block px-2 py-2 text-[10px] leading-4 text-red-600">{peopleSearch.error}</span>}
           </span>
         </span>,
         document.body,

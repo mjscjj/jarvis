@@ -51,7 +51,6 @@ import {
   importProject,
   previewProjectImport,
   resolveProjectRepositories,
-  resolvePerson,
   scanSkills,
   touchKeyMatter,
   touchResource,
@@ -76,6 +75,7 @@ import RelatedOKRCard from './world/RelatedOKRCard'
 import SummaryPageEditor from './world/SummaryPageEditor'
 import { summaryIndexLine } from './world/summary'
 import { usePageContext } from './pageContext'
+import { useFeishuPeopleSearch } from './useFeishuPeopleSearch'
 import type {
   AgentSkill,
   AgentSkillInput,
@@ -725,10 +725,7 @@ function PersonsPanel() {
   const [form] = Form.useForm<PersonUpdateInput>()
   const [boundOpenID, setBoundOpenID] = useState('')
   const [boundP2PChatID, setBoundP2PChatID] = useState('')
-  const [query, setQuery] = useState('')
-  const [searching, setSearching] = useState(false)
-  const [candidates, setCandidates] = useState<ResolveCandidate[] | null>(null)
-  const [hasMore, setHasMore] = useState(false)
+  const peopleSearch = useFeishuPeopleSearch({ active: open && !editing })
 
   const reload = useCallback(() => {
     setLoading(true)
@@ -756,9 +753,7 @@ function PersonsPanel() {
   const visibleItems = roleFilter === 'all' ? items : items.filter((p) => p.role === roleFilter)
 
   const resetResolve = () => {
-    setQuery('')
-    setCandidates(null)
-    setHasMore(false)
+    peopleSearch.reset()
     setBoundOpenID('')
     setBoundP2PChatID('')
   }
@@ -779,20 +774,7 @@ function PersonsPanel() {
     })
     setOpen(true)
   }
-  const runResolve = async () => {
-    if (!query.trim()) return
-    setSearching(true)
-    try {
-      const result = await resolvePerson(query.trim())
-      setCandidates(result.candidates)
-      setHasMore(result.has_more)
-      setError(undefined)
-    } catch (cause: unknown) {
-      setError(errorText(cause))
-    } finally {
-      setSearching(false)
-    }
-  }
+  const runResolve = () => void peopleSearch.search()
   const pickCandidate = (candidate: ResolveCandidate) => {
     setBoundOpenID(candidate.open_id)
     setBoundP2PChatID(candidate.p2p_chat_id || '')
@@ -801,7 +783,7 @@ function PersonsPanel() {
       name: candidate.name, department: candidate.department || null,
       priority_weight: form.getFieldValue('priority_weight') ?? roleDefaultWeight[role],
     })
-    setCandidates(null)
+    peopleSearch.reset()
   }
   const submit = async () => {
     const values = await form.validateFields()
@@ -905,14 +887,15 @@ function PersonsPanel() {
       {!editing && (
         <Card size="small" style={{ marginBottom: 16 }}>
           <Flex gap={8}>
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} onPressEnter={runResolve} placeholder="输入姓名或邮箱搜索飞书用户" allowClear />
-            <Button type="primary" onClick={runResolve} loading={searching}>搜索</Button>
+            <Input value={peopleSearch.query} onChange={(e) => peopleSearch.setQuery(e.target.value)} onPressEnter={runResolve} placeholder="输入姓名或邮箱搜索飞书用户" allowClear />
+            <Button type="primary" onClick={runResolve} loading={peopleSearch.loading}>搜索</Button>
           </Flex>
-          {hasMore && <Alert style={{ marginTop: 8 }} type="warning" showIcon title="结果过多，请补全姓名或改用邮箱缩小范围" />}
-          {candidates && candidates.length === 0 && <Alert style={{ marginTop: 8 }} type="info" showIcon title="未找到匹配用户，换个关键词试试" />}
-          {candidates && candidates.length > 0 && (
+          {peopleSearch.error && <Alert style={{ marginTop: 8 }} type="error" showIcon title="飞书人员搜索失败" description={peopleSearch.error} />}
+          {peopleSearch.hasMore && <Alert style={{ marginTop: 8 }} type="warning" showIcon title="结果过多，请补全姓名或改用邮箱缩小范围" />}
+          {peopleSearch.hasSearched && peopleSearch.candidates.length === 0 && <Alert style={{ marginTop: 8 }} type="info" showIcon title="未找到匹配用户，换个关键词试试" />}
+          {peopleSearch.candidates.length > 0 && (
             <div style={{ marginTop: 8, maxHeight: 220, overflowY: 'auto' }}>
-              {candidates.map((c) => (
+              {peopleSearch.candidates.map((c) => (
                 <Flex key={c.open_id} justify="space-between" align="center" style={{ padding: '6px 4px', borderBottom: '1px solid #f0f0f0' }}>
                   <div>
                     <Text strong>{c.name}</Text>{c.is_external && <Tag color="orange" style={{ marginLeft: 6 }}>外部</Tag>}
@@ -1225,9 +1208,7 @@ function ProfilePanel() {
   // Leader binding reuses the person search so leader_open_id is a real open_id.
   const [leaderOpenID, setLeaderOpenID] = useState('')
   const [leaderName, setLeaderName] = useState('')
-  const [leaderQuery, setLeaderQuery] = useState('')
-  const [leaderSearching, setLeaderSearching] = useState(false)
-  const [leaderCandidates, setLeaderCandidates] = useState<ResolveCandidate[] | null>(null)
+  const leaderSearch = useFeishuPeopleSearch()
 
   const reload = useCallback(() => {
     setLoading(true)
@@ -1246,24 +1227,11 @@ function ProfilePanel() {
   }, [form])
   useEffect(reload, [reload])
 
-  const runLeaderSearch = async () => {
-    if (!leaderQuery.trim()) return
-    setLeaderSearching(true)
-    try {
-      const result = await resolvePerson(leaderQuery.trim())
-      setLeaderCandidates(result.candidates)
-      setError(undefined)
-    } catch (cause: unknown) {
-      setError(errorText(cause))
-    } finally {
-      setLeaderSearching(false)
-    }
-  }
+  const runLeaderSearch = () => void leaderSearch.search()
   const pickLeader = (candidate: ResolveCandidate) => {
     setLeaderOpenID(candidate.open_id)
     setLeaderName(candidate.name)
-    setLeaderCandidates(null)
-    setLeaderQuery('')
+    leaderSearch.reset()
   }
   const clearLeader = () => { setLeaderOpenID(''); setLeaderName('') }
 
@@ -1310,14 +1278,16 @@ function ProfilePanel() {
             <Flex vertical gap={8}>
               <Flex gap={8}>
                 <Input.Search
-                  placeholder="搜索姓名 / 邮箱绑定 leader" value={leaderQuery}
-                  onChange={(e) => setLeaderQuery(e.target.value)} onSearch={runLeaderSearch}
-                  loading={leaderSearching} enterButton="搜索" style={{ maxWidth: 360 }}
+                  placeholder="搜索姓名 / 邮箱绑定 leader" value={leaderSearch.query}
+                  onChange={(e) => leaderSearch.setQuery(e.target.value)} onSearch={runLeaderSearch}
+                  loading={leaderSearch.loading} enterButton="搜索" style={{ maxWidth: 360 }}
                 />
               </Flex>
-              {leaderCandidates && (
+              {leaderSearch.error && <Alert type="error" showIcon title="飞书人员搜索失败" description={leaderSearch.error} />}
+              {leaderSearch.hasMore && <Alert type="warning" showIcon title="结果过多，请补全姓名或改用邮箱缩小范围" />}
+              {leaderSearch.hasSearched && (
                 <Card size="small" variant="outlined">
-                  {leaderCandidates.length === 0 ? <Text type="secondary">无匹配</Text> : leaderCandidates.map((c) => (
+                  {leaderSearch.candidates.length === 0 ? <Text type="secondary">无匹配</Text> : leaderSearch.candidates.map((c) => (
                     <Flex key={c.open_id} justify="space-between" align="center" style={{ padding: '4px 0' }}>
                       <Text>{c.name} <Text type="secondary" style={{ fontSize: 12 }}>{c.department}</Text></Text>
                       <Button size="small" type="link" onClick={() => pickLeader(c)}>选择</Button>

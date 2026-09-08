@@ -175,7 +175,7 @@ case "$COMMAND" in
     ;;
   people-search)
     [[ -n "$QUERY" ]] || { echo "people-search requires --query" >&2; exit 2; }
-    request_get /api/biz-okr/people/search --data-urlencode "q=$QUERY"
+    request_get /api/people/search --data-urlencode "q=$QUERY"
     ;;
   replace-score|delete-score)
     [[ "$TARGET_KIND" == "kr" || "$TARGET_KIND" == "point" ]] || { echo "$COMMAND requires --target-kind kr|point" >&2; exit 2; }
