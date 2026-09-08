@@ -58,6 +58,10 @@ func writeAPIConflict(c *app.RequestContext, code int, err error, current any) {
 
 // SearchWorkspacePeople preserves the original Biz OKR response shape for
 // already-open browser tabs while delegating the lookup to the shared resolver.
+//
+// Deprecated: new clients must use GET /api/people/search. Remove this adapter
+// after request logs show no legacy calls for a full frontend cache-retention
+// window; remove its route and compatibility test in the same change.
 func SearchWorkspacePeople(svc *background.ResolveService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		result := resolveFeishuPeople(ctx, c, svc, c.Query("q"))

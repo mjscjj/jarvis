@@ -277,6 +277,10 @@ func SearchFeishuPeople(svc *background.ResolveService) app.HandlerFunc {
 
 // ResolvePerson preserves the original World API for browser tabs that loaded
 // before the shared search endpoint shipped. It delegates to the same lookup.
+//
+// Deprecated: new clients must use GET /api/people/search. Remove this adapter
+// after request logs show no legacy calls for a full frontend cache-retention
+// window; remove its route and compatibility test in the same change.
 func ResolvePerson(svc *background.ResolveService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		var in struct {
