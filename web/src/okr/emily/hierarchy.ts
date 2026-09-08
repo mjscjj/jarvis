@@ -36,6 +36,14 @@ export function businessCategoryOf(kr: Kr): string {
   return singleTagValue(kr, BUSINESS_CATEGORY_TAG)
 }
 
+// Objective 不单独保存业务分类；只有下属 KR 分类一致时，才把它展示为
+// O 的当前分类。undefined 表示空 O 或存在多个分类。
+export function commonObjectiveBusinessCategory(objective: Objective): string | undefined {
+  if (objective.krs.length === 0) return undefined
+  const first = businessCategoryOf(objective.krs[0])
+  return objective.krs.every((kr) => businessCategoryOf(kr) === first) ? first : undefined
+}
+
 export function priorityOf(kr: Kr): KrPriority | '' {
   const value = singleTagValue(kr, PRIORITY_TAG)
   return value === 'p0' || value === 'p1' || value === 'p2' ? value : ''

@@ -180,19 +180,19 @@ func (c *Client) verifyBroadcastProfile(ctx context.Context, profile string) err
 	return nil
 }
 
-// SendTextToMainAppUser resolves a main-App open_id to a stable enterprise
-// email, skips the author by email, sends with the notification Bot, and reads
-// the resulting message back before reporting success.
-func (s *BroadcastSender) SendTextToMainAppUser(ctx context.Context, recipientOpenID, recipientName, authorEmail, text, idempotencyKey string) error {
+// SendCardToMainAppUser resolves a main-App open_id to a stable enterprise
+// email, skips the author by email, sends a Card 2.0 message with the
+// notification Bot, and reads it back before reporting success.
+func (s *BroadcastSender) SendCardToMainAppUser(ctx context.Context, recipientOpenID, recipientName, authorEmail, card, idempotencyKey string) error {
 	recipientOpenID = strings.TrimSpace(recipientOpenID)
 	recipientName = strings.TrimSpace(recipientName)
-	text = strings.TrimSpace(text)
+	card = strings.TrimSpace(card)
 	idempotencyKey = strings.TrimSpace(idempotencyKey)
 	if recipientOpenID == "" || recipientName == "" {
 		return fmt.Errorf("notification recipient open_id and name are required")
 	}
-	if text == "" {
-		return fmt.Errorf("notification text is empty")
+	if err := validateCard2(card); err != nil {
+		return fmt.Errorf("notification card is invalid: %w", err)
 	}
 	if idempotencyKey == "" || len(idempotencyKey) > 50 {
 		return fmt.Errorf("notification idempotency key must contain 1 to 50 characters")
@@ -218,9 +218,8 @@ func (s *BroadcastSender) SendTextToMainAppUser(ctx context.Context, recipientOp
 	if strings.EqualFold(email, strings.TrimSpace(authorEmail)) {
 		return nil
 	}
-	content, _ := json.Marshal(map[string]string{"text": text})
 	data, _ := json.Marshal(map[string]string{
-		"receive_id": email, "msg_type": "text", "content": string(content), "uuid": idempotencyKey,
+		"receive_id": email, "msg_type": "interactive", "content": card, "uuid": idempotencyKey,
 	})
 	params, _ := json.Marshal(map[string]string{"receive_id_type": "email"})
 	var sent struct {
@@ -248,6 +247,22 @@ func (s *BroadcastSender) SendTextToMainAppUser(ctx context.Context, recipientOp
 	}
 	if readBack.Data.Total != 1 || len(readBack.Data.Messages) != 1 || readBack.Data.Messages[0].MessageID != messageID {
 		return fmt.Errorf("read back comment notification %q returned an unexpected message set", messageID)
+	}
+	return nil
+}
+
+func validateCard2(card string) error {
+	if strings.TrimSpace(card) == "" {
+		return fmt.Errorf("content is empty")
+	}
+	var envelope struct {
+		Schema string `json:"schema"`
+	}
+	if err := json.Unmarshal([]byte(card), &envelope); err != nil {
+		return fmt.Errorf("decode JSON: %w", err)
+	}
+	if envelope.Schema != "2.0" {
+		return fmt.Errorf("schema is %q, want %q", envelope.Schema, "2.0")
 	}
 	return nil
 }

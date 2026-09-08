@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -59,7 +60,7 @@ type CommentMentionNotifier interface {
 }
 
 type commentBroadcastSender interface {
-	SendTextToMainAppUser(context.Context, string, string, string, string, string) error
+	SendCardToMainAppUser(context.Context, string, string, string, string, string) error
 }
 
 type BotCommentMentionNotifier struct {
@@ -82,10 +83,13 @@ func NewBotCommentMentionNotifier(sender commentBroadcastSender, publicBaseURL s
 }
 
 func (n *BotCommentMentionNotifier) NotifyCommentMention(ctx context.Context, input CommentMentionNotification) error {
-	text := formatCommentMentionNotification(input, n.commentURL(input))
-	digest := sha256.Sum256([]byte(input.CommentID + "\x00" + input.Recipient.OpenID + "\x00" + text))
+	card, err := formatCommentMentionCard(input, n.commentURL(input))
+	if err != nil {
+		return fmt.Errorf("build comment notification card: %w", err)
+	}
+	digest := sha256.Sum256([]byte(input.CommentID + "\x00" + input.Recipient.OpenID + "\x00" + card))
 	idempotencyKey := "okr-cmt-" + hex.EncodeToString(digest[:16])
-	if err := n.sender.SendTextToMainAppUser(ctx, input.Recipient.OpenID, input.Recipient.Name, input.AuthorEmail, text, idempotencyKey); err != nil {
+	if err := n.sender.SendCardToMainAppUser(ctx, input.Recipient.OpenID, input.Recipient.Name, input.AuthorEmail, card, idempotencyKey); err != nil {
 		return err
 	}
 	return nil
@@ -111,8 +115,7 @@ func (n *BotCommentMentionNotifier) commentURL(input CommentMentionNotification)
 	return parsed.String()
 }
 
-func formatCommentMentionNotification(input CommentMentionNotification, link string) string {
-	headline := fmt.Sprintf("%s 在 Jarvis OKR 评论中 @ 了你", input.AuthorName)
+func formatCommentMentionCard(input CommentMentionNotification, link string) (string, error) {
 	week := input.Week
 	if week == "" {
 		week = "无周次（Biz OKR Plan）"
@@ -129,25 +132,80 @@ func formatCommentMentionNotification(input CommentMentionNotification, link str
 	if original == "" {
 		original = "未提供"
 	}
-	lines := []string{
-		headline,
-		"",
+	contextLines := []string{
 		"页面：" + commentSourceTabLabel(input.Tab),
-		"周次：" + week,
+		"周期：" + week,
 		"O：" + objective,
 		"KR：" + kr,
 	}
 	if input.PointTitle != "" {
-		lines = append(lines, pointKindLabel(input.PointKind)+"："+input.PointTitle)
+		contextLines = append(contextLines, pointKindLabel(input.PointKind)+"："+input.PointTitle)
 	}
-	lines = append(lines, "对应原文：", original, "", "评论：", input.Content)
 	if input.PlanTitle != "" {
-		lines = append(lines[:2], append([]string{"Plan：" + input.PlanTitle}, lines[2:]...)...)
+		contextLines = append(contextLines[:2], append([]string{"Plan：" + input.PlanTitle}, contextLines[2:]...)...)
+	}
+	for index := range contextLines {
+		contextLines[index] = escapeCardMarkdown(contextLines[index])
+	}
+
+	elements := []any{
+		map[string]any{
+			"tag": "div",
+			"text": map[string]any{
+				"tag": "lark_md", "content": "**原文：**" + escapeCardMarkdown(original) + "\n**评论：**" + escapeCardMarkdown(input.Content), "lines": 6,
+			},
+		},
+		map[string]any{
+			"tag": "collapsible_panel", "expanded": false, "background_color": "grey-50",
+			"border":  map[string]any{"color": "grey-100", "corner_radius": "8px"},
+			"padding": "8px",
+			"header": map[string]any{
+				"title": map[string]string{"tag": "plain_text", "content": "查看评论上下文"},
+			},
+			"elements": []any{
+				map[string]any{
+					"tag":  "div",
+					"text": map[string]any{"tag": "lark_md", "content": strings.Join(contextLines, "\n")},
+				},
+			},
+		},
 	}
 	if link != "" {
-		lines = append(lines, "", "查看并回复："+link)
+		elements = append(elements, map[string]any{
+			"tag": "button", "type": "primary_filled", "size": "small", "width": "fill",
+			"text":      map[string]string{"tag": "plain_text", "content": "查看并回复"},
+			"behaviors": []any{map[string]string{"type": "open_url", "default_url": link}},
+		})
 	}
-	return strings.Join(lines, "\n")
+	card := map[string]any{
+		"schema": "2.0",
+		"config": map[string]any{
+			"update_multi": true, "width_mode": "compact",
+			"summary": map[string]string{"content": fmt.Sprintf("%s @ 了你：%s", input.AuthorName, input.Content)},
+		},
+		"header": map[string]any{
+			"title":    map[string]string{"tag": "plain_text", "content": "OKR 评论"},
+			"subtitle": map[string]string{"tag": "plain_text", "content": input.AuthorName + " @ 了你"},
+			"template": "blue",
+			"icon":     map[string]string{"tag": "standard_icon", "token": "lark-logo_colorful"},
+		},
+		"body": map[string]any{
+			"direction": "vertical", "padding": "12px 12px 16px 12px", "vertical_spacing": "8px", "elements": elements,
+		},
+	}
+	encoded, err := json.Marshal(card)
+	if err != nil {
+		return "", err
+	}
+	return string(encoded), nil
+}
+
+func escapeCardMarkdown(value string) string {
+	return strings.NewReplacer(
+		"&", "&#38;", "<", "&#60;", ">", "&#62;", "*", "&#42;", "~", "&#126;",
+		"[", "&#91;", "]", "&#93;", "(", "&#40;", ")", "&#41;", "#", "&#35;",
+		":", "&#58;", "_", "&#95;",
+	).Replace(value)
 }
 
 func commentSourceTabLabel(tab string) string {

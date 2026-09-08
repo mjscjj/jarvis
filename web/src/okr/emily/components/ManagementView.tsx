@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useBoard } from '../board'
-import { buildAllBusinessNavigation, buildKRHierarchy, businessCategoryOf, businessCategoryOptions, filterObjectivesByHierarchy, isStructuralTag, objectivesForBusiness, priorityOf, withCompletePriorityNavigation, withSelectedBusinessCategory } from '../hierarchy'
+import { buildAllBusinessNavigation, buildKRHierarchy, businessCategoryOf, businessCategoryOptions, commonObjectiveBusinessCategory, filterObjectivesByHierarchy, isStructuralTag, objectivesForBusiness, priorityOf, withCompletePriorityNavigation, withSelectedBusinessCategory } from '../hierarchy'
 import { tagLabel } from '../labels'
 import { hasOwner, ownerOptions, splitOwnerNames } from '../people'
 import type { Kr, KrOwner, KrPriority, KrTag, Objective } from '../types'
@@ -26,11 +26,12 @@ function priorityTone(priority: KrPriority | '') {
   return 'border-slate-200 bg-white text-slate-500'
 }
 
-function BusinessCategoryField({ value, categories, onChange, allowEmpty = false, ariaLabel, className }: {
+function BusinessCategoryField({ value, categories, onChange, allowEmpty = false, emptyLabel = '选择业务分类', ariaLabel, className }: {
 	value: string
 	categories: string[]
 	onChange: (value: string) => void
 	allowEmpty?: boolean
+	emptyLabel?: string
 	ariaLabel: string
 	className: string
 }) {
@@ -60,7 +61,7 @@ function BusinessCategoryField({ value, categories, onChange, allowEmpty = false
 		}
 		onChange(event.target.value)
 	}} aria-label={ariaLabel} className={className}>
-		{allowEmpty ? <option value="">未标注业务</option> : <option value="" disabled>选择业务分类</option>}
+		{allowEmpty ? <option value="">未标注业务</option> : <option value="" disabled>{emptyLabel}</option>}
 		{options.map((category) => <option key={category} value={category}>{category}</option>)}
 		<option value="__new__">+ 新业务分类…</option>
 	</select>
@@ -110,7 +111,8 @@ function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories, deta
 				</select>}
         </div>
 		<div className={`flex flex-wrap items-start gap-2 px-1.5 ${cardHierarchy ? 'mt-1.5' : 'mt-1'}`}>
-		  {cardHierarchy && <select value={priority} onChange={(event) => setKrPriority(kr.id, event.target.value as KrPriority | '')} aria-label="优先级标签" className={`h-6 rounded-md border px-2 text-[10px] outline-none focus:border-blue-400 ${priorityTone(priority)}`}><option value="">未标注</option><option value="p0">Focus · P0</option><option value="p1">P1</option><option value="p2">P2</option></select>}
+			  {cardHierarchy && showStructuralFields && <BusinessCategoryField value={businessCategoryOf(kr)} categories={businessCategories} onChange={(value) => setKrBusinessCategory(kr.id, value)} allowEmpty ariaLabel="业务分类" className="h-6 max-w-36 rounded-md border border-blue-200 bg-blue-50 px-2 text-[10px] text-blue-700 outline-none focus:border-blue-400" />}
+			  {cardHierarchy && <select value={priority} onChange={(event) => setKrPriority(kr.id, event.target.value as KrPriority | '')} aria-label="优先级标签" className={`h-6 rounded-md border px-2 text-[10px] outline-none focus:border-blue-400 ${priorityTone(priority)}`}><option value="">未标注</option><option value="p0">Focus · P0</option><option value="p1">P1</option><option value="p2">P2</option></select>}
           {showTags && <div className="min-w-0 flex-1"><KrTagEditor kr={kr} suggestions={tagSuggestions} /></div>}
 		  {!cardHierarchy && <button
             type="button"
@@ -186,6 +188,9 @@ function ObjectiveEditorHeader({
 	onMoveUp,
 	onMoveDown,
 	cardHierarchy,
+	businessCategories,
+	businessCategoryEditable,
+	businessCategoryObjective,
 }: {
 	objective: Objective
 	visibleKrCount: number
@@ -197,14 +202,20 @@ function ObjectiveEditorHeader({
 	onMoveUp?: () => void
 	onMoveDown?: () => void
 	cardHierarchy: boolean
+	businessCategories: string[]
+	businessCategoryEditable: boolean
+	businessCategoryObjective?: Objective
 }) {
-	const { updateObjective, deleteObjective } = useBoard()
+	const { updateObjective, deleteObjective, setKrBusinessCategory } = useBoard()
 	const [editing, setEditing] = useState(false)
 	const [title, setTitle] = useState(objective.title)
 	const [busy, setBusy] = useState(false)
 	const [confirmDelete, setConfirmDelete] = useState(false)
 	const commentTarget = { type: 'objective' as const, id: objective.id, title: objective.title }
 	const commentSurface = useCommentSurface(commentTarget)
+	const completeObjective = businessCategoryObjective ?? objective
+	const commonBusinessCategory = commonObjectiveBusinessCategory(completeObjective)
+	const hasMixedBusinessCategories = completeObjective.krs.length > 0 && commonBusinessCategory === undefined
 
 	const cancel = () => {
 		setTitle(objective.title)
@@ -260,6 +271,14 @@ function ObjectiveEditorHeader({
 				<h3 className={`min-w-0 flex-1 ${cardHierarchy ? 'text-[17px] font-semibold leading-6 text-slate-800' : 'truncate text-[12px] font-bold text-slate-800'}`}>{objective.title}</h3>
 				<CommentTargetButton target={{ type: 'objective', id: objective.id, title: objective.title }} />
 				<span className={cardHierarchy ? 'rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs tabular-nums text-slate-400' : 'text-[9px] tabular-nums text-slate-400'}>{visibleKrCount}{visibleKrCount !== totalKrCount ? ` / ${totalKrCount}` : ''}{cardHierarchy ? ' 个 KR' : ' 条'}</span>
+				{businessCategoryEditable && completeObjective.krs.length > 0 && <BusinessCategoryField
+					value={commonBusinessCategory ?? ''}
+					categories={businessCategories}
+					onChange={(value) => completeObjective.krs.forEach((kr) => setKrBusinessCategory(kr.id, value))}
+					emptyLabel={hasMixedBusinessCategories ? '多种业务 · 批量修改' : '批量修改业务分类'}
+					ariaLabel={`批量修改“O ${objective.title}”下全部 KR 的业务分类`}
+					className="h-6 max-w-44 rounded-md border border-blue-200 bg-blue-50 px-2 text-[10px] text-blue-700 outline-none focus:border-blue-400"
+				/>}
 				<MoveButtons label="个 O" onUp={onMoveUp} onDown={onMoveDown} />
 				<button type="button" onClick={() => { setTitle(objective.title); setEditing(true) }} className="h-5 rounded-md px-1.5 text-[9px] text-slate-500 hover:bg-white hover:text-blue-600">重命名 O</button>
 				{totalKrCount === 0 && (confirmDelete ? <>
@@ -285,6 +304,7 @@ export function ManagementView({
 	hideStructuralFields = false,
 	compactEmptyPointGroups = false,
 	objectiveDragReorder = false,
+	objectiveBusinessCategoryEditing = false,
 }: {
 	title?: string
 	subtitle?: string
@@ -297,6 +317,7 @@ export function ManagementView({
 	hideStructuralFields?: boolean
 	compactEmptyPointGroups?: boolean
 	objectiveDragReorder?: boolean
+	objectiveBusinessCategoryEditing?: boolean
 }) {
   const { objectives, quarter, syncState, createObjective, swapObjectives, reorderObjectives, swapKrs } = useBoard()
   const commentInteraction = useCommentInteraction()
@@ -547,6 +568,9 @@ export function ManagementView({
                 onMoveUp={objectiveIndex > 0 ? () => void swapObjectives(objective.id, groups[objectiveIndex - 1].id) : undefined}
                 onMoveDown={objectiveIndex < groups.length - 1 ? () => void swapObjectives(objective.id, groups[objectiveIndex + 1].id) : undefined}
 				cardHierarchy={cardHierarchy}
+					businessCategories={businessCategories}
+					businessCategoryEditable={objectiveBusinessCategoryEditing}
+					businessCategoryObjective={objectives.find((item) => item.id === objective.id)}
               />
 			  {!collapsed.has(objective.id) && <div className={cardHierarchy ? 'space-y-3' : 'divide-y divide-slate-100'}>
 						{creatingObjectiveId === objective.id && <NewKrRow objective={objective} businessCategories={businessCategories} peopleOptions={peopleOptions} cardHierarchy={cardHierarchy} onClose={() => setCreatingObjectiveId('')} onCreated={() => setPlacementNotice(`已新建 KR，位于“O ${objective.title}”下的 KR 列表最底部。`)} />}

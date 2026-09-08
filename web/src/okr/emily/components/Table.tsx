@@ -297,7 +297,7 @@ function KrHeader({ objectiveId, kr, open, onToggle, onMoveUp, onMoveDown, readO
 }
 
 function PointHeader({ objectiveId, krId, point, index, open, onToggle, onMoveUp, onMoveDown, readOnly, structureReadOnly, showProgress = true, showScore = false, scoreReadOnly = true, tagSuggestions, deleteWarning }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; onMoveUp?: () => void; onMoveDown?: () => void; readOnly: boolean; structureReadOnly: boolean; showProgress?: boolean; showScore?: boolean; scoreReadOnly?: boolean; tagSuggestions?: KrTag[]; deleteWarning: string }) {
-  const { setPointTitle, setPointMeegoLink, removePoint, addPointTag, removePointTag, setPointScore, week } = useBoard()
+  const { setPointTitle, setPointKind, setPointMeegoLink, removePoint, addPointTag, removePointTag, setPointScore, week } = useBoard()
   const commentTarget = { type: 'point' as const, id: point.id, title: point.title }
   const commentSurface = useCommentSurface(commentTarget)
   const [preview, setPreview] = useState<MeegoPreview>()
@@ -326,6 +326,15 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, onMoveUp
       <div className="flex items-start gap-2">
         {showProgress ? <Caret open={open} onToggle={onToggle} label="具体 KR" /> : <span className="w-4 shrink-0" />}
         <span className="mt-0.5 shrink-0 rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-600">KR{index + 1}</span>
+        {!structureReadOnly && <select
+          value={point.kind}
+          onChange={(event) => setPointKind(krId, point.id, event.target.value as PointKind)}
+          title="切换这条具体 KR 的分组"
+          aria-label="具体 KR 分组"
+          className="mt-0.5 h-6 shrink-0 rounded-md border border-slate-200 bg-white px-1.5 text-[10px] text-slate-600 outline-none focus:border-blue-400"
+        >
+          {KINDS.map((kind) => <option key={kind} value={kind}>{KIND_LABEL[kind]}</option>)}
+        </select>}
         <div className="min-w-0 flex-1">
           <div className="flex items-start gap-2">
             <span className="flex min-w-0 flex-1 items-start gap-1">

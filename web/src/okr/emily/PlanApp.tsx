@@ -254,9 +254,9 @@ function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }:
 				  hierarchyScopeKey={`${quarter}:${plan.id}`}
 				  cardHierarchy
 				  defaultExpandDetails
-				  hideStructuralFields
 				  compactEmptyPointGroups
 				  objectiveDragReorder
+				  objectiveBusinessCategoryEditing
               />
             </div>
           </CommentInteractionProvider>

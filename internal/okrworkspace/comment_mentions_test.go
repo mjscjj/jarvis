@@ -2,6 +2,7 @@ package okrworkspace
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -10,12 +11,12 @@ type commentBroadcastSenderStub struct {
 	openID         string
 	name           string
 	authorEmail    string
-	text           string
+	card           string
 	idempotencyKey string
 }
 
-func (stub *commentBroadcastSenderStub) SendTextToMainAppUser(_ context.Context, openID, name, authorEmail, text, idempotencyKey string) error {
-	stub.openID, stub.name, stub.authorEmail, stub.text, stub.idempotencyKey = openID, name, authorEmail, text, idempotencyKey
+func (stub *commentBroadcastSenderStub) SendCardToMainAppUser(_ context.Context, openID, name, authorEmail, card, idempotencyKey string) error {
+	stub.openID, stub.name, stub.authorEmail, stub.card, stub.idempotencyKey = openID, name, authorEmail, card, idempotencyKey
 	return nil
 }
 
@@ -28,18 +29,66 @@ func TestBotCommentMentionNotificationContainsRequiredContextAndDeepLink(t *test
 	input := CommentMentionNotification{
 		Recipient: CommentMention{OpenID: "ou_bob", Name: "Bob"}, CommentID: "comment-1", AuthorName: "Alice", AuthorEmail: "alice@example.com",
 		Quarter: "2026-Q3", Week: "2026-W35", ObjectiveTitle: "O 原文", KRTitle: "KR 原文",
-		OriginalText: "对应字段原文", Content: "@Bob 请确认原文", Tab: "review-meeting",
+		OriginalText: "对应字段 *原文*", Content: "@Bob 请确认 [原文]", Tab: "review-meeting",
 	}
 	if err := notifier.NotifyCommentMention(t.Context(), input); err != nil {
 		t.Fatal(err)
 	}
-	for _, expected := range []string{"Alice 在 Jarvis OKR 评论中 @ 了你", "页面：Review 会议", "周次：2026-W35", "O：O 原文", "KR：KR 原文", "对应原文：\n对应字段原文", "评论：\n@Bob 请确认原文", "https://emily.example.com/#/weekly-report?"} {
-		if !strings.Contains(sender.text, expected) {
-			t.Fatalf("message %q does not contain %q", sender.text, expected)
+	var card struct {
+		Schema string `json:"schema"`
+		Config struct {
+			WidthMode string `json:"width_mode"`
+		} `json:"config"`
+		Header struct {
+			Subtitle struct {
+				Content string `json:"content"`
+			} `json:"subtitle"`
+		} `json:"header"`
+		Body struct {
+			Elements []json.RawMessage `json:"elements"`
+		} `json:"body"`
+	}
+	if err := json.Unmarshal([]byte(sender.card), &card); err != nil {
+		t.Fatal(err)
+	}
+	if card.Schema != "2.0" || card.Config.WidthMode != "compact" || card.Header.Subtitle.Content != "Alice @ 了你" || len(card.Body.Elements) != 3 {
+		t.Fatalf("card = %s", sender.card)
+	}
+	var bodyText struct {
+		Tag  string `json:"tag"`
+		Text struct {
+			Content string `json:"content"`
+			Lines   int    `json:"lines"`
+		} `json:"text"`
+	}
+	if err := json.Unmarshal(card.Body.Elements[0], &bodyText); err != nil {
+		t.Fatal(err)
+	}
+	if bodyText.Tag != "div" || bodyText.Text.Lines != 6 || bodyText.Text.Content != "**原文：**对应字段 &#42;原文&#42;\n**评论：**@Bob 请确认 &#91;原文&#93;" {
+		t.Fatalf("body text = %#v", bodyText)
+	}
+	var contextPanel struct {
+		Tag      string `json:"tag"`
+		Expanded bool   `json:"expanded"`
+		Elements []struct {
+			Text struct {
+				Content string `json:"content"`
+			} `json:"text"`
+		} `json:"elements"`
+	}
+	if err := json.Unmarshal(card.Body.Elements[1], &contextPanel); err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"页面：Review 会议", "周期：2026-W35", "O：O 原文", "KR：KR 原文"} {
+		if contextPanel.Tag != "collapsible_panel" || contextPanel.Expanded || len(contextPanel.Elements) != 1 || !strings.Contains(contextPanel.Elements[0].Text.Content, expected) {
+			t.Fatalf("context panel = %#v, want %q", contextPanel, expected)
 		}
 	}
-	if !strings.Contains(sender.text, "comment_id=comment-1") || !strings.Contains(sender.text, "tab=review-meeting") || !strings.Contains(sender.text, "week=2026-W35") || len(sender.idempotencyKey) > 50 || !strings.HasPrefix(sender.idempotencyKey, "okr-cmt-") {
-		t.Fatalf("message = %q, idempotency key = %q", sender.text, sender.idempotencyKey)
+	if strings.Contains(contextPanel.Elements[0].Text.Content, "对应字段") {
+		t.Fatalf("original text should be visible, not repeated in context panel: %#v", contextPanel)
+	}
+	if !strings.Contains(sender.card, "https://emily.example.com/#/weekly-report?") || !strings.Contains(sender.card, "comment_id=comment-1") || !strings.Contains(sender.card, "tab=review-meeting") || !strings.Contains(sender.card, "week=2026-W35") || len(sender.idempotencyKey) > 50 || !strings.HasPrefix(sender.idempotencyKey, "okr-cmt-") {
+		t.Fatalf("card = %q, idempotency key = %q", sender.card, sender.idempotencyKey)
 	}
 	if sender.openID != "ou_bob" || sender.name != "Bob" || sender.authorEmail != "alice@example.com" {
 		t.Fatalf("recipient forwarding = %#v", sender)
@@ -62,11 +111,11 @@ func TestBotCommentMentionNotificationBuildsPlanDeepLink(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, expected := range []string{
-		"张若怡 在 Jarvis OKR 评论中 @ 了你", "页面：Biz OKR Plan", "Plan：2026 Q4 Biz OKR Plan",
+		"张若怡 @ 了你", "页面：Biz OKR Plan", "Plan：2026 Q4 Biz OKR Plan", "**原文：**指标原文", "**评论：**@负责人 请确认",
 		"quarter=2026-Q4", "plan_id=plan-1", "tab=okr-plan", "comment_id=comment-plan",
 	} {
-		if !strings.Contains(sender.text, expected) {
-			t.Fatalf("message %q does not contain %q", sender.text, expected)
+		if !strings.Contains(sender.card, expected) {
+			t.Fatalf("card %q does not contain %q", sender.card, expected)
 		}
 	}
 }

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { buildAllBusinessNavigation, buildGlobalPriorityNavigation, buildKRHierarchy, businessCategoryOf, businessCategoryOptions, filterObjectivesByHierarchy, hierarchyKRCount, objectivesForBusiness, priorityKRCount, priorityOf, replaceSingleTag, withCompletePriorityNavigation, withSelectedBusinessCategory } from '../src/okr/emily/hierarchy.ts'
+import { buildAllBusinessNavigation, buildGlobalPriorityNavigation, buildKRHierarchy, businessCategoryOf, businessCategoryOptions, commonObjectiveBusinessCategory, filterObjectivesByHierarchy, hierarchyKRCount, objectivesForBusiness, priorityKRCount, priorityOf, replaceSingleTag, withCompletePriorityNavigation, withSelectedBusinessCategory } from '../src/okr/emily/hierarchy.ts'
 import type { Kr, Objective } from '../src/okr/emily/types.ts'
 
 function kr(id: string, business?: string, priority?: string): Kr {
@@ -137,4 +137,18 @@ test('结构标签保持单值且优先级不再依赖 KR 独立字段', () => {
     { type: 'priority', value: 'p0' },
     { type: 'business_category', value: '公会业务' },
   ])
+})
+
+test('O 的业务分类只投影其下全部 KR 的共同分类', () => {
+  assert.equal(commonObjectiveBusinessCategory({ id: 'o-empty', title: '空 O', krs: [] }), undefined)
+  assert.equal(commonObjectiveBusinessCategory({
+    id: 'o-one',
+    title: '同一业务',
+    krs: [kr('kr-a', '公会业务'), kr('kr-b', '公会业务')],
+  }), '公会业务')
+  assert.equal(commonObjectiveBusinessCategory({
+    id: 'o-mixed',
+    title: '多个业务',
+    krs: [kr('kr-a', '公会业务'), kr('kr-b', '运营效率')],
+  }), undefined)
 })

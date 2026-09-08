@@ -32,7 +32,7 @@ case "$*" in
     ;;
   "--profile notify api POST /open-apis/im/v1/messages --params "*" --data "*" --as bot --format json")
     case "$*" in
-      *'"receive_id":"recipient@example.com"'*'"uuid":"comment-key"'*) ;;
+      *'"content":"{\"schema\":\"2.0\"}"'*'"msg_type":"interactive"'*'"receive_id":"recipient@example.com"'*'"uuid":"comment-key"'*) ;;
       *) printf '%s' "unexpected send data: $*" >&2; exit 8 ;;
     esac
     printf '%s' '{"ok":true,"data":{"message_id":"om_notice"}}'
@@ -54,7 +54,7 @@ esac
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sender.SendTextToMainAppUser(t.Context(), "ou_recipient", "接收人", "author@example.com", "评论提醒", "comment-key"); err != nil {
+	if err := sender.SendCardToMainAppUser(t.Context(), "ou_recipient", "接收人", "author@example.com", `{"schema":"2.0"}`, "comment-key"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -97,7 +97,15 @@ esac
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sender.SendTextToMainAppUser(t.Context(), "ou_self", "作者", "AUTHOR@example.com", "提醒", "comment-key"); err != nil {
+	if err := sender.SendCardToMainAppUser(t.Context(), "ou_self", "作者", "AUTHOR@example.com", `{"schema":"2.0"}`, "comment-key"); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestValidateCard2RejectsInvalidPayload(t *testing.T) {
+	for _, value := range []string{"", "not json", `{"schema":"1.0"}`} {
+		if err := validateCard2(value); err == nil {
+			t.Fatalf("validateCard2(%q) succeeded, want error", value)
+		}
 	}
 }
