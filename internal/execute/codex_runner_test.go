@@ -142,6 +142,9 @@ printf '%s\n' 'diagnostic stderr' >&2
 	if !strings.Contains(args, "--cd\n"+dir+"\n") {
 		t.Fatalf("workspace-rooted text run args missing --cd %q:\n%s", dir, args)
 	}
+	if !strings.Contains(args, "--skip-git-repo-check\n") {
+		t.Fatalf("workspace-rooted text run args missing --skip-git-repo-check:\n%s", args)
+	}
 	wantCWD, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		t.Fatalf("resolve expected cwd: %v", err)

@@ -448,9 +448,11 @@ func (r *CodexRunner) run(ctx context.Context, prompt, sandbox, repoPath string,
 	}
 	if strings.TrimSpace(repoPath) != "" && invocation.SessionID == "" {
 		args = append(args, "--cd", repoPath)
-	} else {
-		args = append(args, "--skip-git-repo-check")
 	}
+	// Jarvis also runs agents from the installed writable runtime, which is a
+	// workspace but intentionally not a Git repository. Keep --cd for resource
+	// resolution and explicitly allow that non-Git workspace.
+	args = append(args, "--skip-git-repo-check")
 	args = append(args, "-")
 
 	runCtx, cancel := context.WithTimeout(ctx, r.timeout)
