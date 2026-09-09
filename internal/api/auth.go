@@ -28,13 +28,7 @@ func GetAuthStatus(service *authn.Service) app.HandlerFunc {
 func LoginWithByteDance(service *authn.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		ctx = observability.FromRequestContext(ctx, c)
-		var result authn.LoginResult
-		var err error
-		if authn.IsLoopbackRequest(c) {
-			result, err = service.Login(ctx)
-		} else {
-			result, err = service.LoginIsolated(ctx)
-		}
+		result, err := service.Login(ctx)
 		if err != nil {
 			writeAuthError(c, err)
 			return

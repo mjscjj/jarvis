@@ -46,17 +46,12 @@ func TestLoginWithByteDanceSetsJarvisSessionCookie(t *testing.T) {
 	}
 }
 
-func TestRemoteLoginStartsIsolatedDeviceFlow(t *testing.T) {
+func TestRemoteLoginReusesCurrentByteDanceIdentity(t *testing.T) {
 	service, err := authn.NewServiceWithRunner("bytedcli", time.Hour, authRunner{run: func(_ string, args []string) ([]byte, error) {
-		switch strings.Join(args, " ") {
-		case "--profile jarvis-web --json auth logout":
-			return []byte(`{"status":"success"}`), nil
-		case "--profile jarvis-web --json auth login --begin":
-			return []byte(`{"data":{"complete_token":"resume-1","verification_url":"https://sso.example/login"}}`), nil
-		default:
+		if strings.Join(args, " ") != "--json auth status" {
 			t.Fatalf("args = %v", args)
-			return nil, nil
 		}
+		return []byte(`{"data":{"authenticated":true,"bytecloud_auth":{"identity":{"username":"alice","email":"alice@bytedance.com"}}}}`), nil
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -68,17 +63,8 @@ func TestRemoteLoginStartsIsolatedDeviceFlow(t *testing.T) {
 	if request.Response.StatusCode() != consts.StatusOK {
 		t.Fatalf("status = %d body=%s", request.Response.StatusCode(), request.Response.Body())
 	}
-	if cookie := string(request.Response.Header.Peek("Set-Cookie")); cookie != "" {
-		t.Fatalf("pending login set cookie %q", cookie)
-	}
-	var payload struct {
-		Data authn.View `json:"data"`
-	}
-	if err := json.Unmarshal(request.Response.Body(), &payload); err != nil {
-		t.Fatal(err)
-	}
-	if payload.Data.Status != authn.StatusPending || payload.Data.FlowID == nil {
-		t.Fatalf("response = %#v", payload.Data)
+	if cookie := string(request.Response.Header.Peek("Set-Cookie")); !strings.Contains(cookie, authn.CookieName+"=") || !strings.Contains(cookie, "HttpOnly") {
+		t.Fatalf("Set-Cookie = %q", cookie)
 	}
 }
 
