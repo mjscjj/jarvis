@@ -37,6 +37,7 @@ func Prepare(layout Layout) error {
 		filepath.Join(layout.RuntimeRoot, "var"),
 		filepath.Join(layout.RuntimeRoot, "runs"),
 		filepath.Join(layout.RuntimeRoot, "data"),
+		filepath.Dir(layout.CCConnectConfig),
 	} {
 		if err := os.MkdirAll(directory, 0o755); err != nil {
 			return fmt.Errorf("create app runtime directory %q: %w", directory, err)
@@ -55,6 +56,7 @@ func validateBundle(layout Layout) error {
 	for _, path := range []string{
 		layout.ServerBinary,
 		layout.QdrantBinary,
+		layout.CCConnectBinary,
 		filepath.Join(layout.ResourceRoot, "conf", "config.yaml"),
 		filepath.Join(layout.ResourceRoot, "conf", "qdrant.yaml"),
 		filepath.Join(layout.ResourceRoot, "web", "dist", "index.html"),

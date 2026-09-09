@@ -2250,6 +2250,155 @@ pre {
   }
 }
 
+.setup-loading,
+.setup-page {
+  min-height: 100dvh;
+  background: #f7f8f9;
+}
+
+.setup-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #5b6470;
+}
+
+.setup-page {
+  padding: 28px;
+}
+
+.setup-shell {
+  width: min(860px, 100%);
+  margin: 0 auto;
+}
+
+.setup-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 26px;
+}
+
+.setup-header img {
+  width: 44px;
+  height: 44px;
+}
+
+.setup-header h2 {
+  margin: 0 0 2px !important;
+  font-size: 22px !important;
+}
+
+.setup-body {
+  margin: 24px 0 16px;
+  border-top: 1px solid #e8eaed;
+}
+
+.setup-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 12px;
+  padding: 18px 0;
+  border-bottom: 1px solid #e8eaed;
+}
+
+.setup-row-icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  color: #5b6470;
+  font-size: 17px;
+}
+
+.setup-row.is-done .setup-row-icon {
+  color: #287a4b;
+}
+
+.setup-row-content,
+.setup-row-heading {
+  min-width: 0;
+}
+
+.setup-row-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 30px;
+}
+
+.setup-row-heading > span {
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.setup-fields,
+.setup-auth-flow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.setup-fields .ant-input,
+.setup-fields .ant-input-affix-wrapper {
+  max-width: 260px;
+}
+
+.setup-auth-output {
+  flex-basis: 100%;
+  max-height: 160px;
+  margin: 4px 0 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid #d9dde3;
+  border-radius: 6px;
+  background: #f7f8fa;
+  color: #30343b;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.setup-running {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: #287a4b;
+}
+
+.setup-shell > .ant-alert {
+  margin-top: 12px;
+}
+
+@media (max-width: 680px) {
+  .setup-page {
+    padding: 20px 16px;
+  }
+
+  .setup-row-heading,
+  .setup-fields,
+  .setup-auth-flow {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .setup-row-heading > span {
+    text-align: left;
+    white-space: normal;
+  }
+
+  .setup-fields .ant-input,
+  .setup-fields .ant-input-affix-wrapper {
+    max-width: none;
+  }
+}
+
 /* System task configuration and log-backed execution history. */
 .system-tasks {
   display: flex;

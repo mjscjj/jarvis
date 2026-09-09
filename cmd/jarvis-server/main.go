@@ -38,6 +38,7 @@ import (
 	"jarvis/internal/meetingsweep"
 	"jarvis/internal/morningbrief"
 	"jarvis/internal/observability"
+	"jarvis/internal/onboarding"
 	"jarvis/internal/pipeline"
 	"jarvis/internal/plugin"
 	"jarvis/internal/proactive"
@@ -928,6 +929,27 @@ func main() {
 	if err != nil {
 		fatalf("initialize runtime settings service failed: %v", err)
 	}
+	desktopStateRoot := strings.TrimSpace(os.Getenv("JARVIS_DESKTOP_STATE_ROOT"))
+	if desktopStateRoot == "" {
+		desktopStateRoot = runtimeRoot
+	}
+	resourceRoot := strings.TrimSpace(os.Getenv("JARVIS_RESOURCE_ROOT"))
+	if resourceRoot == "" {
+		resourceRoot = runtimeRoot
+	}
+	onboardingService, err := onboarding.NewService(onboarding.Options{
+		ConfigPath:    configPathAbsolute,
+		RuntimeRoot:   runtimeRoot,
+		StateRoot:     desktopStateRoot,
+		LarkCLIBin:    cfg.LarkCLI.Bin,
+		AgentCLIBin:   cfg.Execute.Bin,
+		CCConnectBin:  filepath.Join(resourceRoot, "bin", "cc-connect-jarvis"),
+		DB:            db,
+		TaskSubmitter: taskSubmitter,
+	})
+	if err != nil {
+		fatalf("initialize desktop onboarding service failed: %v", err)
+	}
 	systemControlService, err := systemcontrol.NewService(filepath.Join(runtimeRoot, "scripts", "stop-jarvis.sh"), os.Getpid())
 	if err != nil {
 		fatalf("initialize system control service failed: %v", err)
@@ -977,6 +999,7 @@ func main() {
 		MeetingSweep:       meetingSweepWaker,
 		Readiness:          readinessTargets,
 		SystemControl:      systemControlService,
+		Onboarding:         onboardingService,
 	}); err != nil {
 		fatalf("register API routes failed: %v", err)
 	}

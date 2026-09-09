@@ -13,7 +13,7 @@ command -v jq >/dev/null 2>&1 || fail "jq is required but not found in PATH"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-CONFIG_PATH="conf/config.yaml"
+CONFIG_PATH="${JARVIS_CONFIG_PATH:-conf/config.yaml}"
 CHAT_ID=""
 
 usage() {
@@ -51,6 +51,20 @@ consume_flags() {
 
 cmd_preflight() {
   local missing=() relative_path runtime_ignored dirty_count missing_json ready
+  if [[ "${JARVIS_DESKTOP:-}" == "1" ]]; then
+    for relative_path in \
+      conf/config.yaml conf/skills.yaml scripts/jarvis-tools scripts/jarvis-world-model \
+      .agents/skills/bootstrap-jarvis-world-model/SKILL.md; do
+      [[ -e "${REPO_ROOT}/${relative_path}" ]] || missing+=("$relative_path")
+    done
+    missing_json="$(printf '%s\n' "${missing[@]-}" | jq -Rsc 'split("\n") | map(select(length > 0))')"
+    ready=true
+    (( ${#missing[@]} == 0 )) || ready=false
+    jq -nc --arg repo_root "$REPO_ROOT" --argjson ready "$ready" --argjson missing "$missing_json" \
+      '{ready:$ready,runtime_root:$repo_root,desktop:true,missing:$missing}'
+    [[ "$ready" == "true" ]]
+    return
+  fi
   for relative_path in \
     conf/config.yaml conf/skills.yaml scripts/jarvis-tools scripts/jarvis-install scripts/jarvis-world-model \
     scripts/install-cc-connect.sh integrations/cc-connect/manage.sh integrations/cc-connect/manifest.sh \
@@ -130,7 +144,6 @@ cmd_scan() {
 
 cmd_validate() {
   command -v lark-cli >/dev/null 2>&1 || fail "lark-cli is required but not found in PATH"
-  command -v go >/dev/null 2>&1 || fail "go is required but not found in PATH"
   API_BASE="$(resolve_api_base)"
   local auth configured principal projects persons matters resources groups result error_file error_output
   error_file="$(mktemp "${TMPDIR:-/tmp}/jarvis-world-model-validate.XXXXXX")"
@@ -139,7 +152,16 @@ cmd_validate() {
     rm -f "$error_file"
     fail "lark-cli auth failed${error_output:+: ${error_output}}"
   fi
-  if ! configured="$(cd "$REPO_ROOT" && go run ./cmd/jarvis-config show-principal --config "$CONFIG_PATH" 2>"$error_file")"; then
+  local config_command
+  if [[ "${JARVIS_DESKTOP:-}" == "1" ]]; then
+    config_command="${JARVIS_RESOURCE_ROOT:?JARVIS_RESOURCE_ROOT is required}/bin/jarvis-config"
+    [[ -x "$config_command" ]] || fail "bundled jarvis-config is missing: ${config_command}"
+    configured="$("$config_command" show-principal --config "$CONFIG_PATH" 2>"$error_file")" || {
+      error_output="$(<"$error_file")"
+      rm -f "$error_file"
+      fail "load machine identity failed${error_output:+: ${error_output}}"
+    }
+  elif ! configured="$(cd "$REPO_ROOT" && go run ./cmd/jarvis-config show-principal --config "$CONFIG_PATH" 2>"$error_file")"; then
     error_output="$(<"$error_file")"
     rm -f "$error_file"
     fail "load machine identity failed${error_output:+: ${error_output}}"

@@ -111,16 +111,65 @@ func (s *Supervisor) Run(ctx context.Context, output io.Writer) error {
 		return fmt.Errorf("announce runtime connection: %w", err)
 	}
 
+	_ = os.Remove(s.layout.RestartRequestPath)
 	parentGone := monitorParent(ctx, s.options.SupervisorPID)
-	select {
-	case <-ctx.Done():
-		return nil
-	case <-parentGone:
-		return nil
-	case err := <-server.done:
-		return processExitError(server.name, err)
-	case err := <-qdrant.done:
-		return processExitError(qdrant.name, err)
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	var ccConnect *process
+	var ccConnectDone <-chan error
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-parentGone:
+			return nil
+		case err := <-server.done:
+			return processExitError(server.name, err)
+		case err := <-qdrant.done:
+			return processExitError(qdrant.name, err)
+		case err := <-ccConnectDone:
+			return processExitError(ccConnect.name, err)
+		case <-ticker.C:
+			if ccConnect == nil {
+				if _, err := os.Stat(s.layout.CCConnectConfig); err == nil {
+					ccConnect, err = s.startProcess(
+						"cc-connect",
+						s.layout.CCConnectBinary,
+						[]string{"--config", s.layout.CCConnectConfig},
+						s.layout.RuntimeRoot,
+						s.layout.CCConnectStdoutLog,
+						s.layout.CCConnectStderrLog,
+					)
+					if err != nil {
+						return err
+					}
+					processes = append(processes, ccConnect)
+					ccConnectDone = ccConnect.done
+				}
+			}
+			if _, err := os.Stat(s.layout.RestartRequestPath); err == nil {
+				_ = os.Remove(s.layout.RestartRequestPath)
+				stopProcess(server, 15*time.Second)
+				server, err = s.startProcess(
+					"jarvis-server",
+					s.layout.ServerBinary,
+					[]string{"-config", s.layout.ConfigPath, "-addr", s.options.Address},
+					s.layout.RuntimeRoot,
+					s.layout.ServerStdoutLog,
+					s.layout.ServerStderrLog,
+				)
+				if err != nil {
+					return err
+				}
+				processes[1] = server
+				if err := s.waitForHTTP(ctx, "jarvis-server", connection.HTTPURL+"/healthz", server); err != nil {
+					if ctx.Err() != nil {
+						return nil
+					}
+					return err
+				}
+			}
+		}
 	}
 }
 
@@ -149,6 +198,13 @@ func (s *Supervisor) startProcess(name, binary string, args []string, workingDir
 		"/usr/local/bin",
 		"/usr/bin",
 		"/bin",
+	)
+	command.Env = append(command.Env,
+		"JARVIS_DESKTOP=1",
+		"JARVIS_RESOURCE_ROOT="+s.layout.ResourceRoot,
+		"JARVIS_DESKTOP_STATE_ROOT="+s.layout.StateRoot,
+		"JARVIS_RUNTIME_ROOT="+s.layout.RuntimeRoot,
+		"JARVIS_CONFIG_PATH="+s.layout.ConfigPath,
 	)
 	if err := command.Start(); err != nil {
 		stdout.Close()

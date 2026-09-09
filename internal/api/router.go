@@ -17,6 +17,7 @@ import (
 	"jarvis/internal/execute"
 	"jarvis/internal/extract"
 	"jarvis/internal/insight"
+	"jarvis/internal/onboarding"
 	"jarvis/internal/plugin"
 	"jarvis/internal/progress"
 	"jarvis/internal/scheduledtask"
@@ -80,6 +81,7 @@ type Dependencies struct {
 	MeetingSweep       MeetingSweepWaker // 会议事件转发唤醒巡扫；巡扫未启用时为 nil，此时不注册 /internal/meeting-sweep/wake 路由
 	Readiness          ReadinessTargets  // /readyz 探测的外部依赖；缺失只降级，不影响 /healthz
 	SystemControl      SystemShutdowner
+	Onboarding         *onboarding.Service
 }
 
 // Register 把所有路由挂到 Hertz 实例上。
@@ -202,6 +204,15 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.POST("/api/auth/login", LoginWithByteDance(deps.Auth))
 	h.POST("/api/auth/login/complete", CompleteByteDanceLogin(deps.Auth))
 	h.POST("/api/auth/logout", LogoutFromJarvis(deps.Auth))
+	if deps.Onboarding != nil {
+		h.GET("/api/setup/status", GetOnboardingStatus(deps.Onboarding))
+		h.POST("/api/setup/lark/bind", BindOnboardingLarkApp(deps.Onboarding))
+		h.POST("/api/setup/lark/login", BeginOnboardingLarkLogin(deps.Onboarding))
+		h.POST("/api/setup/agent/login", BeginOnboardingAgentLogin(deps.Onboarding))
+		h.GET("/api/setup/flows/:flow_id", GetOnboardingFlow(deps.Onboarding))
+		h.POST("/api/setup/finalize", FinalizeOnboarding(deps.Onboarding, deps.Auth))
+		h.POST("/api/setup/world-model", BootstrapOnboardingWorldModel(deps.Onboarding))
+	}
 	h.POST("/api/system/shutdown", ShutdownSystem(deps.SystemControl))
 	h.GET("/api/agent-identity", GetAgentIdentity(deps.AgentDisplayName))
 	h.GET("/api/messages", ListToolMessages(toolQueries))

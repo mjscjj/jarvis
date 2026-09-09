@@ -23,6 +23,7 @@ import {
 } from '@ant-design/icons'
 import { AgentIdentityProvider, useAgentIdentity } from './agentIdentity'
 import { AuthGate, AuthProvider, useAuth } from './auth'
+import { OnboardingGate } from './Onboarding'
 import { PageContextProvider, usePageContext } from './pageContext'
 import { useLocalStorage } from './hooks/useLocalStorage'
 import { useRuntimeFailureCount } from './hooks/useRuntimeFailureCount'
@@ -481,9 +482,11 @@ function AuthenticatedApp() {
   const { name } = useAgentIdentity()
   return (
     <AuthGate agentName={name}>
-      <PageContextProvider initialKey={DEFAULT_KEY}>
-        <AppShell />
-      </PageContextProvider>
+      <OnboardingGate>
+        <PageContextProvider initialKey={DEFAULT_KEY}>
+          <AppShell />
+        </PageContextProvider>
+      </OnboardingGate>
     </AuthGate>
   )
 }

@@ -3,7 +3,11 @@ import { createRoot } from 'react-dom/client'
 import { ConfigProvider } from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 import App from './App'
+import { installExternalLinkHandler } from './externalLinks'
 import './styles.css'
+
+const removeExternalLinkHandler = installExternalLinkHandler()
+if (import.meta.hot) import.meta.hot.dispose(removeExternalLinkHandler)
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
