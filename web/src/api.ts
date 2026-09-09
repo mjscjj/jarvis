@@ -640,6 +640,11 @@ export function listResources(page = 1, pageSize = 100, signal?: AbortSignal): P
   return request<ResourceList>(`/api/resources?page=${page}&page_size=${pageSize}`, { signal })
 }
 
+export function listProjectResources(projectId: number, signal?: AbortSignal): Promise<ResourceList> {
+  const params = new URLSearchParams({ page: '1', page_size: '100', project_id: String(projectId), active_only: 'true' })
+  return request<ResourceList>(`/api/resources?${params.toString()}`, { signal })
+}
+
 export function createResource(body: ResourceInput): Promise<Resource> {
   return request<Resource>('/api/resources', { method: 'POST', body })
 }

@@ -75,7 +75,15 @@ import PageHeader from './components/PageHeader'
 import FactTimeline from './world/FactTimeline'
 import FactsPanel from './world/FactsPanel'
 import RelatedOKRCard from './world/RelatedOKRCard'
+import ProjectOverview from './world/ProjectOverview'
 import SummaryPageEditor from './world/SummaryPageEditor'
+import {
+  emptyProjectProgressDraft,
+  hasProjectProgress,
+  parseProjectProgress,
+  serializeProjectProgress,
+  type ProjectProgressDraft,
+} from './world/projectProgress'
 import { summaryIndexLine } from './world/summary'
 import { usePageContext } from './pageContext'
 import { useFeishuPeopleSearch } from './useFeishuPeopleSearch'
@@ -151,13 +159,11 @@ const projectProgressSignalLabels: Record<WorldProgressSignal, string> = {
   unknown: '未判断', green: '正常', yellow: '需关注', red: '有风险',
 }
 
-const emptyProjectProgress = '## 本周重点\n\n## 当前进展\n\n## 风险\n\n## 下周计划'
-
 function ProjectProgressEditor({ projectId, autoFocus = false }: { projectId: number; autoFocus?: boolean }) {
   const periodOptions = useMemo(() => recentISOWeekKeys(8), [])
   const [periodKey, setPeriodKey] = useState(() => periodOptions[0])
   const [progress, setProgress] = useState<WorldProgress | null>(null)
-  const [draft, setDraft] = useState(emptyProjectProgress)
+  const [draft, setDraft] = useState<ProjectProgressDraft>({ ...emptyProjectProgressDraft })
   const [statusSignal, setStatusSignal] = useState<WorldProgressSignal>('unknown')
   const [loading, setLoading] = useState(true)
   const [loadSucceeded, setLoadSucceeded] = useState(false)
@@ -171,7 +177,7 @@ function ProjectProgressEditor({ projectId, autoFocus = false }: { projectId: nu
     setLoading(true)
     setLoadSucceeded(false)
     setProgress(null)
-    setDraft(emptyProjectProgress)
+    setDraft({ ...emptyProjectProgressDraft })
     setStatusSignal('unknown')
     setError(undefined)
     setSaved(false)
@@ -179,7 +185,7 @@ function ProjectProgressEditor({ projectId, autoFocus = false }: { projectId: nu
       .then((result) => {
         if (controller.signal.aborted) return
         setProgress(result)
-        setDraft(result?.summary || emptyProjectProgress)
+        setDraft(parseProjectProgress(result?.summary))
         setStatusSignal(result?.signal || 'unknown')
         setLoadSucceeded(true)
       })
@@ -193,7 +199,7 @@ function ProjectProgressEditor({ projectId, autoFocus = false }: { projectId: nu
   }, [periodKey, projectId, reloadRevision])
 
   const save = async () => {
-    if (!draft.trim()) {
+    if (!hasProjectProgress(draft)) {
       setError('请填写本周进展')
       return
     }
@@ -206,7 +212,7 @@ function ProjectProgressEditor({ projectId, autoFocus = false }: { projectId: nu
         ? await updateWorldProgress(progress.id, {
           expected_version: progress.version,
           signal: statusSignal,
-          summary: draft,
+          summary: serializeProjectProgress(draft),
           evidence: progress.evidence || {},
           evidence_until: evidenceUntil,
         })
@@ -216,12 +222,12 @@ function ProjectProgressEditor({ projectId, autoFocus = false }: { projectId: nu
           subject_id: String(projectId),
           period_key: periodKey,
           signal: statusSignal,
-          summary: draft,
+          summary: serializeProjectProgress(draft),
           evidence: {},
           evidence_until: evidenceUntil,
         })
       setProgress(savedProgress)
-      setDraft(savedProgress.summary)
+      setDraft(parseProjectProgress(savedProgress.summary))
       setStatusSignal(savedProgress.signal)
       setSaved(true)
     } catch (cause: unknown) {
@@ -234,7 +240,8 @@ function ProjectProgressEditor({ projectId, autoFocus = false }: { projectId: nu
   return (
     <Card
       size="small"
-      title={<Flex align="center" gap={8}><span>进展</span><Tag color="blue">{periodKey}</Tag></Flex>}
+      className="project-progress-card"
+      title={<div><Flex align="center" gap={8}><span>本周进展</span><Tag color="blue">{periodKey}</Tag></Flex><Text type="secondary" className="project-progress-subtitle">每周一份快照，四块分别编辑</Text></div>}
       extra={(
         <Select
           size="small"
@@ -248,9 +255,9 @@ function ProjectProgressEditor({ projectId, autoFocus = false }: { projectId: nu
       {loading ? <div style={{ padding: 24, textAlign: 'center' }}><Spin /></div> : !loadSucceeded ? (
         <Flex justify="center" style={{ padding: 24 }}><Button onClick={() => setReloadRevision((value) => value + 1)}>重新加载</Button></Flex>
       ) : (
-        <Space orientation="vertical" size={12} style={{ width: '100%' }}>
+        <Space orientation="vertical" size={14} style={{ width: '100%' }}>
           <Flex align="center" justify="space-between" gap={12} wrap>
-            <Text type="secondary">用自然语言记录本周重点、当前进展、风险和下周计划。</Text>
+            <Text type="secondary">只写这一周发生的变化；稳定信息留在上方项目概览。</Text>
             <Select
               size="small"
               value={statusSignal}
@@ -258,15 +265,47 @@ function ProjectProgressEditor({ projectId, autoFocus = false }: { projectId: nu
               options={Object.entries(projectProgressSignalLabels).map(([value, label]) => ({ value, label }))}
             />
           </Flex>
-          <Input.TextArea
-            value={draft}
-            onChange={(event) => { setDraft(event.target.value); setSaved(false) }}
-            autoSize={{ minRows: 8, maxRows: 20 }}
-            autoFocus={autoFocus}
-            placeholder={'## 本周重点\n\n## 当前进展\n\n## 风险\n\n## 下周计划'}
-          />
+          <div className="project-progress-editor-grid">
+            <div className="project-progress-editor">
+              <Flex justify="space-between" align="baseline" gap={8}><Text strong>本周重点</Text><Text type="secondary">最重要的 1–3 个结果</Text></Flex>
+              <Input.TextArea
+                value={draft.focus}
+                onChange={(event) => { setDraft((current) => ({ ...current, focus: event.target.value })); setSaved(false) }}
+                autoSize={{ minRows: 4, maxRows: 10 }}
+                placeholder={'1. 本周必须完成什么\n2. 本周要验证什么'}
+              />
+            </div>
+            <div className="project-progress-editor">
+              <Flex justify="space-between" align="baseline" gap={8}><Text strong>风险 / 需要支持</Text><Text type="secondary">风险、影响、Owner、支持方</Text></Flex>
+              <Input.TextArea
+                value={draft.risk}
+                onChange={(event) => { setDraft((current) => ({ ...current, risk: event.target.value })); setSaved(false) }}
+                autoSize={{ minRows: 4, maxRows: 10 }}
+                placeholder="没有风险就写暂无；有风险请说明影响和需要谁支持"
+              />
+            </div>
+            <div className="project-progress-editor project-progress-editor-wide">
+              <Flex justify="space-between" align="baseline" gap={8}><Text strong>当前进展</Text><Text type="secondary">本周新增结果和变化</Text></Flex>
+              <Input.TextArea
+                value={draft.progress}
+                onChange={(event) => { setDraft((current) => ({ ...current, progress: event.target.value })); setSaved(false) }}
+                autoSize={{ minRows: 5, maxRows: 14 }}
+                autoFocus={autoFocus}
+                placeholder="写结果、影响和可验证的证据，不重复长期事实"
+              />
+            </div>
+            <div className="project-progress-editor project-progress-editor-wide">
+              <Flex justify="space-between" align="baseline" gap={8}><Text strong>下周计划</Text><Text type="secondary">写可验收结果，不写笼统动作</Text></Flex>
+              <Input.TextArea
+                value={draft.next}
+                onChange={(event) => { setDraft((current) => ({ ...current, next: event.target.value })); setSaved(false) }}
+                autoSize={{ minRows: 4, maxRows: 12 }}
+                placeholder={'1. 下周交付什么\n2. 如何判断已经完成'}
+              />
+            </div>
+          </div>
           <Flex justify="space-between" align="center" gap={8} wrap>
-            <Text type="secondary">按周保存，可切换周次回看。</Text>
+            <Text type="secondary">{progress?.evidence_until ? `证据覆盖至 ${dayjs(progress.evidence_until).format('YYYY-MM-DD HH:mm')}` : '尚未保存本周快照'}</Text>
             <Flex align="center" gap={8}>
               {saved && <Text type="success">已保存</Text>}
               <Button type="primary" onClick={() => void save()} loading={saving}>保存进展</Button>
@@ -290,6 +329,7 @@ function ProjectsPanel() {
   const [form] = Form.useForm<ProjectInput>()
   const [detail, setDetail] = useState<Project>()
   const [detailEntry, setDetailEntry] = useState<'overview' | 'progress'>('overview')
+  const [detailTab, setDetailTab] = useState<'progress' | 'facts' | 'relations'>('progress')
   const [eventOpen, setEventOpen] = useState(false)
   const [eventDescription, setEventDescription] = useState('')
   const [eventSubmitting, setEventSubmitting] = useState(false)
@@ -313,6 +353,7 @@ function ProjectsPanel() {
 
   const openDetail = (project: Project, entry: 'overview' | 'progress' = 'overview') => {
     setDetailEntry(entry)
+    setDetailTab('progress')
     setDetail(project)
   }
 
@@ -496,41 +537,77 @@ function ProjectsPanel() {
         <Form.Item name="code" label="项目代号(可选)"><Input allowClear /></Form.Item>
       </Form>
     </Modal>
-    <Drawer title={detail?.name || '项目详情'} open={Boolean(detail)} size={720} onClose={() => { setDetail(undefined); setDetailEntry('overview') }}>
-      {detail && <Space orientation="vertical" size={20} style={{ width: '100%' }}>
-        <Flex gap={8}>
+    <Drawer
+      title={detail ? (
+        <div className="project-detail-title">
+          <Text strong>{detail.name}</Text>
+          <Flex gap={8} align="center" wrap>
+            <Tag color="green">{projectStatusLabels[detail.status]}</Tag>
+            <Text type="secondary">{projectRoleLabels[detail.role]}</Text>
+            <Text type="secondary">优先级 P{detail.priority}</Text>
+            {detail.last_progress_at && <Text type="secondary">最近更新 {dayjs(detail.last_progress_at).format('M-D HH:mm')}</Text>}
+          </Flex>
+        </div>
+      ) : '项目详情'}
+      open={Boolean(detail)}
+      size={900}
+      onClose={() => { setDetail(undefined); setDetailEntry('overview'); setDetailTab('progress') }}
+    >
+      {detail && <Space orientation="vertical" size={16} style={{ width: '100%' }}>
+        <Flex gap={8} wrap>
           <Button onClick={() => void downloadProject(detail)}>分享项目</Button>
           <Button onClick={() => openCopy(detail)}>复制项目</Button>
           <Button loading={resolvingRepositories} onClick={() => void resolveRepositories(detail)}>扫描 Codebase 仓库</Button>
+          <Button type="text" onClick={() => openEdit(detail)}>管理项目</Button>
         </Flex>
-        <Card size="small" title="项目概览">
-          <Descriptions column={2} size="small">
-            <Descriptions.Item label="状态"><Tag>{projectStatusLabels[detail.status]}</Tag></Descriptions.Item>
-            <Descriptions.Item label="我的角色">{projectRoleLabels[detail.role]}</Descriptions.Item>
-            <Descriptions.Item label="优先级">{detail.priority}</Descriptions.Item>
-            <Descriptions.Item label="项目代号">{detail.code || '—'}</Descriptions.Item>
-            <Descriptions.Item label="最近实质进展" span={2}>{detail.last_progress_at ? dayjs(detail.last_progress_at).format('YYYY-MM-DD HH:mm') : '—'}</Descriptions.Item>
-          </Descriptions>
-        </Card>
-        <ProjectProgressEditor projectId={detail.id} autoFocus={detailEntry === 'progress'} />
-        <SummaryPageEditor type="project" id={detail.id} defaultCollapsed />
-        <RelatedOKRCard type="project" id={detail.id} />
-        {repositories.length > 0 && (
-          <Card size="small" title="Codebase 仓库">
-            <Space orientation="vertical">
-              {repositories.map((repository) => (
-                <Text key={repository.resource_id}>
-                  {repository.title} · {repository.status === 'matched' ? repository.local_path : repository.status === 'ambiguous' ? '匹配到多个本地仓库' : '未找到本地仓库'}
-                </Text>
-              ))}
-            </Space>
-          </Card>
-        )}
-        <FactTimeline
-          subject={{ type: 'project', id: detail.id }}
-          title="项目事实"
-          refreshToken={eventRefresh}
-          extra={<Button size="small" type="primary" onClick={() => setEventOpen(true)}>记录进展</Button>}
+        <Tabs
+          activeKey={detailTab}
+          onChange={(value) => setDetailTab(value as typeof detailTab)}
+          items={[
+            {
+              key: 'progress',
+              label: '进展',
+              children: (
+                <Space orientation="vertical" size={16} style={{ width: '100%' }}>
+                  <ProjectOverview project={detail} />
+                  <ProjectProgressEditor projectId={detail.id} autoFocus={detailEntry === 'progress'} />
+                  <SummaryPageEditor type="project" id={detail.id} defaultCollapsed />
+                </Space>
+              ),
+            },
+            {
+              key: 'facts',
+              label: '事实流',
+              children: (
+                <FactTimeline
+                  subject={{ type: 'project', id: detail.id }}
+                  title="项目事实"
+                  refreshToken={eventRefresh}
+                  extra={<Button size="small" type="primary" onClick={() => setEventOpen(true)}>记录事实</Button>}
+                />
+              ),
+            },
+            {
+              key: 'relations',
+              label: '关联',
+              children: (
+                <Space orientation="vertical" size={16} style={{ width: '100%' }}>
+                  <RelatedOKRCard type="project" id={detail.id} />
+                  {repositories.length > 0 && (
+                    <Card size="small" title="Codebase 仓库">
+                      <Space orientation="vertical">
+                        {repositories.map((repository) => (
+                          <Text key={repository.resource_id}>
+                            {repository.title} · {repository.status === 'matched' ? repository.local_path : repository.status === 'ambiguous' ? '匹配到多个本地仓库' : '未找到本地仓库'}
+                          </Text>
+                        ))}
+                      </Space>
+                    </Card>
+                  )}
+                </Space>
+              ),
+            },
+          ]}
         />
       </Space>}
     </Drawer>

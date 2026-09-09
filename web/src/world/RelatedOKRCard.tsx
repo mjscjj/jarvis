@@ -16,9 +16,11 @@ function errorText(cause: unknown): string {
 export default function RelatedOKRCard({
   type,
   id,
+  compact = false,
 }: {
   type: WorldOKREntityType
   id: number | string
+  compact?: boolean
 }) {
   const { navigate } = usePageContext()
   const [quarter, setQuarter] = useState('')
@@ -71,13 +73,7 @@ export default function RelatedOKRCard({
 
   if (available === false) return null
 
-  return (
-    <Card
-      size="small"
-      title={<Flex align="center" gap={8}><span>关联 OKR</span>{quarter && <Tag color="blue">{quarter}</Tag>}<Tag>{rows.length}</Tag></Flex>}
-      extra={<Button type="link" size="small" onClick={() => navigate('plugins', { plugin: 'okr', plugin_tab: 'relations', quarter })}>查看 OKR 投影</Button>}
-    >
-      {loading ? <div style={{ padding: 20, textAlign: 'center' }}><Spin /></div> : error ? (
+  const content = loading ? <div style={{ padding: 20, textAlign: 'center' }}><Spin /></div> : error ? (
         <Alert type="error" showIcon title="关联 OKR 读取失败" description={error} />
       ) : rows.length === 0 ? (
         <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前季度还没有已确认的 OKR 映射或负责人关系" />
@@ -96,7 +92,41 @@ export default function RelatedOKRCard({
             </div>
           ))}
         </Flex>
-      )}
+      )
+
+  if (compact) {
+    const compactContent = loading ? <div className="world-related-okr-compact-loading"><Spin size="small" /></div> : error ? (
+      <Text type="danger">关联 OKR 读取失败</Text>
+    ) : rows.length === 0 ? (
+      <Text type="secondary">暂无已确认的季度目标映射</Text>
+    ) : (
+      <div className="world-related-okr-compact-list">
+        {rows.slice(0, 3).map((row) => (
+          <div key={row.key} className="world-related-okr-compact-row">
+            <Tag color={row.level === 'O' ? 'purple' : row.level === 'KR' ? 'blue' : 'cyan'}>{row.level}</Tag>
+            <div><Text strong>{row.title}</Text>{row.context && <Text type="secondary">{row.context}</Text>}</div>
+          </div>
+        ))}
+      </div>
+    )
+    return (
+      <div className="world-related-okr-compact">
+        <Flex justify="space-between" align="center" gap={8} className="world-related-okr-compact-head">
+          <Flex align="center" gap={6}>{quarter && <Tag color="blue">{quarter}</Tag>}<Tag>{rows.length} 项</Tag></Flex>
+          <Button type="link" size="small" onClick={() => navigate('plugins', { plugin: 'okr', plugin_tab: 'relations', quarter })}>查看 OKR</Button>
+        </Flex>
+        {compactContent}
+      </div>
+    )
+  }
+
+  return (
+    <Card
+      size="small"
+      title={<Flex align="center" gap={8}><span>关联 OKR</span>{quarter && <Tag color="blue">{quarter}</Tag>}<Tag>{rows.length}</Tag></Flex>}
+      extra={<Button type="link" size="small" onClick={() => navigate('plugins', { plugin: 'okr', plugin_tab: 'relations', quarter })}>查看 OKR 投影</Button>}
+    >
+      {content}
     </Card>
   )
 }
