@@ -44,9 +44,9 @@ func RegisterChatSidecar(h *server.Hertz, svc *chat.Service, db *gorm.DB) error 
 	}
 	h.Use(observability.Middleware(), chatSameHostCORS())
 	h.GET("/healthz", HealthForService(db, "jarvis-chat-server"))
-	h.POST("/api/chat", Chat(svc))
+	h.POST("/api/chat", PostChat(svc))
 	h.GET("/api/chat/threads", ListChatThreads(svc))
-	h.GET("/api/chat", GetChatHistory(svc))
+	h.GET("/api/chat", GetChat(svc))
 	h.GET("/api/chat/:thread_id", GetChatHistory(svc))
 	h.OPTIONS("/api/chat", func(_ context.Context, c *app.RequestContext) {
 		c.Status(consts.StatusNoContent)

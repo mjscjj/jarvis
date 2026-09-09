@@ -223,7 +223,12 @@ export function getChatHistory(baseURL: string, threadID: string, signal?: Abort
 }
 
 export function listChatThreads(baseURL: string, signal?: AbortSignal): Promise<ChatThreadList> {
-  return request<ChatThreadList>(`${baseURL}/api/chat/threads`, { signal })
+  return request<ChatThreadList>(`${baseURL}/api/chat?view=threads`, { signal })
+}
+
+export function stopChatTurn(baseURL: string, turnID: string, signal?: AbortSignal): Promise<{ stopped: boolean }> {
+  const query = new URLSearchParams({ action: 'stop', turn_id: turnID })
+  return request<{ stopped: boolean }>(`${baseURL}/api/chat?${query}`, { method: 'POST', signal })
 }
 
 export function finishTask(id: number, expectedVersion: number, status: 'done' | 'failed', result: Record<string, unknown>): Promise<Task> {

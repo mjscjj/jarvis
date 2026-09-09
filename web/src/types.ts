@@ -1254,6 +1254,8 @@ export interface PageSelection {
 export interface ChatRequest {
   message: string
   thread_id?: string | null
+  // 浏览器为当前执行轮次生成的稳定 ID，用于显式暂停并等待服务端落盘。
+  turn_id: string
   page_context?: PageContext | null
   image?: File | null
   // 当前通过飞书登录的用户，服务端据此取他自己的飞书凭证。

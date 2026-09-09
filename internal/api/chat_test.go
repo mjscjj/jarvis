@@ -47,6 +47,7 @@ func TestDecodeChatMultipartWithImage(t *testing.T) {
 	c := multipartChatContext(t, func(w *multipart.Writer) {
 		writeMultipartField(t, w, "message", "看下这张截图")
 		writeMultipartField(t, w, "thread_id", "thread-1")
+		writeMultipartField(t, w, "turn_id", "turn-1")
 		writeMultipartField(t, w, "page_context", `{"active_key":"okr","selection":{"kind":"project","id":7,"label":"Emily"},"view_state":{"tab":"weekly-fill"}}`)
 		writeMultipartPNG(t, w, "image")
 	})
@@ -54,7 +55,7 @@ func TestDecodeChatMultipartWithImage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decodeChatMultipart() error = %v", err)
 	}
-	if req.Message != "看下这张截图" || req.ThreadID != "thread-1" {
+	if req.Message != "看下这张截图" || req.ThreadID != "thread-1" || req.TurnID != "turn-1" {
 		t.Fatalf("request = %#v", req)
 	}
 	if req.PageContext == nil || req.PageContext.ActiveKey != "okr" || req.PageContext.Selection == nil || req.PageContext.Selection.ID != 7 {
@@ -94,6 +95,14 @@ func TestDecodeChatMultipartRejectsInvalidContract(t *testing.T) {
 				writeMultipartField(t, w, "page_context", `{"active_key":"okr","unknown":true}`)
 			},
 			wantErr: "unknown field",
+		},
+		{
+			name: "invalid turn id",
+			write: func(t *testing.T, w *multipart.Writer) {
+				writeMultipartField(t, w, "message", "hello")
+				writeMultipartField(t, w, "turn_id", "bad/turn")
+			},
+			wantErr: "turn_id is invalid",
 		},
 		{
 			name: "multiple images",

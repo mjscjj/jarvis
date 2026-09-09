@@ -367,6 +367,78 @@ func TestStreamRejectsBlankMessage(t *testing.T) {
 	}
 }
 
+func TestStopTurnWaitsForPartialHistory(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "codex")
+	script := "#!/bin/sh\n" +
+		"printf '%s\n' '{\"type\":\"thread.started\",\"thread_id\":\"tid-stop\"}'\n" +
+		"printf '%s\n' '{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"部分回复\"}}'\n" +
+		"while true; do sleep 0.05; done\n"
+	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	svc, err := NewService(Options{
+		AgentName: "小贾", Bin: bin, Model: "fixture-model", Sandbox: "read-only",
+		ReasoningEffort: "medium", Timeout: 60 * time.Second, HistoryDir: dir,
+		SharedMemory: fakeSharedMemoryReader{}, ContextAssembler: &fakeContextAssembler{},
+		SystemPrompts: fakeSystemPromptReader{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	partialSeen := make(chan struct{})
+	streamDone := make(chan error, 1)
+	go func() {
+		streamDone <- svc.Stream(t.Context(), Request{Message: "写一段回复", TurnID: "turn-stop-1"}, func(event Event) error {
+			if event.Kind == EventDelta {
+				close(partialSeen)
+			}
+			return nil
+		})
+	}()
+	select {
+	case <-partialSeen:
+	case <-time.After(10 * time.Second):
+		t.Fatal("partial reply was never emitted")
+	}
+
+	if err := svc.StopTurn(t.Context(), "turn-stop-1"); err != nil {
+		t.Fatalf("StopTurn() error=%v", err)
+	}
+	select {
+	case err := <-streamDone:
+		if err == nil {
+			t.Fatal("stopped stream must report cancellation")
+		}
+	default:
+		t.Fatal("StopTurn returned before Stream finished")
+	}
+	history, err := svc.History("tid-stop")
+	if err != nil {
+		t.Fatalf("History() after StopTurn error = %v", err)
+	}
+	if len(history.Messages) != 2 || history.Messages[0].Text != "写一段回复" || history.Messages[1].Text != "部分回复" {
+		t.Fatalf("history after stop = %#v", history.Messages)
+	}
+}
+
+func TestStopTurnBeforeStreamRegistrationCancelsTheTurn(t *testing.T) {
+	t.Parallel()
+	svc := newTestService(t)
+	if err := svc.StopTurn(t.Context(), "turn-before-post"); err != nil {
+		t.Fatalf("StopTurn() error=%v", err)
+	}
+	err := svc.Stream(t.Context(), Request{Message: "不要执行", TurnID: "turn-before-post"}, func(Event) error {
+		t.Fatal("pre-stopped turn must not emit events")
+		return nil
+	})
+	if !errors.Is(err, ErrTurnStopped) {
+		t.Fatalf("Stream() error = %v, want ErrTurnStopped", err)
+	}
+}
+
 func TestStreamStartsNewSessionWhenResumeHasNoRollout(t *testing.T) {
 	t.Parallel()
 	bin := filepath.Join(t.TempDir(), "codex")

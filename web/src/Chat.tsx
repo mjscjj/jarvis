@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { CloseOutlined, CompressOutlined, CopyOutlined, DeleteOutlined, ExpandOutlined, HistoryOutlined, PaperClipOutlined, PlusOutlined, ReloadOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
 import { Alert, Button, Input, Typography } from 'antd'
 import type { TextAreaRef } from 'antd/es/input/TextArea'
-import { getChatHistory, getChatRuntimeConfig, getSignedInOpenID, isMissingChatHistoryError, listChatThreads, resolveChatBaseURL } from './api'
+import { getChatHistory, getChatRuntimeConfig, getSignedInOpenID, isMissingChatHistoryError, listChatThreads, resolveChatBaseURL, stopChatTurn } from './api'
 import { useAgentIdentity } from './agentIdentity'
 import { usePageContext } from './pageContext'
 import { isOKRTab, isWeeklyWorkspaceTab, OKR_TAB_DEFINITIONS } from './okr/navigation'
@@ -296,6 +296,8 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
   const inputRef = useRef<TextAreaRef>(null)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
+  const activeTurnRef = useRef<string | null>(null)
+  const stoppingTurnRef = useRef<string | null>(null)
   const processingRef = useRef(false)
   const threadIdRef = useRef(threadId)
 
@@ -493,12 +495,30 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
     return '就绪'
   }, [historyLoading, paused, queue.length, queuePaused, runningStatusIndex, sending])
 
-  const stop = useCallback(() => {
-    if (!abortRef.current || stopping) return
+  const stop = useCallback(async () => {
+    const turnID = activeTurnRef.current
+    if (!chatBaseURL || !turnID || stopping) return
     setStopping(true)
     setQueuePaused(true)
-    abortRef.current.abort()
-  }, [stopping])
+    stoppingTurnRef.current = turnID
+    try {
+      // A false result means the stop beat the streaming POST while identity
+      // was still loading. The service keeps a short-lived stop marker; when
+      // the POST arrives it is rejected before the Agent starts.
+      await stopChatTurn(chatBaseURL, turnID)
+    } catch (cause: unknown) {
+      if (activeTurnRef.current === turnID) {
+        stoppingTurnRef.current = null
+        setStopping(false)
+        setError({
+          message: '暂时无法暂停这轮回复。',
+          detail: errorText(cause),
+          at: new Date().toISOString(),
+          recoverable: true,
+        })
+      }
+    }
+  }, [chatBaseURL, stopping])
 
   const fillSuggestion = useCallback((suggestion: string) => {
     setInput(suggestion)
@@ -674,6 +694,7 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
 
     const controller = new AbortController()
     abortRef.current = controller
+    activeTurnRef.current = turn.id
     const threadAtStart = threadIdRef.current
     try {
       // Read the signed-in identity per turn: the person can log in or out
@@ -681,12 +702,14 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
       const req: ChatRequest = {
         message: turn.text,
         thread_id: threadAtStart,
+        turn_id: turn.id,
         page_context: turn.pageContext,
         image: turn.image,
         user_open_id: await getSignedInOpenID(controller.signal),
       }
       const form = new FormData()
       form.append('message', req.message)
+      form.append('turn_id', req.turn_id)
       if (req.thread_id) form.append('thread_id', req.thread_id)
       if (req.user_open_id) form.append('user_open_id', req.user_open_id)
       if (req.page_context) form.append('page_context', JSON.stringify(req.page_context))
@@ -746,7 +769,7 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
       refreshThreads(chatBaseURL)
       window.dispatchEvent(new Event('jarvis:chat-completed'))
     } catch (cause: unknown) {
-      if (isAbortError(cause)) {
+      if (isAbortError(cause) || stoppingTurnRef.current === turn.id) {
         setPaused(true)
         setQueuePaused(true)
         // Keep any partial reply; drop only a still-empty assistant bubble.
@@ -781,6 +804,8 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
       })
     } finally {
       abortRef.current = null
+      if (activeTurnRef.current === turn.id) activeTurnRef.current = null
+      if (stoppingTurnRef.current === turn.id) stoppingTurnRef.current = null
       setStopping(false)
       setSending(false)
       processingRef.current = false

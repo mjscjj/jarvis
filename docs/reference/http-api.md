@@ -100,7 +100,7 @@ Runtime settings 写入后需要重启进程生效；模块开关保存后也需
 - 手工采集：`POST /api/debug/capture/discover|scan-related|scan-chat`
 - 主服务对话发现：`GET /api/chat-config`
 - 前端部署事实：`GET /api/web-config`，返回 `server.public_base_url`。分享链接用它当根地址，作者从 IP 打开页面也能复制出域名链接；配置留空时返回空串，链接沿用当前浏览器地址。
-- 独立 Chat sidecar：`POST /api/chat`（multipart + SSE；`message` 必填，`thread_id`、JSON 字符串 `page_context`、单张 PNG/JPEG `image`、`user_open_id` 可选，图片上限 10 MB）、`GET /api/chat/:thread_id`
+- 独立 Chat sidecar：`POST /api/chat`（multipart + SSE；`message` 必填，`turn_id` 用于暂停当前轮次，`thread_id`、JSON 字符串 `page_context`、单张 PNG/JPEG `image`、`user_open_id` 可选，图片上限 10 MB）、`POST /api/chat?action=stop&turn_id=...`（取消并等待该轮完成历史落盘）、`GET /api/chat?thread_id=...`、`GET /api/chat?view=threads`。历史列表、暂停与详情共用 `/api/chat` 根路径，以保持同源生产代理契约；sidecar 仍兼容 `GET /api/chat/threads` 与 `GET /api/chat/:thread_id`。
 - 带 `user_open_id` 时，sidecar 向主服务的 `/api/biz-okr/feishu-identity` 取该登录用户的飞书凭证位置，并把「用谁的身份 + token 文件路径 + 单条命令注入用法」写进本轮 prompt，让 Agent 用用户自己的权限读他扔进来的文档；token 本身不进 prompt。凭证不可用时把原因写进同一段落，不中断对话。
 
 对话只在 `chat.enabled=true` 且依赖构造成功时注册。

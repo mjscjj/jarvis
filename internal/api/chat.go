@@ -60,6 +60,55 @@ func GetChatHistory(svc *chat.Service) app.HandlerFunc {
 	}
 }
 
+// GetChat serves both history detail and the thread index on the stable
+// /api/chat path. Production only needs to forward this one endpoint; the
+// /api/chat/threads alias remains available for direct sidecar clients.
+func GetChat(svc *chat.Service) app.HandlerFunc {
+	history := GetChatHistory(svc)
+	threads := ListChatThreads(svc)
+	return func(ctx context.Context, c *app.RequestContext) {
+		switch strings.TrimSpace(c.Query("view")) {
+		case "":
+			history(ctx, c)
+		case "threads":
+			threads(ctx, c)
+		default:
+			writeAPIError(c, 400, 40063, fmt.Errorf("unknown chat view %q", c.Query("view")))
+		}
+	}
+}
+
+func StopChatTurn(svc *chat.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		turnID := strings.TrimSpace(c.Query("turn_id"))
+		err := svc.StopTurn(ctx, turnID)
+		if err != nil {
+			if errors.Is(err, chat.ErrInvalidTurnID) {
+				writeAPIError(c, 400, 40064, err)
+			} else {
+				writeAPIError(c, 500, 50064, err)
+			}
+			return
+		}
+		c.JSON(200, map[string]any{"code": 0, "data": map[string]bool{"stopped": true}})
+	}
+}
+
+func PostChat(svc *chat.Service) app.HandlerFunc {
+	stream := Chat(svc)
+	stop := StopChatTurn(svc)
+	return func(ctx context.Context, c *app.RequestContext) {
+		switch strings.TrimSpace(c.Query("action")) {
+		case "":
+			stream(ctx, c)
+		case "stop":
+			stop(ctx, c)
+		default:
+			writeAPIError(c, 400, 40065, fmt.Errorf("unknown chat action %q", c.Query("action")))
+		}
+	}
+}
+
 type chatPageContext struct {
 	ActiveKey string             `json:"active_key"`
 	Selection *chatPageSelection `json:"selection"`
@@ -208,7 +257,7 @@ func decodeChatMultipart(c *app.RequestContext) (req chat.Request, cleanup func(
 		return chat.Request{}, nil, cause
 	}
 
-	allowedValues := map[string]bool{"message": true, "thread_id": true, "page_context": true, "user_open_id": true}
+	allowedValues := map[string]bool{"message": true, "thread_id": true, "turn_id": true, "page_context": true, "user_open_id": true}
 	for key := range form.Value {
 		if !allowedValues[key] {
 			return fail(fmt.Errorf("unknown chat form field %q", key))
@@ -230,6 +279,15 @@ func decodeChatMultipart(c *app.RequestContext) (req chat.Request, cleanup func(
 		return fail(fmt.Errorf("chat thread_id must appear at most once"))
 	} else if len(values) == 1 {
 		req.ThreadID = values[0]
+	}
+
+	if values := form.Value["turn_id"]; len(values) > 1 {
+		return fail(fmt.Errorf("chat turn_id must appear at most once"))
+	} else if len(values) == 1 {
+		req.TurnID = strings.TrimSpace(values[0])
+		if _, err := chat.ValidateTurnID(req.TurnID); err != nil {
+			return fail(err)
+		}
 	}
 
 	if values := form.Value["user_open_id"]; len(values) > 1 {

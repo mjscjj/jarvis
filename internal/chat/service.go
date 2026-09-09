@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +32,7 @@ type ContextAssembler interface {
 type Request struct {
 	Message     string
 	ThreadID    string
+	TurnID      string
 	PageContext *PageContext
 	ImagePath   string
 	UserOpenID  string
@@ -100,8 +102,10 @@ type Service struct {
 	prompts    textstore.Reader
 	identities FeishuIdentityResolver
 
-	mu   sync.Mutex
-	runs map[string]*threadRun
+	mu           sync.Mutex
+	runs         map[string]*threadRun
+	turns        map[string]*threadRun
+	pendingStops map[string]time.Time
 }
 
 // threadRun 是某个 thread 上正在跑的一轮，用来让新一轮把它打断。
@@ -112,11 +116,19 @@ type threadRun struct {
 	cancel context.CancelFunc
 	done   chan struct{}
 	keys   []string
+	turnID string
 }
 
 // 打断上一轮后等它退出的上限。子进程收到 SIGTERM 通常亚秒级退出，等不到就说明
 // 真的卡死了，此时报错比让用户继续对着 thread-store 冲突发消息更有用。
 const threadTakeoverTimeout = 15 * time.Second
+const pendingStopTTL = time.Minute
+
+var (
+	ErrInvalidTurnID = errors.New("chat turn_id is invalid")
+	ErrTurnStopped   = errors.New("chat turn was stopped")
+	turnIDPattern    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$`)
+)
 
 // NewService 构造对话 Service。fail-fast：任一必填项缺失或非法直接返回 error。
 func NewService(opts Options) (*Service, error) {
@@ -141,15 +153,89 @@ func NewService(opts Options) (*Service, error) {
 		return nil, err
 	}
 	return &Service{
-		runner:     r,
-		agentName:  strings.TrimSpace(opts.AgentName),
-		sharedMem:  opts.SharedMemory,
-		context:    opts.ContextAssembler,
-		history:    history,
-		prompts:    opts.SystemPrompts,
-		identities: opts.FeishuIdentities,
-		runs:       map[string]*threadRun{},
+		runner:       r,
+		agentName:    strings.TrimSpace(opts.AgentName),
+		sharedMem:    opts.SharedMemory,
+		context:      opts.ContextAssembler,
+		history:      history,
+		prompts:      opts.SystemPrompts,
+		identities:   opts.FeishuIdentities,
+		runs:         map[string]*threadRun{},
+		turns:        map[string]*threadRun{},
+		pendingStops: map[string]time.Time{},
 	}, nil
+}
+
+func ValidateTurnID(turnID string) (string, error) {
+	turnID = strings.TrimSpace(turnID)
+	if !turnIDPattern.MatchString(turnID) {
+		return "", ErrInvalidTurnID
+	}
+	return turnID, nil
+}
+
+// registerTurn makes a browser-generated turn ID cancellable before any slow
+// prompt assembly or Agent startup. A stop can arrive just before the POST is
+// registered; pendingStops closes that narrow race without using the Agent
+// thread ID, which does not exist yet for a new session.
+func (s *Service) registerTurn(turnID string, run *threadRun) error {
+	if strings.TrimSpace(turnID) == "" {
+		return nil
+	}
+	normalized, err := ValidateTurnID(turnID)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	for pendingID, stoppedAt := range s.pendingStops {
+		if now.Sub(stoppedAt) > pendingStopTTL {
+			delete(s.pendingStops, pendingID)
+		}
+	}
+	if _, stopped := s.pendingStops[normalized]; stopped {
+		delete(s.pendingStops, normalized)
+		return ErrTurnStopped
+	}
+	if _, exists := s.turns[normalized]; exists {
+		return fmt.Errorf("chat turn_id %q is already running", normalized)
+	}
+	run.turnID = normalized
+	s.turns[normalized] = run
+	return nil
+}
+
+// StopTurn cancels one concrete browser turn and waits until Stream has
+// persisted any partial transcript. The boolean is false when the POST has not
+// registered yet; registerTurn will consume the pending stop if it arrives.
+// StopTurn cancels one concrete browser turn and does not return until Stream
+// has persisted its partial transcript. A successful return means the stop is
+// accepted, including the narrow case where the streaming POST has not
+// registered yet and will consume the pending stop marker when it arrives.
+func (s *Service) StopTurn(ctx context.Context, turnID string) error {
+	normalized, err := ValidateTurnID(turnID)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	run := s.turns[normalized]
+	if run == nil {
+		s.pendingStops[normalized] = time.Now()
+		s.mu.Unlock()
+		return nil
+	}
+	run.cancel()
+	s.mu.Unlock()
+
+	select {
+	case <-run.done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(threadTakeoverTimeout):
+		return fmt.Errorf("chat turn %s did not stop within %s", normalized, threadTakeoverTimeout)
+	}
 }
 
 // takeOverThread 保证同一个 thread 上同时只有一轮在跑。
@@ -191,6 +277,9 @@ func (s *Service) releaseRun(run *threadRun) {
 	close(run.done)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if run.turnID != "" && s.turns[run.turnID] == run {
+		delete(s.turns, run.turnID)
+	}
 	for _, key := range run.keys {
 		if s.runs[key] == run {
 			delete(s.runs, key)
@@ -205,6 +294,14 @@ func (s *Service) Stream(ctx context.Context, req Request, emit func(Event) erro
 	if message == "" {
 		return fmt.Errorf("chat message is required")
 	}
+	runCtx, cancel := context.WithCancel(ctx)
+	run := &threadRun{cancel: cancel, done: make(chan struct{})}
+	if err := s.registerTurn(req.TurnID, run); err != nil {
+		cancel()
+		return err
+	}
+	defer s.releaseRun(run)
+	ctx = runCtx
 	// 系统指引只在新会话（首轮）灌入；resume 时 Agent CLI 已持有会话历史，只需发用户消息，
 	// 避免每轮重复灌系统指引膨胀上下文。
 	prompt := message
@@ -231,13 +328,9 @@ func (s *Service) Stream(ctx context.Context, req Request, emit func(Event) erro
 			return err
 		}
 	}
-	runCtx, cancel := context.WithCancel(ctx)
-	run := &threadRun{cancel: cancel, done: make(chan struct{})}
-	defer s.releaseRun(run)
 	if activeThreadID != "" {
 		s.occupyThread(activeThreadID, run)
 	}
-	ctx = runCtx
 
 	var assistant strings.Builder
 	handle := func(event Event) error {
