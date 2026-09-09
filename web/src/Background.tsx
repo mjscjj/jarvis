@@ -27,7 +27,6 @@ import {
 import type { TableColumnsType } from 'antd'
 import dayjs from 'dayjs'
 import type { Dayjs } from 'dayjs'
-import { SafetyCertificateOutlined } from '@ant-design/icons'
 import { useAgentIdentity } from './agentIdentity'
 import {
   appendProjectFact,
@@ -105,7 +104,6 @@ import './styles/review-memory.css'
 const { Text } = Typography
 const WorldMap = lazy(() => import('./world-map/WorldMap'))
 const AgentSettings = lazy(() => import('./AgentSettings'))
-const SecuritySettings = lazy(() => import('./SecuritySettings'))
 
 const projectRoleLabels: Record<ProjectRole, string> = { owner: '负责人', participant: '参与者' }
 const projectStatusLabels: Record<ProjectStatus, string> = {
@@ -1881,30 +1879,21 @@ export default function Background() {
 export function Settings() {
   const { name: agentName } = useAgentIdentity()
   const { context, setViewState } = usePageContext()
-  type SettingsView = 'security' | 'runtime' | 'agents' | 'scheduling' | 'memory' | 'extensions'
+  type SettingsView = 'runtime' | 'agents' | 'scheduling' | 'memory' | 'extensions'
   const settingsView = (value: string | undefined): SettingsView => (
     value === 'runtime' || value === 'agents' || value === 'scheduling' || value === 'memory' || value === 'extensions'
       ? value
-      : 'security'
+      : 'runtime'
   )
   const activeView = settingsView(context.view_state.view)
 
   return (
     <div className="settings-page">
-      <PageHeader title="系统设置" subtitle={`配置 ${agentName} 的安全边界、运行、工作方式、调度、共享记忆和扩展能力`} />
+      <PageHeader title="系统设置" subtitle={`配置 ${agentName} 的运行、工作方式、调度、共享记忆和扩展能力`} />
       <Tabs
         activeKey={activeView}
         onChange={(view) => setViewState({ view })}
         items={[
-          {
-            key: 'security',
-            label: <Space size={6}><SafetyCertificateOutlined />安全保护</Space>,
-            children: (
-              <Suspense fallback={<div style={{ padding: 32, textAlign: 'center' }}><Spin /></div>}>
-                <SecuritySettings />
-              </Suspense>
-            ),
-          },
           { key: 'runtime', label: '运行', children: <RuntimeSettings /> },
           {
             key: 'agents',

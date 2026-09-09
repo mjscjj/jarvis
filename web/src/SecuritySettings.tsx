@@ -22,6 +22,7 @@ import {
   SafetyCertificateOutlined,
 } from '@ant-design/icons'
 import { getSecuritySettings, listSecurityAuditEvents, updateSecuritySettings } from './api'
+import PageHeader from './components/PageHeader'
 import type {
   AccessAuditActorKind,
   AccessAuditEvent,
@@ -168,13 +169,20 @@ export default function SecuritySettings() {
   ], [])
 
   if (loading && !view) {
-    return <div className="security-settings-loading"><Spin /></div>
+    return (
+      <div className="security-page">
+        <PageHeader title="安全保护" subtitle="管理 Jarvis 的数据访问边界与访问审计" />
+        <div className="security-settings-loading"><Spin /></div>
+      </div>
+    )
   }
 
   const dirty = view ? draftP2PEnabled !== view.settings.p2p_scan_enabled : false
 
   return (
-    <div className="security-settings">
+    <div className="security-page">
+      <PageHeader title="安全保护" subtitle="管理 Jarvis 的数据访问边界与访问审计" />
+      <div className="security-settings">
       {view?.restart_required && (
         <Alert
           type="warning"
@@ -302,7 +310,7 @@ export default function SecuritySettings() {
           showIcon
           icon={<SafetyCertificateOutlined />}
           title="当前身份识别边界"
-          description="独立登录身份与服务器 Principal 相同时记为本人，否则记为其他已识别用户；无 Cookie 的本机调用记为本机 Agent；未登录远程请求会被拒绝并记为未识别远程请求。来源 IP 仅保留脱敏网段。"
+          description="通过当前服务器字节身份完成登录的浏览器记为本人；无 Cookie 的本机调用记为本机 Agent；未登录远程请求会被拒绝并记为未识别远程请求。来源 IP 仅保留脱敏网段。"
         />
         {auditError && <Alert type="error" showIcon title="读取审计记录失败" description={auditError} />}
         <Table<AccessAuditEvent>
@@ -315,6 +323,7 @@ export default function SecuritySettings() {
           locale={{ emptyText: '当前筛选范围内暂无访问记录' }}
         />
       </Card>
+      </div>
     </div>
   )
 }

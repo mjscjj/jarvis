@@ -18,6 +18,7 @@ import {
   CloseOutlined,
   EditOutlined,
   LogoutOutlined,
+  SafetyCertificateOutlined,
   UserOutlined,
 } from '@ant-design/icons'
 import { AgentIdentityProvider, useAgentIdentity } from './agentIdentity'
@@ -41,6 +42,7 @@ const ScheduledTasks = lazy(() => import('./ScheduledTasks'))
 const Debug = lazy(() => import('./Debug'))
 const Chat = lazy(() => import('./Chat'))
 const Plugins = lazy(() => import('./Plugins'))
+const SecuritySettings = lazy(() => import('./SecuritySettings'))
 
 const DEFAULT_KEY = 'overview'
 
@@ -54,6 +56,7 @@ const pageLabels: Record<string, string> = {
   todos: '线索',
   'scheduled-tasks': '任务',
   plugins: '插件',
+  security: '安全保护',
   settings: '系统设置',
   debug: '运行状态',
 }
@@ -123,6 +126,7 @@ function AppShell() {
     { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
     { key: 'background', label: '世界', icon: <DatabaseOutlined /> },
     pluginMenu,
+    { key: 'security', label: '安全保护', icon: <SafetyCertificateOutlined /> },
     { type: 'divider' },
     {
       key: 'management',
@@ -143,6 +147,7 @@ function AppShell() {
     'scheduled-tasks': <ScheduledTasks />,
     plugins: <Plugins />,
     background: <Background />,
+    security: <SecuritySettings />,
     settings: <Settings />,
     progress: <Progress />,
     debug: <Debug />,
@@ -445,6 +450,7 @@ function AppShell() {
             </div>
           </div>
           {[
+            { key: 'security', label: '安全保护', icon: <SafetyCertificateOutlined /> },
             { key: 'todos', label: '线索', icon: <CheckCircleOutlined /> },
             { key: 'settings', label: '系统设置', icon: <SettingOutlined /> },
             { key: 'debug', label: '运行状态', icon: <ToolOutlined /> },
