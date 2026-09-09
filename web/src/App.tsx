@@ -30,6 +30,7 @@ import { listAppModules } from './api'
 import { appModuleRegistry } from './modules/registry'
 import type { AppModuleChildDefinition, AppModuleDefinition } from './modules/registry'
 import { isWeeklyShareViewState } from './okr/emily/share'
+import { getAuthStatus as getOKRAuthStatus } from './okr/emily/api'
 import { listPlugins, shutdownJarvis } from './api'
 import type { Plugin } from './types'
 import jarvisIcon from './assets/jarvis-icon.png'
@@ -61,8 +62,12 @@ function moduleChildMenuKey(moduleKey: string, childKey: string): string {
 function enabledModuleChildren(
   module: AppModuleDefinition,
   moduleEnablement: Readonly<Record<string, boolean>>,
+  managementAccess: boolean,
 ): readonly AppModuleChildDefinition[] {
-  return module.children?.filter((child) => !child.requiresModule || moduleEnablement[child.requiresModule] === true) ?? []
+  return module.children?.filter((child) => (
+    (!child.requiresModule || moduleEnablement[child.requiresModule] === true) &&
+    (!child.requiresManagementAccess || managementAccess)
+  )) ?? []
 }
 
 const pageLabels: Record<string, string> = {
@@ -93,6 +98,7 @@ function AppShell() {
   const [mobileSystemOpen, setMobileSystemOpen] = useState(false)
   const [mobileModuleKey, setMobileModuleKey] = useState<string>()
   const [moduleEnablement, setModuleEnablement] = useState<Record<string, boolean>>()
+  const [okrManagementAccess, setOKRManagementAccess] = useState(false)
   const [moduleLoadError, setModuleLoadError] = useState<string>()
   const [enabledPlugins, setEnabledPlugins] = useState<Plugin[]>([])
   const [shuttingDown, setShuttingDown] = useState(false)
@@ -115,14 +121,14 @@ function AppShell() {
   const enabledModules = appModuleRegistry.filter((module) => moduleEnablement?.[module.key])
   const resolvedModuleEnablement = moduleEnablement ?? EMPTY_MODULE_ENABLEMENT
   const moduleNavigationTargets = enabledModules.flatMap((module) => (
-    enabledModuleChildren(module, resolvedModuleEnablement).map((child) => ({
+    enabledModuleChildren(module, resolvedModuleEnablement, okrManagementAccess).map((child) => ({
       menuKey: moduleChildMenuKey(module.key, child.key),
       module,
       child,
     }))
   ))
   const activeModule = enabledModules.find((module) => module.key === context.active_key)
-  const activeModuleChildren = activeModule ? enabledModuleChildren(activeModule, resolvedModuleEnablement) : []
+  const activeModuleChildren = activeModule ? enabledModuleChildren(activeModule, resolvedModuleEnablement, okrManagementAccess) : []
   const activeModuleChild = activeModuleChildren.find((child) => (
     Object.entries(child.viewState).every(([key, value]) => context.view_state[key] === value)
   )) ?? activeModuleChildren[0]
@@ -172,7 +178,7 @@ function AppShell() {
     { key: 'overview', label: '工作台', icon: <HomeOutlined /> },
     { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
     ...enabledModules.map((module) => {
-      const children = enabledModuleChildren(module, resolvedModuleEnablement)
+      const children = enabledModuleChildren(module, resolvedModuleEnablement, okrManagementAccess)
       if (children.length === 0) return { key: module.key, label: module.label, icon: module.icon }
       return {
         key: module.key,
@@ -240,6 +246,17 @@ function AppShell() {
       controller.abort()
       window.removeEventListener('jarvis:app-modules-changed', reload)
     }
+  }, [])
+
+  useEffect(() => {
+    const refresh = () => {
+      void getOKRAuthStatus()
+        .then((auth) => setOKRManagementAccess(auth.managementAccess))
+        .catch(() => setOKRManagementAccess(false))
+    }
+    refresh()
+    window.addEventListener('jarvis:okr-auth-changed', refresh)
+    return () => window.removeEventListener('jarvis:okr-auth-changed', refresh)
   }, [])
 
   useEffect(() => {
@@ -381,7 +398,7 @@ function AppShell() {
 
   const siderWidth = siderCollapsed ? SIDER_COLLAPSED_WIDTH : SIDER_WIDTH
   const mobileModule = enabledModules.find((module) => module.key === mobileModuleKey)
-  const mobileModuleChildren = mobileModule ? enabledModuleChildren(mobileModule, resolvedModuleEnablement) : []
+  const mobileModuleChildren = mobileModule ? enabledModuleChildren(mobileModule, resolvedModuleEnablement, okrManagementAccess) : []
   const mobileNavItems: Array<{
     key: string
     label: string
@@ -394,7 +411,7 @@ function AppShell() {
       key: module.key,
       label: module.label,
       icon: module.icon,
-      children: enabledModuleChildren(module, resolvedModuleEnablement),
+      children: enabledModuleChildren(module, resolvedModuleEnablement, okrManagementAccess),
     })),
     { key: 'background', label: '世界', icon: <DatabaseOutlined /> },
     { key: 'agents', label: 'Agent', icon: <RobotOutlined /> },

@@ -1,23 +1,9 @@
 package api
 
 import (
-	"context"
-	"errors"
-	"fmt"
 	"strings"
 
 	okrAuth "jarvis/internal/okrworkspace/auth"
-
-	"github.com/cloudwego/hertz/pkg/app"
-	"github.com/cloudwego/hertz/pkg/protocol/consts"
-)
-
-type okrPlanAccess string
-
-const (
-	okrPlanAccessNone   okrPlanAccess = "none"
-	okrPlanAccessViewer okrPlanAccess = "viewer"
-	okrPlanAccessEditor okrPlanAccess = "editor"
 )
 
 const (
@@ -25,11 +11,13 @@ const (
 	okrPlanEditorEmail   = "chujiejie.1@bytedance.com"
 )
 
-// The Plan share audience is deliberately an explicit code-owned permission
-// boundary. Feishu open_id values are scoped to one app, so authorization
-// primarily uses union_id. Enterprise email is retained as a compatibility
-// key for sessions created by an identity provider that returns it.
-var okrPlanViewers = []struct {
+// The management audience controls whether the definition-management and
+// tagging workspace is shown. Feishu open_id values are scoped to one app, so
+// identity matching primarily uses union_id. Enterprise email is retained as a
+// compatibility key for sessions created by an identity provider that returns
+// it. Plan, Review and weekly collaboration are deliberately not restricted by
+// this list.
+var okrManagementUsers = []struct {
 	Name    string
 	UnionID string
 	Email   string
@@ -45,48 +33,19 @@ var okrPlanViewers = []struct {
 	{Name: "刘寅", UnionID: "on_5a9ba5363a8a65741f600baa439d3543", Email: "liuyin.01@bytedance.com"},
 }
 
-func okrPlanAccessForUser(user okrAuth.User, identityConfigured bool) okrPlanAccess {
+func canManageOKR(user okrAuth.User, identityConfigured bool) bool {
 	if !identityConfigured {
-		return okrPlanAccessEditor
+		return true
 	}
 	unionID := strings.TrimSpace(user.UnionID)
 	email := strings.ToLower(strings.TrimSpace(user.Email))
 	if unionID == okrPlanEditorUnionID || email == okrPlanEditorEmail {
-		return okrPlanAccessEditor
+		return true
 	}
-	for _, viewer := range okrPlanViewers {
-		if unionID == viewer.UnionID || email != "" && email == viewer.Email {
-			return okrPlanAccessViewer
+	for _, manager := range okrManagementUsers {
+		if unionID == manager.UnionID || email != "" && email == manager.Email {
+			return true
 		}
 	}
-	return okrPlanAccessNone
-}
-
-func RequireOKRPlanAccess(service *okrAuth.Service, required okrPlanAccess) app.HandlerFunc {
-	return func(ctx context.Context, c *app.RequestContext) {
-		user := jarvisOKRUser
-		if service.Enabled() {
-			session, err := service.Current(ctx, string(c.Cookie(okrAuth.CookieName)))
-			if errors.Is(err, okrAuth.ErrUnauthenticated) {
-				writeAPIError(c, consts.StatusUnauthorized, 40180, fmt.Errorf("请先使用飞书登录"))
-				c.Abort()
-				return
-			}
-			if err != nil {
-				writeAPIError(c, consts.StatusInternalServerError, 50083, err)
-				c.Abort()
-				return
-			}
-			user = session.User
-		}
-
-		access := okrPlanAccessForUser(user, service.Enabled())
-		if access == okrPlanAccessNone || required == okrPlanAccessEditor && access != okrPlanAccessEditor {
-			writeAPIError(c, consts.StatusForbidden, 40380, fmt.Errorf("你不在 OKR Plan 的%s名单中", map[okrPlanAccess]string{okrPlanAccessViewer: "查看", okrPlanAccessEditor: "编辑"}[required]))
-			c.Abort()
-			return
-		}
-		c.Set(okrIdentityContextKey, user)
-		c.Next(ctx)
-	}
+	return false
 }

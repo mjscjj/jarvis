@@ -17,7 +17,9 @@ export default function IdentityBoundary({ children }: { children: ReactNode | (
   const loadIdentity = async () => {
     setError('')
     try {
-      setAuth(await getAuthStatus())
+		const next = await getAuthStatus()
+      setAuth(next)
+		window.dispatchEvent(new CustomEvent('jarvis:okr-auth-changed', { detail: next }))
     } catch (reason) {
       setAuth(undefined)
       setError(reason instanceof Error ? reason.message : '无法读取登录状态')

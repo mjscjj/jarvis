@@ -12,6 +12,7 @@ export interface AppModuleChildDefinition {
   label: string
   group?: string
   requiresModule?: string
+  requiresManagementAccess?: boolean
   viewState: Record<string, string>
 }
 
@@ -39,6 +40,7 @@ export const appModuleRegistry: AppModuleDefinition[] = [
 			label: item.label,
 			group: item.group,
 			requiresModule: 'requiresModule' in item ? item.requiresModule : undefined,
+			requiresManagementAccess: item.key === 'manage',
 			viewState: { tab: item.key },
 		})),
 	},

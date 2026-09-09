@@ -13,7 +13,6 @@ import (
 	"jarvis/internal/okrworkspace/domain"
 	"jarvis/internal/okrworkspace/moduleconfig"
 
-	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/common/ut"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
@@ -82,30 +81,30 @@ func TestPollOKRFeishuDeviceLoginTreatsLostLoginAsExpired(t *testing.T) {
 	}
 }
 
-func TestOKRPlanAccessUsesEnterpriseEmailAllowlist(t *testing.T) {
-	if len(okrPlanViewers) != 9 {
-		t.Fatalf("viewer count = %d, want 9", len(okrPlanViewers))
+func TestOKRManagementAccessUsesEnterpriseIdentityAllowlist(t *testing.T) {
+	if len(okrManagementUsers) != 9 {
+		t.Fatalf("management user count = %d, want 9", len(okrManagementUsers))
 	}
-	for _, viewer := range okrPlanViewers {
-		if access := okrPlanAccessForUser(okrAuth.User{Name: viewer.Name, UnionID: viewer.UnionID}, true); access != okrPlanAccessViewer {
-			t.Fatalf("%s union_id access = %q, want viewer", viewer.Name, access)
+	for _, manager := range okrManagementUsers {
+		if !canManageOKR(okrAuth.User{Name: manager.Name, UnionID: manager.UnionID}, true) {
+			t.Fatalf("%s union_id should have management access", manager.Name)
 		}
-		if access := okrPlanAccessForUser(okrAuth.User{Name: viewer.Name, Email: "  " + strings.ToUpper(viewer.Email) + "  "}, true); access != okrPlanAccessViewer {
-			t.Fatalf("%s <%s> access = %q, want viewer", viewer.Name, viewer.Email, access)
+		if !canManageOKR(okrAuth.User{Name: manager.Name, Email: "  " + strings.ToUpper(manager.Email) + "  "}, true) {
+			t.Fatalf("%s <%s> should have management access", manager.Name, manager.Email)
 		}
 	}
-	if access := okrPlanAccessForUser(okrAuth.User{UnionID: okrPlanEditorUnionID}, true); access != okrPlanAccessEditor {
-		t.Fatalf("editor access = %q", access)
+	if !canManageOKR(okrAuth.User{UnionID: okrPlanEditorUnionID}, true) {
+		t.Fatal("principal should have management access")
 	}
-	if access := okrPlanAccessForUser(okrAuth.User{Name: "同名人员", Email: "someone@bytedance.com"}, true); access != okrPlanAccessNone {
-		t.Fatalf("unlisted access = %q", access)
+	if canManageOKR(okrAuth.User{Name: "同名人员", Email: "someone@bytedance.com"}, true) {
+		t.Fatal("unlisted user should not have management access")
 	}
-	if access := okrPlanAccessForUser(jarvisOKRUser, false); access != okrPlanAccessEditor {
-		t.Fatalf("disabled identity access = %q", access)
+	if !canManageOKR(jarvisOKRUser, false) {
+		t.Fatal("disabled identity should preserve local management access")
 	}
 }
 
-func TestRequireOKRPlanAccessSeparatesViewersAndEditor(t *testing.T) {
+func TestOKRCurrentUserReportsManagementAccess(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
@@ -121,45 +120,32 @@ func TestRequireOKRPlanAccessSeparatesViewersAndEditor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	addOKRIdentitySession(t, db, "viewer", okrPlanViewers[0].UnionID, "")
-	addOKRIdentitySession(t, db, "editor", okrPlanEditorUnionID, "")
+	addOKRIdentitySession(t, db, "manager", okrManagementUsers[0].UnionID, "")
 	addOKRIdentitySession(t, db, "outsider", "on_outsider", "outsider@bytedance.com")
 
 	h := server.Default()
-	ok := func(_ context.Context, c *app.RequestContext) { c.String(consts.StatusOK, "ok") }
-	h.GET("/plan", RequireOKRPlanAccess(identity, okrPlanAccessViewer), ok)
-	h.POST("/plan", RequireOKRPlanAccess(identity, okrPlanAccessEditor), ok)
 	h.GET("/me", GetOKRCurrentUser(identity))
 	cookie := func(token string) ut.Header { return ut.Header{Key: "Cookie", Value: okrAuth.CookieName + "=" + token} }
 
 	for _, test := range []struct {
-		name, method, token string
-		want                int
+		name, token string
+		want        bool
 	}{
-		{name: "anonymous viewer", method: "GET", want: consts.StatusUnauthorized},
-		{name: "outsider viewer", method: "GET", token: "outsider", want: consts.StatusForbidden},
-		{name: "allowlisted viewer", method: "GET", token: "viewer", want: consts.StatusOK},
-		{name: "viewer cannot edit", method: "POST", token: "viewer", want: consts.StatusForbidden},
-		{name: "editor can edit", method: "POST", token: "editor", want: consts.StatusOK},
+		{name: "allowlisted manager", token: "manager", want: true},
+		{name: "unlisted user", token: "outsider", want: false},
 	} {
-		headers := []ut.Header(nil)
-		if test.token != "" {
-			headers = append(headers, cookie(test.token))
-		}
-		response := ut.PerformRequest(h.Engine, test.method, "/plan", nil, headers...).Result()
-		if response.StatusCode() != test.want {
+		response := ut.PerformRequest(h.Engine, "GET", "/me", nil, cookie(test.token)).Result()
+		if response.StatusCode() != consts.StatusOK {
 			t.Fatalf("%s: status=%d body=%s", test.name, response.StatusCode(), response.Body())
 		}
-	}
-
-	response := ut.PerformRequest(h.Engine, "GET", "/me", nil, cookie("viewer")).Result()
-	var payload struct {
-		Data okrCurrentUserResponse `json:"data"`
-	}
-	if err := json.Unmarshal(response.Body(), &payload); err != nil {
-		t.Fatal(err)
-	}
-	if payload.Data.PlanAccess != okrPlanAccessViewer {
-		t.Fatalf("me plan_access = %q, want viewer", payload.Data.PlanAccess)
+		var payload struct {
+			Data okrCurrentUserResponse `json:"data"`
+		}
+		if err := json.Unmarshal(response.Body(), &payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload.Data.ManagementAccess != test.want {
+			t.Fatalf("%s management_access = %t, want %t", test.name, payload.Data.ManagementAccess, test.want)
+		}
 	}
 }

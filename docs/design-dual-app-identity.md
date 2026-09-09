@@ -36,10 +36,10 @@ Jarvis 同时承担三件性质不同的事，由两个飞书应用按受众和 
 2026-09-02 首次实测、2026-09-03 复测时，旧授权仍带有敏感权限。开发者后台完成收窄后，2026-09-09 再次核验：
 
 - 最近两天的 112 份新授权均为 **86** 个 scope，`im`、`mail`、`contact`、`calendar`、`task`、`approval`、`vc`、`minutes`、`search` 敏感域全部为零。
-- 九位 OKR Plan 分享对象的现有授权也均为 86 个 scope，可以安全用于页面登录。
+- 九位 OKR 管理与打标用户的现有授权也均为 86 个 scope，可以安全用于页面登录。
 - principal 的一份历史授权仍保留 155 个 scope，并会在 refresh 时沿用旧授权范围；历史授权不会因为后台收窄自动降权，应退出并重新授权或撤销旧授权。
 
-`conf/okr-feishu-scopes.txt` 仍只表达登录 user scope 意图；真正的权限上限是开发者后台。分享前必须同时满足两条：新授权不含敏感域，页面自身有服务端访问控制。OKR Plan 现在按 `union_id` 使用代码白名单，viewer 只能读取并评论，正文写操作只允许 principal。
+`conf/okr-feishu-scopes.txt` 仍只表达登录 user scope 意图；真正的权限上限是开发者后台。名单按 `union_id` 识别，仅控制“管理与打标”入口是否显示，不限制 Plan、Review 和周报协作。
 
 主应用独有且**应当**只在主应用上出现的敏感能力包括 user 级 `im:message`、`im:message.p2p_msg:get_as_user`、`mail:user_mailbox.message.body:read`、`contact:user:search`、`calendar:calendar.event:*`、`approval:instance:write`、`minutes:minutes.transcript:export`。通知应用只保留广播需要的 tenant 发送权限，不因此取得登录人的会话读取能力。
 
@@ -52,7 +52,7 @@ Jarvis 同时承担三件性质不同的事，由两个飞书应用按受众和 
 
 剩下 83 个是云文档、云空间、知识库和多维表格的读写权限，**当前链路并不调用**。保留它们是因为已经在同一次授权里拿到了：后续要做"用户往页面里贴一个飞书文档链接，Jarvis 以他自己的身份打开"这类功能时，不需要让所有人重新授权一遍。一次授权覆盖到位比日后追加更省事，而且这些域相对不敏感。
 
-现阶段登录的产出服务三条链路：**信息展示**（页面上显示当前登录人）、**评论署名**，以及 **OKR Plan 访问控制**。Plan 的读取和评论要求硬编码 viewer 白名单，正文写操作只允许 principal；其它 OKR/周报接口暂不做可见性过滤。
+现阶段登录的产出服务三条链路：**信息展示**（页面上显示当前登录人）、**评论署名**，以及 **OKR 管理入口可见性**。硬编码名单只决定是否显示“管理与打标”；Plan、Review 和周报仍面向已登录协作者。
 
 ## 为什么用 union_id 认人
 
