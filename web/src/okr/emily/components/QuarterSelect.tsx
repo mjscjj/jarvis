@@ -1,8 +1,9 @@
 import { useBoard } from '../board'
+import { quarterOptions } from '../quarterCatalog'
 
 export function QuarterSelect() {
   const { quarter, availableQuarters, setQuarter, syncState } = useBoard()
-  const quarters = availableQuarters.length > 0 ? availableQuarters : (quarter ? [quarter] : [])
+  const quarters = quarterOptions(quarter, availableQuarters)
   const disabled = syncState.kind === 'loading' || syncState.kind === 'saving' || syncState.kind === 'conflict'
 
   return (

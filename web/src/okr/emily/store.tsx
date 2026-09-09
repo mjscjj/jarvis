@@ -7,7 +7,7 @@ import { BUSINESS_CATEGORY_TAG, PRIORITY_TAG, replaceSingleTag } from './hierarc
 import { swappedOrder, swappedPointsWithinKind } from './ordering'
 import { LIGHTS, STATUSES } from './template'
 import type { Entry, EnumValues, Kr, KrOwner, Objective, Point, WeekTemplateKey, WeeklyScore } from './types'
-import { filterWeekCatalog, previousWeekInCatalog } from './weekCatalog'
+import { resolveWeeklyBoardScope } from './weeklyScope'
 
 const SAVE_DELAY_MS = 700
 
@@ -334,40 +334,15 @@ export function BoardProvider({
       let board: BoardData
       let remoteEnums: EnumValues
       if (surface === 'weekly-report') {
-        let [catalog, loadedEnums] = await Promise.all([
-          listWeeklyReportWeeks(targetQuarter ?? quarterRef.current),
+        [board, remoteEnums] = await Promise.all([
+          resolveWeeklyBoardScope(
+            targetQuarter ?? quarterRef.current,
+            targetWeek,
+            weekTemplateKey,
+            { listWeeks: listWeeklyReportWeeks, getBoard },
+          ),
           getEnums(),
         ])
-        remoteEnums = loadedEnums
-        let filteredWeeks = filterWeekCatalog(catalog.weeks, weekTemplateKey)
-        const requestedWeek = targetWeek?.trim() ?? ''
-        let selectedWeek = requestedWeek && filteredWeeks.includes(requestedWeek) ? requestedWeek : filteredWeeks[0] ?? ''
-        if (selectedWeek) {
-          let loaded = await getBoard(catalog.quarter, selectedWeek, surface)
-          const fallbackQuarter = loaded.availableQuarters[0]
-          if (fallbackQuarter && !loaded.availableQuarters.includes(loaded.quarter)) {
-            catalog = await listWeeklyReportWeeks(fallbackQuarter)
-            filteredWeeks = filterWeekCatalog(catalog.weeks, weekTemplateKey)
-            selectedWeek = requestedWeek && filteredWeeks.includes(requestedWeek) ? requestedWeek : filteredWeeks[0] ?? ''
-            loaded = await getBoard(catalog.quarter, selectedWeek, surface)
-          }
-          board = {
-            ...loaded,
-            templateKey: weekTemplateKey,
-            previousWeek: previousWeekInCatalog(filteredWeeks, selectedWeek),
-            availableWeeks: filteredWeeks,
-          }
-        } else {
-          const core = await getBoard(catalog.quarter, '', 'okr')
-          board = {
-            ...core,
-            week: '',
-            templateKey: weekTemplateKey,
-            previousWeek: undefined,
-            availableWeeks: [],
-            objectives: [],
-          }
-        }
       } else {
         [board, remoteEnums] = await Promise.all([
           getBoard(targetQuarter ?? quarterRef.current, targetWeek ?? '', surface),

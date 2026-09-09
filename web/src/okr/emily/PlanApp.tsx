@@ -9,6 +9,7 @@ import { CommentDrawer } from './components/CommentDrawer'
 import { CommentInteractionProvider, commentTargetElementId, scrollToCommentSource, type PendingCommentSelection } from './commenting'
 import type { CommentTarget, PageComment } from './types'
 import type { WeeklyShareTab } from './share'
+import { planOptionLabel } from './planTitle'
 
 const PLAN_SCROLL_KEY_PREFIX = 'jarvis-okr-plan-scroll'
 
@@ -211,7 +212,7 @@ function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }:
             <QuarterSelect />
             <select aria-label="选择 Plan" value={plan?.id ?? ''} disabled={plans.length === 0 || saving} onChange={(event) => { setConfirmDelete(false); selectPlan(event.target.value) }} className="h-8 min-w-40 rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] text-slate-600 outline-none disabled:text-slate-400">
               {plans.length === 0 && <option value="">暂无 Plan</option>}
-              {plans.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+              {plans.map((item) => <option key={item.id} value={item.id}>{planOptionLabel(item.title, quarter)}</option>)}
             </select>
             <ActivityLogButton surface="plan" quarter={quarter} planId={plan?.id} disabled={!plan} />
             <button
