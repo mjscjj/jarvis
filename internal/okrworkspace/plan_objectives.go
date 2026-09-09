@@ -84,15 +84,48 @@ func (s *Service) UpdatePlanObjective(ctx context.Context, planID, objectiveID s
 		return PlanView{}, fmt.Errorf("expected_version must be non-negative")
 	}
 	input.Objective.ID = objectiveID
+	currentObjectives, err := s.planObjectives(ctx, planID)
+	if err != nil {
+		return PlanView{}, err
+	}
+	var current PlanObjectiveView
+	for _, candidate := range currentObjectives {
+		if candidate.ID == objectiveID {
+			current = candidate
+			break
+		}
+	}
+	if current.ID == "" {
+		return PlanView{}, ErrNotFound
+	}
+	currentPoints := make(map[string]PlanPointView)
+	for _, kr := range current.KRs {
+		for _, point := range kr.Points {
+			currentPoints[point.ID] = point
+		}
+	}
+	for krIndex := range input.Objective.KRs {
+		for pointIndex := range input.Objective.KRs[krIndex].Points {
+			point := &input.Objective.KRs[krIndex].Points[pointIndex]
+			if saved, exists := currentPoints[point.ID]; exists {
+				// Existing point content never comes from the parent browser
+				// snapshot. Hydration only satisfies the shared create validator;
+				// the writer below updates ordering alone.
+				point.Version = saved.Version
+				point.Kind = saved.Kind
+				point.Title = saved.Title
+				point.MeegoWorkItemID = saved.MeegoWorkItemID
+				point.MeegoURL = saved.MeegoURL
+				point.Owners = saved.Owners
+				point.Tags = saved.Tags
+			}
+		}
+	}
 	normalized, err := normalizePlanObjectives([]PlanObjectiveView{input.Objective})
 	if err != nil {
 		return PlanView{}, err
 	}
 	objective := normalized[0]
-	current, err := s.planObjective(ctx, planID, objectiveID)
-	if err != nil {
-		return PlanView{}, err
-	}
 	result := s.db.WithContext(ctx).Model(&domain.Objective{}).
 		Where("id = ? AND plan_id = ? AND version = ?", objectiveID, planID, input.ExpectedVersion).
 		Updates(map[string]any{"title": objective.Title, "version": gorm.Expr("version + 1"), "updated_at": time.Now().UTC()})
@@ -102,10 +135,7 @@ func (s *Service) UpdatePlanObjective(ctx context.Context, planID, objectiveID s
 	if result.RowsAffected != 1 {
 		return PlanView{}, ErrConflict
 	}
-	if err := s.deletePlanObjectiveChildren(ctx, current.ID); err != nil {
-		return PlanView{}, err
-	}
-	if err := s.writePlanObjectiveChildren(ctx, objective, input.UpdatedBy, time.Now().UTC()); err != nil {
+	if err := s.updatePlanObjectiveChildren(ctx, objective, input.UpdatedBy, time.Now().UTC()); err != nil {
 		return PlanView{}, err
 	}
 	if err := s.bumpPlan(ctx, planID, input.UpdatedBy); err != nil {

@@ -129,6 +129,7 @@ func (KRMetric) TableName() string { return "okr_workspace_metric" }
 type KRPoint struct {
 	ID              string    `gorm:"primaryKey;size:64"`
 	KRID            string    `gorm:"not null;index"`
+	Version         int32     `gorm:"not null;default:0"`
 	Kind            PointKind `gorm:"not null"`
 	Title           string    `gorm:"not null"`
 	MeegoWorkItemID string    `gorm:"not null;default:'';index"`

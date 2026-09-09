@@ -39,7 +39,7 @@ func (s *Service) planObjectives(ctx context.Context, planID string) ([]PlanObje
 func planKRFromDefinition(value KRView) PlanKRView {
 	points := make([]PlanPointView, 0, len(value.Points))
 	for _, point := range value.Points {
-		points = append(points, PlanPointView{ID: point.ID, Kind: point.Kind, Title: point.Title, MeegoWorkItemID: point.MeegoWorkItemID, MeegoURL: point.MeegoURL, Owners: append([]OwnerView(nil), point.Owners...), Tags: append([]TagView(nil), point.Tags...)})
+		points = append(points, PlanPointView{ID: point.ID, Version: point.Version, Kind: point.Kind, Title: point.Title, MeegoWorkItemID: point.MeegoWorkItemID, MeegoURL: point.MeegoURL, Owners: append([]OwnerView(nil), point.Owners...), Tags: append([]TagView(nil), point.Tags...)})
 	}
 	return PlanKRView{
 		ID: value.ID, Title: value.Title, Version: value.Version, Owners: append([]OwnerView(nil), value.Owners...),
@@ -64,7 +64,7 @@ func (s *Service) writePlanObjectiveChildren(ctx context.Context, objective Plan
 			}
 		}
 		for pointIndex, point := range kr.Points {
-			pointRow := domain.KRPoint{ID: point.ID, KRID: kr.ID, Kind: point.Kind, Title: point.Title, MeegoWorkItemID: strings.TrimSpace(point.MeegoWorkItemID), MeegoURL: strings.TrimSpace(point.MeegoURL), SortOrder: pointIndex}
+			pointRow := domain.KRPoint{ID: point.ID, KRID: kr.ID, Version: point.Version, Kind: point.Kind, Title: point.Title, MeegoWorkItemID: strings.TrimSpace(point.MeegoWorkItemID), MeegoURL: strings.TrimSpace(point.MeegoURL), SortOrder: pointIndex}
 			if err := db.Create(&pointRow).Error; err != nil {
 				return fmt.Errorf("create plan point %s: %w", point.ID, err)
 			}
@@ -81,6 +81,123 @@ func (s *Service) writePlanObjectiveChildren(ctx context.Context, objective Plan
 			if err := db.Create(&domain.KRTag{KRID: kr.ID, Type: tag.Type, Value: tag.Value}).Error; err != nil {
 				return fmt.Errorf("create plan KR tag: %w", err)
 			}
+		}
+	}
+	return nil
+}
+
+// updatePlanObjectiveChildren updates the KR-owned rows of an existing Plan
+// objective without deleting and recreating its points. Existing point rows,
+// wording and owners are exclusively owned by the point endpoint, so an old
+// browser snapshot cannot overwrite a collaborator's point edit.
+func (s *Service) updatePlanObjectiveChildren(ctx context.Context, objective PlanObjectiveView, actor string, now time.Time) error {
+	db := s.db.WithContext(ctx)
+	var existingKRs []domain.KR
+	if err := db.Where("objective_id = ?", objective.ID).Find(&existingKRs).Error; err != nil {
+		return fmt.Errorf("list existing plan KRs: %w", err)
+	}
+	existingKRByID := make(map[string]domain.KR, len(existingKRs))
+	for _, kr := range existingKRs {
+		existingKRByID[kr.ID] = kr
+	}
+	incomingKRIDs := make(map[string]struct{}, len(objective.KRs))
+	for krIndex, kr := range objective.KRs {
+		incomingKRIDs[kr.ID] = struct{}{}
+		if current, exists := existingKRByID[kr.ID]; exists {
+			updates := map[string]any{"title": kr.Title, "metric_note": kr.MetricNote, "sort_order": krIndex, "version": gorm.Expr("version + 1"), "updated_at": now, "updated_by": actor}
+			result := db.Model(&domain.KR{}).Where("id = ? AND objective_id = ? AND version = ?", kr.ID, objective.ID, current.Version).Updates(updates)
+			if result.Error != nil {
+				return fmt.Errorf("update plan KR %s: %w", kr.ID, result.Error)
+			}
+			if result.RowsAffected != 1 {
+				return ErrConflict
+			}
+		} else {
+			row := domain.KR{ID: kr.ID, ObjectiveID: objective.ID, Title: kr.Title, MetricNote: kr.MetricNote, SortOrder: krIndex, CreatedBy: actor, UpdatedBy: actor, CreatedAt: now, UpdatedAt: now}
+			if err := db.Create(&row).Error; err != nil {
+				return fmt.Errorf("create plan KR %s: %w", kr.ID, err)
+			}
+		}
+		if err := replaceKROwners(db, kr.ID, normalizeOwners(kr.Owners)); err != nil {
+			return err
+		}
+		if err := db.Where("kr_id = ?", kr.ID).Delete(&domain.KRMetric{}).Error; err != nil {
+			return fmt.Errorf("replace plan KR metrics: %w", err)
+		}
+		for metricIndex, metric := range kr.Metrics {
+			if err := db.Create(&domain.KRMetric{ID: metric.ID, KRID: kr.ID, Text: metric.Text, Light: metric.Light, Images: nonNilImages(metric.Images), SortOrder: metricIndex}).Error; err != nil {
+				return fmt.Errorf("create plan metric %s: %w", metric.ID, err)
+			}
+		}
+		if err := db.Where("kr_id = ?", kr.ID).Delete(&domain.KRTag{}).Error; err != nil {
+			return fmt.Errorf("replace plan KR tags: %w", err)
+		}
+		for _, tag := range kr.Tags {
+			if err := db.Create(&domain.KRTag{KRID: kr.ID, Type: tag.Type, Value: tag.Value}).Error; err != nil {
+				return fmt.Errorf("create plan KR tag: %w", err)
+			}
+		}
+
+		var existingPoints []domain.KRPoint
+		if err := db.Where("kr_id = ?", kr.ID).Find(&existingPoints).Error; err != nil {
+			return fmt.Errorf("list existing plan points: %w", err)
+		}
+		existingPointByID := make(map[string]domain.KRPoint, len(existingPoints))
+		for _, point := range existingPoints {
+			existingPointByID[point.ID] = point
+		}
+		incomingPointIDs := make(map[string]struct{}, len(kr.Points))
+		for pointIndex, point := range kr.Points {
+			incomingPointIDs[point.ID] = struct{}{}
+			if _, exists := existingPointByID[point.ID]; exists {
+				// Only ordering is structural. All editable point definition fields
+				// remain untouched and are saved through PatchPointDefinition.
+				if err := db.Model(&domain.KRPoint{}).Where("id = ? AND kr_id = ?", point.ID, kr.ID).Update("sort_order", pointIndex).Error; err != nil {
+					return fmt.Errorf("update plan point order: %w", err)
+				}
+				continue
+			}
+			pointRow := domain.KRPoint{ID: point.ID, KRID: kr.ID, Version: point.Version, Kind: point.Kind, Title: point.Title, MeegoWorkItemID: strings.TrimSpace(point.MeegoWorkItemID), MeegoURL: strings.TrimSpace(point.MeegoURL), SortOrder: pointIndex}
+			if err := db.Create(&pointRow).Error; err != nil {
+				return fmt.Errorf("create plan point %s: %w", point.ID, err)
+			}
+			if err := replacePointOwners(db, point.ID, normalizeOwners(point.Owners)); err != nil {
+				return err
+			}
+			for _, tag := range point.Tags {
+				if err := db.Create(&domain.PointTag{PointID: point.ID, Type: tag.Type, Value: tag.Value}).Error; err != nil {
+					return fmt.Errorf("create plan point tag: %w", err)
+				}
+			}
+		}
+		var removedPointIDs []string
+		for _, point := range existingPoints {
+			if _, kept := incomingPointIDs[point.ID]; !kept {
+				removedPointIDs = append(removedPointIDs, point.ID)
+			}
+		}
+		if err := purgePoints(db, removedPointIDs, true); err != nil {
+			return err
+		}
+	}
+	for _, kr := range existingKRs {
+		if _, kept := incomingKRIDs[kr.ID]; kept {
+			continue
+		}
+		var pointIDs []string
+		if err := db.Model(&domain.KRPoint{}).Where("kr_id = ?", kr.ID).Pluck("id", &pointIDs).Error; err != nil {
+			return fmt.Errorf("list removed plan KR points: %w", err)
+		}
+		if err := purgePoints(db, pointIDs, true); err != nil {
+			return err
+		}
+		for _, model := range []any{&domain.KROwner{}, &domain.KRTag{}, &domain.KRMetric{}} {
+			if err := db.Where("kr_id = ?", kr.ID).Delete(model).Error; err != nil {
+				return fmt.Errorf("delete removed plan KR children: %w", err)
+			}
+		}
+		if err := db.Delete(&domain.KR{}, "id = ?", kr.ID).Error; err != nil {
+			return fmt.Errorf("delete removed plan KR: %w", err)
 		}
 	}
 	return nil

@@ -160,19 +160,19 @@ func TestCoreAndWeeklyWritesHaveSeparateOwnership(t *testing.T) {
 	}); err == nil {
 		t.Fatal("ReplaceKRCore() accepted weekly progress")
 	}
-	if _, err := service.ReplaceKRCore(t.Context(), kr.ID, ReplaceKRInput{
-		ExpectedVersion: 0, Title: kr.Title,
-		Points: []PointView{{ID: point.ID, Kind: point.Kind, Title: point.Title}},
-		Tags:   []TagView{{Type: domain.TagTypeBusinessCategory, Value: "公会业务"}, {Type: domain.TagTypePriority, Value: "p1"}},
-	}); err == nil {
-		t.Fatal("ReplaceKRCore() accepted a point without explicit tags")
+	pointTags := []TagView{{Type: "management_focus", Value: "策略要点"}}
+	if _, err := service.PatchPointDefinition(t.Context(), point.ID, PatchPointDefinitionInput{
+		ExpectedVersion: 0,
+		Tags:            &pointTags,
+	}); err != nil {
+		t.Fatal(err)
 	}
 
 	core, err := service.ReplaceKRCore(t.Context(), kr.ID, ReplaceKRInput{
 		ExpectedVersion: 0, Title: "新 OKR 标题", MetricNote: "季度口径",
 		Owners:  []OwnerView{{OpenID: "ou_a", Name: "甲"}, {OpenID: "ou_b", Name: "乙"}},
 		Metrics: []MetricView{{ID: metric.ID, Text: "新核心指标", Light: domain.LightYellow}},
-		Points:  []PointView{{ID: point.ID, Kind: point.Kind, Title: point.Title, Tags: []TagView{{Type: "management_focus", Value: "策略要点"}}}},
+		Points:  []PointView{{ID: point.ID}},
 		Tags:    []TagView{{Type: domain.TagTypeBusinessCategory, Value: "公会业务"}, {Type: domain.TagTypePriority, Value: "p0"}},
 	})
 	if err != nil {

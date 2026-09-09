@@ -266,6 +266,7 @@ type MetricView struct {
 
 type PointView struct {
 	ID              string           `json:"id"`
+	Version         int32            `json:"version"`
 	Kind            domain.PointKind `json:"kind"`
 	Title           string           `json:"title"`
 	MeegoWorkItemID string           `json:"meego_work_item_id"`
@@ -393,9 +394,8 @@ type ReplaceKRInput struct {
 	Owners          []OwnerView  `json:"owners"`
 }
 
-// ReplaceGenericKRInput is the reusable OKR aggregate contract. It can add,
-// reorder, update and remove metrics and points, but Biz-owned tags and
-// Meego fields are deliberately not representable.
+// ReplaceGenericKRInput is the reusable OKR aggregate contract. It owns KR
+// fields and point structure; existing point content is deliberately ignored.
 type ReplaceGenericKRInput struct {
 	ExpectedVersion int32              `json:"expected_version"`
 	UpdatedBy       string             `json:"-"`
@@ -407,10 +407,11 @@ type ReplaceGenericKRInput struct {
 }
 
 type GenericPointView struct {
-	ID     string           `json:"id"`
-	Kind   domain.PointKind `json:"kind"`
-	Title  string           `json:"title"`
-	Owners []OwnerView      `json:"owners"`
+	ID      string           `json:"id"`
+	Version int32            `json:"version"`
+	Kind    domain.PointKind `json:"kind"`
+	Title   string           `json:"title"`
+	Owners  []OwnerView      `json:"owners"`
 }
 
 type CreateKRInput struct {
@@ -856,7 +857,7 @@ func (s *Service) loadKRDefinition(ctx context.Context, record domain.KR, includ
 		pointOwnersByID[owner.PointID] = append(pointOwnersByID[owner.PointID], storedOwnerView(owner.OpenID, owner.Name))
 	}
 	for _, point := range points {
-		pointView := PointView{ID: point.ID, Kind: point.Kind, Title: point.Title, Tags: pointTagsByID[point.ID], Owners: pointOwnersByID[point.ID], Entries: []ProgressView{}, PreviousEntries: []ProgressView{}}
+		pointView := PointView{ID: point.ID, Version: point.Version, Kind: point.Kind, Title: point.Title, Tags: pointTagsByID[point.ID], Owners: pointOwnersByID[point.ID], Entries: []ProgressView{}, PreviousEntries: []ProgressView{}}
 		if includeBiz {
 			pointView.MeegoWorkItemID = point.MeegoWorkItemID
 			pointView.MeegoURL = point.MeegoURL
@@ -973,7 +974,7 @@ func (s *Service) ReplaceGenericKRCore(ctx context.Context, id string, input Rep
 		Points: make([]PointView, 0, len(input.Points)),
 	}
 	for _, point := range input.Points {
-		common.Points = append(common.Points, PointView{ID: point.ID, Kind: point.Kind, Title: point.Title, Owners: point.Owners})
+		common.Points = append(common.Points, PointView{ID: point.ID, Version: point.Version, Kind: point.Kind, Title: point.Title, Owners: point.Owners})
 	}
 	if err := validateReplaceInput(id, common, false); err != nil {
 		return KRView{}, err
@@ -1030,21 +1031,23 @@ func (s *Service) replaceKRCore(ctx context.Context, id string, input ReplaceKRI
 		}
 		for index, point := range input.Points {
 			incomingPointIDs[point.ID] = struct{}{}
-			if _, exists := oldPointByID[point.ID]; exists {
-				values := map[string]any{"kind": point.Kind, "title": point.Title, "sort_order": index}
-				if includeBiz {
-					values["meego_work_item_id"] = strings.TrimSpace(point.MeegoWorkItemID)
-					values["meego_url"] = strings.TrimSpace(point.MeegoURL)
-				}
-				if err := tx.Model(&domain.KRPoint{}).Where("id = ? AND kr_id = ?", point.ID, id).Updates(values).Error; err != nil {
+			_, exists := oldPointByID[point.ID]
+			if exists {
+				// Existing point content is owned exclusively by the point PATCH
+				// endpoint. A KR snapshot may only preserve structural ordering.
+				if err := tx.Model(&domain.KRPoint{}).Where("id = ? AND kr_id = ?", point.ID, id).Update("sort_order", index).Error; err != nil {
 					return fmt.Errorf("update point definition: %w", err)
 				}
-				if includeBiz && weeklySchemaPresent && oldPointByID[point.ID].MeegoWorkItemID != strings.TrimSpace(point.MeegoWorkItemID) {
-					if err := tx.Where("point_id = ?", point.ID).Delete(&domain.MeegoSyncSnapshot{}).Error; err != nil {
-						return fmt.Errorf("reset changed Meego snapshot: %w", err)
-					}
-				}
 			} else {
+				if strings.TrimSpace(point.Title) == "" {
+					return fmt.Errorf("new points require a title")
+				}
+				if !domain.ValidPointKind(point.Kind) {
+					return fmt.Errorf("new points require a valid kind")
+				}
+				if includeBiz && point.Tags == nil {
+					return fmt.Errorf("new points require tags; use [] for no tags")
+				}
 				record := domain.KRPoint{ID: point.ID, KRID: id, Kind: point.Kind, Title: point.Title, SortOrder: index}
 				if includeBiz {
 					record.MeegoWorkItemID = strings.TrimSpace(point.MeegoWorkItemID)
@@ -1054,7 +1057,7 @@ func (s *Service) replaceKRCore(ctx context.Context, id string, input ReplaceKRI
 					return fmt.Errorf("create point definition: %w", err)
 				}
 			}
-			if includeBiz {
+			if includeBiz && !exists {
 				if err := tx.Where("point_id = ?", point.ID).Delete(&domain.PointTag{}).Error; err != nil {
 					return fmt.Errorf("replace point tags: %w", err)
 				}
@@ -1064,8 +1067,10 @@ func (s *Service) replaceKRCore(ctx context.Context, id string, input ReplaceKRI
 					}
 				}
 			}
-			if err := replacePointOwners(tx, point.ID, normalizeOwners(point.Owners)); err != nil {
-				return err
+			if !exists {
+				if err := replacePointOwners(tx, point.ID, normalizeOwners(point.Owners)); err != nil {
+					return err
+				}
 			}
 		}
 		var removedPointIDs []string
@@ -1877,17 +1882,17 @@ func validateReplaceInput(id string, input ReplaceKRInput, includeBiz bool) erro
 		seen[metric.ID] = true
 	}
 	for _, point := range input.Points {
-		if strings.TrimSpace(point.ID) == "" || strings.TrimSpace(point.Title) == "" || !domain.ValidPointKind(point.Kind) || seen[point.ID] {
-			return fmt.Errorf("points require unique ids, title, and a valid kind")
+		if strings.TrimSpace(point.ID) == "" || seen[point.ID] {
+			return fmt.Errorf("points require unique ids")
 		}
 		seen[point.ID] = true
+		if point.Kind != "" && !domain.ValidPointKind(point.Kind) {
+			return fmt.Errorf("point kind is invalid")
+		}
 		if len(point.Entries) > 0 || len(point.PreviousEntries) > 0 {
 			return fmt.Errorf("weekly progress cannot be written through the OKR definition endpoint")
 		}
-		if includeBiz && point.Tags == nil {
-			return fmt.Errorf("point tags are required; use [] for no tags")
-		}
-		if includeBiz {
+		if includeBiz && point.Tags != nil {
 			if err := validatePointTags(point.Tags); err != nil {
 				return fmt.Errorf("invalid tags for point %s: %w", point.ID, err)
 			}

@@ -61,6 +61,7 @@ type PlanKRView struct {
 
 type PlanPointView struct {
 	ID              string           `json:"id"`
+	Version         int32            `json:"version"`
 	Kind            domain.PointKind `json:"kind"`
 	Title           string           `json:"title"`
 	MeegoWorkItemID string           `json:"meego_work_item_id"`

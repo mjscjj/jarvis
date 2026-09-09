@@ -54,6 +54,7 @@ export interface MetricLine {
 /** 具体事项，表格里的一行 */
 export interface Point {
   id: string
+	version?: number
   kind: PointKind
   title: string
   meegoWorkItemId?: string

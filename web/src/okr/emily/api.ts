@@ -29,7 +29,7 @@ interface APIKr {
   version: number
 	weekly_core_version: number
   metrics: Array<{ id: string; text: string; light?: Light; images?: Entry['images'] }>
-  points: Array<{ id: string; kind: PointKind; title: string; meego_work_item_id?: string; meego_url?: string; tags: KrTag[]; owners?: Array<{ open_id: string; name: string; identity_namespace?: 'main_feishu_app' }>; entries: APIEntry[]; previous_entries: APIEntry[]; score?: WeeklyScore }>
+	  points: Array<{ id: string; version: number; kind: PointKind; title: string; meego_work_item_id?: string; meego_url?: string; tags: KrTag[]; owners?: Array<{ open_id: string; name: string; identity_namespace?: 'main_feishu_app' }>; entries: APIEntry[]; previous_entries: APIEntry[]; score?: WeeklyScore }>
   tags: KrTag[]
   score?: WeeklyScore
 }
@@ -55,7 +55,7 @@ interface APIPlanObjective {
     owners: Array<{ open_id: string; name: string; identity_namespace?: 'main_feishu_app' }>
     metric_note: string
     metrics: Array<{ id: string; text: string; light?: Light; images?: Entry['images'] }>
-    points: Array<{ id: string; kind: PointKind; title: string; meego_work_item_id?: string; meego_url?: string; owners?: Array<{ open_id: string; name: string; identity_namespace?: 'main_feishu_app' }>; tags: KrTag[] }>
+    points: Array<{ id: string; version?: number; kind?: PointKind; title?: string; meego_work_item_id?: string; meego_url?: string; owners?: Array<{ open_id: string; name: string; identity_namespace?: 'main_feishu_app' }>; tags?: KrTag[] }>
     tags: KrTag[]
   }>
 }
@@ -84,22 +84,16 @@ interface APIPlanSummary {
 
 interface APIPointDefinitionPatchResult {
   point_id: string
-  kr_id: string
-  kr_version: number
-  objective_id: string
-  objective_version: number
-  plan_id?: string
-  plan_version?: number
+	  version: number
+	  title: string
+	  owners: Array<{ open_id: string; name: string; identity_namespace?: 'main_feishu_app' }>
 }
 
 export interface PointDefinitionPatchResult {
   pointId: string
-  krId: string
-  krVersion: number
-  objectiveId: string
-  objectiveVersion: number
-  planId?: string
-  planVersion?: number
+	  version: number
+	  title: string
+	  owners: KrOwner[]
 }
 
 interface APIPlanList {
@@ -394,10 +388,11 @@ function fromAPIKr(value: APIKr): Kr {
     version: value.version,
 		weeklyCoreVersion: value.weekly_core_version,
     metrics: value.metrics.map((metric) => ({ ...metric, images: metric.images ?? [] })),
-    points: value.points.map((point) => ({
-      id: point.id,
+	    points: value.points.map((point) => ({
+	      id: point.id,
+	      version: point.version ?? 0,
       kind: point.kind,
-      title: point.title,
+	          title: point.title ?? '',
       meegoWorkItemId: point.meego_work_item_id ?? '',
       meegoUrl: point.meego_url ?? '',
       tags: point.tags ?? [],
@@ -444,10 +439,11 @@ function fromAPIPlanObjectives(value: APIPlanObjective[]): Objective[] {
         metricNote: kr.metric_note,
         weeklyCoreVersion: 0,
         metrics: (kr.metrics ?? []).map((metric) => ({ ...metric, images: metric.images ?? [] })),
-        points: (kr.points ?? []).map((point) => ({
-          id: point.id,
-          kind: point.kind,
-          title: point.title,
+	        points: (kr.points ?? []).map((point) => ({
+	          id: point.id,
+	          version: point.version ?? 0,
+	          kind: point.kind!,
+	          title: point.title ?? '',
           meegoWorkItemId: point.meego_work_item_id ?? '',
           meegoUrl: point.meego_url ?? '',
           tags: point.tags ?? [],
@@ -474,12 +470,15 @@ function toAPIPlanObjective(objective: Objective): APIPlanObjective {
       metrics: kr.metrics.map((metric) => ({ id: metric.id, text: metric.text, light: metric.light, images: metric.images ?? [] })),
       points: kr.points.map((point) => ({
         id: point.id,
-        kind: point.kind,
-        title: point.title,
-        meego_work_item_id: point.meegoWorkItemId ?? '',
-        meego_url: point.meegoUrl ?? '',
-        owners: (point.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
-        tags: point.tags ?? [],
+				version: point.version ?? 0,
+				...(point.version === undefined ? {
+					kind: point.kind,
+					title: point.title,
+					meego_work_item_id: point.meegoWorkItemId ?? '',
+					meego_url: point.meegoUrl ?? '',
+					owners: (point.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
+					tags: point.tags ?? [],
+				} : {}),
       })),
       tags: kr.tags ?? [],
     })),
@@ -698,23 +697,24 @@ export async function updateOKRPlanObjective(planId: string, objective: Objectiv
   }
 }
 
-export async function patchPointDefinition(input: { pointId: string; planId?: string; title?: string; owners?: KrOwner[] }): Promise<PointDefinitionPatchResult> {
+export async function patchPointDefinition(input: { pointId: string; planId?: string; expectedVersion: number; title?: string; owners?: KrOwner[]; kind?: PointKind; meegoWorkItemId?: string; meegoUrl?: string; tags?: KrTag[] }): Promise<PointDefinitionPatchResult> {
   const path = input.planId
     ? `/api/biz-okr/plans/${encodeURIComponent(input.planId)}/points/${encodeURIComponent(input.pointId)}/definition`
     : `/api/okr/points/${encodeURIComponent(input.pointId)}/definition`
-  const body: { title?: string; owners?: Array<{ open_id: string; name: string }> } = {}
-  if (input.title !== undefined) body.title = input.title
-  if (input.owners !== undefined) body.owners = input.owners.map((owner) => ({ open_id: owner.openId, name: owner.name }))
+	  const body: { expected_version: number; title?: string; owners?: Array<{ open_id: string; name: string }>; kind?: PointKind; meego_work_item_id?: string; meego_url?: string; tags?: KrTag[] } = { expected_version: input.expectedVersion }
+	  if (input.title !== undefined) body.title = input.title
+	  if (input.owners !== undefined) body.owners = input.owners.map((owner) => ({ open_id: owner.openId, name: owner.name }))
+	  if (input.kind !== undefined) body.kind = input.kind
+	  if (input.meegoWorkItemId !== undefined) body.meego_work_item_id = input.meegoWorkItemId
+	  if (input.meegoUrl !== undefined) body.meego_url = input.meegoUrl
+	  if (input.tags !== undefined) body.tags = input.tags
   const value = await request<APIPointDefinitionPatchResult>(path, { method: 'PATCH', body: JSON.stringify(body) })
-  return {
-    pointId: value.point_id,
-    krId: value.kr_id,
-    krVersion: value.kr_version,
-    objectiveId: value.objective_id,
-    objectiveVersion: value.objective_version,
-    planId: value.plan_id,
-    planVersion: value.plan_version,
-  }
+	  return {
+	    pointId: value.point_id,
+	    version: value.version,
+	    title: value.title,
+	    owners: (value.owners ?? []).map((owner) => ({ openId: owner.open_id, name: owner.name, identityNamespace: owner.identity_namespace })),
+	  }
 }
 
 export async function deleteOKRPlanObjective(planId: string, objective: Objective): Promise<void> {
@@ -1303,20 +1303,13 @@ async function progressRequest(path: string, init: RequestInit): Promise<Kr> {
 	}
 }
 
-// Writes only the wording, people and existing point order of the shared
-// definition. The weekly pages hold week-scoped metrics and lights, and this
-// endpoint cannot receive them, so filling a week can never overwrite the
-// definition's own numbers.
+// Writes only fields owned by the KR. Concrete KR rows are always saved via
+// patchPointDefinition and never ride along in this parent request.
 export async function replaceKRDefinition(kr: Kr): Promise<Kr> {
 	const body = {
 		expected_version: kr.version ?? 0,
 		title: kr.title,
 		owners: (kr.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
-		points: kr.points.map((point) => ({
-			id: point.id,
-			title: point.title,
-			owners: (point.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
-		})),
 	}
 	return fromAPIKr(await request<APIKr>(`/api/okr/krs/${encodeURIComponent(kr.id)}/definition`, {
 		method: 'PUT',
@@ -1338,12 +1331,15 @@ export async function replaceKR(kr: Kr): Promise<Kr> {
       metrics: kr.metrics,
       points: kr.points.map((point) => ({
         id: point.id,
-        kind: point.kind,
-        title: point.title,
-        meego_work_item_id: point.meegoWorkItemId ?? '',
-        meego_url: point.meegoUrl ?? '',
-        tags: point.tags ?? [],
-        owners: (point.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
+				version: point.version,
+				...(point.version === undefined ? {
+					kind: point.kind,
+					title: point.title,
+					meego_work_item_id: point.meegoWorkItemId ?? '',
+					meego_url: point.meegoUrl ?? '',
+					owners: (point.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
+					tags: point.tags ?? [],
+				} : {}),
       })),
       tags: kr.tags ?? [],
     }

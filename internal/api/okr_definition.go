@@ -61,6 +61,10 @@ func patchPointDefinitionWith(patch func(context.Context, string, string, okrwor
 		}
 		input.UpdatedBy = currentOKRIdentity(c).OpenID
 		result, err := patch(ctx, strings.TrimSpace(c.Param("plan_id")), strings.TrimSpace(c.Param("point_id")), input)
+		if errors.Is(err, okrworkspace.ErrConflict) {
+			writeAPIConflict(c, 40947, err, result)
+			return
+		}
 		if errors.Is(err, okrworkspace.ErrNotFound) {
 			writeAPIError(c, consts.StatusNotFound, 40447, err)
 			return

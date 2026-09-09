@@ -151,15 +151,18 @@ func TestPlanPointDefinitionPatchesDoNotOverwriteSiblingPoints(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	initialPlanVersion := plan.Version
+	initialObjectiveVersion := plan.Objectives[0].Version
+	initialKRVersion := plan.Objectives[0].KRs[0].Version
 
 	strategyTitle := "战宇琼填写的策略 KR"
-	strategyResult, err := service.PatchPlanPointDefinition(t.Context(), plan.ID, "strategy-point", PatchPointDefinitionInput{Title: &strategyTitle, UpdatedBy: "strategy-editor"})
+	strategyResult, err := service.PatchPlanPointDefinition(t.Context(), plan.ID, "strategy-point", PatchPointDefinitionInput{ExpectedVersion: 0, Title: &strategyTitle, UpdatedBy: "strategy-editor"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	productTitle := "罗沙填写的产品 KR"
 	owners := []OwnerView{{OpenID: "ou_luosha", Name: "罗沙"}}
-	productResult, err := service.PatchPlanPointDefinition(t.Context(), plan.ID, "product-point", PatchPointDefinitionInput{Title: &productTitle, Owners: &owners, UpdatedBy: "product-editor"})
+	productResult, err := service.PatchPlanPointDefinition(t.Context(), plan.ID, "product-point", PatchPointDefinitionInput{ExpectedVersion: 0, Title: &productTitle, Owners: &owners, UpdatedBy: "product-editor"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,8 +175,27 @@ func TestPlanPointDefinitionPatchesDoNotOverwriteSiblingPoints(t *testing.T) {
 	if points[0].Title != strategyTitle || points[1].Title != productTitle || len(points[1].Owners) != 1 || points[1].Owners[0].Name != "罗沙" {
 		t.Fatalf("independent point patches overwrote each other: %+v", points)
 	}
-	if strategyResult.ObjectiveVersion >= productResult.ObjectiveVersion || productResult.PlanVersion != loaded.Version {
-		t.Fatalf("parent versions were not advanced: strategy=%+v product=%+v plan=%+v", strategyResult, productResult, loaded)
+	if strategyResult.Version != 1 || productResult.Version != 1 {
+		t.Fatalf("point versions were not advanced independently: strategy=%+v product=%+v", strategyResult, productResult)
+	}
+	if loaded.Version != initialPlanVersion || loaded.Objectives[0].Version != initialObjectiveVersion || loaded.Objectives[0].KRs[0].Version != initialKRVersion {
+		t.Fatalf("point patches changed parent versions: plan=%+v", loaded)
+	}
+	staleTitle := "旧页面试图覆盖"
+	current, err := service.PatchPlanPointDefinition(t.Context(), plan.ID, "strategy-point", PatchPointDefinitionInput{ExpectedVersion: 0, Title: &staleTitle})
+	if !errors.Is(err, ErrConflict) || current.Version != 1 || current.Title != strategyTitle {
+		t.Fatalf("stale point patch = %+v, %v; want current point conflict", current, err)
+	}
+
+	staleObjective := plan.Objectives[0]
+	staleObjective.Title = "O 的独立修改"
+	updatedPlan, err := service.UpdatePlanObjective(t.Context(), plan.ID, staleObjective.ID, PlanObjectiveWriteInput{ExpectedVersion: initialObjectiveVersion, Objective: staleObjective, UpdatedBy: "objective-editor"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updatedPoints := updatedPlan.Objectives[0].KRs[0].Points
+	if updatedPoints[0].Title != strategyTitle || updatedPoints[1].Title != productTitle || len(updatedPoints[1].Owners) != 1 {
+		t.Fatalf("stale objective snapshot overwrote point definitions: %+v", updatedPoints)
 	}
 }
 

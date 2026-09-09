@@ -22,19 +22,27 @@ func TestReplaceKRCorePersistsOwnersPerPoint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	strategyOwners := []OwnerView{
+		{OpenID: "ou_a", Name: "甲"},
+		{OpenID: "ou_b", Name: "乙"},
+		{OpenID: "OU_A", Name: "甲"},
+		{OpenID: "ou_c", Name: "  "},
+	}
+	if _, err := service.PatchPointDefinition(t.Context(), strategy.ID, PatchPointDefinitionInput{ExpectedVersion: 0, Owners: &strategyOwners}); err != nil {
+		t.Fatal(err)
+	}
+	productOwners := []OwnerView{{OpenID: "ou_c", Name: "丙"}}
+	if _, err := service.PatchPointDefinition(t.Context(), product.ID, PatchPointDefinitionInput{ExpectedVersion: 0, Owners: &productOwners}); err != nil {
+		t.Fatal(err)
+	}
 	updated, err := service.ReplaceKRCore(t.Context(), kr.ID, ReplaceKRInput{
 		ExpectedVersion: 0,
 		Title:           kr.Title,
 		Owners:          []OwnerView{{OpenID: "ou_kr", Name: "KR 负责人"}},
+		// Stale point owners in a parent snapshot are deliberately ignored.
 		Points: []PointView{
-			{ID: strategy.ID, Kind: strategy.Kind, Title: strategy.Title, Tags: []TagView{}, Owners: []OwnerView{
-				{OpenID: "ou_a", Name: "甲"},
-				{OpenID: "ou_b", Name: "乙"},
-				// Duplicates and blanks must be dropped by the shared owner normalizer.
-				{OpenID: "OU_A", Name: "甲"},
-				{OpenID: "ou_c", Name: "  "},
-			}},
-			{ID: product.ID, Kind: product.Kind, Title: product.Title, Tags: []TagView{}, Owners: []OwnerView{{OpenID: "ou_c", Name: "丙"}}},
+			{ID: strategy.ID, Kind: strategy.Kind, Title: strategy.Title, Tags: []TagView{}, Owners: []OwnerView{}},
+			{ID: product.ID, Kind: product.Kind, Title: product.Title, Tags: []TagView{}, Owners: []OwnerView{}},
 		},
 	})
 	if err != nil {

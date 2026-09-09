@@ -15,9 +15,9 @@ import (
 	"gorm.io/gorm"
 )
 
-// The weekly pages send this request while holding week-scoped metric values,
-// so the contract exposes only wording, people and existing point order.
-func TestKRDefinitionRouteEditsOnlyWordingAndPeople(t *testing.T) {
+// The weekly pages send this request while holding point drafts, so the KR
+// contract must reject points and leave every concrete KR untouched.
+func TestKRDefinitionRouteNeverWritesPoints(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
@@ -73,7 +73,7 @@ func TestKRDefinitionRouteEditsOnlyWordingAndPeople(t *testing.T) {
 		}
 	}
 
-	body := `{"expected_version":0,"title":"新 KR 标题","owners":[{"open_id":"ou_new","name":"新负责人"}],"points":[{"id":"point-2","title":"第二个要点","owners":[]},{"id":"point-1","title":"新要点标题","owners":[{"open_id":"ou_point","name":"要点负责人"}]}]}`
+	body := `{"expected_version":0,"title":"新 KR 标题","owners":[{"open_id":"ou_new","name":"新负责人"}]}`
 	response := ut.PerformRequest(h.Engine, "PUT", "/api/okr/krs/kr-1/definition", &ut.Body{Body: strings.NewReader(body), Len: len(body)}).Result()
 	if response.StatusCode() != 200 {
 		t.Fatalf("definition status=%d body=%s", response.StatusCode(), response.Body())
@@ -88,8 +88,8 @@ func TestKRDefinitionRouteEditsOnlyWordingAndPeople(t *testing.T) {
 	if view.Title != "新 KR 标题" || view.OwnerName != "新负责人" || view.Version != 1 {
 		t.Fatalf("wording and people were not applied: %+v", view)
 	}
-	if len(view.Points) != 2 || view.Points[0].ID != "point-2" || view.Points[1].Title != "新要点标题" || len(view.Points[1].Owners) != 1 || view.Points[1].Owners[0].Name != "要点负责人" {
-		t.Fatalf("point wording and people were not applied: %+v", view.Points)
+	if len(view.Points) != 2 || view.Points[0].ID != "point-1" || view.Points[0].Title != "旧要点标题" || len(view.Points[0].Owners) != 0 {
+		t.Fatalf("KR definition write touched points: %+v", view.Points)
 	}
 	if view.MetricNote != "主干指标说明" || len(view.Metrics) != 1 || view.Metrics[0].Text != "主干核心数据" {
 		t.Fatalf("definition metrics must survive a wording edit: %+v", view)
@@ -156,8 +156,8 @@ func TestPointDefinitionRoutePatchesOnlyOneExistingPoint(t *testing.T) {
 	for _, request := range []struct {
 		id, body string
 	}{
-		{"strategy", `{"title":"新策略"}`},
-		{"product", `{"title":"新产品","owners":[{"open_id":"ou_owner","name":"负责人"}]}`},
+		{"strategy", `{"expected_version":0,"title":"新策略"}`},
+		{"product", `{"expected_version":0,"title":"新产品","owners":[{"open_id":"ou_owner","name":"负责人"}]}`},
 	} {
 		response := ut.PerformRequest(h.Engine, "PATCH", "/api/okr/points/"+request.id+"/definition", &ut.Body{Body: strings.NewReader(request.body), Len: len(request.body)}).Result()
 		if response.StatusCode() != 200 {
@@ -172,8 +172,22 @@ func TestPointDefinitionRoutePatchesOnlyOneExistingPoint(t *testing.T) {
 	for _, point := range view.Points {
 		points[point.ID] = point
 	}
-	if view.Version != 2 || points["strategy"].Title != "新策略" || points["product"].Title != "新产品" || len(points["product"].Owners) != 1 {
+	if view.Version != 0 || points["strategy"].Version != 1 || points["product"].Version != 1 || points["strategy"].Title != "新策略" || points["product"].Title != "新产品" || len(points["product"].Owners) != 1 {
 		t.Fatalf("point patches = %+v", view)
+	}
+	staleBody := `{"expected_version":0,"title":"旧页面覆盖"}`
+	staleResponse := ut.PerformRequest(h.Engine, "PATCH", "/api/okr/points/strategy/definition", &ut.Body{Body: strings.NewReader(staleBody), Len: len(staleBody)}).Result()
+	if staleResponse.StatusCode() != 409 {
+		t.Fatalf("stale point patch status=%d body=%s", staleResponse.StatusCode(), staleResponse.Body())
+	}
+	var conflict struct {
+		Data okrworkspace.PointDefinitionPatchResult `json:"data"`
+	}
+	if err := json.Unmarshal(staleResponse.Body(), &conflict); err != nil {
+		t.Fatal(err)
+	}
+	if conflict.Data.Version != 1 || conflict.Data.Title != "新策略" {
+		t.Fatalf("stale point conflict = %+v", conflict.Data)
 	}
 
 	for _, body := range []string{`{}`, `{"title":" "}`, `{"owners":[],"extra":true}`} {

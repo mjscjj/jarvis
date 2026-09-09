@@ -23,17 +23,21 @@ function kr(patch: Partial<Kr> = {}): Kr {
   }
 }
 
-test('措辞和人员的改动会被认成定义改动', () => {
+test('KR 措辞和人员的改动会被认成父级定义改动', () => {
   const baseline = kr()
   assert.notEqual(definitionSignature(baseline), definitionSignature(kr({ title: '改过的 KR 标题' })))
   assert.notEqual(definitionSignature(baseline), definitionSignature(kr({ owners: [{ name: '王五', openId: 'ou_wang' }] })))
   assert.notEqual(definitionSignature(baseline), definitionSignature(kr({
     owners: [{ name: '张三', openId: 'ou_zhang' }, { name: '新增的人', openId: 'ou_new' }],
   })))
+})
 
+test('具体 KR 内容不再触发父级定义写入', () => {
+  const baseline = kr()
   const point = baseline.points[0]
-  assert.notEqual(definitionSignature(baseline), definitionSignature(kr({ points: [{ ...point, title: '改过的要点' }] })))
-  assert.notEqual(definitionSignature(baseline), definitionSignature(kr({ points: [{ ...point, owners: [] }] })))
+  assert.equal(definitionSignature(baseline), definitionSignature(kr({ points: [{ ...point, title: '改过的要点' }] })))
+  assert.equal(definitionSignature(baseline), definitionSignature(kr({ points: [{ ...point, owners: [] }] })))
+  assert.equal(definitionSignature(baseline), definitionSignature(kr({ points: [{ ...point, kind: 'product' }] })))
 })
 
 test('具体 KR 顺序的改动会被认成定义改动', () => {

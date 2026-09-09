@@ -9,10 +9,12 @@ import { LIGHTS, STATUSES } from './template'
 const SAVE_DELAY_MS = 700
 
 type PendingPointPatch = {
-  objectiveId: string
-  krId: string
-  title?: string
-  owners?: KrOwner[]
+	title?: string
+	owners?: KrOwner[]
+	kind?: Point['kind']
+	meegoWorkItemId?: string
+	meegoUrl?: string
+	tags?: Point['tags']
 }
 
 const DEFAULT_ENUMS: EnumValues = {
@@ -173,7 +175,24 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
     if (!current) return
     const nextObjective = objectiveId ? saved.objectives.find((item) => item.id === objectiveId) : undefined
     const nextObjectives = objectiveId && nextObjective
-      ? objectivesRef.current.map((item) => item.id === objectiveId ? { ...item, version: nextObjective.version } : item)
+			? objectivesRef.current.map((item) => {
+				if (item.id !== objectiveId) return item
+				const remoteKRs = new Map(nextObjective.krs.map((kr) => [kr.id, kr]))
+				return {
+					...item,
+					version: nextObjective.version,
+					krs: item.krs.map((kr) => {
+						const remoteKR = remoteKRs.get(kr.id)
+						if (!remoteKR) return kr
+						const remotePoints = new Map(remoteKR.points.map((point) => [point.id, point]))
+						return {
+							...kr,
+							version: remoteKR.version,
+							points: kr.points.map((point) => ({ ...point, version: remotePoints.get(point.id)?.version ?? point.version })),
+						}
+					}),
+				}
+			})
       : objectivesRef.current
     const nextPlan = { ...current, version: saved.version, updatedBy: saved.updatedBy, updatedAt: saved.updatedAt, objectives: nextObjectives }
     planRef.current = nextPlan
@@ -214,21 +233,27 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
     pointSavesInFlight.current.add(pointId)
     setSyncState({ kind: 'saving', message: '正在保存具体 KR…' })
     try {
-      const saved = await patchPointDefinition({ pointId, planId: currentPlan.id, title: patch.title, owners: patch.owners })
-      const nextObjectives = objectivesRef.current.map((objective) => objective.id !== saved.objectiveId ? objective : {
+      const currentPoint = findPoint(objectivesRef.current, pointId)
+			if (!currentPoint) {
+				pointPatches.current.delete(pointId)
+				pointRevisions.current.delete(pointId)
+				return
+			}
+			const saved = await patchPointDefinition({ pointId, planId: currentPlan.id, expectedVersion: currentPoint.version ?? 0, ...patch })
+      const nextObjectives = objectivesRef.current.map((objective) => ({
         ...objective,
-        version: Math.max(objective.version ?? 0, saved.objectiveVersion),
-        krs: objective.krs.map((kr) => kr.id === saved.krId ? { ...kr, version: Math.max(kr.version ?? 0, saved.krVersion) } : kr),
-      })
+        krs: objective.krs.map((kr) => ({
+          ...kr,
+          points: kr.points.map((point) => point.id === pointId ? { ...point, version: saved.version } : point),
+        })),
+      }))
       objectivesRef.current = nextObjectives
       setObjectives(nextObjectives)
-      const latestPlan = planRef.current
-      if (latestPlan) {
-        const nextPlan = { ...latestPlan, version: Math.max(latestPlan.version, saved.planVersion ?? 0), updatedAt: new Date().toISOString(), objectives: nextObjectives }
-        planRef.current = nextPlan
-        setPlan(nextPlan)
-        setPlans((items) => items.map((item) => item.id === nextPlan.id ? { ...item, version: nextPlan.version, updatedAt: nextPlan.updatedAt } : item))
-      }
+			if (planRef.current) {
+				const nextPlan = { ...planRef.current, objectives: nextObjectives }
+				planRef.current = nextPlan
+				setPlan(nextPlan)
+			}
       if ((pointRevisions.current.get(pointId) ?? 0) === revision) {
         pointPatches.current.delete(pointId)
         pointRevisions.current.delete(pointId)
@@ -238,7 +263,20 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
       }
     } catch (error) {
       failed = true
-      setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '具体 KR 保存失败，请重试。' })
+			if (error instanceof APIError && error.status === 409 && error.data) {
+				const remote = error.data as { version?: number }
+				const nextObjectives = objectivesRef.current.map((objective) => ({ ...objective, krs: objective.krs.map((kr) => ({ ...kr, points: kr.points.map((point) => point.id === pointId ? { ...point, version: remote.version ?? point.version } : point) })) }))
+				objectivesRef.current = nextObjectives
+				setObjectives(nextObjectives)
+				if (planRef.current) {
+					const nextPlan = { ...planRef.current, objectives: nextObjectives }
+					planRef.current = nextPlan
+					setPlan(nextPlan)
+				}
+				setSyncState({ kind: 'error', message: '这个具体 KR 已被其他人更新；你的内容仍保留，点击重试可按最新版保存。' })
+			} else {
+				setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '具体 KR 保存失败，请重试。' })
+			}
     } finally {
       pointSavesInFlight.current.delete(pointId)
       if (!failed && pointPatches.current.has(pointId)) schedulePointSaveRef.current(pointId)
@@ -372,16 +410,6 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
       if (!previous || JSON.stringify(previous) !== JSON.stringify(objective)) {
         dirtyObjectives.current.add(objective.id)
         objectiveRevisions.current.set(objective.id, (objectiveRevisions.current.get(objective.id) ?? 0) + 1)
-        for (const kr of objective.krs) {
-          for (const point of kr.points) {
-            if (pointSavesInFlight.current.has(point.id)) continue
-            const timer = pointTimers.current.get(point.id)
-            if (timer) window.clearTimeout(timer)
-            pointTimers.current.delete(point.id)
-            pointPatches.current.delete(point.id)
-            pointRevisions.current.delete(point.id)
-          }
-        }
       }
     }
     for (const objective of before) {
@@ -395,30 +423,32 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
     scheduleSave()
   }, [scheduleSave])
 
-  const mutatePointDefinition = useCallback((objectiveId: string, krId: string, pointId: string, patch: Pick<PendingPointPatch, 'title' | 'owners'>) => {
-    const persisted = planRef.current?.objectives.some((objective) => objective.krs.some((kr) => kr.points.some((point) => point.id === pointId))) ?? false
-    if (!persisted || dirtyObjectives.current.has(objectiveId)) {
-      mutate((draft) => {
-        const point = findKr(draft, krId)?.points.find((item) => item.id === pointId)
-        if (!point) return
-        if (patch.title !== undefined) point.title = patch.title
-        if (patch.owners !== undefined) point.owners = patch.owners
-      })
-      return
-    }
-    const draft = clone(objectivesRef.current)
-    const point = findKr(draft, krId)?.points.find((item) => item.id === pointId)
-    if (!point) return
-    if (patch.title !== undefined) point.title = patch.title
-    if (patch.owners !== undefined) point.owners = patch.owners
+	const mutatePointDefinition = useCallback((pointId: string, patch: PendingPointPatch) => {
+		const draft = clone(objectivesRef.current)
+		const point = findPoint(draft, pointId)
+		if (!point) return
+		const persisted = point.version !== undefined
+		Object.assign(point, patch)
     objectivesRef.current = draft
     setObjectives(draft)
+		// New points are created by the already queued structural Objective save.
+		// Existing points never fall back to that whole-object write path.
+		if (!persisted) {
+			const objective = draft.find((item) => item.krs.some((kr) => kr.points.some((item) => item.id === pointId)))
+			if (objective) {
+				dirtyObjectives.current.add(objective.id)
+				objectiveRevisions.current.set(objective.id, (objectiveRevisions.current.get(objective.id) ?? 0) + 1)
+				setSyncState({ kind: 'ready', message: '有修改待保存…' })
+				scheduleSave()
+			}
+			return
+		}
     const pending = pointPatches.current.get(pointId)
-    pointPatches.current.set(pointId, { ...pending, objectiveId, krId, ...patch })
+		pointPatches.current.set(pointId, { ...pending, ...patch })
     pointRevisions.current.set(pointId, (pointRevisions.current.get(pointId) ?? 0) + 1)
     setSyncState({ kind: 'ready', message: '有修改待保存…' })
     schedulePointSave(pointId)
-  }, [mutate, schedulePointSave])
+  }, [schedulePointSave, scheduleSave])
 
   const queueObjectiveOrder = useCallback(async (ids: string[]) => {
     const current = objectivesRef.current
@@ -608,21 +638,19 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
       const kr = findKr(draft, krId)
       if (kr) kr.tags = (kr.tags ?? []).filter((tag) => tag.type !== type || tag.value !== value)
     }),
-    addPointTag: (krId, pointId, value, type = 'custom') => mutate((draft) => {
+    addPointTag: (_krId, pointId, value, type = 'custom') => {
       const clean = value.trim()
-      const point = findKr(draft, krId)?.points.find((item) => item.id === pointId)
+      const point = findPoint(objectivesRef.current, pointId)
       if (!point || !clean) return
-      point.tags ??= []
-      if (!point.tags.some((tag) => tag.type === type && tag.value === clean)) point.tags.push({ type, value: clean })
-    }),
-    removePointTag: (krId, pointId, type, value) => mutate((draft) => {
-      const point = findKr(draft, krId)?.points.find((item) => item.id === pointId)
-      if (point) point.tags = (point.tags ?? []).filter((tag) => tag.type !== type || tag.value !== value)
-    }),
-    setPointOwners: (krId, pointId, owners) => {
-      const objectiveId = objectivesRef.current.find((objective) => objective.krs.some((kr) => kr.id === krId))?.id
-      if (objectiveId) mutatePointDefinition(objectiveId, krId, pointId, { owners })
+      if (!(point.tags ?? []).some((tag) => tag.type === type && tag.value === clean)) {
+        mutatePointDefinition(pointId, { tags: [...(point.tags ?? []), { type, value: clean }] })
+      }
     },
+    removePointTag: (_krId, pointId, type, value) => {
+      const point = findPoint(objectivesRef.current, pointId)
+      if (point) mutatePointDefinition(pointId, { tags: (point.tags ?? []).filter((tag) => tag.type !== type || tag.value !== value) })
+    },
+    setPointOwners: (_krId, pointId, owners) => mutatePointDefinition(pointId, { owners }),
     setMetricNote: (krId, note) => mutate((draft) => {
       const kr = findKr(draft, krId)
       if (kr) kr.metricNote = note
@@ -642,11 +670,8 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
       const kr = findKr(draft, krId)
       if (kr) kr.metrics = kr.metrics.filter((item) => item.id !== metricId)
     }),
-    setPointTitle: (objId, krId, pointId, title) => mutatePointDefinition(objId, krId, pointId, { title }),
-    setPointMeegoLink: (krId, pointId, patch) => mutate((draft) => {
-      const point = findKr(draft, krId)?.points.find((item) => item.id === pointId)
-      if (point) Object.assign(point, patch)
-    }),
+    setPointTitle: (_objId, _krId, pointId, title) => mutatePointDefinition(pointId, { title }),
+    setPointMeegoLink: (_krId, pointId, patch) => mutatePointDefinition(pointId, patch),
     addPoint: (_objId, krId, kind) => mutate((draft) => {
       const kr = findKr(draft, krId)
       if (!kr) return
@@ -659,7 +684,8 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
       const kr = findKr(draft, krId)
       if (kr) kr.points = swappedPointsWithinKind(kr.points, pointId, targetId)
     }),
-    setPointKind: (krId, pointId, kind) => mutate((draft) => {
+    setPointKind: (krId, pointId, kind) => {
+			const draft = clone(objectivesRef.current)
       const kr = findKr(draft, krId)
       const point = kr?.points.find((item) => item.id === pointId)
       if (!kr || !point || point.kind === kind) return
@@ -667,7 +693,10 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
       const others = kr.points.filter((item) => item.id !== pointId)
       const lastSameKind = others.map((item) => item.kind).lastIndexOf(kind)
       kr.points = lastSameKind === -1 ? [...others, point] : [...others.slice(0, lastSameKind + 1), point, ...others.slice(lastSameKind + 1)]
-    }),
+			objectivesRef.current = draft
+			setObjectives(draft)
+			mutatePointDefinition(pointId, { kind })
+		},
     removePoint: (_objId, krId, pointId) => mutate((draft) => {
       const kr = findKr(draft, krId)
       if (kr) kr.points = kr.points.filter((item) => item.id !== pointId)
