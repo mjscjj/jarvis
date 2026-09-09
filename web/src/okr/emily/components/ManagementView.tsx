@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useBoard } from '../board'
 import { buildAllBusinessNavigation, buildKRHierarchy, businessCategoryOf, businessCategoryOptions, commonObjectiveBusinessCategory, filterObjectivesByHierarchy, isStructuralTag, objectivesForBusiness, priorityOf, withCompletePriorityNavigation, withSelectedBusinessCategory } from '../hierarchy'
 import { tagLabel } from '../labels'
-import { hasOwner, ownerOptions, splitOwnerNames } from '../people'
+import { hasOwner, krOwners, ownerOptions } from '../people'
 import type { Kr, KrOwner, KrPriority, KrTag, Objective } from '../types'
 import { BusinessCategoryTabs } from './BusinessCategoryTabs'
 import { FeishuPeoplePicker, FeishuPeoplePickerInput } from './FeishuPeoplePicker'
@@ -67,13 +67,13 @@ function BusinessCategoryField({ value, categories, onChange, allowEmpty = false
 	</select>
 }
 
-function KrTagEditor({ kr, suggestions }: { kr: Kr; suggestions: KrTag[] }) {
+function KrTagEditor({ kr, suggestions, readOnly }: { kr: Kr; suggestions: KrTag[]; readOnly: boolean }) {
   const { addTag, removeTag } = useBoard()
 	const allTags = (kr.tags ?? []).filter((tag) => !isStructuralTag(tag))
-  return <TagEditor idPrefix={`tag-options-${kr.id}`} tags={allTags} suggestions={suggestions.filter((item) => !isStructuralTag(item))} onAdd={(value, type) => addTag(kr.id, value, type)} onRemove={(type, value) => removeTag(kr.id, type, value)} />
+	return <TagEditor idPrefix={`tag-options-${kr.id}`} tags={allTags} suggestions={suggestions.filter((item) => !isStructuralTag(item))} onAdd={(value, type) => addTag(kr.id, value, type)} onRemove={(type, value) => removeTag(kr.id, type, value)} readOnly={readOnly} />
 }
 
-function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories, detailsOpen, cardHierarchy, compactEmptyPointGroups, onToggleDetails, onMoveUp, onMoveDown, showTags, showStructuralFields, deleteWarning }: { objectiveId: string; kr: Kr; tagSuggestions: KrTag[]; businessCategories: string[]; detailsOpen: boolean; cardHierarchy: boolean; compactEmptyPointGroups: boolean; onToggleDetails: () => void; onMoveUp?: () => void; onMoveDown?: () => void; showTags: boolean; showStructuralFields: boolean; deleteWarning: string }) {
+function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories, detailsOpen, cardHierarchy, compactEmptyPointGroups, onToggleDetails, onMoveUp, onMoveDown, showTags, showStructuralFields, deleteWarning, readOnly }: { objectiveId: string; kr: Kr; tagSuggestions: KrTag[]; businessCategories: string[]; detailsOpen: boolean; cardHierarchy: boolean; compactEmptyPointGroups: boolean; onToggleDetails: () => void; onMoveUp?: () => void; onMoveDown?: () => void; showTags: boolean; showStructuralFields: boolean; deleteWarning: string; readOnly: boolean }) {
 	const { setKrTitle, setKrBusinessCategory, setKrPriority, deleteKr } = useBoard()
 	const [confirmDelete, setConfirmDelete] = useState(false)
 	const [deleting, setDeleting] = useState(false)
@@ -99,21 +99,22 @@ function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories, deta
 			{cardHierarchy && <button type="button" onClick={onToggleDetails} title={detailsOpen ? '折叠 KR' : '展开 KR'} aria-label={detailsOpen ? '折叠 KR' : '展开 KR'} aria-expanded={detailsOpen} className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><svg viewBox="0 0 12 12" aria-hidden className={`size-3 transition-transform ${detailsOpen ? 'rotate-90' : ''}`}><path d="M4 2.2 L8.8 6 L4 9.8 Z" fill="currentColor" /></svg></button>}
           <input
             value={kr.title}
+			readOnly={readOnly}
             onChange={(event) => setKrTitle(objectiveId, kr.id, event.target.value)}
             placeholder="填写 KR 内容"
             aria-label="KR 内容"
-            className={`min-w-64 flex-[1_1_32rem] rounded-md border border-transparent bg-transparent px-1.5 outline-none transition-colors hover:border-slate-200 hover:bg-white focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-50 ${cardHierarchy ? 'min-h-7 text-[14px] font-semibold leading-5 text-slate-900' : 'h-7 text-[11px] font-medium text-slate-700'}`}
+			className={`min-w-64 flex-[1_1_32rem] rounded-md border border-transparent bg-transparent px-1.5 outline-none transition-colors ${readOnly ? 'cursor-default' : 'hover:border-slate-200 hover:bg-white focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-50'} ${cardHierarchy ? 'min-h-7 text-[14px] font-semibold leading-5 text-slate-900' : 'h-7 text-[11px] font-medium text-slate-700'}`}
 				/>
 					<CommentTargetButton target={{ type: 'kr', id: kr.id, title: kr.title }} />
-					{showStructuralFields && !cardHierarchy && <BusinessCategoryField value={businessCategoryOf(kr)} categories={businessCategories} onChange={(value) => setKrBusinessCategory(kr.id, value)} allowEmpty ariaLabel="业务分类" className="h-6 max-w-36 rounded-md border border-blue-200 bg-blue-50 px-2 text-[10px] text-blue-700 outline-none focus:border-blue-400" />}
-				{showStructuralFields && !cardHierarchy && <select value={priority} onChange={(event) => setKrPriority(kr.id, event.target.value as KrPriority | '')} aria-label="优先级标签" className={`h-6 rounded-md border px-2 text-[10px] outline-none focus:border-blue-400 ${priorityTone(priority)}`}>
+					{showStructuralFields && !cardHierarchy && (readOnly ? <span className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] text-blue-700">{businessCategoryOf(kr) || '未标注业务'}</span> : <BusinessCategoryField value={businessCategoryOf(kr)} categories={businessCategories} onChange={(value) => setKrBusinessCategory(kr.id, value)} allowEmpty ariaLabel="业务分类" className="h-6 max-w-36 rounded-md border border-blue-200 bg-blue-50 px-2 text-[10px] text-blue-700 outline-none focus:border-blue-400" />)}
+				{showStructuralFields && !cardHierarchy && (readOnly ? <span className={`rounded-md border px-2 py-1 text-[10px] ${priorityTone(priority)}`}>{priority ? (priority === 'p0' ? 'Focus · P0' : priority.toUpperCase()) : '未标注'}</span> : <select value={priority} onChange={(event) => setKrPriority(kr.id, event.target.value as KrPriority | '')} aria-label="优先级标签" className={`h-6 rounded-md border px-2 text-[10px] outline-none focus:border-blue-400 ${priorityTone(priority)}`}>
 					<option value="">未标注</option><option value="p0">Focus · P0</option><option value="p1">P1</option><option value="p2">P2</option>
-				</select>}
+				</select>)}
         </div>
 		<div className={`flex flex-wrap items-start gap-2 px-1.5 ${cardHierarchy ? 'mt-1.5' : 'mt-1'}`}>
-			  {cardHierarchy && showStructuralFields && <BusinessCategoryField value={businessCategoryOf(kr)} categories={businessCategories} onChange={(value) => setKrBusinessCategory(kr.id, value)} allowEmpty ariaLabel="业务分类" className="h-6 max-w-36 rounded-md border border-blue-200 bg-blue-50 px-2 text-[10px] text-blue-700 outline-none focus:border-blue-400" />}
-			  {cardHierarchy && <select value={priority} onChange={(event) => setKrPriority(kr.id, event.target.value as KrPriority | '')} aria-label="优先级标签" className={`h-6 rounded-md border px-2 text-[10px] outline-none focus:border-blue-400 ${priorityTone(priority)}`}><option value="">未标注</option><option value="p0">Focus · P0</option><option value="p1">P1</option><option value="p2">P2</option></select>}
-          {showTags && <div className="min-w-0 flex-1"><KrTagEditor kr={kr} suggestions={tagSuggestions} /></div>}
+			  {cardHierarchy && showStructuralFields && (readOnly ? <span className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] text-blue-700">{businessCategoryOf(kr) || '未标注业务'}</span> : <BusinessCategoryField value={businessCategoryOf(kr)} categories={businessCategories} onChange={(value) => setKrBusinessCategory(kr.id, value)} allowEmpty ariaLabel="业务分类" className="h-6 max-w-36 rounded-md border border-blue-200 bg-blue-50 px-2 text-[10px] text-blue-700 outline-none focus:border-blue-400" />)}
+			  {cardHierarchy && (readOnly ? <span className={`rounded-md border px-2 py-1 text-[10px] ${priorityTone(priority)}`}>{priority ? (priority === 'p0' ? 'Focus · P0' : priority.toUpperCase()) : '未标注'}</span> : <select value={priority} onChange={(event) => setKrPriority(kr.id, event.target.value as KrPriority | '')} aria-label="优先级标签" className={`h-6 rounded-md border px-2 text-[10px] outline-none focus:border-blue-400 ${priorityTone(priority)}`}><option value="">未标注</option><option value="p0">Focus · P0</option><option value="p1">P1</option><option value="p2">P2</option></select>)}
+		  {showTags && <div className="min-w-0 flex-1"><KrTagEditor kr={kr} suggestions={tagSuggestions} readOnly={readOnly} /></div>}
 		  {!cardHierarchy && <button
             type="button"
             aria-expanded={detailsOpen}
@@ -125,8 +126,8 @@ function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories, deta
         </div>
       </div>
       <div className="flex min-w-12 items-center justify-end gap-1">
-		<FeishuPeoplePicker kr={kr} compact={!cardHierarchy} />
-		<span className={`flex items-center gap-1 transition-opacity ${cardHierarchy && !confirmDelete ? 'sm:opacity-0 sm:group-hover/kr:opacity-100 sm:group-focus-within/kr:opacity-100' : ''}`}>
+		{readOnly ? <span className="flex flex-wrap justify-end gap-1">{krOwners(kr).map((owner) => <span key={`${owner.openId}:${owner.name}`} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-500">{owner.name}</span>)}</span> : <FeishuPeoplePicker kr={kr} compact={!cardHierarchy} />}
+		{!readOnly && <span className={`flex items-center gap-1 transition-opacity ${cardHierarchy && !confirmDelete ? 'sm:opacity-0 sm:group-hover/kr:opacity-100 sm:group-focus-within/kr:opacity-100' : ''}`}>
         <MoveButtons label="条 KR" onUp={onMoveUp} onDown={onMoveDown} />
         {confirmDelete ? (
           <>
@@ -135,10 +136,10 @@ function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories, deta
             <button type="button" onClick={() => setConfirmDelete(false)} className="h-6 px-1 text-[9px] text-slate-400 hover:text-slate-700">取消</button>
           </>
 		) : <button type="button" onClick={() => setConfirmDelete(true)} title="删除 KR" className="h-6 rounded-md px-1.5 text-[10px] text-slate-300 transition-colors hover:bg-red-50 hover:text-red-600">删除</button>}
-		</span>
+		</span>}
         <CommentSurfaceHint target={commentTarget} />
       </div>
-		{detailsOpen && <div className={`col-span-2 ${cardHierarchy ? 'px-0.5 pb-1' : 'px-1.5 pb-1'}`}><KrDefinitionDetails objectiveId={objectiveId} kr={kr} tagSuggestions={showTags ? tagSuggestions : undefined} deletePointWarning={deleteWarning} compactEmptyPointGroups={compactEmptyPointGroups} cardBody={cardHierarchy} /></div>}
+		{detailsOpen && <div className={`col-span-2 ${cardHierarchy ? 'px-0.5 pb-1' : 'px-1.5 pb-1'}`}><KrDefinitionDetails objectiveId={objectiveId} kr={kr} tagSuggestions={showTags ? tagSuggestions : undefined} deletePointWarning={deleteWarning} compactEmptyPointGroups={compactEmptyPointGroups} cardBody={cardHierarchy} readOnly={readOnly} /></div>}
     </article>
   )
 }
@@ -191,6 +192,7 @@ function ObjectiveEditorHeader({
 	businessCategories,
 	businessCategoryEditable,
 	businessCategoryObjective,
+	readOnly,
 }: {
 	objective: Objective
 	visibleKrCount: number
@@ -205,6 +207,7 @@ function ObjectiveEditorHeader({
 	businessCategories: string[]
 	businessCategoryEditable: boolean
 	businessCategoryObjective?: Objective
+	readOnly: boolean
 }) {
 	const { updateObjective, deleteObjective, setKrBusinessCategory } = useBoard()
 	const [editing, setEditing] = useState(false)
@@ -251,7 +254,7 @@ function ObjectiveEditorHeader({
 
 	return (
 		<div id={commentTargetElementId(commentTarget)} onClick={commentSurface.onClick} data-okr-target-kind="objective" data-okr-objective-id={objective.id} className={`group/commentable flex flex-wrap items-center gap-2 ${cardHierarchy ? 'mb-3 px-1' : 'min-h-9 border-y border-slate-100 bg-slate-50/80 px-3.5 py-1.5 first:border-t-0'} ${commentSurface.enabled ? 'cursor-pointer hover:bg-indigo-50/70' : ''} ${commentSurface.selected || commentSurface.focused ? 'ring-2 ring-inset ring-indigo-500' : ''}`}>
-			{editing ? <>
+			{!readOnly && editing ? <>
 				<input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void save(); if (event.key === 'Escape') cancel() }} aria-label="O 标题" className={`h-7 min-w-64 flex-1 rounded-md border border-slate-200 bg-white px-2 font-medium text-slate-700 outline-none focus:border-blue-400 ${cardHierarchy ? 'text-[15px]' : 'text-[11px]'}`} />
 				<button type="button" disabled={busy || !title.trim()} onClick={() => void save()} className="h-6 rounded-md bg-blue-600 px-2 text-[9px] font-medium text-white disabled:opacity-40">保存</button>
 				<button type="button" disabled={busy} onClick={cancel} className="h-6 px-1 text-[9px] text-slate-400">取消</button>
@@ -271,7 +274,7 @@ function ObjectiveEditorHeader({
 				<h3 className={`min-w-0 flex-1 ${cardHierarchy ? 'text-[17px] font-semibold leading-6 text-slate-800' : 'truncate text-[12px] font-bold text-slate-800'}`}>{objective.title}</h3>
 				<CommentTargetButton target={{ type: 'objective', id: objective.id, title: objective.title }} />
 				<span className={cardHierarchy ? 'rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs tabular-nums text-slate-400' : 'text-[9px] tabular-nums text-slate-400'}>{visibleKrCount}{visibleKrCount !== totalKrCount ? ` / ${totalKrCount}` : ''}{cardHierarchy ? ' 个 KR' : ' 条'}</span>
-				{businessCategoryEditable && completeObjective.krs.length > 0 && <BusinessCategoryField
+				{!readOnly && businessCategoryEditable && completeObjective.krs.length > 0 && <BusinessCategoryField
 					value={commonBusinessCategory ?? ''}
 					categories={businessCategories}
 					onChange={(value) => completeObjective.krs.forEach((kr) => setKrBusinessCategory(kr.id, value))}
@@ -279,13 +282,13 @@ function ObjectiveEditorHeader({
 					ariaLabel={`批量修改“O ${objective.title}”下全部 KR 的业务分类`}
 					className="h-6 max-w-44 rounded-md border border-blue-200 bg-blue-50 px-2 text-[10px] text-blue-700 outline-none focus:border-blue-400"
 				/>}
-				<MoveButtons label="个 O" onUp={onMoveUp} onDown={onMoveDown} />
-				<button type="button" onClick={() => { setTitle(objective.title); setEditing(true) }} className="h-5 rounded-md px-1.5 text-[9px] text-slate-500 hover:bg-white hover:text-blue-600">重命名 O</button>
-				{totalKrCount === 0 && (confirmDelete ? <>
+				{!readOnly && <MoveButtons label="个 O" onUp={onMoveUp} onDown={onMoveDown} />}
+				{!readOnly && <button type="button" onClick={() => { setTitle(objective.title); setEditing(true) }} className="h-5 rounded-md px-1.5 text-[9px] text-slate-500 hover:bg-white hover:text-blue-600">重命名 O</button>}
+				{!readOnly && totalKrCount === 0 && (confirmDelete ? <>
 					<button type="button" disabled={busy} onClick={() => void remove()} className="h-5 rounded-md bg-red-600 px-1.5 text-[9px] font-medium text-white disabled:opacity-40">确认删除</button>
 					<button type="button" disabled={busy} onClick={() => setConfirmDelete(false)} className="h-5 px-1 text-[9px] text-slate-400">取消</button>
 				</> : <button type="button" onClick={() => setConfirmDelete(true)} className="h-5 rounded-md px-1.5 text-[9px] text-red-400 hover:bg-red-50 hover:text-red-600">删除空 O</button>)}
-				<button type="button" onClick={onToggleCreateKr} className={`h-5 rounded-md px-1.5 text-[9px] font-medium ${creatingKr ? 'bg-blue-50 text-blue-700' : 'text-blue-600 hover:bg-blue-50'}`}>{creatingKr ? '收起新建' : '+ 新建 KR'}</button>
+				{!readOnly && <button type="button" onClick={onToggleCreateKr} className={`h-5 rounded-md px-1.5 text-[9px] font-medium ${creatingKr ? 'bg-blue-50 text-blue-700' : 'text-blue-600 hover:bg-blue-50'}`}>{creatingKr ? '收起新建' : '+ 新建 KR'}</button>}
 				<CommentSurfaceHint target={commentTarget} />
 			</>}
 		</div>
@@ -305,6 +308,7 @@ export function ManagementView({
 	compactEmptyPointGroups = false,
 	objectiveDragReorder = false,
 	objectiveBusinessCategoryEditing = false,
+	readOnly = false,
 }: {
 	title?: string
 	subtitle?: string
@@ -318,6 +322,7 @@ export function ManagementView({
 	compactEmptyPointGroups?: boolean
 	objectiveDragReorder?: boolean
 	objectiveBusinessCategoryEditing?: boolean
+	readOnly?: boolean
 }) {
   const { objectives, quarter, syncState, createObjective, swapObjectives, reorderObjectives, swapKrs } = useBoard()
   const commentInteraction = useCommentInteraction()
@@ -510,9 +515,9 @@ export function ManagementView({
           <div className="ml-auto rounded-lg bg-slate-50 px-2 py-1 text-[10px] text-slate-500">
             <span className="font-medium text-slate-700">{resultCount}</span> / {objectives.reduce((total, objective) => total + objective.krs.length, 0)} 条
           </div>
-			<button type="button" onClick={() => { setObjectiveQuarter(defaultQuarter); setCreatingObjective((value) => !value) }} className="h-8 rounded-lg bg-indigo-600 px-3 text-[10px] font-medium text-white hover:bg-indigo-700">+ 新建 O</button>
+			{!readOnly && <button type="button" onClick={() => { setObjectiveQuarter(defaultQuarter); setCreatingObjective((value) => !value) }} className="h-8 rounded-lg bg-indigo-600 px-3 text-[10px] font-medium text-white hover:bg-indigo-700">+ 新建 O</button>}
           </div>
-		  {creatingObjective && <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50/60 p-2">
+		  {!readOnly && creatingObjective && <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-indigo-100 bg-indigo-50/60 p-2">
 			<input value={objectiveQuarter} onChange={(event) => setObjectiveQuarter(event.target.value)} placeholder="2026-Q3" aria-label="季度" className="h-8 w-28 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] outline-none focus:border-indigo-400" />
 			<input value={objectiveTitle} onChange={(event) => setObjectiveTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submitObjective() }} placeholder="目标名称" aria-label="目标名称" autoFocus className="h-8 min-w-64 flex-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[11px] outline-none focus:border-indigo-400" />
 			<button type="button" onClick={() => void submitObjective()} disabled={!objectiveTitle.trim() || !objectiveQuarter.trim() || syncState.kind === 'saving'} className="h-8 rounded-lg bg-indigo-600 px-3 text-[10px] font-medium text-white disabled:opacity-40">创建目标</button>
@@ -546,7 +551,7 @@ export function ManagementView({
 					onBusiness={(value) => { setBusinessCategory(value); setHierarchyPriority(undefined); setHierarchyObjectiveId('') }}
 						onPriority={(value) => { setHierarchyPriority(value as KrPriority | ''); setHierarchyObjectiveId('') }}
 						onObjective={setHierarchyObjectiveId}
-						onObjectiveOrderChange={objectiveDragReorder ? reorderVisibleObjectives : undefined}
+						onObjectiveOrderChange={!readOnly && objectiveDragReorder ? reorderVisibleObjectives : undefined}
 						objectiveReorderDisabled={syncState.kind === 'loading' || syncState.kind === 'saving'}
 					/>
 			</div> : <div className="mt-2 rounded-xl border border-slate-200 bg-gradient-to-b from-slate-50/90 to-slate-100/65 p-2.5">
@@ -571,9 +576,10 @@ export function ManagementView({
 					businessCategories={businessCategories}
 					businessCategoryEditable={objectiveBusinessCategoryEditing}
 					businessCategoryObjective={objectives.find((item) => item.id === objective.id)}
+					readOnly={readOnly}
               />
 			  {!collapsed.has(objective.id) && <div className={cardHierarchy ? 'space-y-3' : 'divide-y divide-slate-100'}>
-						{creatingObjectiveId === objective.id && <NewKrRow objective={objective} businessCategories={businessCategories} peopleOptions={peopleOptions} cardHierarchy={cardHierarchy} onClose={() => setCreatingObjectiveId('')} onCreated={() => setPlacementNotice(`已新建 KR，位于“O ${objective.title}”下的 KR 列表最底部。`)} />}
+						{!readOnly && creatingObjectiveId === objective.id && <NewKrRow objective={objective} businessCategories={businessCategories} peopleOptions={peopleOptions} cardHierarchy={cardHierarchy} onClose={() => setCreatingObjectiveId('')} onCreated={() => setPlacementNotice(`已新建 KR，位于“O ${objective.title}”下的 KR 列表最底部。`)} />}
 						{objective.krs.map((kr, krIndex) => <KrEditorRow
 							key={kr.id}
 							objectiveId={objective.id}
@@ -589,6 +595,7 @@ export function ManagementView({
 							showTags={showTags}
 							showStructuralFields={!hideStructuralFields}
 							deleteWarning={deleteKrWarning}
+							readOnly={readOnly}
 						/>)}
               </div>}
             </section>

@@ -30,13 +30,14 @@ export function TagChip({ tag, onRemove }: { tag: KrTag; onRemove?: () => void }
   )
 }
 
-export function TagEditor({ idPrefix, tags, suggestions, onAdd, onRemove, emptyLabel = '+ 添加标签' }: {
+export function TagEditor({ idPrefix, tags, suggestions, onAdd, onRemove, emptyLabel = '+ 添加标签', readOnly = false }: {
   idPrefix: string
   tags: KrTag[]
   suggestions: KrTag[]
   onAdd: (value: string, type: string) => void
   onRemove: (type: string, value: string) => void
   emptyLabel?: string
+	readOnly?: boolean
 }) {
   const [editing, setEditing] = useState(false)
   const [expanded, setExpanded] = useState(false)
@@ -57,10 +58,10 @@ export function TagEditor({ idPrefix, tags, suggestions, onAdd, onRemove, emptyL
   return (
     <div className="min-w-0">
       <div className="flex min-h-6 min-w-0 flex-wrap items-start gap-1">
-        {visibleTags.map((tag) => <TagChip key={`${tag.type}:${tag.value}`} tag={tag} onRemove={() => onRemove(tag.type, tag.value)} />)}
+		{visibleTags.map((tag) => <TagChip key={`${tag.type}:${tag.value}`} tag={tag} onRemove={readOnly ? undefined : () => onRemove(tag.type, tag.value)} />)}
         {hiddenCount > 0 && <button type="button" onClick={() => setExpanded(true)} className="h-5 rounded-md bg-slate-50 px-1.5 text-[10px] text-slate-400 hover:bg-slate-100 hover:text-slate-600">+{hiddenCount}</button>}
         {expanded && tags.length > 4 && <button type="button" onClick={() => setExpanded(false)} className="h-5 px-1 text-[10px] text-slate-400 hover:text-slate-600">收起</button>}
-        {!editing && <button type="button" onClick={() => setEditing(true)} className="h-6 rounded-md border border-dashed border-slate-300 px-2 text-[10px] font-medium text-slate-500 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600">{emptyLabel}</button>}
+		{!readOnly && !editing && <button type="button" onClick={() => setEditing(true)} className="h-6 rounded-md border border-dashed border-slate-300 px-2 text-[10px] font-medium text-slate-500 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600">{emptyLabel}</button>}
       </div>
       {editing && (
         <div className="mt-1.5 flex max-w-2xl flex-wrap items-center gap-1 rounded-md bg-slate-50 p-1">

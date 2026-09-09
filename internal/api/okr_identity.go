@@ -22,6 +22,7 @@ var jarvisOKRUser = okrAuth.User{OpenID: "jarvis", Name: "Jarvis"}
 type okrCurrentUserResponse struct {
 	Authenticated bool          `json:"authenticated"`
 	Configured    bool          `json:"configured"`
+	PlanAccess    okrPlanAccess `json:"plan_access"`
 	ExpiresAt     *time.Time    `json:"expires_at,omitempty"`
 	User          *okrAuth.User `json:"user,omitempty"`
 }
@@ -30,19 +31,19 @@ func GetOKRCurrentUser(service *okrAuth.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		if !service.Enabled() {
 			user := jarvisOKRUser
-			c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": okrCurrentUserResponse{Authenticated: true, Configured: false, User: &user}})
+			c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": okrCurrentUserResponse{Authenticated: true, Configured: false, PlanAccess: okrPlanAccessEditor, User: &user}})
 			return
 		}
 		session, err := service.Current(ctx, string(c.Cookie(okrAuth.CookieName)))
 		if errors.Is(err, okrAuth.ErrUnauthenticated) {
-			c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": okrCurrentUserResponse{Configured: true}})
+			c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": okrCurrentUserResponse{Configured: true, PlanAccess: okrPlanAccessNone}})
 			return
 		}
 		if err != nil {
 			writeAPIError(c, consts.StatusInternalServerError, 50080, err)
 			return
 		}
-		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": okrCurrentUserResponse{Authenticated: true, Configured: true, ExpiresAt: &session.ExpiresAt, User: &session.User}})
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": okrCurrentUserResponse{Authenticated: true, Configured: true, PlanAccess: okrPlanAccessForUser(session.User, true), ExpiresAt: &session.ExpiresAt, User: &session.User}})
 	}
 }
 

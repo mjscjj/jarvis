@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: reference; `internal/api/router.go` is source of truth
-> Last verified: 2026-09-06 @ uncommitted worktree
+> Last verified: 2026-09-09 @ uncommitted worktree
 
 本文只按能力分组，不复制 handler 的完整请求/响应结构。新增或删除接口时先改 `internal/api/router.go`，再更新本页。
 
@@ -74,7 +74,8 @@
 - Biz OKR：`GET /api/biz-okr/scope|board|core-board` 提供当前完整业务组合视图；Plan、标签、Review、评论、评分、Follow-up、催填、Meego 和文档导出均位于 `/api/biz-okr/*`。周页面评论使用 `/api/biz-okr/comments`，Plan 评论按 `GET|POST /api/biz-okr/plans/:plan_id/comments` 隔离作用域，评论编辑与删除仍复用 `/api/biz-okr/comments/:comment_id`。周页面创建评论携带 `source_tab`，仅用于生成回到实际创建页的 Emily 深链；Plan 入口固定使用 `okr-plan`。评论创建或编辑可带 `mentions: [{open_id,name}]`，每个 mention 必须对应正文中的 `@name`。只有创建评论时的显式 `@` 会通知；不按页面或 Owner 自动扩大收件人，编辑评论也不再发通知。mention 的主应用 `open_id` 由 principal 用户身份精确回读为企业邮箱，再固定由“Jarvis通知机器人”投递紧凑 Card 2.0 并回读确认；卡片主体是“原文/评论”，页面与 OKR 上下文默认折叠，不回退到默认 Jarvis Bot。响应中的 `notification_errors` 表示评论已保存但部分提醒失败。`DELETE /api/biz-okr/weeks/:week?quarter=...` 保留原有“删除整个业务周次”的完整清理语义。固定四个 Agent 行动仍由 `okr-agent-orchestrator` 动态组合原子工具，不提供固定生成 API。
 - OKR Preview AI 评审：`POST /api/biz-okr/preview-review`，body 为 `{quarter, week, kind: all|kr|point, kr_id, point_id}`，同步返回 `{content}` Markdown。评审只出判断和建议、不写任何东西，所以不建 Task、不进审批链路、没有运行历史可轮询。Agent 按需使用 `okr-module-tools` 与 `biz-okr-tools` 回查。
 - Meego observation：`POST /api/biz-okr/meego-observations` 只保存 Agent 已通过 `bytedcli` 读取的结构化快照；HTTP handler 不查询 Meego，外部读取和匹配规则归 `weekly-report-progress-sync` Skill。
-- Biz OKR identity：`GET /api/biz-okr/me`；启用 `conf/okr-module.yaml` 的 `identity` 后，经 `POST /api/biz-okr/auth/feishu/device` 发起飞书设备授权、`POST /api/biz-okr/auth/feishu/device/:login_id/poll` 轮询并建立 HttpOnly session。用户 token 仍按 open_id 写到 `identity.token_dir`，`GET /api/biz-okr/feishu-identity?open_id=` 返回与 token 配对的 App ID 和文件位置。身份只服务 Biz 页面、评论署名和用户态文档读取，不进入通用 OKR 插件。
+- Biz OKR identity：`GET /api/biz-okr/me`；启用 `conf/okr-module.yaml` 的 `identity` 后，经 `POST /api/biz-okr/auth/feishu/device` 发起飞书设备授权、`POST /api/biz-okr/auth/feishu/device/:login_id/poll` 轮询并建立 HttpOnly session。响应中的 `plan_access=none|viewer|editor` 是前端渲染 Plan 访问态的最小权限投影。用户 token 仍按 open_id 写到 `identity.token_dir`，`GET /api/biz-okr/feishu-identity?open_id=` 返回与 token 配对的 App ID 和文件位置。身份只服务 Biz 页面、Plan 权限、评论署名和用户态文档读取，不进入通用 OKR 插件。
+- Biz OKR Plan 权限：所有 `GET /api/biz-okr/plans...` 及 Plan 评论读写都要求登录且通过查看名单；Plan 创建、正文修改、排序和删除只允许 editor。权限按跨应用稳定的 `union_id` 判断，企业邮箱只作兼容键，硬编码名单的唯一实现位于 `internal/api/okr_plan_access.go`。分享页前端同时进入只读态，但后端门禁才是安全边界。
 - Biz OKR people：`GET /api/biz-okr/people/avatars?names=...` 服务 Biz 人员头像展示；新页面的人员搜索复用全局 `/api/people/search?q=`。旧搜索接口及下线条件见上面的“人员搜索兼容接口”。
 - OKR images：`POST /api/okr/images` 上传 PNG/JPEG/GIF/WebP，返回可持久化的 `/okr-assets/<sha256>.<ext>`；图片落在 `conf/okr-module.yaml` 的 `upload_dir`。
 - 文档导出：`POST /api/biz-okr/feishu-documents`，由用户按钮触发，通过当前 Jarvis `lark-cli --as user` 创建 Markdown 飞书文档。新建文档继承的租户默认密级不允许组织内链接分享，飞书会以 91012 拒绝，所以创建后先按 `lark_cli.export_secure_label` 的标签名（在 `drive +secure-label-list` 里查 id）打一次密级，再设 `link_share_entity=tenant_editable` 并读回校验。标签没配、租户里查不到这个名字或密级写入失败都直接报错，不退回一篇不可分享的文档。

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { getWebConfig } from '../../api'
 import { useBoard } from './board'
 import { PlanBoardProvider, usePlanBoard } from './planStore'
 import { QuarterSelect } from './components/QuarterSelect'
@@ -8,7 +9,7 @@ import { ActivityLogButton } from './components/ActivityLogButton'
 import { CommentDrawer } from './components/CommentDrawer'
 import { CommentInteractionProvider, commentTargetElementId, scrollToCommentSource, type PendingCommentSelection } from './commenting'
 import type { CommentTarget, PageComment } from './types'
-import type { WeeklyShareTab } from './share'
+import { weeklyShareURLForTab, type WeeklyShareTab } from './share'
 import { planOptionLabel } from './planTitle'
 
 const PLAN_SCROLL_KEY_PREFIX = 'jarvis-okr-plan-scroll'
@@ -77,7 +78,7 @@ function NewPlanPanel({ onClose }: { onClose: () => void }) {
   )
 }
 
-function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }: { initialCommentId?: string; shared?: boolean; onShareTabChange?: (tab: WeeklyShareTab) => void }) {
+function PlanCanvas({ initialCommentId = '', shared = false, readOnly = false, onShareTabChange }: { initialCommentId?: string; shared?: boolean; readOnly?: boolean; onShareTabChange?: (tab: WeeklyShareTab) => void }) {
   const { plan, plans, quarter, syncState, selectPlan, deleteCurrentPlan } = usePlanBoard()
   const [creatingPlan, setCreatingPlan] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -89,6 +90,8 @@ function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }:
   const [comments, setComments] = useState<PageComment[]>([])
   const [commentTarget, setCommentTarget] = useState<CommentTarget>()
   const [pendingCommentSelection, setPendingCommentSelection] = useState<PendingCommentSelection>()
+	const [shareNotice, setShareNotice] = useState('')
+	const [shareLink, setShareLink] = useState('')
   const attemptedScrollKey = useRef('')
   const readyToSaveScrollKey = useRef('')
   const saving = syncState.kind === 'saving' || syncState.kind === 'loading'
@@ -142,6 +145,31 @@ function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }:
     }
     openComments()
   }
+
+	const copyShareLink = async () => {
+		setShareNotice('')
+		setShareLink('')
+		let link: string
+		try {
+			const config = await getWebConfig()
+			link = weeklyShareURLForTab(window.location.href, 'okr-plan', config.public_base_url)
+		} catch (cause) {
+			setShareNotice(cause instanceof Error ? `读取分享地址失败：${cause.message}` : '读取分享地址失败')
+			return
+		}
+		if (!navigator.clipboard) {
+			setShareLink(link)
+			setShareNotice('当前页面无法自动复制，请复制下面的分享链接')
+			return
+		}
+		try {
+			await navigator.clipboard.writeText(link)
+			setShareNotice('OKR Plan 只读链接已复制')
+		} catch (cause) {
+			setShareLink(link)
+			setShareNotice(cause instanceof Error ? `自动复制失败：${cause.message}；请复制下面的链接` : '自动复制失败，请复制下面的链接')
+		}
+	}
 
   useEffect(() => {
     if (!focusedComment) return
@@ -207,6 +235,7 @@ function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }:
             <div className="mt-1 text-[10px] text-slate-400">{quarter.replace('-', ' ')} · 计划草稿</div>
           </div>
           {shared && <WeeklyShareNav currentTab="okr-plan" onChange={(tab) => onShareTabChange?.(tab)} />}
+			{readOnly && <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">只读</span>}
           <span className={`text-[10px] ${syncState.kind === 'saving' ? 'text-blue-600' : syncState.kind === 'saved' ? 'text-emerald-600' : syncState.kind === 'error' ? 'text-red-600' : 'text-slate-400'}`} aria-live="polite">{syncState.message}</span>
           <div className="ml-auto flex flex-wrap items-center gap-2">
             <QuarterSelect />
@@ -214,7 +243,8 @@ function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }:
               {plans.length === 0 && <option value="">暂无 Plan</option>}
               {plans.map((item) => <option key={item.id} value={item.id}>{planOptionLabel(item.title, quarter)}</option>)}
             </select>
-            <ActivityLogButton surface="plan" quarter={quarter} planId={plan?.id} disabled={!plan} />
+			{!readOnly && <ActivityLogButton surface="plan" quarter={quarter} planId={plan?.id} disabled={!plan} />}
+			{!shared && <button type="button" onClick={() => void copyShareLink()} className="h-8 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] font-medium text-slate-600 hover:border-slate-300 hover:bg-slate-50">分享 Plan 页</button>}
             <button
               type="button"
               disabled={!plan}
@@ -225,14 +255,15 @@ function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }:
               <span aria-hidden>💬</span><span>评论</span>
               {commentCount > 0 && <span className="min-w-4 rounded-full bg-indigo-600 px-1 text-center text-[9px] leading-4 text-white">{commentCount}</span>}
             </button>
-            <button type="button" onClick={() => { setConfirmDelete(false); setCreatingPlan((value) => !value) }} className="h-8 rounded-lg bg-emerald-600 px-3 text-[10px] font-medium text-white hover:bg-emerald-700">新建 Plan</button>
-            <button type="button" disabled={!plan || saving} onClick={() => { setCreatingPlan(false); setConfirmDelete(true) }} className="h-8 rounded-lg border border-red-200 bg-red-50 px-3 text-[10px] font-medium text-red-700 hover:bg-red-100 disabled:opacity-40">删除 Plan</button>
+			{!readOnly && <button type="button" onClick={() => { setConfirmDelete(false); setCreatingPlan((value) => !value) }} className="h-8 rounded-lg bg-emerald-600 px-3 text-[10px] font-medium text-white hover:bg-emerald-700">新建 Plan</button>}
+			{!readOnly && <button type="button" disabled={!plan || saving} onClick={() => { setCreatingPlan(false); setConfirmDelete(true) }} className="h-8 rounded-lg border border-red-200 bg-red-50 px-3 text-[10px] font-medium text-red-700 hover:bg-red-100 disabled:opacity-40">删除 Plan</button>}
           </div>
         </div>
       </header>
       <main id={plan ? commentTargetElementId({ type: 'page', id: plan.id }) : undefined} className={`mx-auto max-w-[1580px] px-4 py-3 transition-[padding] sm:px-6 sm:py-4 lg:px-8 ${commentsOpen ? 'lg:pr-[420px]' : ''}`}>
-        {creatingPlan && <NewPlanPanel onClose={() => setCreatingPlan(false)} />}
-        {confirmDelete && plan && (
+		{shareNotice && <div className="mb-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-[10px] text-blue-700"><div>{shareNotice}</div>{shareLink && <input aria-label="分享链接" value={shareLink} readOnly onFocus={(event) => event.currentTarget.select()} onClick={(event) => event.currentTarget.select()} className="mt-2 h-8 w-full rounded-md border border-blue-200 bg-white px-2 text-[11px] text-slate-700 outline-none" />}</div>}
+		{!readOnly && creatingPlan && <NewPlanPanel onClose={() => setCreatingPlan(false)} />}
+		{!readOnly && confirmDelete && plan && (
           <section className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-3">
             <div className="mr-2 flex-1">
               <div className="text-xs font-semibold text-red-800">确认删除 {plan.title}？</div>
@@ -246,7 +277,7 @@ function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }:
         {plan ? (
           <CommentInteractionProvider value={{ enabled: true, triggerMode: 'surface', selected: commentTarget, focused: focusedComment, comments, counts: commentCounts, pendingSelection: pendingCommentSelection, setPendingSelection: setPendingCommentSelection, select: openComments }}>
             <div className={`transition-opacity ${saving ? 'pointer-events-none opacity-55' : ''}`}>
-              <ManagementView
+			  <ManagementView
                 title=""
                 subtitle=""
                 showTags
@@ -258,6 +289,7 @@ function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }:
 				  compactEmptyPointGroups
 				  objectiveDragReorder
 				  objectiveBusinessCategoryEditing
+				  readOnly={readOnly}
               />
             </div>
           </CommentInteractionProvider>
@@ -279,6 +311,7 @@ export default function PlanApp({
   initialCommentId = '',
   onQuarterChange,
   shared = false,
+	readOnly = false,
   onShareTabChange,
 }: {
   initialQuarter?: string
@@ -286,11 +319,12 @@ export default function PlanApp({
   initialCommentId?: string
   onQuarterChange?: (quarter: string) => void
   shared?: boolean
+	readOnly?: boolean
   onShareTabChange?: (tab: WeeklyShareTab) => void
 }) {
   return (
     <PlanBoardProvider initialQuarter={initialQuarter} initialPlanId={initialPlanId} onQuarterChange={onQuarterChange}>
-      <PlanCanvas initialCommentId={initialCommentId} shared={shared} onShareTabChange={onShareTabChange} />
+		<PlanCanvas initialCommentId={initialCommentId} shared={shared} readOnly={readOnly} onShareTabChange={onShareTabChange} />
     </PlanBoardProvider>
   )
 }

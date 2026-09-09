@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { isWeeklyShareViewState, WEEKLY_SHARE_NAV, weeklyShareTab, weeklyShareURL, weeklyShareWorkspaceTab } from '../src/okr/emily/share.ts'
+import { isWeeklyShareViewState, WEEKLY_SHARE_NAV, weeklyShareTab, weeklyShareURL, weeklyShareURLForTab, weeklyShareWorkspaceTab } from '../src/okr/emily/share.ts'
 
 test('weekly share link keeps only the selected dataset and view', () => {
   assert.equal(
@@ -31,6 +31,13 @@ test('a configured public address replaces the IP the author browsed in on', () 
     weeklyShareURL('http://127.0.0.1:18802/#/weekly-report?tab=weekly-fill', { dataset: 'weekly', view: 'meeting' }, 'https://emily.example/'),
     'https://emily.example/#/weekly-report?tab=weekly-meeting',
   )
+})
+
+test('OKR Plan share link keeps the Plan quarter and uses the public share route', () => {
+	assert.equal(
+		weeklyShareURLForTab('http://127.0.0.1:18802/#/biz-okr?quarter=2026-Q4&tab=okr-plan', 'okr-plan', 'https://emily.example/'),
+		'https://emily.example/#/weekly-report?tab=okr-plan&quarter=2026-Q4',
+	)
 })
 
 test('weekly share scope resolves OKR Plan and all four weekly pages', () => {

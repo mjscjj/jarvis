@@ -175,6 +175,7 @@ export interface AuthUser {
 export interface AuthStatus {
   authenticated: boolean
   configured: boolean
+	planAccess: 'none' | 'viewer' | 'editor'
   expiresAt?: string
   user?: AuthUser
 }

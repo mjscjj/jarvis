@@ -13,6 +13,7 @@ import { isWeeklyWorkspaceTab, okrTabForWeeklyWorkspace, resolveOKRTab, weeklyWo
 import { withOKRScope, withOKRTarget } from './chatContext'
 import { isWeeklyShareViewState, weeklyShareTab, weeklyShareWorkspaceTab, type WeeklyShareTab } from './emily/share'
 import { templateKeyForDataset } from './emily/weekCatalog'
+import type { AuthStatus } from './emily/types'
 import { activeQuarterForViewState, okrPlanDefaultQuarter, previousQuarter, quarterFromViewState } from './routeState'
 import './emily/index.css'
 
@@ -56,8 +57,9 @@ function PageContextSync({ surface }: { surface: 'okr' | 'weekly-report' }) {
   return null
 }
 
-function Workspace({ moduleEnablement }: {
+function Workspace({ moduleEnablement, planAccess }: {
   moduleEnablement: Readonly<Record<string, boolean>>
+	planAccess: AuthStatus['planAccess']
 }) {
   const { context, setViewState } = usePageContext()
   const requestedTab = context.view_state.tab
@@ -116,10 +118,22 @@ function Workspace({ moduleEnablement }: {
 	const weekTemplateKey = workspace ? templateKeyForDataset(workspace.dataset) : undefined
 	const boardKey = weekTemplateKey ? `${surface}:${weekTemplateKey}` : surface
 
+	if (visibleTab === 'okr-plan' && planAccess === 'none') {
+		return (
+			<div className="flex min-h-[520px] items-center justify-center px-6">
+				<section className="w-full max-w-md rounded-2xl border border-amber-200 bg-white px-8 py-9 text-center shadow-sm">
+					<span className="mx-auto flex size-11 items-center justify-center rounded-xl bg-amber-500 text-base font-semibold text-white">P</span>
+					<h1 className="mt-4 text-lg font-semibold text-slate-900">暂时无法查看 OKR Plan</h1>
+					<p className="mt-2 text-sm leading-6 text-slate-500">当前登录账号不在 Plan 分享名单中。如需访问，请联系储节节添加权限。</p>
+				</section>
+			</div>
+		)
+	}
+
 	if (visibleTab === 'okr-plan') {
 		return (
 			<div id="okr-workspace-root" className="okr-workspace-root">
-				<PlanWorkspace initialQuarter={activeQuarter} initialPlanId={context.view_state.plan_id} initialCommentId={context.view_state.comment_id} onQuarterChange={syncPlanQuarter} shared={weeklyShare} onShareTabChange={changeShareTab} />
+				<PlanWorkspace initialQuarter={activeQuarter} initialPlanId={context.view_state.plan_id} initialCommentId={context.view_state.comment_id} onQuarterChange={syncPlanQuarter} shared={weeklyShare} readOnly={planAccess !== 'editor'} onShareTabChange={changeShareTab} />
 			</div>
 		)
 	}
@@ -155,7 +169,7 @@ function Workspace({ moduleEnablement }: {
 export default function BizOKRModule({ moduleEnablement }: AppModulePageProps) {
 	return (
 		<IdentityBoundary>
-			<Workspace moduleEnablement={moduleEnablement} />
+			{(auth) => <Workspace moduleEnablement={moduleEnablement} planAccess={auth.planAccess} />}
 		</IdentityBoundary>
 	)
 }

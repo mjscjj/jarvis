@@ -198,6 +198,7 @@ interface APIFollowUpList {
 interface APIAuthStatus {
   authenticated: boolean
   configured: boolean
+	plan_access: 'none' | 'viewer' | 'editor'
   expires_at?: string
   user?: {
     open_id: string
@@ -976,6 +977,7 @@ export async function getAuthStatus(): Promise<AuthStatus> {
   return {
     authenticated: value.authenticated,
     configured: value.configured,
+		planAccess: value.plan_access,
     expiresAt: value.expires_at,
     user: value.user ? {
       openId: value.user.open_id,

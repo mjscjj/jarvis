@@ -448,7 +448,7 @@ function PointGroup({ objectiveId, kr, kind, closed, toggle, definitionReadOnly,
   )
 }
 
-export function KrDefinitionDetails({ objectiveId, kr, tagSuggestions, deletePointWarning = '连同各周进展一起删除', compactEmptyPointGroups = false, cardBody = false }: { objectiveId: string; kr: Kr; tagSuggestions?: KrTag[]; deletePointWarning?: string; compactEmptyPointGroups?: boolean; cardBody?: boolean }) {
+export function KrDefinitionDetails({ objectiveId, kr, tagSuggestions, deletePointWarning = '连同各周进展一起删除', compactEmptyPointGroups = false, cardBody = false, readOnly = false }: { objectiveId: string; kr: Kr; tagSuggestions?: KrTag[]; deletePointWarning?: string; compactEmptyPointGroups?: boolean; cardBody?: boolean; readOnly?: boolean }) {
   const { addPoint } = useBoard()
   const [closed, setClosed] = useState<Set<string>>(new Set())
   const toggle = (id: string) => setClosed((previous) => {
@@ -460,7 +460,7 @@ export function KrDefinitionDetails({ objectiveId, kr, tagSuggestions, deletePoi
 
   return (
     <div className={cardBody ? 'space-y-5 border-t border-slate-100 pt-4' : 'space-y-4 rounded-xl border border-slate-200 bg-slate-50/55 p-3'}>
-      <MetricBox kr={kr} readOnly={false} />
+		<MetricBox kr={kr} readOnly={readOnly} />
       {KINDS.filter((kind) => !compactEmptyPointGroups || kr.points.some((point) => point.kind === kind)).map((kind) => (
         <PointGroup
           key={kind}
@@ -469,15 +469,15 @@ export function KrDefinitionDetails({ objectiveId, kr, tagSuggestions, deletePoi
           kind={kind}
           closed={closed}
           toggle={toggle}
-          definitionReadOnly={false}
-          structureReadOnly={false}
+		  definitionReadOnly={readOnly}
+		  structureReadOnly={readOnly}
           progressReadOnly
           showProgress={false}
           tagSuggestions={tagSuggestions}
           deleteWarning={deletePointWarning}
         />
       ))}
-      {compactEmptyPointGroups && KINDS.some((kind) => !kr.points.some((point) => point.kind === kind)) && <div className="flex flex-wrap gap-2">
+		{!readOnly && compactEmptyPointGroups && KINDS.some((kind) => !kr.points.some((point) => point.kind === kind)) && <div className="flex flex-wrap gap-2">
         {KINDS.filter((kind) => !kr.points.some((point) => point.kind === kind)).map((kind) => <button key={kind} type="button" onClick={() => addPoint(objectiveId, kr.id, kind)} className="rounded-md border border-dashed border-slate-200 bg-white px-2.5 py-1.5 text-[10px] text-slate-400 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600">+ {KIND_LABEL[kind]}</button>)}
       </div>}
     </div>

@@ -1,9 +1,8 @@
 # Biz OKR 飞书登录申请的 user scope，一行一个，`#` 起头为注释。
 #
-# 警告：这份清单只表达意图，不构成约束。实测（2026-09-03 复测）飞书 device flow
-# 忽略请求里的 scope 子集，按“Jarvis通知机器人”后台已开通的 user scope 全集签发 token：这里请求
-# 85 个且零敏感域，换回来的 token 却带 155 个，含 im、mail、contact、calendar。
-# 真正的生效点是开发者后台的勾选项，详见 docs/design-dual-app-identity.md。
+# 这份清单表达请求意图，最终上限仍由“Jarvis通知机器人”开发者后台已开通的
+# user scope 决定。2026-09-09 复测的新授权为 86 个 scope，敏感域为零；历史授权
+# 不会自动收窄，仍须退出并重新授权。详见 docs/design-dual-app-identity.md。
 #
 # 这些 scope 表达的意图是：Jarvis 用登录用户的 token 以「该用户本人」的身份
 # 读他有权限的飞书文档、知识库和多维表格，不再依赖本机 lark-cli 里另一个人
