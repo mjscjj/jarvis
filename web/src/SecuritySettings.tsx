@@ -236,13 +236,6 @@ export default function SecuritySettings() {
             </Space>
             <Tag color="default">尚不可强制</Tag>
           </Flex>
-          <Alert
-            className="security-policy-note"
-            type="warning"
-            showIcon
-            title="当前不提供无效开关"
-            description={view?.l4_document_read.message || '读取工具尚未提供统一的密级拦截能力。'}
-          />
         </Card>
       </div>
 
