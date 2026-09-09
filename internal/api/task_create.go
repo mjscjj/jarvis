@@ -22,6 +22,7 @@ type createTaskRequest struct {
 	SourcePayload json.RawMessage `json:"source_payload"`
 	ProjectID     *uint64         `json:"project_id"`
 	SourceType    string          `json:"source_type"`
+	Actor         string          `json:"actor"`
 }
 
 func CreateTask(submitter *taskcreate.Submitter) app.HandlerFunc {
@@ -70,8 +71,8 @@ func createTaskInput(request createTaskRequest) (taskcreate.Input, error) {
 	case "", taskcreate.SourceManual:
 		sourceType = taskcreate.SourceManual
 	case taskcreate.SourceProactive:
-		actorType = taskcreate.SourceProactive
-		channel = "proactive_agent"
+		actorType = normalizedTaskActor(request.Actor, taskcreate.SourceProactive)
+		channel = taskAgentChannel(actorType)
 	default:
 		return taskcreate.Input{}, fmt.Errorf("source_type must be manual or proactive")
 	}
@@ -82,4 +83,15 @@ func createTaskInput(request createTaskRequest) (taskcreate.Input, error) {
 		ActorType:   actorType,
 		EventDetail: map[string]any{"channel": channel},
 	}, nil
+}
+
+func normalizedTaskActor(value, fallback string) string {
+	if actor := strings.TrimSpace(value); actor != "" {
+		return actor
+	}
+	return fallback
+}
+
+func taskAgentChannel(actor string) string {
+	return normalizedTaskActor(actor, "agent") + "_agent"
 }

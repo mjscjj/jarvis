@@ -22,7 +22,7 @@ func TestBackgroundStagesExposeTheSameMachineCapabilities(t *testing.T) {
 			"list-relations --node-type TYPE --node-id ID", "--node-types TYPE[,TYPE...]", "yield-until", "JARVIS_TASK_ID",
 			"get-world-progress", "create-world-progress", "update-world-progress",
 			"get-shared-memory", "append-shared-memory", "set-shared-memory", "2000",
-			"JARVIS_AGENT_STAGE=proactive", "bytedcli --json <领域> --help", "不要加载全量帮助",
+			"对所有 Agent 阶段开放", "JARVIS_AGENT_STAGE", "bytedcli --json <领域> --help", "不要加载全量帮助",
 		} {
 			if !strings.Contains(block, required) {
 				t.Fatalf("Block(%q) missing %q:\n%s", stage, required, block)

@@ -252,33 +252,33 @@ func TestFinishTaskFailedTagsManualStage(t *testing.T) {
 	}
 }
 
-func TestCloseTaskTagsProactiveActorAndStage(t *testing.T) {
+func TestCloseTaskRecordsCallingAgentActorAndStage(t *testing.T) {
 	service := &fakeTaskService{}
 	h := server.New()
 	h.POST("/api/tasks/:task_id/close", CloseTask(service))
-	body := []byte(`{"expected_version":4,"result":{"summary":"已过期，关闭","evidence":"截止时间早于今天"}}`)
+	body := []byte(`{"expected_version":4,"actor":"m5","result":{"summary":"已过期，关闭","evidence":"截止时间早于今天"}}`)
 	response := ut.PerformRequest(h.Engine, "POST", "/api/tasks/8/close", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
 	if response.StatusCode() != consts.StatusOK {
 		t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())
 	}
-	if service.close.TaskID != 8 || service.close.ExpectedVersion != 4 || service.close.ActorType != "proactive" {
+	if service.close.TaskID != 8 || service.close.ExpectedVersion != 4 || service.close.ActorType != "m5" {
 		t.Fatalf("close input = %#v", service.close)
 	}
-	if !bytes.Contains(service.close.Result, []byte(`"stage":"proactive_closed"`)) {
-		t.Fatalf("close result missing proactive stage: %s", service.close.Result)
+	if !bytes.Contains(service.close.Result, []byte(`"stage":"m5_closed"`)) {
+		t.Fatalf("close result missing caller stage: %s", service.close.Result)
 	}
 }
 
-func TestUpdateTaskTagsProactiveActorAndPreservesLooseFields(t *testing.T) {
+func TestUpdateTaskRecordsCallingAgentAndPreservesLooseFields(t *testing.T) {
 	service := &fakeTaskService{}
 	h := server.New()
 	h.PATCH("/api/tasks/:task_id", UpdateTask(service))
-	body := []byte(`{"expected_version":4,"summary":"权限仍在等待","instruction":"恢复后先核验权限","reason":"等待条件仍有效"}`)
+	body := []byte(`{"expected_version":4,"summary":"权限仍在等待","instruction":"恢复后先核验权限","reason":"等待条件仍有效","actor":"factengine"}`)
 	response := ut.PerformRequest(h.Engine, "PATCH", "/api/tasks/8", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
 	if response.StatusCode() != consts.StatusOK {
 		t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())
 	}
-	if service.update.TaskID != 8 || service.update.ExpectedVersion != 4 || service.update.ActorType != "proactive" {
+	if service.update.TaskID != 8 || service.update.ExpectedVersion != 4 || service.update.ActorType != "factengine" {
 		t.Fatalf("update input = %#v", service.update)
 	}
 	if service.update.Summary == nil || *service.update.Summary != "权限仍在等待" ||

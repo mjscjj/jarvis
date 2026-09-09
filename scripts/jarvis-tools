@@ -96,10 +96,10 @@ subcommands:
   get-task               Read task overview or a frozen context section
   list-task-runs         Page through a task’s execution history
   get-task-run           Read one run’s output and effects
-  create-task            Create a normal Task for strong M5 (proactive agent only)
-  start-task             Start one pending Task with strong M5 (proactive agent only)
-  update-task            Update one non-terminal Task (proactive agent only)
-  close-task             Close one non-terminal Task (proactive agent only)
+  create-task            Create a normal Task for strong M5
+  start-task             Start one pending Task with strong M5
+  update-task            Update one non-terminal Task
+  close-task             Close one non-terminal Task
   list-scheduled-tasks   List time-triggered tasks
   get-scheduled-task     Get one time-triggered task
   create-scheduled-task  Create a time trigger for a new task
@@ -477,29 +477,29 @@ EOF
 usage: jarvis-tools create-task [--payload JSON|-] [--config PATH]
 
 Create one ordinary Task and hand it to the strong M5 executor. This command is
-only available when JARVIS_AGENT_STAGE=proactive. The payload uses the existing
-POST /api/tasks contract: title, action_type, target, background, source_payload
-and optional project_id. source_type=proactive is enforced.
+available to every Jarvis Agent stage. The payload uses the existing POST
+/api/tasks contract: title, action_type, target, background, source_payload and
+optional project_id. source_type=proactive remains the automatic Agent-created
+Task route; the actual calling stage is recorded separately as the event actor.
 EOF
       ;;
     start-task) cat <<'EOF'
 usage: jarvis-tools start-task --id ID [--config PATH]
 
 Start one existing pending Task with the strong M5 executor. This command is
-only available when JARVIS_AGENT_STAGE=proactive. It returns after M5 claims the
-Task; use get-task in a later heartbeat to inspect and verify the result.
+available to every Jarvis Agent stage. It returns after M5 claims the Task; use
+get-task later to inspect and verify the result.
 EOF
       ;;
     update-task) cat <<'EOF'
 usage: jarvis-tools update-task --id ID [--payload JSON|-] [--config PATH]
 
 Update the mutable current surface of one non-terminal Task. This command is
-only available when JARVIS_AGENT_STAGE=proactive. The payload requires
-expected_version, reason, and at least one of title, target, summary or
-instruction. source_payload remains frozen. instruction is appended for M5
-rather than rewriting source evidence. A needs_human Task only accepts
-summary updates so an Agent cannot silently change the goal behind a question
-the principal is already looking at.
+available to every Jarvis Agent stage. The payload requires expected_version,
+reason, and at least one of title, target, summary or instruction. source_payload
+remains frozen. instruction is appended for M5 rather than rewriting source
+evidence. A needs_human Task only accepts summary updates so an Agent cannot
+silently change the goal behind a question the principal is already looking at.
 
 example:
   jarvis-tools update-task --id 42 --payload '{"expected_version":2,"summary":"权限申请仍有效，等待 owner 审批","instruction":"恢复后先重新核验权限，再继续转换文档","reason":"跨日后等待条件仍有效，补充最新状态而不是关闭"}'
@@ -508,11 +508,10 @@ EOF
     close-task) cat <<'EOF'
 usage: jarvis-tools close-task --id ID [--payload JSON|-] [--config PATH]
 
-Close one existing non-terminal Task. This command is only available when
-JARVIS_AGENT_STAGE=proactive. The payload must contain expected_version and a
-non-empty result object. Put the close result in result.summary and optional
-supporting data in result.evidence; the server records actor=proactive and
-stage=proactive_closed.
+Close one existing non-terminal Task. This command is available to every Jarvis
+Agent stage. The payload must contain expected_version and a non-empty result
+object. Put the close result in result.summary and optional supporting data in
+result.evidence; the server records the actual calling stage as the actor.
 
 example:
   jarvis-tools close-task --id 42 --payload '{"expected_version":2,"result":{"summary":"关闭结果","evidence":"支持材料"}}'
@@ -652,6 +651,16 @@ resolve_config_path() {
 resolve_api_base() {
   local config_path="$1"
   "${SCRIPT_DIR}/jarvis-api-base" "$config_path"
+}
+
+# task_actor reports the actual calling Agent stage for Task audit events.
+# Execution uses the established m5 actor label; ad-hoc local calls use agent.
+task_actor() {
+  case "${JARVIS_AGENT_STAGE:-}" in
+    execute) printf 'm5' ;;
+    '') printf 'agent' ;;
+    *) printf '%s' "$JARVIS_AGENT_STAGE" ;;
+  esac
 }
 
 # resolve_timezone CONFIG_PATH → prints the configured business timezone.
@@ -2568,16 +2577,16 @@ cmd_get_scheduled_task() {
 cmd_create_task() {
   reset_flags
   consume_flags "$@"
-  [[ "${JARVIS_AGENT_STAGE:-}" == "proactive" ]] || fail "create-task is only available to the proactive Agent"
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
-  local payload body
+  local actor payload body
+  actor="$(task_actor)"
   if [[ "$PAYLOAD" == "-" ]]; then
     payload="$(cat)"
   else
     payload="$PAYLOAD"
   fi
   printf '%s' "$payload" | jq -e 'type == "object"' >/dev/null 2>&1 || fail "create-task payload must be a JSON object"
-  payload="$(printf '%s' "$payload" | jq -c '. + {source_type:"proactive"}')"
+  payload="$(printf '%s' "$payload" | jq -c --arg actor "$actor" '. + {source_type:"proactive",actor:$actor}')"
   body="$(api_write POST /api/tasks "$payload")"
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
@@ -2585,7 +2594,6 @@ cmd_create_task() {
 cmd_start_task() {
   reset_flags
   consume_flags "$@"
-  [[ "${JARVIS_AGENT_STAGE:-}" == "proactive" ]] || fail "start-task is only available to the proactive Agent"
   [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "start-task requires positive --id"
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
   local body
@@ -2596,10 +2604,10 @@ cmd_start_task() {
 cmd_update_task() {
   reset_flags
   consume_flags "$@"
-  [[ "${JARVIS_AGENT_STAGE:-}" == "proactive" ]] || fail "update-task is only available to the proactive Agent"
   [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "update-task requires positive --id"
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
-  local payload body
+  local actor payload body
+  actor="$(task_actor)"
   if [[ "$PAYLOAD" == "-" ]]; then
     payload="$(cat)"
   else
@@ -2615,6 +2623,7 @@ cmd_update_task() {
     ((has("summary") | not) or (.summary | type == "string" and length > 0)) and
     ((has("instruction") | not) or (.instruction | type == "string" and length > 0))
   ' >/dev/null 2>&1 || fail "update-task payload requires expected_version, reason and at least one mutable Task field"
+  payload="$(printf '%s' "$payload" | jq -c --arg actor "$actor" '. + {actor:$actor}')"
   body="$(api_write PATCH "/api/tasks/${ID}" "$payload")"
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
@@ -2622,10 +2631,10 @@ cmd_update_task() {
 cmd_close_task() {
   reset_flags
   consume_flags "$@"
-  [[ "${JARVIS_AGENT_STAGE:-}" == "proactive" ]] || fail "close-task is only available to the proactive Agent"
   [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "close-task requires positive --id"
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
-  local payload body
+  local actor payload body
+  actor="$(task_actor)"
   if [[ "$PAYLOAD" == "-" ]]; then
     payload="$(cat)"
   else
@@ -2636,6 +2645,7 @@ cmd_close_task() {
     (.expected_version | type == "number" and . >= 0 and floor == .) and
     (.result | type == "object" and (.summary | type == "string" and length > 0))
   ' >/dev/null 2>&1 || fail "close-task payload requires non-negative expected_version and non-empty result.summary"
+  payload="$(printf '%s' "$payload" | jq -c --arg actor "$actor" '. + {actor:$actor}')"
   body="$(api_write POST "/api/tasks/${ID}/close" "$payload")"
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }

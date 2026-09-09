@@ -175,7 +175,7 @@ type Task struct {
 	Status          string         `gorm:"column:status;not null;default:pending;index:idx_task_status"`
 	ExecutionResult datatypes.JSON `gorm:"column:execution_result"`
 	// Summary is where the matter itself now stands, written by M5 after a run or
-	// maintained by the proactive Agent when later evidence changes that standing.
+	// maintained by an Agent when later evidence changes that standing.
 	// It is not the same as ExecutionRun.Summary ("what this run did"): a Task spans
 	// several runs, and this field answers "how far has this thing got".
 	Summary *string `gorm:"column:summary"`

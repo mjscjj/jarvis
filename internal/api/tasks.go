@@ -26,6 +26,7 @@ type finishTaskRequest struct {
 type closeTaskRequest struct {
 	ExpectedVersion *int32          `json:"expected_version"`
 	Result          json.RawMessage `json:"result"`
+	Actor           string          `json:"actor"`
 }
 
 type updateTaskRequest struct {
@@ -35,6 +36,7 @@ type updateTaskRequest struct {
 	Summary         *string `json:"summary"`
 	Instruction     *string `json:"instruction"`
 	Reason          string  `json:"reason"`
+	Actor           string  `json:"actor"`
 }
 
 func ListTasks(service execute.TaskService) app.HandlerFunc {
@@ -237,9 +239,9 @@ func FinishTask(service execute.TaskService) app.HandlerFunc {
 	}
 }
 
-// CloseTask is the proactive Agent's internal cleanup path. It resolves an
-// existing non-terminal Task with explicit evidence and records actor=proactive;
-// it never runs an external side effect or impersonates an M5 execution.
+// CloseTask is the shared Agent cleanup path. It resolves an existing
+// non-terminal Task with explicit evidence and records the caller-provided
+// stage for audit; it never runs an external side effect.
 func CloseTask(service execute.TaskService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)
@@ -256,14 +258,15 @@ func CloseTask(service execute.TaskService) app.HandlerFunc {
 			writeAPIError(c, consts.StatusBadRequest, 40032, fmt.Errorf("expected_version is required"))
 			return
 		}
-		tagged, err := tagResultStage(request.Result, "proactive_closed")
+		actor := normalizedTaskActor(request.Actor, "proactive")
+		tagged, err := tagResultStage(request.Result, actor+"_closed")
 		if err != nil {
 			writeAPIError(c, consts.StatusBadRequest, 40032, err)
 			return
 		}
 		result, err := service.Close(ctx, execute.CloseInput{
 			TaskID: taskID, ExpectedVersion: *request.ExpectedVersion,
-			Result: tagged, ActorType: "proactive",
+			Result: tagged, ActorType: actor,
 		})
 		if err != nil {
 			writeExecutionError(c, err)
@@ -273,8 +276,8 @@ func CloseTask(service execute.TaskService) app.HandlerFunc {
 	}
 }
 
-// UpdateTask lets the proactive Agent revise the mutable current Task surface
-// without rewriting frozen source evidence or pretending the goal is complete.
+// UpdateTask lets an Agent revise the mutable current Task surface without
+// rewriting frozen source evidence or pretending the goal is complete.
 func UpdateTask(service execute.TaskService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		taskID, err := strconv.ParseUint(c.Param("task_id"), 10, 64)
@@ -291,10 +294,11 @@ func UpdateTask(service execute.TaskService) app.HandlerFunc {
 			writeAPIError(c, consts.StatusBadRequest, 40033, fmt.Errorf("expected_version is required"))
 			return
 		}
+		actor := normalizedTaskActor(request.Actor, "proactive")
 		result, err := service.UpdateTask(ctx, execute.TaskUpdateInput{
 			TaskID: taskID, ExpectedVersion: *request.ExpectedVersion,
 			Title: request.Title, Target: request.Target, Summary: request.Summary,
-			Instruction: request.Instruction, Reason: request.Reason, ActorType: "proactive",
+			Instruction: request.Instruction, Reason: request.Reason, ActorType: actor,
 		})
 		if err != nil {
 			writeExecutionError(c, err)

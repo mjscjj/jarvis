@@ -466,7 +466,7 @@ func (s *Store) Close(ctx context.Context, input CloseInput) (*TaskView, error) 
 		if update.RowsAffected != 1 {
 			return fmt.Errorf("%w: task_id=%d expected=%d", ErrVersionConflict, task.ID, input.ExpectedVersion)
 		}
-		if err := closeUnboundContinuations(tx, task.ID, "task was closed by the proactive agent"); err != nil {
+		if err := closeUnboundContinuations(tx, task.ID, "task was closed by an agent"); err != nil {
 			return err
 		}
 		if err := progress.AppendTaskEvent(tx, progress.TaskEventInput{
@@ -494,10 +494,10 @@ func (s *Store) Close(ctx context.Context, input CloseInput) (*TaskView, error) 
 	return &view, nil
 }
 
-// UpdateTask lets the proactive Agent maintain a Task as the world changes
-// instead of forcing the binary choice between leaving stale wording untouched
-// and closing the work. It can update the mutable hints/current standing and
-// append a future M5 instruction, while frozen source evidence remains intact.
+// UpdateTask lets an Agent maintain a Task as the world changes instead of
+// forcing the binary choice between leaving stale wording untouched and closing
+// the work. It can update the mutable hints/current standing and append a future
+// M5 instruction, while frozen source evidence remains intact.
 func (s *Store) UpdateTask(ctx context.Context, input TaskUpdateInput) (*TaskView, error) {
 	if input.TaskID == 0 || input.ExpectedVersion < 0 || strings.TrimSpace(input.ActorType) == "" {
 		return nil, fmt.Errorf("%w: Task ID/version and actor type are required", ErrInvalidInput)
@@ -568,9 +568,9 @@ func (s *Store) UpdateTask(ctx context.Context, input TaskUpdateInput) (*TaskVie
 		if instruction == "" {
 			return nil, fmt.Errorf("%w: instruction must be non-blank", ErrInvalidInput)
 		}
-		encoded, err := appendExecutionSupplement(task.ExecutionSupplements, instruction, "proactive_agent", time.Now().UTC())
+		encoded, err := appendExecutionSupplement(task.ExecutionSupplements, instruction, input.ActorType+"_agent", time.Now().UTC())
 		if err != nil {
-			return nil, fmt.Errorf("append proactive instruction task_id=%d: %w", task.ID, err)
+			return nil, fmt.Errorf("append Agent instruction task_id=%d: %w", task.ID, err)
 		}
 		updates["execution_supplements"] = datatypes.JSON(encoded)
 		changes["instruction"] = instruction

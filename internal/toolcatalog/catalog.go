@@ -49,7 +49,7 @@ func Block(stage string) (string, error) {
 		"- `list-task-runs --id TASK_ID --page N --limit N` 查历史摘要；`get-task-run --id RUN_ID` 读完整结果和 effects，`--include-prompt` 才加载该 run 的 prompt。",
 		"- 查本地已采集对话先用 `query-messages`，已知数据库 ID 时用 `get-message`；查附件与文档引用先用 `query-captured-resources`，命中后再用 `get-captured-resource` 加载正文。",
 		"- `yield-until` 需要 Task runner 注入 `JARVIS_TASK_ID`，创建归属当前 Task 的恢复触发；`create-scheduled-task` 创建独立触发。",
-		"- `create-task` / `start-task` / `update-task` / `close-task` 需要 `JARVIS_AGENT_STAGE=proactive`，其它阶段调用会被命令拒绝。",
+		"- `create-task` / `start-task` / `update-task` / `close-task` 对所有 Agent 阶段开放；是否调用由当前阶段提示词决定，服务端仍校验参数、状态与乐观锁版本，并按 `JARVIS_AGENT_STAGE` 留痕。",
 		"- lark-cli：查询或操作飞书。先用 `lark-cli skills list` 查看能力目录并选定域，再用 `lark-cli skills read <域名>` 查工作流、`lark-cli schema <method>` 查单 API 参数；匹配到飞书 Skill 时先读取 Skill。",
 		"- lark-cli 默认用本机已登录的身份（`--as user` 是机器所有者，`--as bot` 是 Jarvis Bot）。给单条命令设 `LARKSUITE_CLI_APP_ID` + `LARKSUITE_CLI_USER_ACCESS_TOKEN` 可改用指定用户的 access token，此时该命令绕过本机凭证。这两个变量一旦进入 shell 环境，lark-cli 即进入 user strict 模式，同环境下所有 `--as bot` 命令都会被拒绝，因此只作单条命令前缀使用，不要 export。",
 		"- bytedcli：查询内部代码、commit、MR、issue 等研发信息。先用 `bytedcli --help` 查看领域，再用 `bytedcli --json <领域> --help` 查看该领域命令，最后用 `bytedcli --json <子命令路径> --help` 查看参数；不要加载全量帮助。",

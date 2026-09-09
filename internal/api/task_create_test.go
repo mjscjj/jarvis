@@ -28,3 +28,13 @@ func TestCreateTaskInputAcceptsProactiveSource(t *testing.T) {
 		t.Fatal("createTaskInput accepted unknown source")
 	}
 }
+
+func TestCreateTaskInputRecordsCallingAgentStage(t *testing.T) {
+	input, err := createTaskInput(createTaskRequest{SourceType: taskcreate.SourceProactive, Actor: "m5"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if input.SourceType != taskcreate.SourceProactive || input.ActorType != "m5" || input.EventDetail["channel"] != "m5_agent" {
+		t.Fatalf("input = %+v", input)
+	}
+}
