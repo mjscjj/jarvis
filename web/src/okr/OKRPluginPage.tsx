@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Card, Collapse, Empty, Flex, Select, Spin, Statistic, Table, Tabs, Tag, Typography } from 'antd'
 import { NodeIndexOutlined, ReloadOutlined } from '@ant-design/icons'
-import { listRelations, listWorldProgress } from '../api'
+import { listPages, listRelations, listWorldProgress } from '../api'
 import type { WorldProgress, WorldProgressSignal } from '../types'
 import { usePageContext } from '../pageContext'
 import { getGenericOKRBoard, getGenericOKRProgressBoard, listWeeklyReportWeeks } from './emily/api'
@@ -213,9 +213,12 @@ export default function OKRPluginPage() {
     setRelations([])
     setRelationsError(undefined)
     try {
-      const result = await listRelations({ nodeTypes: ['okr_objective', 'okr_kr', 'okr_point'] }, signal)
+      const [result, worldPages] = await Promise.all([
+        listRelations({ nodeTypes: ['okr_objective', 'okr_kr', 'okr_point'] }, signal),
+        listPages(true, signal),
+      ])
       if (signal?.aborted) return
-      setRelations(relationsForOKRBoard(result.items, nextBoard.objectives))
+      setRelations(relationsForOKRBoard(result.items, nextBoard.objectives, worldPages))
     } catch (cause) {
       if (!(cause instanceof DOMException && cause.name === 'AbortError')) setRelationsError(errorText(cause))
     } finally {
@@ -279,11 +282,42 @@ export default function OKRPluginPage() {
   })
 
   const relationColumns = [
-    { title: 'OKR 对象', dataIndex: 'okr_ref' },
-    { title: '关系', dataIndex: 'display_relation', width: 150 },
-    { title: '世界对象', dataIndex: 'world_ref' },
-    { title: '状态', dataIndex: 'confirmed_at', width: 90, render: (value: string | null) => <Tag color={value ? 'green' : 'default'}>{value ? '已确认' : '待确认'}</Tag> },
-    { title: '置信度', dataIndex: 'confidence', width: 100, render: (value: number | null) => value == null ? '—' : `${Math.round(value * 100)}%` },
+    {
+      title: 'OKR 内容',
+      key: 'okr',
+      render: (_: unknown, row: OKRRelationRow) => (
+        <Flex vertical gap={2}>
+          <Flex align="center" gap={8}>
+            <Tag color={row.okr_level === 'O' ? 'purple' : row.okr_level === 'KR' ? 'blue' : 'cyan'}>{row.okr_level}</Tag>
+            <Text strong>{row.okr_title}</Text>
+          </Flex>
+          {row.okr_context && <Text type="secondary">{row.okr_context}</Text>}
+        </Flex>
+      ),
+    },
+    { title: '关联方式', dataIndex: 'display_relation', width: 130 },
+    {
+      title: '现实对象',
+      key: 'world',
+      render: (_: unknown, row: OKRRelationRow) => (
+        <Flex align="center" gap={8}>
+          <Tag>{row.world_type_label}</Tag>
+          <Text strong>{row.world_name}</Text>
+        </Flex>
+      ),
+    },
+    { title: '确认情况', dataIndex: 'confirmed_at', width: 100, render: (value: string | null) => <Tag color={value ? 'green' : 'default'}>{value ? '已确认' : '待确认'}</Tag> },
+    {
+      title: '判断把握',
+      dataIndex: 'confidence',
+      width: 100,
+      render: (value: number | null) => {
+        if (value == null) return <Text type="secondary">未评估</Text>
+        if (value >= 0.9) return <Tag color="green">高</Tag>
+        if (value >= 0.7) return <Tag color="gold">中</Tag>
+        return <Tag>低</Tag>
+      },
+    },
   ]
   return (
     <div className="plugin-detail okr-plugin-page">
@@ -319,7 +353,7 @@ export default function OKRPluginPage() {
         <Card size="small"><Statistic title="子 KR" value={counts.points} /></Card>
         <Card size="small"><Statistic title="指标" value={counts.metrics} /></Card>
         <Card size="small"><Statistic title="Owner 出现项" value={counts.owners} /></Card>
-        <Card size="small"><Statistic title="世界关联" value={relations.length} /></Card>
+        <Card size="small"><Statistic title="现实关联" value={relations.length} /></Card>
       </Flex>
       <Tabs
         activeKey={activeTab}
@@ -344,15 +378,15 @@ export default function OKRPluginPage() {
           },
           {
             key: 'relations',
-            label: '世界关联',
+            label: '现实关联',
             children: relationsLoading ? <Spin /> : (
               <Flex vertical gap={16}>
-                <Alert type="info" showIcon message="OKR 结构始终完整展示；现实关系可以稀疏，未关联是正常状态。世界地图只接入已确认且可解析的关系，下表同时保留待确认关系供审阅，不会为了补齐图谱自动创建实体。" />
+                <Alert type="info" showIcon message="这里展示已找到的 OKR 与项目、关键事项或协作人的联系。没有关联也正常；待确认的联系会先保留，确认后才会出现在全景图中。" />
                 <Flex align="center" justify="space-between" gap={12} wrap>
-                  <Card size="small"><Statistic title="已确认世界关联" value={relations.filter((relation) => Boolean(relation.confirmed_at)).length} /></Card>
+                  <Card size="small"><Statistic title="已确认关联" value={relations.filter((relation) => Boolean(relation.confirmed_at)).length} /></Card>
                   <Button type="primary" icon={<NodeIndexOutlined />} onClick={() => navigate('background', { view: 'world-map' })}>打开 OKR 全景</Button>
                 </Flex>
-                {relations.length === 0 ? <Empty description="尚未建立 OKR 到项目、关键事项或人物的强关系" /> : (
+                {relations.length === 0 ? <Empty description="尚未找到 OKR 与项目、关键事项或协作人的关联" /> : (
                   <Table<OKRRelationRow> rowKey="id" columns={relationColumns} dataSource={relations} pagination={false} />
                 )}
               </Flex>

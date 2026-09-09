@@ -148,7 +148,11 @@ func (s *Service) PollDeviceLogin(ctx context.Context, loginID string) (DeviceLo
 	pending, ok := s.deviceLogins[loginID]
 	if !ok {
 		s.deviceMu.Unlock()
-		return DeviceLoginPoll{}, "", ErrDeviceLoginNotFound
+		// Device authorizations are intentionally process-local. A restart while
+		// the user is approving in Feishu therefore loses this entry. Report the
+		// flow as expired so the browser can offer a fresh login instead of
+		// surfacing an internal 404 as a page navigation error.
+		return DeviceLoginPoll{Status: DeviceLoginExpired}, "", nil
 	}
 	if !pending.expiresAt.After(now) {
 		delete(s.deviceLogins, loginID)

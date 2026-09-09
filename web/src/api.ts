@@ -76,6 +76,7 @@ import type {
   Plugin,
   PluginAuthorization,
   WorldProgress,
+  WorldProgressSignal,
   EntityRelation,
   ProactiveRun,
   ProactiveRunDetail,
@@ -751,6 +752,33 @@ export async function findWorldProgress(
 
 export function listWorldProgress(periodKey: string, signal?: AbortSignal): Promise<{ items: WorldProgress[] }> {
   return request<{ items: WorldProgress[] }>(`/api/world-progress/period/${encodeURIComponent(periodKey)}`, { signal })
+}
+
+export interface WorldProgressCreateInput {
+  expected_version: 0
+  subject_type: string
+  subject_id: string
+  period_key: string
+  signal: WorldProgressSignal
+  summary: string
+  evidence: Record<string, unknown>
+  evidence_until: string
+}
+
+export interface WorldProgressUpdateInput {
+  expected_version: number
+  signal: WorldProgressSignal
+  summary: string
+  evidence: Record<string, unknown>
+  evidence_until: string
+}
+
+export function createWorldProgress(body: WorldProgressCreateInput): Promise<WorldProgress> {
+  return request<WorldProgress>('/api/world-progress', { method: 'POST', body })
+}
+
+export function updateWorldProgress(id: number, body: WorldProgressUpdateInput): Promise<WorldProgress> {
+  return request<WorldProgress>(`/api/world-progress/${id}`, { method: 'PUT', body })
 }
 
 export interface RelationQuery {

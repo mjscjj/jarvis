@@ -35,6 +35,7 @@ import {
   createPerson,
   createProject,
   createResource,
+  createWorldProgress,
   deletePerson,
   deleteProject,
   deleteResource,
@@ -42,6 +43,7 @@ import {
   exportProject,
   getProfile,
   getSkillContent,
+  findWorldProgress,
   listGroups,
   listKeyMatters,
   listPersons,
@@ -60,6 +62,7 @@ import {
   updateProfile,
   updateProject,
   updateResource,
+  updateWorldProgress,
   updateSkill,
 } from './api'
 import { keyMatterToInput, replaceKeyMatter } from './keyMatters'
@@ -100,6 +103,8 @@ import type {
   ResourceType,
   SkillStage,
   WorkRuleStage,
+  WorldProgress,
+  WorldProgressSignal,
 } from './types'
 import './styles/review-memory.css'
 
@@ -124,6 +129,155 @@ function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
 }
 
+function isoWeekKey(value: Date): string {
+  const date = new Date(Date.UTC(value.getFullYear(), value.getMonth(), value.getDate()))
+  const weekday = date.getUTCDay() || 7
+  date.setUTCDate(date.getUTCDate() + 4 - weekday)
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1))
+  const number = Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)
+  return date.getUTCFullYear() + '-W' + String(number).padStart(2, '0')
+}
+
+function recentISOWeekKeys(count: number): string[] {
+  const anchor = new Date()
+  return Array.from({ length: count }, (_, index) => {
+    const date = new Date(anchor)
+    date.setDate(date.getDate() - index * 7)
+    return isoWeekKey(date)
+  }).filter((value, index, values) => values.indexOf(value) === index)
+}
+
+const projectProgressSignalLabels: Record<WorldProgressSignal, string> = {
+  unknown: '未判断', green: '正常', yellow: '需关注', red: '有风险',
+}
+
+const emptyProjectProgress = '## 本周重点\n\n## 当前进展\n\n## 风险\n\n## 下周计划'
+
+function ProjectProgressEditor({ projectId, autoFocus = false }: { projectId: number; autoFocus?: boolean }) {
+  const periodOptions = useMemo(() => recentISOWeekKeys(8), [])
+  const [periodKey, setPeriodKey] = useState(() => periodOptions[0])
+  const [progress, setProgress] = useState<WorldProgress | null>(null)
+  const [draft, setDraft] = useState(emptyProjectProgress)
+  const [statusSignal, setStatusSignal] = useState<WorldProgressSignal>('unknown')
+  const [loading, setLoading] = useState(true)
+  const [loadSucceeded, setLoadSucceeded] = useState(false)
+  const [reloadRevision, setReloadRevision] = useState(0)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string>()
+  const [saved, setSaved] = useState(false)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    setLoading(true)
+    setLoadSucceeded(false)
+    setProgress(null)
+    setDraft(emptyProjectProgress)
+    setStatusSignal('unknown')
+    setError(undefined)
+    setSaved(false)
+    findWorldProgress('project', String(projectId), periodKey, controller.signal)
+      .then((result) => {
+        if (controller.signal.aborted) return
+        setProgress(result)
+        setDraft(result?.summary || emptyProjectProgress)
+        setStatusSignal(result?.signal || 'unknown')
+        setLoadSucceeded(true)
+      })
+      .catch((cause: unknown) => {
+        if (!(cause instanceof DOMException && cause.name === 'AbortError')) setError(errorText(cause))
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false)
+    })
+    return () => controller.abort()
+  }, [periodKey, projectId, reloadRevision])
+
+  const save = async () => {
+    if (!draft.trim()) {
+      setError('请填写本周进展')
+      return
+    }
+    setSaving(true)
+    setError(undefined)
+    setSaved(false)
+    const evidenceUntil = dayjs().endOf('day').toISOString()
+    try {
+      const savedProgress = progress
+        ? await updateWorldProgress(progress.id, {
+          expected_version: progress.version,
+          signal: statusSignal,
+          summary: draft,
+          evidence: progress.evidence || {},
+          evidence_until: evidenceUntil,
+        })
+        : await createWorldProgress({
+          expected_version: 0,
+          subject_type: 'project',
+          subject_id: String(projectId),
+          period_key: periodKey,
+          signal: statusSignal,
+          summary: draft,
+          evidence: {},
+          evidence_until: evidenceUntil,
+        })
+      setProgress(savedProgress)
+      setDraft(savedProgress.summary)
+      setStatusSignal(savedProgress.signal)
+      setSaved(true)
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Card
+      size="small"
+      title={<Flex align="center" gap={8}><span>进展</span><Tag color="blue">{periodKey}</Tag></Flex>}
+      extra={(
+        <Select
+          size="small"
+          value={periodKey}
+          onChange={setPeriodKey}
+          options={periodOptions.map((value) => ({ value, label: value }))}
+        />
+      )}
+    >
+      {error && <Alert type="error" showIcon title="进展读取或保存失败" description={error} closable onClose={() => setError(undefined)} />}
+      {loading ? <div style={{ padding: 24, textAlign: 'center' }}><Spin /></div> : !loadSucceeded ? (
+        <Flex justify="center" style={{ padding: 24 }}><Button onClick={() => setReloadRevision((value) => value + 1)}>重新加载</Button></Flex>
+      ) : (
+        <Space orientation="vertical" size={12} style={{ width: '100%' }}>
+          <Flex align="center" justify="space-between" gap={12} wrap>
+            <Text type="secondary">用自然语言记录本周重点、当前进展、风险和下周计划。</Text>
+            <Select
+              size="small"
+              value={statusSignal}
+              onChange={(value) => { setStatusSignal(value); setSaved(false) }}
+              options={Object.entries(projectProgressSignalLabels).map(([value, label]) => ({ value, label }))}
+            />
+          </Flex>
+          <Input.TextArea
+            value={draft}
+            onChange={(event) => { setDraft(event.target.value); setSaved(false) }}
+            autoSize={{ minRows: 8, maxRows: 20 }}
+            autoFocus={autoFocus}
+            placeholder={'## 本周重点\n\n## 当前进展\n\n## 风险\n\n## 下周计划'}
+          />
+          <Flex justify="space-between" align="center" gap={8} wrap>
+            <Text type="secondary">按周保存，可切换周次回看。</Text>
+            <Flex align="center" gap={8}>
+              {saved && <Text type="success">已保存</Text>}
+              <Button type="primary" onClick={() => void save()} loading={saving}>保存进展</Button>
+            </Flex>
+          </Flex>
+        </Space>
+      )}
+    </Card>
+  )
+}
+
 // --- Projects ---
 
 function ProjectsPanel() {
@@ -135,6 +289,7 @@ function ProjectsPanel() {
   const [submitting, setSubmitting] = useState(false)
   const [form] = Form.useForm<ProjectInput>()
   const [detail, setDetail] = useState<Project>()
+  const [detailEntry, setDetailEntry] = useState<'overview' | 'progress'>('overview')
   const [eventOpen, setEventOpen] = useState(false)
   const [eventDescription, setEventDescription] = useState('')
   const [eventSubmitting, setEventSubmitting] = useState(false)
@@ -155,6 +310,11 @@ function ProjectsPanel() {
   }, [])
   useEffect(reload, [reload])
   useEffect(() => setRepositories([]), [detail?.id])
+
+  const openDetail = (project: Project, entry: 'overview' | 'progress' = 'overview') => {
+    setDetailEntry(entry)
+    setDetail(project)
+  }
 
   const openCreate = () => {
     setEditing(null)
@@ -242,7 +402,7 @@ function ProjectsPanel() {
           onOk: async () => {
             try {
               const created = await importProject(bundle)
-              setDetail(created)
+              openDetail(created)
               reload()
             } catch (cause: unknown) {
               setError(errorText(cause))
@@ -270,7 +430,7 @@ function ProjectsPanel() {
     try {
       const created = await duplicateProject(copySource.id, values.name, values.code || null)
       setCopyOpen(false)
-      setDetail(created)
+      openDetail(created)
       reload()
     } catch (cause: unknown) {
       setError(errorText(cause))
@@ -299,9 +459,10 @@ function ProjectsPanel() {
     { title: '优先级', dataIndex: 'priority', width: 90 },
     { title: '长期事实', dataIndex: 'summary', ellipsis: true, render: (v: string | null) => summaryIndexLine(v) || '—' },
     {
-      title: '操作', width: 200, render: (_, p) => (
+      title: '操作', width: 270, render: (_, p) => (
         <Flex gap={8}>
-          <Button size="small" onClick={(event) => { event.stopPropagation(); setDetail(p) }}>详情</Button>
+          <Button size="small" type="primary" onClick={(event) => { event.stopPropagation(); openDetail(p, 'progress') }}>进展</Button>
+          <Button size="small" onClick={(event) => { event.stopPropagation(); openDetail(p) }}>详情</Button>
           <Button size="small" onClick={(event) => { event.stopPropagation(); openEdit(p) }}>编辑</Button>
           <Popconfirm title="归档该项目？" onConfirm={() => remove(p)} okText="归档" cancelText="取消">
             <Button size="small" danger onClick={(event) => event.stopPropagation()}>归档</Button>
@@ -317,7 +478,7 @@ function ProjectsPanel() {
       <Flex gap={8}><Button onClick={chooseProjectBundle}>导入项目</Button><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={openCreate}>新建项目</Button></Flex>
     </Flex>
     {error && <Alert type="error" showIcon title="项目操作失败" description={error} closable onClose={() => setError(undefined)} />}
-    <Card className="table-card" variant="borderless"><Table<Project> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} onRow={(project) => ({ onClick: () => setDetail(project), className: 'clickable-row' })} /></Card>
+    <Card className="table-card" variant="borderless"><Table<Project> rowKey="id" columns={columns} dataSource={items} loading={loading} pagination={false} onRow={(project) => ({ onClick: () => openDetail(project), className: 'clickable-row' })} /></Card>
     <Modal title={editing ? '编辑项目' : '新建项目'} open={open} confirmLoading={submitting} onOk={submit} onCancel={() => setOpen(false)} okText="保存" destroyOnHidden>
       <Form form={form} layout="vertical">
         <Form.Item name="name" label="项目名" rules={[{ required: true, message: '请输入项目名' }]}><Input /></Form.Item>
@@ -335,21 +496,24 @@ function ProjectsPanel() {
         <Form.Item name="code" label="项目代号(可选)"><Input allowClear /></Form.Item>
       </Form>
     </Modal>
-    <Drawer title={detail?.name || '项目详情'} open={Boolean(detail)} size={720} onClose={() => setDetail(undefined)}>
+    <Drawer title={detail?.name || '项目详情'} open={Boolean(detail)} size={720} onClose={() => { setDetail(undefined); setDetailEntry('overview') }}>
       {detail && <Space orientation="vertical" size={20} style={{ width: '100%' }}>
         <Flex gap={8}>
           <Button onClick={() => void downloadProject(detail)}>分享项目</Button>
           <Button onClick={() => openCopy(detail)}>复制项目</Button>
           <Button loading={resolvingRepositories} onClick={() => void resolveRepositories(detail)}>扫描 Codebase 仓库</Button>
         </Flex>
-        <Descriptions column={2} size="small">
-          <Descriptions.Item label="状态"><Tag>{projectStatusLabels[detail.status]}</Tag></Descriptions.Item>
-          <Descriptions.Item label="我的角色">{projectRoleLabels[detail.role]}</Descriptions.Item>
-          <Descriptions.Item label="优先级">{detail.priority}</Descriptions.Item>
-          <Descriptions.Item label="项目代号">{detail.code || '—'}</Descriptions.Item>
-          <Descriptions.Item label="最近实质进展" span={2}>{detail.last_progress_at ? dayjs(detail.last_progress_at).format('YYYY-MM-DD HH:mm') : '—'}</Descriptions.Item>
-        </Descriptions>
-        <SummaryPageEditor type="project" id={detail.id} />
+        <Card size="small" title="项目概览">
+          <Descriptions column={2} size="small">
+            <Descriptions.Item label="状态"><Tag>{projectStatusLabels[detail.status]}</Tag></Descriptions.Item>
+            <Descriptions.Item label="我的角色">{projectRoleLabels[detail.role]}</Descriptions.Item>
+            <Descriptions.Item label="优先级">{detail.priority}</Descriptions.Item>
+            <Descriptions.Item label="项目代号">{detail.code || '—'}</Descriptions.Item>
+            <Descriptions.Item label="最近实质进展" span={2}>{detail.last_progress_at ? dayjs(detail.last_progress_at).format('YYYY-MM-DD HH:mm') : '—'}</Descriptions.Item>
+          </Descriptions>
+        </Card>
+        <ProjectProgressEditor projectId={detail.id} autoFocus={detailEntry === 'progress'} />
+        <SummaryPageEditor type="project" id={detail.id} defaultCollapsed />
         <RelatedOKRCard type="project" id={detail.id} />
         {repositories.length > 0 && (
           <Card size="small" title="Codebase 仓库">

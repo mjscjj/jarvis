@@ -87,6 +87,21 @@ func TestOKRPlanRoutesUseOwnLifecycle(t *testing.T) {
 	if objectiveResponse.StatusCode() != 201 {
 		t.Fatalf("create objective status=%d body=%s", objectiveResponse.StatusCode(), objectiveResponse.Body())
 	}
+	pointPatchBody := `{"title":"更新后的产品 KR","owners":[{"open_id":"ou_b","name":"乙"}]}`
+	pointPatchResponse := ut.PerformRequest(h.Engine, "PATCH", "/api/biz-okr/plans/"+created.Data.ID+"/points/plan-p/definition", &ut.Body{Body: strings.NewReader(pointPatchBody), Len: len(pointPatchBody)}).Result()
+	if pointPatchResponse.StatusCode() != 200 {
+		t.Fatalf("patch plan point status=%d body=%s", pointPatchResponse.StatusCode(), pointPatchResponse.Body())
+	}
+	planResponse := ut.PerformRequest(h.Engine, "GET", "/api/biz-okr/plans/"+created.Data.ID, nil).Result()
+	var patchedPlan struct {
+		Data okrworkspace.PlanView `json:"data"`
+	}
+	if err := json.Unmarshal(planResponse.Body(), &patchedPlan); err != nil {
+		t.Fatal(err)
+	}
+	if point := patchedPlan.Data.Objectives[0].KRs[0].Points[0]; point.Title != "更新后的产品 KR" || len(point.Owners) != 1 || point.Owners[0].Name != "乙" {
+		t.Fatalf("patched plan point = %+v", point)
+	}
 	reorderBody := `{"ids":["plan-o"]}`
 	reorderResponse := ut.PerformRequest(h.Engine, "PUT", "/api/biz-okr/plans/"+created.Data.ID+"/objectives/order", &ut.Body{Body: strings.NewReader(reorderBody), Len: len(reorderBody)}).Result()
 	if reorderResponse.StatusCode() != 200 {

@@ -100,7 +100,7 @@ created_at
 
 `world_progress` 使用 `(subject_type, subject_id, period_key)` 唯一键，保存 `signal`、自然语言 `summary`、宽松 `evidence`、`evidence_until`、`assessed_at` 和 CAS `version`。`signal` 只提供 `unknown/green/yellow/red` 四种机器可筛选颜色；具体处境、变化、风险和下一观察点都写在 summary。`assessed_at` 是 Jarvis 形成判断的时间，`evidence_until` 是本次判断所覆盖证据的截止时间，两者不能混用。
 
-它不是 Fact，不冒充客观事件，也不替代外部产品的正式进展。首个主体适配器接受 `okr_objective`、`okr_kr` 和 `okr_point`：创建和更新时确认 OKR 模块已启用且对应 O、KR 或 Point 存在；读取历史行不依赖模块当前可用。相同内容更新是 no-op，不递增版本或刷新评估时间。
+它不是 Fact，不冒充客观事件，也不替代外部产品的正式进展。主体适配器接受未归档的 `project`，以及已启用 OKR 模块中真实存在的 `okr_objective`、`okr_kr` 和 `okr_point`：创建和更新时确认对应主体存在；读取历史行不依赖模块当前可用。相同内容更新是 no-op，不递增版本或刷新评估时间。
 
 ### 6.2 接口
 

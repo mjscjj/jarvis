@@ -14,7 +14,7 @@ function linkLabel(link: PageLink): string {
   return link.name ? `${link.name} (${link.type}:${link.id})` : `${link.type}:${link.id}`
 }
 
-export default function SummaryPageEditor({ type, id }: { type: PageType; id: number }) {
+export default function SummaryPageEditor({ type, id, defaultCollapsed = false }: { type: PageType; id: number; defaultCollapsed?: boolean }) {
   const [page, setPage] = useState<PageView>()
   const [draft, setDraft] = useState('')
   const [loading, setLoading] = useState(false)
@@ -22,6 +22,7 @@ export default function SummaryPageEditor({ type, id }: { type: PageType; id: nu
   const [error, setError] = useState<string>()
   const [conflict, setConflict] = useState<PageView>()
   const [saved, setSaved] = useState(false)
+  const [collapsed, setCollapsed] = useState(defaultCollapsed)
 
   const load = useCallback(() => {
     const controller = new AbortController()
@@ -43,6 +44,7 @@ export default function SummaryPageEditor({ type, id }: { type: PageType; id: nu
   }, [type, id])
 
   useEffect(() => load(), [load])
+  useEffect(() => setCollapsed(defaultCollapsed), [defaultCollapsed, id, type])
 
   const applyCurrent = (current: PageView) => {
     setPage(current)
@@ -101,7 +103,11 @@ export default function SummaryPageEditor({ type, id }: { type: PageType; id: nu
             {charCount} / {maxChars}
           </Text>
         )}
+        <Button type="link" size="small" onClick={() => setCollapsed((value) => !value)}>{collapsed ? '展开' : '收起'}</Button>
       </Flex>
+      {collapsed ? (
+        <Text type="secondary">{page?.summary?.split(/\r?\n/, 1)[0] || '暂无长期事实'}</Text>
+      ) : <>
       {error && <Alert type="error" showIcon title="长期事实保存失败" description={error} closable onClose={() => setError(undefined)} />}
       {saved && <Alert type="success" showIcon title="长期事实已保存" closable onClose={() => setSaved(false)} />}
       {conflict && (
@@ -155,6 +161,7 @@ export default function SummaryPageEditor({ type, id }: { type: PageType; id: nu
         <Button onClick={() => load()} disabled={saving || loading}>重新加载</Button>
         <Button type="primary" onClick={save} loading={saving} disabled={!page}>保存长期事实</Button>
       </Flex>
+      </>}
     </Card>
   )
 }

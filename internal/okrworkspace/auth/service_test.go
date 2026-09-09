@@ -132,8 +132,9 @@ func TestServiceCompletesDeviceIdentitySession(t *testing.T) {
 	if want := now.Add(24 * time.Hour); !current.ExpiresAt.Equal(want) {
 		t.Fatalf("session expiry = %s, want %s", current.ExpiresAt, want)
 	}
-	if _, _, err := service.PollDeviceLogin(context.Background(), login.ID); !errors.Is(err, ErrDeviceLoginNotFound) {
-		t.Fatalf("completed login was reusable: %v", err)
+	poll, _, err = service.PollDeviceLogin(context.Background(), login.ID)
+	if err != nil || poll.Status != DeviceLoginExpired {
+		t.Fatalf("completed login follow-up poll = %+v, %v; want expired", poll, err)
 	}
 	if err := service.Logout(context.Background(), token); err != nil {
 		t.Fatal(err)
@@ -167,6 +168,35 @@ func TestServiceHandlesDevicePendingSlowDownAndExpiry(t *testing.T) {
 	poll, _, err = service.PollDeviceLogin(context.Background(), login.ID)
 	if err != nil || poll.Status != DeviceLoginExpired {
 		t.Fatalf("expired poll = %+v, %v", poll, err)
+	}
+}
+
+func TestServiceTreatsDeviceLoginLostAcrossRestartAsExpired(t *testing.T) {
+	now := time.Date(2026, 9, 1, 8, 0, 0, 0, time.UTC)
+	provider := &fakeProvider{authorization: DeviceAuthorization{
+		DeviceCode: "device-secret", VerificationURL: "https://accounts.example/device",
+		ExpiresIn: 10 * time.Minute, PollInterval: time.Second,
+	}}
+	db := authTestDB(t)
+	tokens := authTestTokenStore(t)
+	beforeRestart, err := NewService(db, moduleconfig.IdentityConfig{Enabled: true, SessionTTLHours: 24}, provider, tokens)
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeRestart.now = func() time.Time { return now }
+	login, err := beforeRestart.BeginDeviceLogin(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	afterRestart, err := NewService(db, moduleconfig.IdentityConfig{Enabled: true, SessionTTLHours: 24}, provider, tokens)
+	if err != nil {
+		t.Fatal(err)
+	}
+	afterRestart.now = func() time.Time { return now.Add(time.Second) }
+	poll, token, err := afterRestart.PollDeviceLogin(context.Background(), login.ID)
+	if err != nil || token != "" || poll.Status != DeviceLoginExpired {
+		t.Fatalf("post-restart poll = %+v, token=%q, err=%v; want expired", poll, token, err)
 	}
 }
 

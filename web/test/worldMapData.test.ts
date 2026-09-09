@@ -28,7 +28,7 @@ test('active graph preserves explicit reference direction and counts facts', () 
   assert.deepEqual(graphCounts(graph), { nodes: 3, links: 2, facts: 13 })
 })
 
-test('OKR lens shows native hierarchy but requires persisted relations for world owners', () => {
+test('OKR lens derives the principal objective roots and known world owners from native OKR ownership', () => {
   const objectives: Objective[] = [{
     id: 'o-1',
     title: '稳定交付',
@@ -38,13 +38,23 @@ test('OKR lens shows native hierarchy but requires persisted relations for world
       points: [{ id: 'point-1', kind: 'strategy', title: '灰度发布', entries: [], owners: [{ openId: 'ou_person', name: '协作者' }] }],
     }],
   }]
-  const graph = buildOKRGraph({ objectives, relations: [], activePages: pages, fullIndex: index, objectiveId: 'o-1' })
+  const identities = [
+    { openId: 'ou_me', pageType: 'principal' as const, pageId: 1 },
+    { openId: 'ou_me', pageType: 'person' as const, pageId: 99 },
+    { openId: 'ou_person', pageType: 'person' as const, pageId: 3 },
+  ]
+  const graph = buildOKRGraph({ objectives, relations: [], activePages: pages, fullIndex: index, identities, objectiveId: 'o-1' })
 
   assert.deepEqual(new Set(graph.nodes.map((node) => node.id)), new Set([
-    'okr_objective:o-1', 'okr_kr:kr-1', 'okr_point:point-1',
+    'principal:1', 'person:3', 'okr_objective:o-1', 'okr_kr:kr-1', 'okr_point:point-1',
   ]))
   assert.equal(graph.links.filter((link) => link.relationType === 'contains').length, 2)
-  assert.equal(graph.links.filter((link) => link.relationType === 'owned_by').length, 0)
+  assert.ok(graph.links.some((link) => link.source === 'principal:1' && link.target === 'okr_objective:o-1' && link.relationType === 'owns'))
+  assert.ok(graph.links.some((link) => link.source === 'okr_kr:kr-1' && link.target === 'principal:1' && link.relationType === 'owned_by'))
+  assert.ok(graph.links.some((link) => link.source === 'okr_point:point-1' && link.target === 'person:3' && link.relationType === 'owned_by'))
+  assert.equal(graph.nodes.some((node) => node.name === '临时协作者'), false)
+  assert.equal(graph.nodes.some((node) => node.id === 'person:99'), false)
+  assert.deepEqual(okrWorldPageRefs(objectives, [], identities), [{ type: 'principal', id: 1 }, { type: 'person', id: 3 }])
 })
 
 test('OKR lens keeps the complete quarter hierarchy in overview and combines confirmed canonical relations', () => {
@@ -86,7 +96,6 @@ test('OKR world pages are loaded from confirmed canonical targets even when abse
   ]
   assert.deepEqual(okrWorldPageRefs(objectives, relations), [
     { type: 'project', id: 19 },
-    { type: 'person', id: 71 },
   ])
 })
 

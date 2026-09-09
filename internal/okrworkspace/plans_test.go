@@ -130,6 +130,75 @@ func TestPlanObjectiveWritesConflictOnlyWithinOneObjective(t *testing.T) {
 	}
 }
 
+func TestPlanPointDefinitionPatchesDoNotOverwriteSiblingPoints(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := service.CreatePlan(t.Context(), CreatePlanInput{Quarter: "2026-Q3", Title: "concurrent points"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err = service.CreatePlanObjective(t.Context(), plan.ID, PlanObjectiveView{
+		ID: "plan-o", Title: "O", KRs: []PlanKRView{{
+			ID: "plan-kr", Title: "KR", Points: []PlanPointView{
+				{ID: "strategy-point", Kind: domain.PointKindStrategy, Title: "旧策略 KR"},
+				{ID: "product-point", Kind: domain.PointKindProduct, Title: "旧产品 KR"},
+			},
+		}},
+	}, "creator")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	strategyTitle := "战宇琼填写的策略 KR"
+	strategyResult, err := service.PatchPlanPointDefinition(t.Context(), plan.ID, "strategy-point", PatchPointDefinitionInput{Title: &strategyTitle, UpdatedBy: "strategy-editor"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	productTitle := "罗沙填写的产品 KR"
+	owners := []OwnerView{{OpenID: "ou_luosha", Name: "罗沙"}}
+	productResult, err := service.PatchPlanPointDefinition(t.Context(), plan.ID, "product-point", PatchPointDefinitionInput{Title: &productTitle, Owners: &owners, UpdatedBy: "product-editor"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := service.GetPlan(t.Context(), plan.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	points := loaded.Objectives[0].KRs[0].Points
+	if points[0].Title != strategyTitle || points[1].Title != productTitle || len(points[1].Owners) != 1 || points[1].Owners[0].Name != "罗沙" {
+		t.Fatalf("independent point patches overwrote each other: %+v", points)
+	}
+	if strategyResult.ObjectiveVersion >= productResult.ObjectiveVersion || productResult.PlanVersion != loaded.Version {
+		t.Fatalf("parent versions were not advanced: strategy=%+v product=%+v plan=%+v", strategyResult, productResult, loaded)
+	}
+}
+
+func TestCommittedPointDefinitionPatchRejectsPlanPoint(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := service.CreatePlan(t.Context(), CreatePlanInput{Quarter: "2026-Q3", Title: "scope"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.CreatePlanObjective(t.Context(), plan.ID, PlanObjectiveView{
+		ID: "plan-o", Title: "O", KRs: []PlanKRView{{ID: "plan-kr", Title: "KR", Points: []PlanPointView{{ID: "plan-point", Kind: domain.PointKindProduct, Title: "旧标题"}}}},
+	}, "creator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	title := "越过 Plan 边界"
+	if _, err := service.PatchPointDefinition(t.Context(), "plan-point", PatchPointDefinitionInput{Title: &title}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("committed endpoint accepted a Plan point: %v", err)
+	}
+}
+
 func TestPlanObjectiveReorderReturnsPersistedCanonicalPlan(t *testing.T) {
 	db := openWorkspaceTestDB(t)
 	service, err := NewService(db)

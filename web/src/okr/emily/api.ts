@@ -82,6 +82,26 @@ interface APIPlanSummary {
   updated_at: string
 }
 
+interface APIPointDefinitionPatchResult {
+  point_id: string
+  kr_id: string
+  kr_version: number
+  objective_id: string
+  objective_version: number
+  plan_id?: string
+  plan_version?: number
+}
+
+export interface PointDefinitionPatchResult {
+  pointId: string
+  krId: string
+  krVersion: number
+  objectiveId: string
+  objectiveVersion: number
+  planId?: string
+  planVersion?: number
+}
+
 interface APIPlanList {
   quarter: string
   available_quarters: string[]
@@ -675,6 +695,25 @@ export async function updateOKRPlanObjective(planId: string, objective: Objectiv
       throw new APIError(error.message, error.status, error.code, fromAPIPlan(error.data as APIPlan), error.logid)
     }
     throw error
+  }
+}
+
+export async function patchPointDefinition(input: { pointId: string; planId?: string; title?: string; owners?: KrOwner[] }): Promise<PointDefinitionPatchResult> {
+  const path = input.planId
+    ? `/api/biz-okr/plans/${encodeURIComponent(input.planId)}/points/${encodeURIComponent(input.pointId)}/definition`
+    : `/api/okr/points/${encodeURIComponent(input.pointId)}/definition`
+  const body: { title?: string; owners?: Array<{ open_id: string; name: string }> } = {}
+  if (input.title !== undefined) body.title = input.title
+  if (input.owners !== undefined) body.owners = input.owners.map((owner) => ({ open_id: owner.openId, name: owner.name }))
+  const value = await request<APIPointDefinitionPatchResult>(path, { method: 'PATCH', body: JSON.stringify(body) })
+  return {
+    pointId: value.point_id,
+    krId: value.kr_id,
+    krVersion: value.kr_version,
+    objectiveId: value.objective_id,
+    objectiveVersion: value.objective_version,
+    planId: value.plan_id,
+    planVersion: value.plan_version,
   }
 }
 

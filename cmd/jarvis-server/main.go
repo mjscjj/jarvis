@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 	"jarvis/internal/config"
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/dailydigest"
+	"jarvis/internal/domain"
 	"jarvis/internal/effectops"
 	"jarvis/internal/embedding"
 	"jarvis/internal/execute"
@@ -561,6 +563,8 @@ func main() {
 	}
 	worldProgressService, err := worldprogress.NewService(db, func(ctx context.Context, subjectType, subjectID string) error {
 		switch subjectType {
+		case "project":
+			return validateProjectWorldProgressSubject(ctx, db, subjectID)
 		case "okr_objective", "okr_kr", "okr_point":
 		default:
 			return errors.Join(worldprogress.ErrInvalidInput, fmt.Errorf("unsupported world progress subject type %q", subjectType))
@@ -1201,4 +1205,19 @@ func main() {
 	infof("jarvis-server listening on %s", cfg.Server.Addr)
 	// Spin 阻塞运行并处理优雅退出（SIGINT/SIGTERM/SIGHUP）。
 	h.Spin()
+}
+
+func validateProjectWorldProgressSubject(ctx context.Context, db *gorm.DB, subjectID string) error {
+	projectID, err := strconv.ParseUint(strings.TrimSpace(subjectID), 10, 64)
+	if err != nil || projectID == 0 {
+		return worldprogress.ErrNotFound
+	}
+	var count int64
+	if err := db.WithContext(ctx).Model(&domain.Project{}).Where("id = ? AND status <> ?", projectID, "archived").Count(&count).Error; err != nil {
+		return err
+	}
+	if count == 0 {
+		return worldprogress.ErrNotFound
+	}
+	return nil
 }

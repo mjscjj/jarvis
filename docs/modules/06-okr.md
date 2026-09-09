@@ -75,7 +75,7 @@ Jarvis 世界模型
 
 周报催填的收件人判断和个性化文案仍由 Biz OKR Prompt/Skill 所有；实际外发统一调用无模块门禁的 `feishu-broadcast` Skill，由“Jarvis通知机器人”直接私聊负责人并返回逐人送达回执，不再创建或维护 OKR 催填助手群。
 
-Objective→KR、KR→Metric/Point 和 Owner 等 OKR 内部关系由 OKR 原生结构派生，不复制进 `EntityRelation`。只有 OKR 到 Project、KeyMatter、Resource 等跨模块、有证据的强关系才进入通用关系存储。
+Objective→KR、KR→Metric/Point 和 Owner 等 OKR 内部关系由 OKR 原生结构派生，不复制进 `EntityRelation`。OKR 全景把当前 Principal 直接连到季度顶层 Objective，并按 `open_id` 将 KR/Point Owner 连到已经存在的 Principal/Person；不会为未建模的 Owner 创建人物。只有 OKR 到 Project、KeyMatter、Resource 等跨模块、有证据的强关系才进入通用关系存储。
 
 ## 配置与启动
 

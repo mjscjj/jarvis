@@ -119,6 +119,71 @@ func TestKRDefinitionRouteEditsOnlyWordingAndPeople(t *testing.T) {
 	}
 }
 
+func TestPointDefinitionRoutePatchesOnlyOneExistingPoint(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := okrworkspace.MigrateCore(db); err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range []any{
+		&domain.Objective{ID: "o-1", Quarter: "2026-Q3", Title: "O"},
+		&domain.KR{ID: "kr-1", ObjectiveID: "o-1", Title: "KR"},
+		&domain.KRPoint{ID: "strategy", KRID: "kr-1", Kind: domain.PointKindStrategy, Title: "旧策略"},
+		&domain.KRPoint{ID: "product", KRID: "kr-1", Kind: domain.PointKindProduct, Title: "旧产品"},
+	} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	workspace, err := okrworkspace.NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	images, err := okrworkspace.NewImageStore(t.TempDir(), 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := server.New()
+	if err := RegisterOKRModuleRoutes(h, OKRModuleDependencies{
+		Workspace: workspace, Images: images,
+		Enabled: func(context.Context) (bool, error) { return true, nil },
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, request := range []struct {
+		id, body string
+	}{
+		{"strategy", `{"title":"新策略"}`},
+		{"product", `{"title":"新产品","owners":[{"open_id":"ou_owner","name":"负责人"}]}`},
+	} {
+		response := ut.PerformRequest(h.Engine, "PATCH", "/api/okr/points/"+request.id+"/definition", &ut.Body{Body: strings.NewReader(request.body), Len: len(request.body)}).Result()
+		if response.StatusCode() != 200 {
+			t.Fatalf("patch %s status=%d body=%s", request.id, response.StatusCode(), response.Body())
+		}
+	}
+	view, err := workspace.GetCoreKR(t.Context(), "kr-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	points := make(map[string]okrworkspace.PointView, len(view.Points))
+	for _, point := range view.Points {
+		points[point.ID] = point
+	}
+	if view.Version != 2 || points["strategy"].Title != "新策略" || points["product"].Title != "新产品" || len(points["product"].Owners) != 1 {
+		t.Fatalf("point patches = %+v", view)
+	}
+
+	for _, body := range []string{`{}`, `{"title":" "}`, `{"owners":[],"extra":true}`} {
+		response := ut.PerformRequest(h.Engine, "PATCH", "/api/okr/points/strategy/definition", &ut.Body{Body: strings.NewReader(body), Len: len(body)}).Result()
+		if response.StatusCode() != 400 {
+			t.Fatalf("invalid body %s status=%d body=%s", body, response.StatusCode(), response.Body())
+		}
+	}
+}
+
 func TestGenericKRRouteCanMaintainDecompositionWithoutBizSchema(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {

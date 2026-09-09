@@ -3,9 +3,9 @@ import { AimOutlined, CompressOutlined, FullscreenExitOutlined, FullscreenOutlin
 import { Alert, Button, Empty, Input, Popover, Segmented, Select, Space, Spin, Switch, Tag, Tooltip } from 'antd'
 import type { ForceGraphMethods, NodeObject } from 'react-force-graph-2d'
 import ForceGraph2D from 'react-force-graph-2d'
-import { getPage, listAppModules, listPages, listRelations } from '../api'
+import { getPage, getProfile, listAppModules, listPages, listPersons, listRelations } from '../api'
 import MarkdownReport from '../components/MarkdownReport'
-import type { EntityRelation, PageIndexItem, PageType, PageView } from '../types'
+import type { EntityRelation, PageIndexItem, PageType, PageView, Person } from '../types'
 import { getGenericOKRBoard, type BoardData } from '../okr/emily/api'
 import {
   buildActiveGraph,
@@ -29,7 +29,7 @@ import {
   type WorldNodeType,
 } from './graphData'
 import { defaultWorldLens, isOKRPluginEnabled, type WorldLens } from './lens'
-import { buildOKRGraph, okrWorldPageRefs } from './okrGraph'
+import { buildOKRGraph, okrWorldPageRefs, type OKRWorldIdentity } from './okrGraph'
 import './world-map.css'
 
 type GraphRef = ForceGraphMethods<WorldNode, WorldLink>
@@ -90,6 +90,15 @@ async function loadPageRefs(refs: Array<{ type: PageType; id: number }>, cache: 
   return { pages: result.filter((page): page is PageView => Boolean(page)), failed }
 }
 
+async function loadAllPersons(signal: AbortSignal): Promise<Person[]> {
+  const items: Person[] = []
+  for (let page = 1; ; page++) {
+    const result = await listPersons(page, 100, signal)
+    items.push(...result.items)
+    if (items.length >= result.total || result.items.length === 0) return items
+  }
+}
+
 function useElementSize<T extends HTMLElement>() {
   const ref = useRef<T>(null)
   const [size, setSize] = useState({ width: 900, height: 680 })
@@ -126,6 +135,7 @@ export default function WorldMap() {
   const [okrBoard, setOKRBoard] = useState<BoardData>()
   const [okrRelations, setOKRRelations] = useState<EntityRelation[]>([])
   const [okrWorldPages, setOKRWorldPages] = useState<PageView[]>([])
+  const [okrWorldIdentities, setOKRWorldIdentities] = useState<OKRWorldIdentity[]>([])
   const [okrQuarter, setOKRQuarter] = useState('')
   const [objectiveId, setObjectiveId] = useState('')
   const [scope, setScope] = useState<NetworkScope>('primary')
@@ -244,15 +254,23 @@ export default function WorldMap() {
     setOKRBoard(undefined)
     setOKRRelations([])
     setOKRWorldPages([])
+    setOKRWorldIdentities([])
     Promise.all([
       getGenericOKRBoard(okrQuarter, controller.signal),
       listRelations({ nodeTypes: ['okr_objective', 'okr_kr', 'okr_point'] }, controller.signal),
-    ]).then(async ([board, relationResult]) => {
-      const loaded = await loadPageRefs(okrWorldPageRefs(board.objectives, relationResult.items), pageCache.current, controller.signal)
+      getProfile(controller.signal),
+      loadAllPersons(controller.signal),
+    ]).then(async ([board, relationResult, profile, people]) => {
+      const identities: OKRWorldIdentity[] = [
+        ...(profile.saved && profile.id > 0 ? [{ openId: profile.open_id, pageType: 'principal' as const, pageId: profile.id }] : []),
+        ...people.map((person) => ({ openId: person.open_id, pageType: 'person' as const, pageId: person.id })),
+      ]
+      const loaded = await loadPageRefs(okrWorldPageRefs(board.objectives, relationResult.items, identities), pageCache.current, controller.signal)
       if (controller.signal.aborted) return
       setOKRBoard(board)
       setOKRRelations(relationResult.items)
       setOKRWorldPages(loaded.pages)
+      setOKRWorldIdentities(identities)
       setError(loaded.failed > 0 ? `${loaded.failed} 个关联的现实实体暂时无法读取；OKR 原生结构仍完整展示。` : undefined)
     }).catch((cause: unknown) => {
       if (!controller.signal.aborted) setError(errorText(cause))
@@ -280,8 +298,9 @@ export default function WorldMap() {
     relations: okrRelations,
     activePages: okrPages,
     fullIndex: okrIndex,
+    identities: okrWorldIdentities,
     objectiveId: objectiveId || undefined,
-  }), [currentOKRBoard, objectiveId, okrIndex, okrPages, okrRelations])
+  }), [currentOKRBoard, objectiveId, okrIndex, okrPages, okrRelations, okrWorldIdentities])
   const loading = worldLoading || moduleLoading || lens === 'okr' && okrLoading
 
   const activePrimaryIds = useMemo(() => primaryComponentIds(activeGraph), [activeGraph])

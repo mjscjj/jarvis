@@ -7,7 +7,25 @@ export interface OKRGraphInput {
   relations: EntityRelation[]
   activePages: PageView[]
   fullIndex: PageIndexItem[]
+  identities?: OKRWorldIdentity[]
   objectiveId?: string
+}
+
+export interface OKRWorldIdentity {
+  openId: string
+  pageType: 'principal' | 'person'
+  pageId: number
+}
+
+function identitiesByOpenID(identities: OKRWorldIdentity[]): Map<string, OKRWorldIdentity> {
+  const result = new Map<string, OKRWorldIdentity>()
+  for (const identity of identities) {
+    const openID = identity.openId.trim()
+    if (!openID) continue
+    const existing = result.get(openID)
+    if (!existing || identity.pageType === 'principal') result.set(openID, { ...identity, openId: openID })
+  }
+  return result
 }
 
 const okrTypes = new Set(['okr_objective', 'okr_kr', 'okr_point'])
@@ -18,12 +36,10 @@ function isSupportedOKRWorldRelation(relation: EntityRelation): boolean {
     return relation.relation_type === 'maps_to' && relation.target_type === 'project'
   }
   if (relation.source_type === 'okr_kr') {
-    return relation.relation_type === 'maps_to' && (relation.target_type === 'project' || relation.target_type === 'key_matter') ||
-      relation.relation_type === 'owned_by' && (relation.target_type === 'person' || relation.target_type === 'principal')
+    return relation.relation_type === 'maps_to' && (relation.target_type === 'project' || relation.target_type === 'key_matter')
   }
   if (relation.source_type === 'okr_point') {
-    return (relation.relation_type === 'maps_to' || relation.relation_type === 'advances') && relation.target_type === 'key_matter' ||
-      relation.relation_type === 'owned_by' && (relation.target_type === 'person' || relation.target_type === 'principal')
+    return (relation.relation_type === 'maps_to' || relation.relation_type === 'advances') && relation.target_type === 'key_matter'
   }
   if ((relation.source_type === 'project' || relation.source_type === 'key_matter') && relation.target_type === 'okr_kr') {
     return relation.relation_type === 'advances'
@@ -31,7 +47,7 @@ function isSupportedOKRWorldRelation(relation: EntityRelation): boolean {
   return false
 }
 
-export function okrWorldPageRefs(objectives: Objective[], relations: EntityRelation[]): Array<{ type: PageType; id: number }> {
+export function okrWorldPageRefs(objectives: Objective[], relations: EntityRelation[], identities: OKRWorldIdentity[] = []): Array<{ type: PageType; id: number }> {
   const currentRefs = new Set<string>()
   for (const objective of objectives) {
     currentRefs.add(nodeKey('okr_objective', objective.id))
@@ -51,6 +67,15 @@ export function okrWorldPageRefs(objectives: Objective[], relations: EntityRelat
     const id = Number(worldID)
     if (!Number.isSafeInteger(id) || id <= 0) continue
     refs.set(nodeKey(worldType, id), { type: worldType, id })
+  }
+  const ownerOpenIDs = new Set(objectives.flatMap((objective) => objective.krs.flatMap((kr) => [
+    ...(kr.owners ?? []).map((owner) => owner.openId),
+    ...kr.points.flatMap((point) => (point.owners ?? []).map((owner) => owner.openId)),
+  ])))
+  for (const identity of identitiesByOpenID(identities).values()) {
+    if (identity.pageType !== 'principal' && !ownerOpenIDs.has(identity.openId)) continue
+    if (!Number.isSafeInteger(identity.pageId) || identity.pageId <= 0) continue
+    refs.set(nodeKey(identity.pageType, identity.pageId), { type: identity.pageType, id: identity.pageId })
   }
   return [...refs.values()]
 }
@@ -143,10 +168,48 @@ export function buildOKRGraph(input: OKRGraphInput): WorldGraph {
   const seenLinks = new Set<string>()
   const indexes = new Map(input.fullIndex.map((item) => [nodeKey(item.type, item.id), item]))
   const activePages = new Map(input.activePages.map((page) => [nodeKey(page.type, page.id), page]))
+  const identities = identitiesByOpenID(input.identities ?? [])
+  const principal = [...identities.values()].find((identity) => identity.pageType === 'principal')
+
+  const addIdentityNode = (identity: OKRWorldIdentity): string | undefined => {
+    const key = nodeKey(identity.pageType, identity.pageId)
+    if (nodes.has(key)) return key
+    const item = indexes.get(key)
+    if (!item && !activePages.has(key)) return undefined
+    nodes.set(key, pageNode(identity.pageType, identity.pageId, item, activePages))
+    return key
+  }
+  const addOwnerLinks = (source: string, owners: Array<{ openId: string }> | undefined) => {
+    for (const openID of new Set((owners ?? []).map((owner) => owner.openId).filter(Boolean))) {
+      const identity = identities.get(openID)
+      if (!identity) continue
+      const target = addIdentityNode(identity)
+      if (!target) continue
+      addLink(links, seenLinks, {
+        id: `native-owner:${source}->${target}`,
+        source,
+        target,
+        relationType: 'owned_by',
+        label: '负责人',
+        strength: 'owner',
+      })
+    }
+  }
 
   for (const objective of selectedObjectives) {
     const objectiveNode = okrNode('okr_objective', objective.id, objective.title, objective.id)
     nodes.set(objectiveNode.id, objectiveNode)
+    if (principal) {
+      const principalNode = addIdentityNode(principal)
+      if (principalNode) addLink(links, seenLinks, {
+        id: `principal-okr:${principalNode}->${objectiveNode.id}`,
+        source: principalNode,
+        target: objectiveNode.id,
+        relationType: 'owns',
+        label: '负责',
+        strength: 'owner',
+      })
+    }
     for (const kr of objective.krs) {
       const krNode = okrNode('okr_kr', kr.id, kr.title, objective.id)
       nodes.set(krNode.id, krNode)
@@ -158,6 +221,7 @@ export function buildOKRGraph(input: OKRGraphInput): WorldGraph {
         label: '包含',
         strength: 'structural',
       })
+      addOwnerLinks(krNode.id, kr.owners)
       for (const point of kr.points) {
         const pointNode = okrNode('okr_point', point.id, point.title, objective.id)
         nodes.set(pointNode.id, pointNode)
@@ -169,6 +233,7 @@ export function buildOKRGraph(input: OKRGraphInput): WorldGraph {
           label: '包含',
           strength: 'structural',
         })
+        addOwnerLinks(pointNode.id, point.owners)
       }
     }
   }

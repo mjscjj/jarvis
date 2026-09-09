@@ -1,15 +1,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { APIError, createKR, createObjective as createObjectiveRequest, createProgress, deleteKR, deleteObjective as deleteObjectiveRequest, deleteProgress, deleteWeeklyReportWeek, deleteWeeklyScore, getBoard, getEnums, getWeeklyKR, listWeeklyReportWeeks, reorderKRs, reorderObjectives, replaceKR, replaceKRDefinition, replaceWeeklyKRCore, replaceWeeklyScore, updateObjective as updateObjectiveRequest, updateProgress, type BoardData, type BoardSurface } from './api'
+import { APIError, createKR, createObjective as createObjectiveRequest, createProgress, deleteKR, deleteObjective as deleteObjectiveRequest, deleteProgress, deleteWeeklyReportWeek, deleteWeeklyScore, getBoard, getEnums, getWeeklyKR, listWeeklyReportWeeks, patchPointDefinition, reorderKRs, reorderObjectives, replaceKR, replaceKRDefinition, replaceWeeklyKRCore, replaceWeeklyScore, updateObjective as updateObjectiveRequest, updateProgress, type BoardData, type BoardSurface } from './api'
 import { BoardContext, uid, type BoardApi, type SyncState } from './board'
 import { definitionSignature } from './definition'
 import { findKrDraftIssue } from './draftValidation'
 import { BUSINESS_CATEGORY_TAG, PRIORITY_TAG, replaceSingleTag } from './hierarchy'
 import { swappedOrder, swappedPointsWithinKind } from './ordering'
 import { LIGHTS, STATUSES } from './template'
-import type { Entry, EnumValues, Kr, Objective, Point, WeekTemplateKey, WeeklyScore } from './types'
+import type { Entry, EnumValues, Kr, KrOwner, Objective, Point, WeekTemplateKey, WeeklyScore } from './types'
 import { filterWeekCatalog, previousWeekInCatalog } from './weekCatalog'
 
 const SAVE_DELAY_MS = 700
+
+type PendingPointPatch = {
+  krId: string
+  title?: string
+  owners?: KrOwner[]
+}
 
 const DEFAULT_ENUMS: EnumValues = {
 	statuses: STATUSES.map((item) => item.value),
@@ -157,6 +163,10 @@ export function BoardProvider({
   const serverKrs = useRef(new Map<string, Kr>())
   const revisions = useRef(new Map<string, number>())
   const timers = useRef(new Map<string, number>())
+  const pointTimers = useRef(new Map<string, number>())
+  const pointPatches = useRef(new Map<string, PendingPointPatch>())
+  const pointRevisions = useRef(new Map<string, number>())
+  const pointSavesInFlight = useRef(new Set<string>())
   const lastFailedKr = useRef<string | null>(null)
 
   const publish = useCallback((next: Objective[]) => {
@@ -165,9 +175,70 @@ export function BoardProvider({
   }, [])
 
   const scheduleSaveRef = useRef<(krId: string) => void>(() => undefined)
+  const schedulePointSaveRef = useRef<(pointId: string) => void>(() => undefined)
+
+  const savePointNow = useCallback(async (pointId: string) => {
+    const patch = pointPatches.current.get(pointId)
+    if (!remoteReady.current || !patch || pointSavesInFlight.current.has(pointId)) return
+    const revision = pointRevisions.current.get(pointId) ?? 0
+    let failed = false
+    pointSavesInFlight.current.add(pointId)
+    setSyncState({ kind: 'saving', message: '正在保存具体 KR…' })
+    try {
+      const saved = await patchPointDefinition({ pointId, title: patch.title, owners: patch.owners })
+      const current = findKr(objectivesRef.current, saved.krId)
+      if (current) {
+        const next = clone(current)
+        next.version = Math.max(next.version ?? 0, saved.krVersion)
+        publish(replaceKrIn(objectivesRef.current, saved.krId, next))
+      }
+      const baseline = serverKrs.current.get(saved.krId)
+      if (baseline) {
+        const nextBaseline = clone(baseline)
+        nextBaseline.version = Math.max(nextBaseline.version ?? 0, saved.krVersion)
+        const point = nextBaseline.points.find((item) => item.id === pointId)
+        if (point) {
+          if (patch.title !== undefined) point.title = patch.title
+          if (patch.owners !== undefined) point.owners = clone(patch.owners)
+        }
+        serverKrs.current.set(saved.krId, nextBaseline)
+      }
+      if ((pointRevisions.current.get(pointId) ?? 0) === revision) {
+        pointPatches.current.delete(pointId)
+        pointRevisions.current.delete(pointId)
+      }
+      if (pointPatches.current.size === 0 && timers.current.size === 0) setSyncState({ kind: 'saved', message: '已自动保存' })
+    } catch (error) {
+      failed = true
+      setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '具体 KR 保存失败，请重试。' })
+    } finally {
+      pointSavesInFlight.current.delete(pointId)
+      if (!failed && pointPatches.current.has(pointId)) schedulePointSaveRef.current(pointId)
+      const pendingKR = pointPatches.current.get(pointId)?.krId ?? patch.krId
+      if (timers.current.has(pendingKR)) scheduleSaveRef.current(pendingKR)
+    }
+  }, [publish])
+
+  const schedulePointSave = useCallback((pointId: string) => {
+    const previous = pointTimers.current.get(pointId)
+    if (previous) window.clearTimeout(previous)
+    const timer = window.setTimeout(() => {
+      pointTimers.current.delete(pointId)
+      void savePointNow(pointId)
+    }, SAVE_DELAY_MS)
+    pointTimers.current.set(pointId, timer)
+  }, [savePointNow])
+
+  useEffect(() => {
+    schedulePointSaveRef.current = schedulePointSave
+  }, [schedulePointSave])
 
   const saveNow = useCallback(async (krId: string) => {
     if (!remoteReady.current) return
+    if (Array.from(pointSavesInFlight.current).some((pointId) => pointPatches.current.get(pointId)?.krId === krId)) {
+      scheduleSaveRef.current(krId)
+      return
+    }
     const current = findKr(objectivesRef.current, krId)
     if (!current) return
     const snapshot = clone(current)
@@ -227,6 +298,8 @@ export function BoardProvider({
     remoteReady.current = false
     setSyncState({ kind: 'loading', message: '正在读取本周进展…' })
     try {
+      for (const pointTimer of pointTimers.current.values()) window.clearTimeout(pointTimer)
+      pointTimers.current.clear()
       let board: BoardData
       let remoteEnums: EnumValues
       if (surface === 'weekly-report') {
@@ -273,6 +346,8 @@ export function BoardProvider({
       publish(board.objectives)
       serverKrs.current = new Map(board.objectives.flatMap((objective) => objective.krs).map((kr) => [kr.id, clone(kr)]))
       revisions.current.clear()
+      pointPatches.current.clear()
+      pointRevisions.current.clear()
       lastFailedKr.current = null
       quarterRef.current = board.quarter
       setQuarterState(board.quarter)
@@ -298,13 +373,25 @@ export function BoardProvider({
     return () => {
       window.clearTimeout(startupTimer)
       for (const timer of activeTimers.values()) window.clearTimeout(timer)
+      for (const timer of pointTimers.current.values()) window.clearTimeout(timer)
+      pointTimers.current.clear()
     }
   }, [loadRemote])
 
   useEffect(() => {
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (timers.current.size === 0 && pointPatches.current.size === 0 && pointSavesInFlight.current.size === 0) return
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warnBeforeUnload)
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload)
+  }, [])
+
+  useEffect(() => {
     const nextQuarter = initialQuarter.trim()
     if (!nextQuarter || nextQuarter === quarterRef.current) return
-    if (timers.current.size > 0 || syncState.kind === 'saving' || syncState.kind === 'conflict') {
+    if (timers.current.size > 0 || pointPatches.current.size > 0 || pointSavesInFlight.current.size > 0 || syncState.kind === 'saving' || syncState.kind === 'conflict') {
       setSyncState({ kind: 'error', message: '请等待当前修改保存后再切换季度。' })
       return
     }
@@ -316,9 +403,43 @@ export function BoardProvider({
     const draft = clone(objectivesRef.current)
     fn(draft)
     publish(draft)
+    const kr = findKr(draft, krId)
+    for (const point of kr?.points ?? []) {
+      if (pointSavesInFlight.current.has(point.id)) continue
+      const pointTimer = pointTimers.current.get(point.id)
+      if (pointTimer) window.clearTimeout(pointTimer)
+      pointTimers.current.delete(point.id)
+      pointPatches.current.delete(point.id)
+      pointRevisions.current.delete(point.id)
+    }
     revisions.current.set(krId, (revisions.current.get(krId) ?? 0) + 1)
+    setSyncState({ kind: 'ready', message: '有修改待保存…' })
     scheduleSave(krId)
   }, [publish, scheduleSave])
+
+  const mutatePointDefinition = useCallback((krId: string, pointId: string, patch: Pick<PendingPointPatch, 'title' | 'owners'>) => {
+    const persisted = serverKrs.current.get(krId)?.points.some((point) => point.id === pointId) ?? false
+    if (!persisted || timers.current.has(krId) || lastFailedKr.current === krId) {
+      mutate(krId, (draft) => {
+        const point = findKr(draft, krId)?.points.find((item) => item.id === pointId)
+        if (!point) return
+        if (patch.title !== undefined) point.title = patch.title
+        if (patch.owners !== undefined) point.owners = patch.owners
+      })
+      return
+    }
+    const draft = clone(objectivesRef.current)
+    const point = findKr(draft, krId)?.points.find((item) => item.id === pointId)
+    if (!point) return
+    if (patch.title !== undefined) point.title = patch.title
+    if (patch.owners !== undefined) point.owners = patch.owners
+    publish(draft)
+    const pending = pointPatches.current.get(pointId)
+    pointPatches.current.set(pointId, { ...pending, krId, ...patch })
+    pointRevisions.current.set(pointId, (pointRevisions.current.get(pointId) ?? 0) + 1)
+    setSyncState({ kind: 'ready', message: '有修改待保存…' })
+    schedulePointSave(pointId)
+  }, [mutate, publish, schedulePointSave])
 
   const resolveConflict = useCallback((choice: 'remote' | 'local') => {
     if (syncState.kind !== 'conflict') return
@@ -369,7 +490,7 @@ export function BoardProvider({
     availableQuarters,
     setQuarter: (nextQuarter) => {
       if (nextQuarter === quarterRef.current) return
-      if (timers.current.size > 0 || syncState.kind === 'saving' || syncState.kind === 'conflict') {
+      if (timers.current.size > 0 || pointPatches.current.size > 0 || pointSavesInFlight.current.size > 0 || syncState.kind === 'saving' || syncState.kind === 'conflict') {
         setSyncState({ kind: 'error', message: '请等待当前修改保存后再切换季度。' })
         return
       }
@@ -382,7 +503,7 @@ export function BoardProvider({
     availableWeeks,
 		setWeek: (nextWeek) => {
       if (nextWeek === weekRef.current) return
-      if (timers.current.size > 0 || syncState.kind === 'saving' || syncState.kind === 'conflict') {
+      if (timers.current.size > 0 || pointPatches.current.size > 0 || pointSavesInFlight.current.size > 0 || syncState.kind === 'saving' || syncState.kind === 'conflict') {
         setSyncState({ kind: 'error', message: '请等待当前修改保存后再切换周次。' })
         return
       }
@@ -392,7 +513,7 @@ export function BoardProvider({
 		},
 		setWeeklyScope: (nextQuarter, nextWeek) => {
 			if (nextQuarter === quarterRef.current && nextWeek === weekRef.current) return true
-			if (timers.current.size > 0 || syncState.kind === 'saving' || syncState.kind === 'conflict') {
+			if (timers.current.size > 0 || pointPatches.current.size > 0 || pointSavesInFlight.current.size > 0 || syncState.kind === 'saving' || syncState.kind === 'conflict') {
 				setSyncState({ kind: 'error', message: '周次已开启；请等待当前修改保存后再切换。' })
 				return false
 			}
@@ -406,7 +527,7 @@ export function BoardProvider({
 			const selectedWeek = weekRef.current
 			const lifecycleName = weekTemplateKey === 'okr_weekly_preview_v1' ? 'Review' : '周报'
 			if (!selectedQuarter || !selectedWeek) throw new Error(`当前没有可删除的${lifecycleName}。`)
-			if (timers.current.size > 0 || syncState.kind === 'saving' || syncState.kind === 'loading' || syncState.kind === 'conflict') {
+			if (timers.current.size > 0 || pointPatches.current.size > 0 || pointSavesInFlight.current.size > 0 || syncState.kind === 'saving' || syncState.kind === 'loading' || syncState.kind === 'conflict') {
 				throw new Error('请等待当前修改保存后再删除本周。')
 			}
 			remoteReady.current = false
@@ -540,6 +661,14 @@ export function BoardProvider({
       const pending = timers.current.get(krId)
       if (pending) window.clearTimeout(pending)
       timers.current.delete(krId)
+      const pointIds = current.points.map((point) => point.id)
+      for (const pointId of pointIds) {
+        const pointTimer = pointTimers.current.get(pointId)
+        if (pointTimer) window.clearTimeout(pointTimer)
+        pointTimers.current.delete(pointId)
+        pointPatches.current.delete(pointId)
+        pointRevisions.current.delete(pointId)
+      }
       setSyncState({ kind: 'saving', message: '正在删除 KR…' })
       try {
         await deleteKR(current)
@@ -608,10 +737,7 @@ export function BoardProvider({
       const point = findKr(draft, krId)?.points.find((item) => item.id === pointId)
       if (point) point.tags = (point.tags ?? []).filter((tag) => tag.type !== type || tag.value !== value)
     }),
-    setPointOwners: (krId, pointId, owners) => mutate(krId, (draft) => {
-      const point = findKr(draft, krId)?.points.find((item) => item.id === pointId)
-      if (point) point.owners = owners
-    }),
+    setPointOwners: (krId, pointId, owners) => mutatePointDefinition(krId, pointId, { owners }),
     setMetricNote: (krId, note) => mutate(krId, (draft) => {
       const kr = findKr(draft, krId)
       if (kr) kr.metricNote = note
@@ -631,10 +757,7 @@ export function BoardProvider({
       const kr = findKr(draft, krId)
       if (kr) kr.metrics = kr.metrics.filter((item) => item.id !== metricId)
     }),
-    setPointTitle: (_objId, krId, pointId, title) => mutate(krId, (draft) => {
-      const point = findKr(draft, krId)?.points.find((item) => item.id === pointId)
-      if (point) point.title = title
-    }),
+    setPointTitle: (_objId, krId, pointId, title) => mutatePointDefinition(krId, pointId, { title }),
     setPointMeegoLink: (krId, pointId, patch) => mutate(krId, (draft) => {
       const point = findKr(draft, krId)?.points.find((item) => item.id === pointId)
       if (point) Object.assign(point, patch)
@@ -701,14 +824,23 @@ export function BoardProvider({
       if (!point || (score === undefined && !point.score)) return
       await saveWeeklyScore(krId, 'point', pointId, point.score, score)
     },
-    reset: () => void loadRemote(),
+    reset: () => {
+      if (timers.current.size > 0 || pointPatches.current.size > 0 || pointSavesInFlight.current.size > 0 || syncState.kind === 'saving') {
+        setSyncState({ kind: 'error', message: '请等待当前修改保存后再刷新。' })
+        return
+      }
+      void loadRemote()
+    },
     retry: () => {
-      if (lastFailedKr.current && remoteReady.current) void saveNow(lastFailedKr.current)
+      if (pointPatches.current.size > 0 && remoteReady.current) {
+        for (const pointId of pointPatches.current.keys()) schedulePointSave(pointId)
+      }
+      else if (lastFailedKr.current && remoteReady.current) void saveNow(lastFailedKr.current)
       else void loadRemote()
     },
     resolveConflict,
     applySavedKr: (kr) => publish(replaceKrIn(objectivesRef.current, kr.id, kr)),
-  }), [availableQuarters, availableWeeks, enums, loadRemote, mutate, objectives, previousWeek, publish, quarter, resolveConflict, saveNow, saveWeeklyScore, syncState, templateKey, week, weekTemplateKey])
+  }), [availableQuarters, availableWeeks, enums, loadRemote, mutate, mutatePointDefinition, objectives, previousWeek, publish, quarter, resolveConflict, saveNow, saveWeeklyScore, schedulePointSave, syncState, templateKey, week, weekTemplateKey])
 
   return <BoardContext.Provider value={api}>{children}</BoardContext.Provider>
 }
