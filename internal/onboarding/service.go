@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"jarvis/internal/background"
 	"jarvis/internal/config"
 	"jarvis/internal/domain"
 	"jarvis/internal/taskcreate"
@@ -27,6 +28,9 @@ const (
 	flowPending = "pending"
 	flowSuccess = "success"
 	flowFailed  = "failed"
+
+	worldModelActionType = "bootstrap_world_model"
+	worldModelMarkerName = "world-model.required"
 )
 
 type CommandRunner interface {
@@ -201,15 +205,15 @@ func (s *Service) Status(ctx context.Context) (*Status, error) {
 	}
 	lark := s.larkStatus(ctx)
 	agent := s.agentStatus(ctx)
-	var profileCount int64
-	if err := s.options.DB.WithContext(ctx).Model(&domain.PrincipalProfile{}).Count(&profileCount).Error; err != nil {
-		return nil, fmt.Errorf("inspect onboarding principal profile: %w", err)
+	worldModelReady, err := s.worldModelReady(ctx, lark.User.OpenID)
+	if err != nil {
+		return nil, err
 	}
 	result := &Status{
 		Configuration:   configuration,
 		Lark:            lark,
 		Agent:           agent,
-		WorldModelReady: profileCount > 0,
+		WorldModelReady: worldModelReady,
 	}
 	result.Completed = configuration.MachineConfigurationReady &&
 		lark.Bot.Status == "ready" && lark.User.Status == "ready" &&
@@ -333,6 +337,9 @@ func (s *Service) Finalize(ctx context.Context, agentName, gitAuthor, appID, app
 	); err != nil {
 		return nil, err
 	}
+	if err := s.requireWorldModel(); err != nil {
+		return nil, err
+	}
 	time.AfterFunc(750*time.Millisecond, func() {
 		_ = os.WriteFile(filepath.Join(s.options.StateRoot, "restart.requested"), []byte("setup\n"), 0o600)
 	})
@@ -340,10 +347,32 @@ func (s *Service) Finalize(ctx context.Context, agentName, gitAuthor, appID, app
 }
 
 func (s *Service) BootstrapWorldModel(ctx context.Context) (*domain.Task, error) {
+	lark := s.larkStatus(ctx)
+	if lark.User.Status != "ready" || lark.User.OpenID == "" {
+		return nil, fmt.Errorf("飞书用户授权必须先完成")
+	}
+	if err := s.requireWorldModel(); err != nil {
+		return nil, err
+	}
+	if err := s.ensurePrincipalProfile(ctx, lark.User); err != nil {
+		return nil, err
+	}
+	var existing domain.Task
+	result := s.options.DB.WithContext(ctx).
+		Where("action_type = ?", worldModelActionType).
+		Order("id DESC").
+		Limit(1).
+		Find(&existing)
+	if result.Error != nil {
+		return nil, fmt.Errorf("find world model initialization task: %w", result.Error)
+	}
+	if result.RowsAffected == 1 && existing.Status != "failed" {
+		return &existing, nil
+	}
 	payload := json.RawMessage(`{"source":"desktop_onboarding","requested_action":"bootstrap_world_model"}`)
 	return s.options.TaskSubmitter.Submit(ctx, taskcreate.Input{
 		Title:         "建立初始世界模型",
-		ActionType:    "agent_task",
+		ActionType:    worldModelActionType,
 		Target:        "基于当前飞书身份建立 Principal、项目、人物、资料、重点事项与群监听",
 		Background:    json.RawMessage(`{"onboarding":"desktop","instruction":"这是全新桌面实例。读取并执行 $JARVIS_RUNTIME_ROOT/.agents/skills/bootstrap-jarvis-world-model/SKILL.md，使用 $JARVIS_RUNTIME_ROOT/scripts 下的工具完成初始化并逐项读回验证。"}`),
 		SourcePayload: payload,
@@ -351,6 +380,69 @@ func (s *Service) BootstrapWorldModel(ctx context.Context) (*domain.Task, error)
 		ActorType:     "user",
 		EventDetail:   map[string]any{"channel": "desktop_onboarding"},
 	})
+}
+
+func (s *Service) ensurePrincipalProfile(ctx context.Context, identity IdentityStatus) error {
+	name := strings.TrimSpace(identity.Name)
+	if strings.TrimSpace(identity.OpenID) == "" || name == "" {
+		return fmt.Errorf("飞书用户身份缺少 open_id 或姓名")
+	}
+	service, err := background.NewProfileService(s.options.DB, identity.OpenID)
+	if err != nil {
+		return err
+	}
+	current, err := service.Get(ctx)
+	if err != nil {
+		return err
+	}
+	if current.Saved {
+		return nil
+	}
+	_, err = service.Upsert(ctx, background.ProfileInput{Name: name})
+	return err
+}
+
+func (s *Service) worldModelReady(ctx context.Context, principalOpenID string) (bool, error) {
+	principalOpenID = strings.TrimSpace(principalOpenID)
+	if principalOpenID == "" {
+		return false, nil
+	}
+	var profileCount int64
+	if err := s.options.DB.WithContext(ctx).
+		Model(&domain.PrincipalProfile{}).
+		Where("open_id = ?", principalOpenID).
+		Count(&profileCount).Error; err != nil {
+		return false, fmt.Errorf("inspect onboarding principal profile: %w", err)
+	}
+	if _, err := os.Stat(s.worldModelMarkerPath()); errors.Is(err, os.ErrNotExist) {
+		return profileCount > 0, nil
+	} else if err != nil {
+		return false, fmt.Errorf("inspect world model initialization marker: %w", err)
+	}
+	var task domain.Task
+	result := s.options.DB.WithContext(ctx).
+		Where("action_type = ?", worldModelActionType).
+		Order("id DESC").
+		Limit(1).
+		Find(&task)
+	if result.Error != nil {
+		return false, fmt.Errorf("inspect world model initialization task: %w", result.Error)
+	}
+	return profileCount > 0 && result.RowsAffected == 1 && task.Status == "done", nil
+}
+
+func (s *Service) worldModelMarkerPath() string {
+	return filepath.Join(s.options.StateRoot, worldModelMarkerName)
+}
+
+func (s *Service) requireWorldModel() error {
+	if err := os.MkdirAll(s.options.StateRoot, 0o700); err != nil {
+		return fmt.Errorf("create onboarding state directory: %w", err)
+	}
+	if err := os.WriteFile(s.worldModelMarkerPath(), []byte("required\n"), 0o600); err != nil {
+		return fmt.Errorf("write world model initialization marker: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) completeLarkLogin(flowID, deviceCode string) {
