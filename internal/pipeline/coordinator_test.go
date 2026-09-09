@@ -111,6 +111,25 @@ func (f *fakeTaskExecutor) Execute(ctx context.Context, input execute.ExecuteInp
 	return &execute.ExecuteResult{TaskID: input.TaskID, Status: "done"}, nil
 }
 
+type blockingTaskExecutor struct {
+	started chan uint64
+	release chan struct{}
+}
+
+func (f *blockingTaskExecutor) Execute(ctx context.Context, input execute.ExecuteInput) (*execute.ExecuteResult, error) {
+	select {
+	case f.started <- input.TaskID:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	select {
+	case <-f.release:
+		return &execute.ExecuteResult{TaskID: input.TaskID, Status: "done"}, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
 func TestCoordinatorPreservesLogIDIntoM5(t *testing.T) {
 	executor := &fakeTaskExecutor{
 		calls:  make(chan execute.ExecuteInput, 1),
@@ -196,6 +215,45 @@ func TestCoordinatorRunsDifferentChatsConcurrently(t *testing.T) {
 	close(extractor.release)
 	if !seen["oc_person"] || !seen["oc_group"] {
 		t.Fatalf("started chats = %#v", seen)
+	}
+}
+
+func TestCoordinatorRunsTasksConcurrently(t *testing.T) {
+	executor := &blockingTaskExecutor{
+		started: make(chan uint64, 2), release: make(chan struct{}),
+	}
+	opts := pipelineTestOptions()
+	opts.ExecutionConcurrency = 2
+	coordinator, err := newCoordinator(nil, nil, &fakeExecutionStore{}, executor, opts)
+	if err != nil {
+		t.Fatalf("newCoordinator() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := coordinator.Start(ctx); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer func() {
+		cancel()
+		coordinator.Wait()
+	}()
+
+	for _, taskID := range []uint64{71, 72} {
+		if err := coordinator.TaskReady(ctx, taskID, 0); err != nil {
+			t.Fatalf("TaskReady(%d) error = %v", taskID, err)
+		}
+	}
+	seen := make(map[uint64]bool)
+	for range 2 {
+		select {
+		case taskID := <-executor.started:
+			seen[taskID] = true
+		case <-time.After(2 * time.Second):
+			t.Fatal("tasks did not start concurrently")
+		}
+	}
+	close(executor.release)
+	if !seen[71] || !seen[72] {
+		t.Fatalf("started tasks = %#v", seen)
 	}
 }
 

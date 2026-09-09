@@ -31,6 +31,9 @@ func TestLoginUsesExistingByteDanceIdentity(t *testing.T) {
 	if result.Status != StatusAuthenticated || result.User == nil || result.User.Username != "alice" {
 		t.Fatalf("result = %#v", result)
 	}
+	if !result.User.IsPrincipal {
+		t.Fatal("server identity was not marked as principal")
+	}
 	if _, ok := service.Authenticate(result.SessionToken); !ok {
 		t.Fatal("new session is not authenticated")
 	}
@@ -69,6 +72,9 @@ func TestLoginCompletesDeviceFlow(t *testing.T) {
 	}
 	if complete.Status != StatusAuthenticated || complete.SessionToken == "" {
 		t.Fatalf("complete = %#v", complete)
+	}
+	if complete.User == nil || !complete.User.IsPrincipal {
+		t.Fatalf("completed local user = %#v", complete.User)
 	}
 }
 

@@ -209,8 +209,8 @@ lark-cli skills read <lark-skill-name>
 lark-cli schema <service.resource.method>
 
 bytedcli --help
-bytedcli --json --all-help
-bytedcli <domain> --help
+bytedcli --json <domain> --help
+bytedcli --json <command-path> --help
 bytedcli --json auth status
 ```
 

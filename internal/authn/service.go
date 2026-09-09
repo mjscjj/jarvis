@@ -19,13 +19,16 @@ const (
 	StatusAuthenticated   = "authenticated"
 	StatusUnauthenticated = "unauthenticated"
 	StatusPending         = "pending"
+
+	loginFlowTTL = 15 * time.Minute
 )
 
 var ErrPending = errors.New("authentication is still pending")
 
 type User struct {
-	Username string `json:"username"`
-	Email    string `json:"email"`
+	Username    string `json:"username"`
+	Email       string `json:"email"`
+	IsPrincipal bool   `json:"-"`
 }
 
 type View struct {
@@ -53,9 +56,10 @@ func (execRunner) Run(ctx context.Context, bin string, args ...string) ([]byte, 
 }
 
 type flow struct {
-	token string
-	url   string
-	code  string
+	token     string
+	url       string
+	code      string
+	expiresAt time.Time
 }
 
 type session struct {
@@ -128,9 +132,13 @@ func (s *Service) Login(ctx context.Context) (LoginResult, error) {
 		return LoginResult{}, err
 	}
 	if authenticated {
+		user.IsPrincipal = true
 		return s.startSession(user)
 	}
+	return s.beginLogin(ctx)
+}
 
+func (s *Service) beginLogin(ctx context.Context) (LoginResult, error) {
 	// Jarvis consumes bytedcli's resumable ByteCloud device-flow contract:
 	// --begin returns a completion token and verification URL, then --complete
 	// finishes the same flow. --session is a different browser-session flow and
@@ -152,7 +160,11 @@ func (s *Service) Login(ctx context.Context) (LoginResult, error) {
 		return LoginResult{}, fmt.Errorf("create SSO flow ID: %w", err)
 	}
 	s.mu.Lock()
-	s.flows[flowID] = flow{token: token, url: url, code: code}
+	s.pruneExpiredFlowsLocked()
+	s.flows[flowID] = flow{
+		token: token, url: url, code: code,
+		expiresAt: s.now().Add(loginFlowTTL),
+	}
 	s.mu.Unlock()
 	return LoginResult{View: View{
 		Enabled: true, Status: StatusPending, VerificationURL: stringPointer(url),
@@ -164,9 +176,8 @@ func (s *Service) Complete(ctx context.Context, flowID string) (LoginResult, err
 	if !s.enabled {
 		return LoginResult{View: s.Status("")}, nil
 	}
-	s.mu.Lock()
-	pendingFlow, ok := s.flows[strings.TrimSpace(flowID)]
-	s.mu.Unlock()
+	flowID = strings.TrimSpace(flowID)
+	pendingFlow, ok := s.pendingFlow(flowID)
 	if !ok {
 		return LoginResult{}, fmt.Errorf("SSO flow not found or expired")
 	}
@@ -176,18 +187,19 @@ func (s *Service) Complete(ctx context.Context, flowID string) (LoginResult, err
 		if hasErrorCode(raw, "AUTHORIZATION_PENDING", "SLOW_DOWN") {
 			return LoginResult{}, ErrPending
 		}
+		s.deleteFlow(flowID)
 		return LoginResult{}, commandError("complete ByteDance SSO", raw, err)
 	}
 	user, authenticated, err := s.probe(ctx)
 	if err != nil {
+		s.deleteFlow(flowID)
 		return LoginResult{}, err
 	}
 	if !authenticated {
 		return LoginResult{}, ErrPending
 	}
-	s.mu.Lock()
-	delete(s.flows, strings.TrimSpace(flowID))
-	s.mu.Unlock()
+	user.IsPrincipal = true
+	s.deleteFlow(flowID)
 	return s.startSession(user)
 }
 
@@ -213,6 +225,29 @@ func (s *Service) Logout(token string) {
 	s.mu.Lock()
 	delete(s.sessions, strings.TrimSpace(token))
 	s.mu.Unlock()
+}
+
+func (s *Service) deleteFlow(flowID string) {
+	s.mu.Lock()
+	delete(s.flows, flowID)
+	s.mu.Unlock()
+}
+
+func (s *Service) pendingFlow(flowID string) (flow, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pruneExpiredFlowsLocked()
+	pendingFlow, ok := s.flows[flowID]
+	return pendingFlow, ok
+}
+
+func (s *Service) pruneExpiredFlowsLocked() {
+	now := s.now()
+	for flowID, pendingFlow := range s.flows {
+		if !pendingFlow.expiresAt.After(now) {
+			delete(s.flows, flowID)
+		}
+	}
 }
 
 func (s *Service) startSession(user User) (LoginResult, error) {

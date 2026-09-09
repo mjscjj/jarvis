@@ -61,11 +61,10 @@ func testNotice() execute.QuestionNotification {
 	}
 }
 
-// TestSendQuestionRendersEveryControlInOneForm pins the layout contract: Feishu
-// returns a form's inputs only when the submit button is a direct child of that
-// form and carries no behaviors, so one click has to bring back both the chosen
-// button and everything typed or selected alongside it.
-func TestSendQuestionRendersEveryControlInOneForm(t *testing.T) {
+// TestSendQuestionKeepsComplexControlsInOneForm pins the layout contract:
+// Feishu returns a form's inputs only when the submit button is a direct child
+// of that form and carries no behaviors.
+func TestSendQuestionKeepsComplexControlsInOneForm(t *testing.T) {
 	lark := &fakeLark{response: map[string]any{"data": map[string]any{"message_id": "om_card"}}}
 	delivery, err := testNotifier(t, lark).SendQuestion(context.Background(), testNotice())
 	if err != nil {
@@ -83,15 +82,16 @@ func TestSendQuestionRendersEveryControlInOneForm(t *testing.T) {
 		element, _ := raw.(map[string]any)
 		kinds[element["tag"].(string)]++
 	}
-	// 2 answer buttons + 1 link + the always-appended detail link.
-	if kinds["button"] != 4 || kinds["select_static"] != 1 || kinds["multi_select_static"] != 1 || kinds["input"] != 1 {
+	if kinds["button"] != 3 || kinds["select_static"] != 1 || kinds["multi_select_static"] != 1 || kinds["input"] != 1 {
 		t.Fatalf("rendered controls = %#v", kinds)
 	}
+	submits := 0
 	for _, raw := range elements {
 		element, _ := raw.(map[string]any)
 		if element["tag"] != "button" || element["action_type"] != "form_submit" {
 			continue
 		}
+		submits++
 		if _, hasBehaviors := element["behaviors"]; hasBehaviors {
 			t.Fatalf("submit button must carry no behaviors: %#v", element)
 		}
@@ -102,6 +102,111 @@ func TestSendQuestionRendersEveryControlInOneForm(t *testing.T) {
 		if value["clicked"] != element["name"] {
 			t.Fatalf("submit button %v must answer under its own name: %#v", element["name"], value)
 		}
+	}
+	if submits != 2 {
+		t.Fatalf("want 2 direct submit buttons, got %d: %#v", submits, elements)
+	}
+}
+
+func TestSendQuestionRendersTwoButtonDecisionInOneCompactRow(t *testing.T) {
+	notice := testNotice()
+	notice.Question.Fields = []execute.QuestionField{
+		{Type: execute.FieldButton, Name: "confirm", Label: "确认", Style: "primary"},
+		{Type: execute.FieldButton, Name: "reject", Label: "拒绝", Style: "danger"},
+	}
+	lark := &fakeLark{response: map[string]any{"data": map[string]any{"message_id": "om_card"}}}
+	if _, err := testNotifier(t, lark).SendQuestion(context.Background(), notice); err != nil {
+		t.Fatalf("SendQuestion() error = %v", err)
+	}
+
+	elements := cardElements(t, sentCard(t, lark))
+	for _, raw := range elements {
+		element, _ := raw.(map[string]any)
+		if element["tag"] == "form" {
+			t.Fatalf("plain decision must not use a form: %#v", elements)
+		}
+	}
+	row := onlyElementWithTag(t, elements, "column_set")
+	if row["flex_mode"] != "bisect" {
+		t.Fatalf("decision row flex_mode = %v", row["flex_mode"])
+	}
+	columns, _ := row["columns"].([]any)
+	if len(columns) != 2 {
+		t.Fatalf("decision row columns = %#v", columns)
+	}
+	for index, raw := range columns {
+		column, _ := raw.(map[string]any)
+		buttons, _ := column["elements"].([]any)
+		if len(buttons) != 1 {
+			t.Fatalf("column %d elements = %#v", index, buttons)
+		}
+		button, _ := buttons[0].(map[string]any)
+		if button["tag"] != "button" || button["size"] != "small" || button["width"] != "fill" {
+			t.Fatalf("column %d button = %#v", index, button)
+		}
+		if _, isSubmit := button["action_type"]; isSubmit {
+			t.Fatalf("compact callback button must not submit a form: %#v", button)
+		}
+		behaviors, _ := button["behaviors"].([]any)
+		if len(behaviors) != 1 {
+			t.Fatalf("column %d behaviors = %#v", index, behaviors)
+		}
+		behavior, _ := behaviors[0].(map[string]any)
+		value, _ := behavior["value"].(map[string]any)
+		if behavior["type"] != "callback" || value["action"] != callbackAction ||
+			value["task_id"] != float64(7) || value["version"] != float64(12) {
+			t.Fatalf("column %d callback = %#v", index, behavior)
+		}
+	}
+}
+
+func TestSendQuestionFoldsProgressAndUsesTextDetailLink(t *testing.T) {
+	lark := &fakeLark{response: map[string]any{"data": map[string]any{"message_id": "om_card"}}}
+	if _, err := testNotifier(t, lark).SendQuestion(context.Background(), testNotice()); err != nil {
+		t.Fatalf("SendQuestion() error = %v", err)
+	}
+
+	elements := cardElements(t, sentCard(t, lark))
+	panel := onlyElementWithTag(t, elements, "collapsible_panel")
+	if expanded, ok := panel["expanded"].(bool); !ok || expanded {
+		t.Fatalf("progress panel must start folded: %#v", panel)
+	}
+	header, _ := panel["header"].(map[string]any)
+	title, _ := header["title"].(map[string]any)
+	if title["content"] != "目前进展" {
+		t.Fatalf("progress panel header = %#v", header)
+	}
+	panelElements, _ := panel["elements"].([]any)
+	if len(panelElements) != 1 || panelElements[0].(map[string]any)["content"] != "已核对三份数据" {
+		t.Fatalf("progress panel elements = %#v", panelElements)
+	}
+
+	detail, _ := elements[len(elements)-1].(map[string]any)
+	if detail["tag"] != "markdown" || detail["text_size"] != "notation" ||
+		!strings.Contains(detail["content"].(string), "[查看详情](http://192.168.1.20:18800/#/work/task/7)") {
+		t.Fatalf("detail link = %#v", detail)
+	}
+	if strings.Contains(mustJSON(t, detail), `"tag":"button"`) {
+		t.Fatalf("detail link must not be a button: %#v", detail)
+	}
+}
+
+func TestSendQuestionKeepsCompleteApprovalBody(t *testing.T) {
+	notice := testNotice()
+	notice.Question.Body = "背景：需要确认这份长文档。\n\n" + strings.Repeat("完整正文", 600)
+	notice.Question.Fields = []execute.QuestionField{
+		{Type: execute.FieldButton, Name: "confirm", Label: "确认", Style: "primary"},
+		{Type: execute.FieldButton, Name: "reject", Label: "拒绝", Style: "danger"},
+	}
+	lark := &fakeLark{response: map[string]any{"data": map[string]any{"message_id": "om_card"}}}
+	if _, err := testNotifier(t, lark).SendQuestion(context.Background(), notice); err != nil {
+		t.Fatalf("SendQuestion() error = %v", err)
+	}
+
+	elements := cardElements(t, sentCard(t, lark))
+	body, _ := elements[0].(map[string]any)
+	if body["content"] != notice.Question.Body {
+		t.Fatalf("approval body was truncated: got %d runes, want %d", len([]rune(body["content"].(string))), len([]rune(notice.Question.Body)))
 	}
 }
 
@@ -202,8 +307,7 @@ func sentCard(t *testing.T, lark *fakeLark) map[string]any {
 
 func onlyForm(t *testing.T, card map[string]any) map[string]any {
 	t.Helper()
-	body, _ := card["body"].(map[string]any)
-	elements, _ := body["elements"].([]any)
+	elements := cardElements(t, card)
 	var forms []map[string]any
 	for _, raw := range elements {
 		element, _ := raw.(map[string]any)
@@ -215,4 +319,41 @@ func onlyForm(t *testing.T, card map[string]any) map[string]any {
 		t.Fatalf("card must hold exactly one form, got %d: %#v", len(forms), elements)
 	}
 	return forms[0]
+}
+
+func cardElements(t *testing.T, card map[string]any) []any {
+	t.Helper()
+	body, ok := card["body"].(map[string]any)
+	if !ok {
+		t.Fatalf("card body = %#v", card["body"])
+	}
+	elements, ok := body["elements"].([]any)
+	if !ok {
+		t.Fatalf("card elements = %#v", body["elements"])
+	}
+	return elements
+}
+
+func onlyElementWithTag(t *testing.T, elements []any, tag string) map[string]any {
+	t.Helper()
+	var matches []map[string]any
+	for _, raw := range elements {
+		element, _ := raw.(map[string]any)
+		if element["tag"] == tag {
+			matches = append(matches, element)
+		}
+	}
+	if len(matches) != 1 {
+		t.Fatalf("want exactly one %s, got %d: %#v", tag, len(matches), elements)
+	}
+	return matches[0]
+}
+
+func mustJSON(t *testing.T, value any) string {
+	t.Helper()
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatalf("marshal value: %v", err)
+	}
+	return string(encoded)
 }

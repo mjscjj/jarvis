@@ -409,6 +409,7 @@ export default function RuntimeSettings() {
           <Section title="消息采集" description="发现可处理的会话，并增量扫描飞书消息。">
             <TextField name="capture_discover_schedule" label="发现会话周期" placeholder="@every 6h" />
             <TextField name="capture_scan_schedule" label="扫描消息周期" placeholder="@every 5m" />
+            <NumberField name="capture_p2p_activation_window_minutes" label="私聊首次回看（分钟）" min={1} max={1440} help="真人私聊首次进入监听时回看的历史范围；不影响 M3 的通用上下文窗口。" />
             <NumberField name="capture_page_size" label="飞书单页消息数" min={1} max={50} />
             <NumberField name="capture_scan_workers" label="并发扫描会话数" min={1} max={32} />
             <NumberField name="capture_auto_related_p2p_top_n" label="自动关注私聊数" min={0} max={500} help="按当前活跃度轮换采集的真人私聊数量；固定私聊不占名额，0 表示关闭自动关注。" />

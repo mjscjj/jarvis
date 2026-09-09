@@ -261,7 +261,7 @@ func (s *TodoStore) SetTodoStatus(ctx context.Context, input TodoStatusInput) (*
 }
 
 func validateTodoStatusTransition(todoID uint64, from, to string) error {
-	if _, live := activeTodoStatuses[from]; !live {
+	if _, known := allowedTodoStatuses[from]; !known {
 		return fmt.Errorf("todo id=%d is %s and cannot be re-opened", todoID, from)
 	}
 	if from == "materialized" && to == "extracted" {

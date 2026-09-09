@@ -62,6 +62,8 @@ capture 不冻结 Fact 明细：实体 `summary` 已回答「创建时是什么�
 - Qdrant 语义近邻；
 - 必要时模型裁决。
 
+去重只合并尚未生成 Task 的 `extracted` / `observing` Todo。Todo 一旦生成过 Task，就代表一次已经交付给 M5 的任务发生；后续即使 `target` 和 fingerprint 相同，也创建新的 Todo，避免新的明确指令被历史任务静默吞掉。
+
 Todo、事件、水位和去重向量在同一落库流程中协调；关键步骤失败时整轮报错，不留下“数据库成功但语义索引缺失”的伪成功。
 
 ## 5. 引擎与配置

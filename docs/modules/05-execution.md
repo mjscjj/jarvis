@@ -92,6 +92,8 @@ factengine 从 `message`、TodoEvent 和 TaskEvent 三类材料蒸馏 Fact；来
 Task 执行接口包括：runs、events、output、execute、interrupt、rerun、resume、finish 和 supplement。已产生外部效果上的用户操作独立放在 `internal/effectops`；当前包括 message recall。完整分组见 [HTTP API](../reference/http-api.md)。
 
 实时推进由 `pipeline.Coordinator` 触发；`execute.schedule` 恢复漏通知和过期 `executing`。配置在 `execute.*`，运行时 overlay 保存后需重启。
+`execute.concurrency` 控制自动 M5 worker 池大小，实时 TaskReady 和补偿扫描发现的 pending Task 共用这组 worker；每个 Task 仍通过 `pending -> executing` 的 version 条件更新抢占，避免同一个 Task 被重复执行。
+任务列表页支持一次选择最多 5 个 pending Task 并批量启动；它复用单 Task execute API，实际运行仍由每个 Task 自己的状态/version 抢占保护。
 
 重建服务前必须确认没有活跃 Task，见 [运行与部署](../reference/operations.md)。
 

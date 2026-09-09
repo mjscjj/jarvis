@@ -48,7 +48,7 @@ func TestDiscoverChatsRotatesCurrentActiveP2PTopN(t *testing.T) {
 	if err := db.Where("chat_id = ?", "oc_third").Take(&thirdCheckpoint).Error; err != nil {
 		t.Fatalf("load newly monitored checkpoint: %v", err)
 	}
-	wantActivationStart := second.Add(-service.opts.ActivationContext).UnixMilli()
+	wantActivationStart := second.Add(-service.opts.P2PActivationWindow).UnixMilli()
 	if thirdCheckpoint.HighWaterCreateTime != wantActivationStart {
 		t.Fatalf("newly monitored checkpoint = %d, want activation start %d", thirdCheckpoint.HighWaterCreateTime, wantActivationStart)
 	}
@@ -103,6 +103,61 @@ func TestDiscoverChatsDoesNotRotateFromPartialListing(t *testing.T) {
 	assertDiscoverRelated(t, db, "oc_third", false)
 }
 
+func TestP2PScanDisabledSkipsAutomaticAndManualScanning(t *testing.T) {
+	db := newDiscoverTestDB(t)
+	fixture := &discoverRotationFixture{
+		pages: map[string]discoverPage{
+			"": {chats: append(
+				discoverP2PChats("oc_direct"),
+				CLIChat{ChatID: "oc_group", ChatMode: "group", Name: "group"},
+			)},
+		},
+	}
+	service := newDiscoverTestService(t, db, fixture, 2)
+	service.opts.P2PScanEnabled = false
+	service.now = func() time.Time {
+		return time.Date(2026, 8, 25, 20, 0, 0, 0, service.opts.Location)
+	}
+	if err := service.DiscoverChats(context.Background()); err != nil {
+		t.Fatalf("DiscoverChats() error = %v", err)
+	}
+	assertDiscoverRelated(t, db, "oc_direct", false)
+
+	direct := domain.Group{ChatID: "oc_existing_direct", ChatMode: "p2p", RelatedGroup: true, Tier: "hot"}
+	if err := db.Create(&direct).Error; err != nil {
+		t.Fatalf("create existing direct chat: %v", err)
+	}
+	if err := db.Create(&domain.Checkpoint{
+		ChatID: direct.ChatID, HighWaterCreateTime: service.now().Add(-time.Hour).UnixMilli(), BackfillDone: true,
+	}).Error; err != nil {
+		t.Fatalf("create direct chat checkpoint: %v", err)
+	}
+	withoutCheckpoint := domain.Group{ChatID: "oc_cc_direct", ChatMode: "p2p", RelatedGroup: false, Tier: "cold"}
+	if err := db.Create(&withoutCheckpoint).Error; err != nil {
+		t.Fatalf("create direct chat without checkpoint: %v", err)
+	}
+	if err := service.ScanChatNow(context.Background(), direct.ChatID); !errors.Is(err, ErrP2PScanDisabled) {
+		t.Fatalf("ScanChatNow() error = %v, want ErrP2PScanDisabled", err)
+	}
+	if err := service.ScanRelated(context.Background()); err != nil {
+		t.Fatalf("ScanRelated() error = %v", err)
+	}
+	var checkpoint domain.Checkpoint
+	if err := db.Where("chat_id = ?", direct.ChatID).Take(&checkpoint).Error; err != nil {
+		t.Fatalf("load direct checkpoint: %v", err)
+	}
+	if checkpoint.HighWaterCreateTime != service.now().UnixMilli() {
+		t.Fatalf("disabled direct checkpoint = %d, want %d", checkpoint.HighWaterCreateTime, service.now().UnixMilli())
+	}
+	checkpoint = domain.Checkpoint{}
+	if err := db.Where("chat_id = ?", withoutCheckpoint.ChatID).Take(&checkpoint).Error; err != nil {
+		t.Fatalf("load initialized direct checkpoint: %v", err)
+	}
+	if checkpoint.HighWaterCreateTime != service.now().UnixMilli() || !checkpoint.BackfillDone {
+		t.Fatalf("initialized disabled direct checkpoint = %#v", checkpoint)
+	}
+}
+
 type discoverPage struct {
 	chats     []CLIChat
 	hasMore   bool
@@ -150,7 +205,8 @@ func newDiscoverTestService(t *testing.T, db *gorm.DB, runner runner, topN int) 
 	service, err := NewService(db, runner, Options{
 		PageSize: 50, ScanWorkers: 1, HotAge: 6 * time.Hour, WarmAge: 7 * 24 * time.Hour,
 		Location: location, PrincipalOpenID: "ou_principal", SearchOverlap: 10 * time.Minute,
-		ActivationContext: 2 * time.Hour, AutoRelatedP2PTopN: topN,
+		ActivationContext: 2 * time.Hour, P2PActivationWindow: 15 * time.Minute,
+		P2PScanEnabled: true, AutoRelatedP2PTopN: topN,
 	})
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)

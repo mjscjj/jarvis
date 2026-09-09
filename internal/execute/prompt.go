@@ -54,15 +54,15 @@ const executionResultSchema = `{
     "question":{
       "type":["object","null"],
       "additionalProperties":false,
-      "description":"Required with outcome=needs_human, null otherwise. The card the principal sees. Put everything needed to decide in body; the answer comes back to this same session as JSON of the field names plus clicked.",
+      "description":"Required with outcome=needs_human, null otherwise. The compact decision card the principal sees. Include the minimum context needed to decide, not investigation logs or repeated history; the answer comes back to this same session as JSON of the field names plus clicked.",
       "required":["title","body","fields"],
       "properties":{
-        "title":{"type":"string","minLength":1},
-        "body":{"type":"string","description":"Markdown. Full context and, when you are asking permission, the exact content you would write or send."},
+        "title":{"type":"string","minLength":1,"description":"One short sentence stating exactly what the principal must decide."},
+        "body":{"type":"string","description":"Markdown. Start with 1-3 concise sentences covering what this is, why a decision is needed now, and the main impact. Omit investigation logs, tool calls, repeated history, and unrelated detail. For a content-changing side effect, also include the complete exact text you would write or send; never shorten that text for compactness."},
         "fields":{
           "type":"array",
           "minItems":1,
-          "description":"At least one button is required; without it the principal cannot answer.",
+          "description":"At least one button is required; without it the principal cannot answer. For a simple binary decision, prefer exactly two buttons with short labels.",
           "items":{
             "type":"object",
             "additionalProperties":false,

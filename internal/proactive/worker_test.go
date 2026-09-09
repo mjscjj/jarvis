@@ -99,7 +99,15 @@ func TestWorkerBuildsHeartbeatPromptAndUsesProactiveStage(t *testing.T) {
 	if result != runner.result {
 		t.Fatalf("result = %q", result)
 	}
-	for _, want := range []string{"system mission", "trusted memory", "BEGIN_AVAILABLE_TOOLS", "BEGIN_HEARTBEAT", "2026-08-02T23:04:05+08:00"} {
+	for _, want := range []string{
+		"system mission",
+		"trusted memory",
+		"BEGIN_AVAILABLE_TOOLS",
+		"BEGIN_HEARTBEAT",
+		"当前 UTC 时间（与 Task、ExecutionRun 等工具返回时间比较时只使用此值）：2026-08-02T15:04:05Z",
+		"当前业务本地时间（仅用于判断“今天”的自然日范围）：2026-08-02T23:04:05+08:00",
+		"业务时区：CST",
+	} {
 		if !strings.Contains(runner.prompt, want) {
 			t.Fatalf("prompt missing %q:\n%s", want, runner.prompt)
 		}
@@ -112,6 +120,24 @@ func TestWorkerBuildsHeartbeatPromptAndUsesProactiveStage(t *testing.T) {
 	}
 	if recorder.successOutput != runner.result || recorder.failureDetail != "" {
 		t.Fatalf("recorded finish output=%q failure=%q", recorder.successOutput, recorder.failureDetail)
+	}
+}
+
+func TestRepositoryPromptDoesNotCloseTasksByAge(t *testing.T) {
+	raw, err := os.ReadFile("../../conf/prompts/proactive-system-prompt.md")
+	if err != nil {
+		t.Fatalf("read proactive prompt: %v", err)
+	}
+	prompt := string(raw)
+	for _, want := range []string{"跨日、暂时沉默", "只有查到肯定证据", "超过一天"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("proactive prompt missing evidence-based close rule %q", want)
+		}
+	}
+	for _, forbidden := range []string{"1天或者2天前", "2天前的Task进行重点关闭"} {
+		if strings.Contains(prompt, forbidden) {
+			t.Fatalf("proactive prompt still closes Tasks by age: %q", forbidden)
+		}
 	}
 }
 

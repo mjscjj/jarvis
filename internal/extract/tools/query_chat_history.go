@@ -155,7 +155,7 @@ func (t *QueryChatHistoryTool) Invoke(ctx context.Context, arguments json.RawMes
 		query = query.Where("create_time <= ?", *endMS)
 	}
 	if args.Keyword != nil && strings.TrimSpace(*args.Keyword) != "" {
-		query = query.Where("content LIKE ?", "%"+likeEscape(strings.TrimSpace(*args.Keyword))+"%")
+		query = query.Where(`content LIKE ? ESCAPE '\'`, "%"+likeEscape(strings.TrimSpace(*args.Keyword))+"%")
 	}
 
 	var rows []domain.Message

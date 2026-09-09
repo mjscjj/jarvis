@@ -716,9 +716,15 @@ func TestReportCapabilitiesAvoidOKRAPIAndMorningBriefClosesSend(t *testing.T) {
 		"morning-brief-YYYYMMDD-HHMMSS",
 		"lark-cli im +messages-mget",
 		"读回成功",
+		"list-backlinks",
 	} {
 		if !strings.Contains(morning, want) {
 			t.Errorf("morning brief send contract is missing %q", want)
+		}
+	}
+	for _, obsolete := range []string{"awaiting_approval", "list-relations"} {
+		if strings.Contains(morning, obsolete) {
+			t.Errorf("morning brief still contains obsolete contract %q", obsolete)
 		}
 	}
 }

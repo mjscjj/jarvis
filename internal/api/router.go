@@ -20,6 +20,7 @@ import (
 	"jarvis/internal/plugin"
 	"jarvis/internal/progress"
 	"jarvis/internal/scheduledtask"
+	"jarvis/internal/security"
 	"jarvis/internal/sharedmem"
 	"jarvis/internal/taskcreate"
 	"jarvis/internal/textstore"
@@ -80,6 +81,7 @@ type Dependencies struct {
 	PublicBaseURL      string           // 这台部署对外可打开的根地址；分享链接用它替换浏览器地址栏里的 IP
 	Capture            *capture.Service // 调试面板手动采集触发；nil 则不注册 /api/debug/capture/* 路由
 	RuntimeSettings    *config.RuntimeSettingsService
+	SecurityAudit      *security.AuditService
 	ContextAssembler   *contextsnap.Assembler
 	CardAsks           CardAskProcessor
 	CardApprovalSecret string
@@ -201,6 +203,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.AppModules == nil {
 		return fmt.Errorf("api app module service dependency is nil")
 	}
+	if deps.SecurityAudit == nil {
+		return fmt.Errorf("api security audit dependency is nil")
+	}
 	if deps.ContextAssembler == nil {
 		return fmt.Errorf("api context assembler dependency is nil")
 	}
@@ -317,6 +322,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	// 保存到本地覆盖文件，进程重启后生效。
 	h.GET("/api/runtime-settings", GetRuntimeSettings(deps.RuntimeSettings))
 	h.PUT("/api/runtime-settings", UpdateRuntimeSettings(deps.RuntimeSettings))
+	h.GET("/api/security-settings", GetSecuritySettings(deps.RuntimeSettings))
+	h.PUT("/api/security-settings", UpdateSecuritySettings(deps.RuntimeSettings, deps.Capture))
+	h.GET("/api/security-audit-events", ListSecurityAuditEvents(deps.SecurityAudit))
 	// 工作规则：M3 与 M5 各自读取一个固定 Markdown 文件。
 	h.GET("/api/work-rules", ListWorkRules(deps.WorkRules))
 	h.GET("/api/work-rules/:work_rule_key", GetWorkRule(deps.WorkRules))

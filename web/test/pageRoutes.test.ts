@@ -20,6 +20,19 @@ test('keeps legacy OKR hashes readable after the Biz OKR rename', () => {
   })
 })
 
+test('redirects legacy agent and security settings hashes to their current pages', () => {
+  assert.deepEqual(routeFromHash('#/agents?stage=m3', 'overview'), {
+    key: 'settings',
+    selection: null,
+    viewState: { stage: 'm3', view: 'agents' },
+  })
+  assert.deepEqual(routeFromHash('#/manage/settings?view=security', 'overview'), {
+    key: 'security',
+    selection: null,
+    viewState: {},
+  })
+})
+
 test('maps a weekly share hash to the Biz OKR page and preserves its public path', () => {
   assert.deepEqual(routeFromHash('#/weekly-report?quarter=2026-Q3&week=2026-W36', 'overview'), {
     key: 'biz-okr',

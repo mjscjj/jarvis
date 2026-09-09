@@ -33,7 +33,9 @@ type QuestionField struct {
 	Style   string   `json:"style"`
 }
 
-// Field types. A button submits the form; link opens a URL and answers nothing.
+// Field types. A button answers the question; link opens a URL and answers
+// nothing. The renderer chooses a form submit or direct callback from the
+// complete set of fields.
 const (
 	FieldButton      = "button"
 	FieldSelect      = "select"

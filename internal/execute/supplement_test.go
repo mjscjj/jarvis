@@ -92,6 +92,11 @@ func TestRepositoryM5EffectivePromptUsesExplicitMessageTool(t *testing.T) {
 	if strings.Contains(prompt, "user_message") {
 		t.Fatalf("effective M5 prompt still contains legacy implicit message field:\n%s", prompt)
 	}
+	for _, obsolete := range []string{"apply 阶段", "APPROVED_PROPOSAL", "awaiting_approval"} {
+		if strings.Contains(prompt, obsolete) {
+			t.Fatalf("effective M5 prompt contains obsolete approval protocol %q:\n%s", obsolete, prompt)
+		}
+	}
 }
 
 func TestAppendExecutionSupplement(t *testing.T) {

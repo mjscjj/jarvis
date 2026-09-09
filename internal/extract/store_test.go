@@ -65,10 +65,10 @@ func TestSetTodoStatusRejectsBadInput(t *testing.T) {
 	}
 }
 
-func TestObservableTodoStatusesAreLive(t *testing.T) {
+func TestObservableTodoStatusesAreDeduplicatedBeforeTaskCreation(t *testing.T) {
 	for status := range observableTodoStatuses {
 		if _, ok := activeTodoStatuses[status]; !ok {
-			t.Fatalf("settable status %q is not an active Todo status", status)
+			t.Fatalf("settable status %q is not a deduplicated Todo status", status)
 		}
 	}
 }

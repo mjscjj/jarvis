@@ -8,18 +8,15 @@ import (
 	"jarvis/internal/semantic"
 )
 
-// activeTodoStatuses are Todo statuses that still represent a live clue for
-// semantic dedup. "materialized" is included because creating a Task does not
-// change the Todo's action identity.
-// "observing" is included because a clue nobody acts on is still a live clue:
-// re-seeing it must update its evidence, not mint a second copy, and fresh
-// evidence can pull it back to "extracted" for execution.
+// activeTodoStatuses are the Todo statuses M3 may still merge new evidence
+// into. Once a Todo is materialized, its Task owns that occurrence and a later
+// instruction must be allowed to create another Todo.
 var activeTodoStatuses = map[string]struct{}{
-	"extracted": {}, "materialized": {}, "observing": {},
+	"extracted": {}, "observing": {},
 }
 
 func ActiveTodoStatuses() []string {
-	return []string{"extracted", "materialized", "observing"}
+	return []string{"extracted", "observing"}
 }
 
 type SemanticTodo struct {
@@ -31,6 +28,7 @@ type SemanticTodo struct {
 	ProjectID        *uint64 `json:"project_id"`
 	Status           string  `json:"status"`
 	DedupFingerprint string  `json:"dedup_fingerprint"`
+	HasTask          bool    `json:"has_task"`
 }
 
 type semanticEmbedder interface {
@@ -96,8 +94,10 @@ func (d *Deduplicator) Resolve(ctx context.Context, candidate Candidate, project
 		if existing.ActionType != candidate.ActionType || !sameUint64(existing.ProjectID, projectID) {
 			return SemanticResolution{}, fmt.Errorf("semantic index domain mismatch todo_id=%d", match.TodoID)
 		}
-		if _, active := activeTodoStatuses[existing.Status]; !active {
-			return SemanticResolution{}, fmt.Errorf("semantic index contains inactive todo_id=%d status=%s", match.TodoID, existing.Status)
+		if _, active := activeTodoStatuses[existing.Status]; !active || existing.HasTask {
+			// Qdrant records the status at the last M3 upsert. Materialization is
+			// owned by the next stage, so SQLite is authoritative here.
+			continue
 		}
 		if match.Fingerprint == fingerprint {
 			id := existing.ID
@@ -134,8 +134,11 @@ func (s *PipelineStore) LoadSemanticTodo(ctx context.Context, todoID uint64) (*S
 		ProjectID        *uint64
 		Status           string
 		DedupFingerprint string
+		HasTask          bool
 	}
-	result := s.db.WithContext(ctx).Table("todo").Where("id = ?", todoID).Take(&row)
+	result := s.db.WithContext(ctx).Table("todo").
+		Select("todo.*, EXISTS (SELECT 1 FROM task WHERE task.todo_id = todo.id) AS has_task").
+		Where("todo.id = ?", todoID).Take(&row)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -145,7 +148,7 @@ func (s *PipelineStore) LoadSemanticTodo(ctx context.Context, todoID uint64) (*S
 	return &SemanticTodo{
 		ID: row.ID, ActionType: row.ActionType, Title: row.Title, Description: row.Description,
 		Target: row.Target, ProjectID: copyUint64(row.ProjectID), Status: row.Status,
-		DedupFingerprint: row.DedupFingerprint,
+		DedupFingerprint: row.DedupFingerprint, HasTask: row.HasTask,
 	}, nil
 }
 

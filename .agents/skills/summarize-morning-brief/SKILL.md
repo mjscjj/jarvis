@@ -70,7 +70,7 @@ mkdir -p "data/morning-brief/<YYYY-MM-DD>"
 - `list-todos`：未闭环线索
 - `list-scheduled-tasks`：已到或将到恢复时间的等待
 - `list-projects` / `get-context`：活跃项目背景
-- `list-facts` / `list-relations`：必要时补背景
+- `list-facts` / `list-backlinks`：必要时补历史证据和实体之间的引用背景
 - `query-messages`：本地已采集消息（不完整时不假装完整）
 
 必须读**当前**状态。主动巡视刚创建或正在执行的 Task，写「已在推进」，不要再建议「现在开始」。

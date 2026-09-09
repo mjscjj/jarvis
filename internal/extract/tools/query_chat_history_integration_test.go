@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -45,6 +46,8 @@ func TestQueryChatHistorySQLite(t *testing.T) {
 		{MessageID: "m2", ChatID: "oc_hist", ChatMode: "group", SenderOpenID: "ou_b", SenderName: "Bob", SenderType: "user", MessageType: "text", Content: "无关寒暄", CreateTime: base + 1000},
 		{MessageID: "m3", ChatID: "oc_hist", ChatMode: "group", SenderOpenID: "ou_a", SenderName: "Alice", SenderType: "user", MessageType: "text", Content: "另一个 payment 仓库", CreateTime: base + 2000},
 		{MessageID: "m4", ChatID: "oc_other", ChatMode: "group", SenderOpenID: "ou_a", SenderName: "Alice", SenderType: "user", MessageType: "text", Content: "别的群 login", CreateTime: base + 500},
+		{MessageID: "m5", ChatID: "oc_hist", ChatMode: "group", SenderOpenID: "ou_a", SenderName: "Alice", SenderType: "user", MessageType: "text", Content: `字面量 100% a_b C:\tmp`, CreateTime: base + 3000},
+		{MessageID: "m6", ChatID: "oc_hist", ChatMode: "group", SenderOpenID: "ou_a", SenderName: "Alice", SenderType: "user", MessageType: "text", Content: "通配对照 1000 axb", CreateTime: base + 4000},
 	}
 	if err := tx.Create(&seed).Error; err != nil {
 		t.Fatalf("seed messages: %v", err)
@@ -61,6 +64,18 @@ func TestQueryChatHistorySQLite(t *testing.T) {
 	}
 	if result.Count != 2 || result.Messages[0].MessageID != "m1" || result.Messages[1].MessageID != "m3" {
 		t.Fatalf("keyword filter result = %#v", result)
+	}
+	for _, keyword := range []string{"100%", "a_b", `C:\tmp`} {
+		out, err = tool.Invoke(context.Background(), json.RawMessage(`{"chat_id":"oc_hist","start_time":null,"end_time":null,"keyword":`+strconv.Quote(keyword)+`,"limit":10}`))
+		if err != nil {
+			t.Fatalf("Invoke(%q) error = %v", keyword, err)
+		}
+		if err := json.Unmarshal(out, &result); err != nil {
+			t.Fatalf("decode %q result: %v", keyword, err)
+		}
+		if result.Count != 1 || result.Messages[0].MessageID != "m5" {
+			t.Fatalf("literal keyword %q result = %#v", keyword, result)
+		}
 	}
 
 	end := time.UnixMilli(base + 1500).UTC().Format(time.RFC3339)

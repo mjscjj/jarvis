@@ -7,10 +7,10 @@ const pageHashes: Record<string, string> = {
   progress: '/review',
   'biz-okr': '/biz-okr',
   background: '/memory',
-  agents: '/agents',
   todos: '/manage/clues',
   'scheduled-tasks': '/manage/automations',
   plugins: '/plugins',
+  security: '/security',
   settings: '/manage/settings',
   debug: '/manage/runtime',
 }
@@ -33,6 +33,12 @@ export function routeFromHash(hash: string, initialKey: string): HashRoute {
   const raw = hash.replace(/^#/, '')
   const [path, query = ''] = raw.split('?')
   const viewState = Object.fromEntries(new URLSearchParams(query).entries())
+  if (path === '/agents') {
+    return { key: 'settings', selection: null, viewState: { ...viewState, view: 'agents' } }
+  }
+  if (path === '/manage/settings' && viewState.view === 'security') {
+    return { key: 'security', selection: null, viewState: {} }
+  }
   const taskMatch = path.match(/^\/work\/task\/(\d+)$/)
   if (taskMatch) {
     const id = Number(taskMatch[1])

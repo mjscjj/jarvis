@@ -69,6 +69,7 @@ type RuntimeSettings struct {
 	CaptureScanWorkers        int    `json:"capture_scan_workers"`
 	CaptureDiscoverSchedule   string `json:"capture_discover_schedule"`
 	CaptureScanSchedule       string `json:"capture_scan_schedule"`
+	CaptureP2PWindowMinutes   int    `json:"capture_p2p_activation_window_minutes"`
 	CaptureAutoRelatedP2PTopN int    `json:"capture_auto_related_p2p_top_n"`
 
 	FactEngineEnabled           bool   `json:"fact_engine_enabled"`
@@ -110,13 +111,30 @@ type RuntimeSettingsView struct {
 	OverridePath    string          `json:"override_path"`
 }
 
+type SecuritySettings struct {
+	P2PScanEnabled bool `json:"p2p_scan_enabled"`
+}
+
+type SecurityCapability struct {
+	Enforceable bool   `json:"enforceable"`
+	Enabled     bool   `json:"enabled"`
+	Message     string `json:"message"`
+}
+
+type SecuritySettingsView struct {
+	Settings        SecuritySettings   `json:"settings"`
+	RestartRequired bool               `json:"restart_required"`
+	L4DocumentRead  SecurityCapability `json:"l4_document_read"`
+}
+
 // RuntimeSettingsService persists a local overlay next to the main config.
 // The active snapshot is frozen at process start, so the API can truthfully
 // report whether saved settings differ from the running process.
 type RuntimeSettingsService struct {
-	mu         sync.Mutex
-	configPath string
-	active     RuntimeSettings
+	mu                   sync.Mutex
+	configPath           string
+	active               RuntimeSettings
+	activeP2PScanEnabled bool
 }
 
 func NewRuntimeSettingsService(configPath string, active *Config) (*RuntimeSettingsService, error) {
@@ -127,8 +145,9 @@ func NewRuntimeSettingsService(configPath string, active *Config) (*RuntimeSetti
 		return nil, fmt.Errorf("runtime settings active config is nil")
 	}
 	return &RuntimeSettingsService{
-		configPath: configPath,
-		active:     runtimeSettingsFromConfig(active),
+		configPath:           configPath,
+		active:               runtimeSettingsFromConfig(active),
+		activeP2PScanEnabled: active.Capture.P2PScanEnabled,
 	}, nil
 }
 
@@ -165,6 +184,8 @@ func (s *RuntimeSettingsService) Update(ctx context.Context, input RuntimeSettin
 	// settings page. Preserve its active value when that page rewrites the
 	// runtime overlay.
 	override.Auth = cfg.Auth
+	override.Server.Addr = cfg.Server.Addr
+	override.Capture.P2PScanEnabled = cfg.Capture.P2PScanEnabled
 	override.Extract.PrincipalOpenID = cfg.Extract.PrincipalOpenID
 	override.LarkCLI.Bin = cfg.LarkCLI.Bin
 	override.DailyDigest.GitAuthor = cfg.DailyDigest.GitAuthor
@@ -173,6 +194,64 @@ func (s *RuntimeSettingsService) Update(ctx context.Context, input RuntimeSettin
 		return nil, err
 	}
 	return s.getLocked()
+}
+
+func (s *RuntimeSettingsService) GetSecurity(ctx context.Context) (*SecuritySettingsView, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cfg, err := Load(s.configPath)
+	if err != nil {
+		return nil, err
+	}
+	return s.securityView(cfg), nil
+}
+
+func (s *RuntimeSettingsService) UpdateSecurity(ctx context.Context, input SecuritySettings) (*SecuritySettingsView, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cfg, err := Load(s.configPath)
+	if err != nil {
+		return nil, err
+	}
+	cfg.Capture.P2PScanEnabled = input.P2PScanEnabled
+	if err := cfg.validate(); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidRuntimeSettings, err)
+	}
+	settings := runtimeSettingsFromConfig(cfg)
+	override := runtimeOverrideFromSettings(settings)
+	override.Server.Addr = cfg.Server.Addr
+	override.Capture.P2PScanEnabled = cfg.Capture.P2PScanEnabled
+	override.Extract.PrincipalOpenID = cfg.Extract.PrincipalOpenID
+	override.LarkCLI.Bin = cfg.LarkCLI.Bin
+	override.DailyDigest.GitAuthor = cfg.DailyDigest.GitAuthor
+	override.CardApproval = cfg.CardApproval
+	if err := writeRuntimeOverride(RuntimeOverridePath(s.configPath), override); err != nil {
+		return nil, err
+	}
+	reloaded, err := Load(s.configPath)
+	if err != nil {
+		return nil, err
+	}
+	return s.securityView(reloaded), nil
+}
+
+func (s *RuntimeSettingsService) securityView(cfg *Config) *SecuritySettingsView {
+	return &SecuritySettingsView{
+		Settings:        SecuritySettings{P2PScanEnabled: cfg.Capture.P2PScanEnabled},
+		RestartRequired: cfg.Capture.P2PScanEnabled != s.activeP2PScanEnabled,
+		L4DocumentRead: SecurityCapability{
+			Enforceable: false,
+			Enabled:     false,
+			Message:     "当前 lark-cli 没有统一的读取前密级拦截能力，暂不提供虚假的开关。",
+		},
+	}
 }
 
 func (s *RuntimeSettingsService) getLocked() (*RuntimeSettingsView, error) {
@@ -234,6 +313,7 @@ func runtimeSettingsFromConfig(cfg *Config) RuntimeSettings {
 		CaptureScanWorkers:           cfg.Capture.ScanWorkers,
 		CaptureDiscoverSchedule:      cfg.Capture.DiscoverSchedule,
 		CaptureScanSchedule:          cfg.Capture.ScanSchedule,
+		CaptureP2PWindowMinutes:      cfg.Capture.P2PWindowMinutes,
 		CaptureAutoRelatedP2PTopN:    cfg.Capture.AutoRelatedP2PTopN,
 		FactEngineEnabled:            cfg.FactEngine.Enabled,
 		FactEngineSchedule:           cfg.FactEngine.Schedule,
@@ -311,6 +391,7 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 	cfg.Capture.ScanWorkers = input.CaptureScanWorkers
 	cfg.Capture.DiscoverSchedule = strings.TrimSpace(input.CaptureDiscoverSchedule)
 	cfg.Capture.ScanSchedule = strings.TrimSpace(input.CaptureScanSchedule)
+	cfg.Capture.P2PWindowMinutes = input.CaptureP2PWindowMinutes
 	cfg.Capture.AutoRelatedP2PTopN = input.CaptureAutoRelatedP2PTopN
 	cfg.FactEngine.Enabled = input.FactEngineEnabled
 	cfg.FactEngine.Schedule = strings.TrimSpace(input.FactEngineSchedule)
@@ -345,7 +426,10 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 type runtimeOverride struct {
 	Identity IdentityConfig `yaml:"identity"`
 	Auth     AuthConfig     `yaml:"auth"`
-	Extract  struct {
+	Server   struct {
+		Addr string `yaml:"addr"`
+	} `yaml:"server"`
+	Extract struct {
 		PrincipalOpenID       string  `yaml:"principal_open_id"`
 		Enabled               bool    `yaml:"enabled"`
 		Engine                string  `yaml:"engine"`
@@ -396,11 +480,13 @@ type runtimeOverride struct {
 		TimeoutSeconds  int    `yaml:"timeout_seconds"`
 	} `yaml:"chat"`
 	Capture struct {
-		PageSize           int    `yaml:"page_size"`
-		ScanWorkers        int    `yaml:"scan_workers"`
-		DiscoverSchedule   string `yaml:"discover_schedule"`
-		ScanSchedule       string `yaml:"scan_schedule"`
-		AutoRelatedP2PTopN int    `yaml:"auto_related_p2p_top_n"`
+		PageSize                   int    `yaml:"page_size"`
+		ScanWorkers                int    `yaml:"scan_workers"`
+		DiscoverSchedule           string `yaml:"discover_schedule"`
+		ScanSchedule               string `yaml:"scan_schedule"`
+		P2PScanEnabled             bool   `yaml:"p2p_scan_enabled"`
+		P2PActivationWindowMinutes int    `yaml:"p2p_activation_window_minutes"`
+		AutoRelatedP2PTopN         int    `yaml:"auto_related_p2p_top_n"`
 	} `yaml:"capture"`
 	// CardApproval is local identity/secret configuration, not a setting the
 	// management page may edit. Preserve its active value whenever that page
@@ -494,6 +580,7 @@ func runtimeOverrideFromSettings(input RuntimeSettings) runtimeOverride {
 	override.Capture.ScanWorkers = input.CaptureScanWorkers
 	override.Capture.DiscoverSchedule = strings.TrimSpace(input.CaptureDiscoverSchedule)
 	override.Capture.ScanSchedule = strings.TrimSpace(input.CaptureScanSchedule)
+	override.Capture.P2PActivationWindowMinutes = input.CaptureP2PWindowMinutes
 	override.Capture.AutoRelatedP2PTopN = input.CaptureAutoRelatedP2PTopN
 	override.FactEngine.Enabled = input.FactEngineEnabled
 	override.FactEngine.Schedule = strings.TrimSpace(input.FactEngineSchedule)

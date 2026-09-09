@@ -17,7 +17,6 @@ export interface PageContextValue {
 }
 
 const Context = createContext<PageContextValue | null>(null)
-
 function writePageHash(
   key: string,
   selection: PageSelection | null,
@@ -49,12 +48,19 @@ export function PageContextProvider({
   const [viewState, setViewStateState] = useState<Record<string, string>>(initialRoute.viewState)
 
   useEffect(() => {
-    if (!window.location.hash) writePageHash(initialKey, null, {}, true)
+    if (!window.location.hash) {
+      writePageHash(initialKey, null, {}, true)
+    } else if (window.location.hash.replace(/^#/, '').split('?')[0] === '/agents') {
+      writePageHash(initialRoute.key, initialRoute.selection, initialRoute.viewState, true)
+    }
     const syncFromHash = () => {
       const route = routeFromHash(window.location.hash, initialKey)
       setActiveKeyState(route.key)
       setSelectionState(route.selection)
       setViewStateState(route.viewState)
+      if (window.location.hash.replace(/^#/, '').split('?')[0] === '/agents') {
+        writePageHash(route.key, route.selection, route.viewState, true)
+      }
     }
     window.addEventListener('hashchange', syncFromHash)
     return () => window.removeEventListener('hashchange', syncFromHash)

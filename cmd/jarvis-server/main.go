@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"jarvis/internal/agentconfig"
+	"jarvis/internal/agentenv"
 	"jarvis/internal/agentidentity"
 	"jarvis/internal/api"
 	"jarvis/internal/appmodule"
@@ -50,6 +51,7 @@ import (
 	"jarvis/internal/proactive"
 	"jarvis/internal/progress"
 	"jarvis/internal/scheduledtask"
+	"jarvis/internal/security"
 	"jarvis/internal/semantic"
 	"jarvis/internal/sharedmem"
 	"jarvis/internal/skill"
@@ -124,11 +126,8 @@ func main() {
 	if err != nil {
 		fatalf("resolve config path failed: %v", err)
 	}
-	repoRoot, err := os.Getwd()
-	if err != nil {
-		fatalf("resolve server working directory: %v", err)
-	}
-	if err := cfg.ExportToolEnvironment(configPathAbsolute, repoRoot); err != nil {
+	runtimeRoot := filepath.Dir(filepath.Dir(configPathAbsolute))
+	if err := cfg.ExportToolEnvironment(configPathAbsolute, runtimeRoot); err != nil {
 		fatalf("configure instance tool environment: %v", err)
 	}
 	textFileService, err := textstore.NewService(filepath.Join(filepath.Dir(configPathAbsolute), "prompts"))
@@ -259,6 +258,12 @@ func main() {
 		infof("sqlite schema migration completed")
 		return
 	}
+	if err := agentenv.ConfigureTools(runtimeRoot); err != nil {
+		fatalf("configure Agent tools failed: %v", err)
+	}
+	if err := os.Setenv("JARVIS_TIMEZONE", cfg.Capture.Timezone); err != nil {
+		fatalf("configure Agent timezone failed: %v", err)
+	}
 	progressService, err := progress.NewService(db)
 	if err != nil {
 		fatalf("initialize progress service failed: %v", err)
@@ -311,15 +316,17 @@ func main() {
 		infof("feishu user identity refreshed at startup: user=%s token=%s", user.UserName, user.TokenStatus)
 	}
 	captureService, err := capture.NewService(db, larkClient, capture.Options{
-		PageSize:           cfg.Capture.PageSize,
-		ScanWorkers:        cfg.Capture.ScanWorkers,
-		HotAge:             time.Duration(cfg.Capture.HotAgeHours) * time.Hour,
-		WarmAge:            time.Duration(cfg.Capture.WarmAgeHours) * time.Hour,
-		Location:           location,
-		PrincipalOpenID:    cfg.Extract.PrincipalOpenID,
-		SearchOverlap:      10 * time.Minute,
-		ActivationContext:  time.Duration(cfg.Extract.ContextWindowMinutes) * time.Minute,
-		AutoRelatedP2PTopN: cfg.Capture.AutoRelatedP2PTopN,
+		PageSize:            cfg.Capture.PageSize,
+		ScanWorkers:         cfg.Capture.ScanWorkers,
+		HotAge:              time.Duration(cfg.Capture.HotAgeHours) * time.Hour,
+		WarmAge:             time.Duration(cfg.Capture.WarmAgeHours) * time.Hour,
+		Location:            location,
+		PrincipalOpenID:     cfg.Extract.PrincipalOpenID,
+		SearchOverlap:       10 * time.Minute,
+		ActivationContext:   time.Duration(cfg.Extract.ContextWindowMinutes) * time.Minute,
+		P2PActivationWindow: time.Duration(cfg.Capture.P2PWindowMinutes) * time.Minute,
+		P2PScanEnabled:      cfg.Capture.P2PScanEnabled,
+		AutoRelatedP2PTopN:  cfg.Capture.AutoRelatedP2PTopN,
 	})
 	if err != nil {
 		fatalf("initialize capture service failed: %v", err)
@@ -333,7 +340,7 @@ func main() {
 		Model:           cfg.FactEngine.Model,
 		ReasoningEffort: cfg.FactEngine.ReasoningEffort,
 		Sandbox:         cfg.FactEngine.Sandbox,
-		WorkspaceRoot:   filepath.Dir(filepath.Dir(configPathAbsolute)),
+		WorkspaceRoot:   runtimeRoot,
 		Timeout:         time.Duration(cfg.FactEngine.TimeoutSec) * time.Second,
 	})
 	if err != nil {
@@ -412,7 +419,7 @@ func main() {
 		Prompts:       runtimePrompts,
 		SharedMemory:  sharedMemoryService,
 		Sandbox:       cfg.Proactive.Sandbox,
-		WorkspaceRoot: filepath.Dir(filepath.Dir(configPathAbsolute)),
+		WorkspaceRoot: runtimeRoot,
 		Location:      location,
 		Engine:        cfg.Proactive.Bin,
 		Model:         cfg.Proactive.Model,
@@ -431,7 +438,7 @@ func main() {
 		Runner:        meetingSweepRunner,
 		Prompts:       runtimePrompts,
 		Sandbox:       cfg.MeetingSweep.Sandbox,
-		WorkspaceRoot: filepath.Dir(filepath.Dir(configPathAbsolute)),
+		WorkspaceRoot: runtimeRoot,
 		Location:      location,
 		Engine:        cfg.MeetingSweep.Bin,
 		Model:         cfg.MeetingSweep.Model,
@@ -450,13 +457,13 @@ func main() {
 		Runner:        morningBriefRunner,
 		Prompts:       runtimePrompts,
 		Sandbox:       cfg.MorningBrief.Sandbox,
-		WorkspaceRoot: filepath.Dir(filepath.Dir(configPathAbsolute)),
+		WorkspaceRoot: runtimeRoot,
 		Location:      location,
 	})
 	if err != nil {
 		fatalf("initialize morning brief worker failed: %v", err)
 	}
-	morningBriefReader, err := morningbrief.NewReader(filepath.Dir(filepath.Dir(configPathAbsolute)), location)
+	morningBriefReader, err := morningbrief.NewReader(runtimeRoot, location)
 	if err != nil {
 		fatalf("initialize morning brief reader failed: %v", err)
 	}
@@ -676,7 +683,7 @@ func main() {
 		PrincipalOpenID: cfg.Extract.PrincipalOpenID,
 		GitAuthor:       cfg.DailyDigest.GitAuthor,
 		RepoRoot:        cfg.Execute.RepoRoot,
-		WorkspaceRoot:   filepath.Dir(filepath.Dir(configPathAbsolute)),
+		WorkspaceRoot:   runtimeRoot,
 		PersonSkillDir:  filepath.Join(cfg.Skills.Root, "summarize-person-day"),
 		GroupSkillDir:   filepath.Join(cfg.Skills.Root, "feishu-group-daily-summary"),
 		SummarySandbox:  "danger-full-access",
@@ -1093,12 +1100,17 @@ func main() {
 	if err != nil {
 		fatalf("initialize ByteDance SSO service failed: %v", err)
 	}
+	securityAuditService, err := security.NewAuditService(db)
+	if err != nil {
+		fatalf("initialize security audit service failed: %v", err)
+	}
+	h.Use(securityAuditService.Middleware(authService))
 	h.Use(authn.BrowserMiddleware(authService))
 	runtimeSettingsService, err := config.NewRuntimeSettingsService(*configPath, cfg)
 	if err != nil {
 		fatalf("initialize runtime settings service failed: %v", err)
 	}
-	systemControlService, err := systemcontrol.NewService(filepath.Join(repoRoot, "scripts", "stop-jarvis.sh"), os.Getpid())
+	systemControlService, err := systemcontrol.NewService(filepath.Join(runtimeRoot, "scripts", "stop-jarvis.sh"), os.Getpid())
 	if err != nil {
 		fatalf("initialize system control service failed: %v", err)
 	}
@@ -1181,6 +1193,7 @@ func main() {
 		}(), Capture: captureService,
 		PublicBaseURL:      cfg.Server.PublicBaseURL,
 		RuntimeSettings:    runtimeSettingsService,
+		SecurityAudit:      securityAuditService,
 		ContextAssembler:   contextAssembler,
 		CardAsks:           cardAskProcessor,
 		CardApprovalSecret: cfg.CardApproval.RelaySecret,

@@ -66,6 +66,18 @@
   white-space: nowrap;
 }
 
+.workbench-task-bulkbar {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  margin: -4px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-soft);
+}
+
 .workbench-task-updated {
   font-size: 11px;
   white-space: nowrap;

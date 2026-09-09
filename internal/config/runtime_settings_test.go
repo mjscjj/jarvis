@@ -96,6 +96,8 @@ capture:
   timezone: "Asia/Shanghai"
   discover_schedule: "@every 6h"
   scan_schedule: "@every 5m"
+  p2p_scan_enabled: true
+  p2p_activation_window_minutes: 15
 codex:
   bin: "traex"
   model: "analysis-model"
@@ -191,6 +193,7 @@ chat:
 	input.ExtractSchedule = "@every 2m"
 	input.ExtractConcurrency = 4
 	input.CaptureScanWorkers = 6
+	input.CaptureP2PWindowMinutes = 25
 	input.FactEngineReasoningEffort = "high"
 	input.FactEngineWindowMaxMessages = 80
 	input.ProactiveSchedule = "@every 2h"
@@ -209,7 +212,8 @@ chat:
 	}
 	if updated.Settings.AgentDisplayName != "小贾" || updated.Settings.AnalysisCLI != "codex" || updated.Settings.ExecuteCLI != "traex" || updated.Settings.ChatCLI != "traex" || !updated.Settings.ChatFastMode ||
 		updated.Settings.ExecuteConcurrency != 4 || updated.Settings.ExtractSchedule != "@every 2m" || updated.Settings.ExtractConcurrency != 4 ||
-		updated.Settings.CaptureScanWorkers != 6 || updated.Settings.FactEngineReasoningEffort != "high" || updated.Settings.FactEngineWindowMaxMessages != 80 ||
+		updated.Settings.CaptureScanWorkers != 6 || updated.Settings.CaptureP2PWindowMinutes != 25 ||
+		updated.Settings.FactEngineReasoningEffort != "high" || updated.Settings.FactEngineWindowMaxMessages != 80 ||
 		updated.Settings.ProactiveSchedule != "@every 2h" || updated.Settings.ProactiveStartupDelaySeconds != 180 ||
 		updated.Settings.LarkRateLimit != 7.5 || updated.Settings.DailyDigestConcurrency != 4 {
 		t.Fatalf("updated settings = %#v", updated.Settings)
@@ -231,7 +235,8 @@ chat:
 	}
 	if reloaded.Identity.DisplayName != "小贾" || reloaded.Codex.Bin != "codex" || reloaded.Execute.Bin != "traex" || reloaded.Chat.Bin != "traex" || !reloaded.Chat.FastMode ||
 		reloaded.Execute.Concurrency != 4 || reloaded.Extract.Schedule != "@every 2m" || reloaded.Extract.Concurrency != 4 ||
-		reloaded.Capture.ScanWorkers != 6 || reloaded.FactEngine.ReasoningEffort != "high" || reloaded.FactEngine.WindowMaxMessages != 80 ||
+		reloaded.Capture.ScanWorkers != 6 || !reloaded.Capture.P2PScanEnabled || reloaded.Capture.P2PWindowMinutes != 25 ||
+		reloaded.FactEngine.ReasoningEffort != "high" || reloaded.FactEngine.WindowMaxMessages != 80 ||
 		reloaded.Proactive.Schedule != "@every 2h" || reloaded.Proactive.StartupDelaySeconds != 180 ||
 		reloaded.LarkCLI.RateLimit != 7.5 || reloaded.DailyDigest.GroupConcurrency != 4 {
 		t.Fatalf("reloaded config = %#v", reloaded)
@@ -312,6 +317,46 @@ func TestRuntimeSettingsUpdateRejectsInvalidSchedule(t *testing.T) {
 	}
 	if _, err := os.Stat(RuntimeOverridePath(configPath)); !os.IsNotExist(err) {
 		t.Fatalf("invalid update wrote override: %v", err)
+	}
+}
+
+func TestSecuritySettingsUpdateOwnsOnlyP2PScan(t *testing.T) {
+	configPath := writeRuntimeSettingsTestConfig(t)
+	if err := os.WriteFile(RuntimeOverridePath(configPath), []byte(`
+server:
+  addr: 127.0.0.1:18802
+`), 0o600); err != nil {
+		t.Fatalf("write runtime override: %v", err)
+	}
+	active, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	service, err := NewRuntimeSettingsService(configPath, active)
+	if err != nil {
+		t.Fatalf("NewRuntimeSettingsService() error = %v", err)
+	}
+
+	view, err := service.UpdateSecurity(context.Background(), SecuritySettings{P2PScanEnabled: false})
+	if err != nil {
+		t.Fatalf("UpdateSecurity() error = %v", err)
+	}
+	if view.Settings.P2PScanEnabled || !view.RestartRequired {
+		t.Fatalf("security view = %#v", view)
+	}
+
+	reloaded, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() after security update error = %v", err)
+	}
+	if reloaded.Capture.P2PScanEnabled {
+		t.Fatal("p2p scan remained enabled")
+	}
+	if reloaded.Capture.ScanSchedule != active.Capture.ScanSchedule ||
+		reloaded.Execute.Model != active.Execute.Model ||
+		reloaded.Proactive.Schedule != active.Proactive.Schedule ||
+		reloaded.Server.Addr != active.Server.Addr {
+		t.Fatalf("security update changed unrelated runtime settings: %#v", reloaded)
 	}
 }
 

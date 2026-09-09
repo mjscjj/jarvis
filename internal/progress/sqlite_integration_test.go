@@ -12,12 +12,12 @@ import (
 
 	"jarvis/internal/background"
 	"jarvis/internal/config"
+	"jarvis/internal/contextpack"
+	"jarvis/internal/datatypes"
 	"jarvis/internal/domain"
 	"jarvis/internal/execute"
 	"jarvis/internal/progress"
 	"jarvis/internal/store"
-
-	"jarvis/internal/datatypes"
 )
 
 func TestProgressEventsSQLite(t *testing.T) {
@@ -74,10 +74,19 @@ func TestProgressEventsSQLite(t *testing.T) {
 	}
 
 	now := time.Now().UTC()
+	content, err := contextpack.Freeze(
+		[]byte(`{"source_message_ids":[],"request":"实现事件存储"}`),
+		[]byte(`{}`),
+		"integration",
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("freeze Todo content: %v", err)
+	}
 	todo := domain.Todo{
 		Title: "实现存储", Description: "实现事件存储", ActionType: "code_change",
 		Target: "jarvis", SourceMessageIDs: datatypes.JSON(`[]`), SourceQuote: "test",
-		Content:    datatypes.JSON(`{"source":{"request":"integration"},"capture":{},"annotation":{}}`),
+		Content:    datatypes.JSON(content),
 		Resolution: datatypes.JSON(`{}`),
 		Status:     "materialized", DedupFingerprint: strings.Repeat("a", 64),
 		FirstSeenAt: now, LastEvidenceAt: now,
@@ -87,8 +96,9 @@ func TestProgressEventsSQLite(t *testing.T) {
 	}
 	task := domain.Task{
 		TodoID: &todo.ID, Title: todo.Title, ActionType: todo.ActionType,
-		SourcePayload: todo.Content,
-		Status:        "pending"}
+		Target: todo.Target, SourcePayload: todo.Content,
+		SourceType: "todo", SourceID: &todo.ID, Status: "pending",
+	}
 	if err := db.Create(&task).Error; err != nil {
 		t.Fatalf("create Task: %v", err)
 	}

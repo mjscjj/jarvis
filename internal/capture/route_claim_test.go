@@ -50,6 +50,29 @@ func TestCaptureRouteClaimSkipsOnlyCurrentMessageWithoutOpeningMonitoring(t *tes
 	}
 }
 
+func TestCaptureRouteClaimAcceptsP2PWhenScanningDisabled(t *testing.T) {
+	db := openRouteClaimTestDB(t)
+	service := &Service{db: db, opts: Options{P2PScanEnabled: false}, now: time.Now}
+	message, err := service.CaptureRouteClaim(t.Context(), RouteClaimMessage{
+		MessageID: "om_cc_p2p", ChatID: "oc_cc_p2p", ChatMode: "p2p",
+		SenderOpenID: "ou_user", SenderName: "发起人", MessageType: "text",
+		Content: "当前单聊", ContentRaw: `{"text":"当前单聊"}`, CreateTime: 1786752000000,
+	})
+	if err != nil {
+		t.Fatalf("CaptureRouteClaim() error = %v", err)
+	}
+	if message.Source != "cc_connect" || !message.ExtractionSkipped {
+		t.Fatalf("captured message = %#v", message)
+	}
+	var persisted domain.Message
+	if err := db.Where("message_id = ?", message.MessageID).Take(&persisted).Error; err != nil {
+		t.Fatalf("load captured p2p: %v", err)
+	}
+	if persisted.ChatMode != "p2p" || persisted.Source != "cc_connect" {
+		t.Fatalf("persisted p2p = %#v", persisted)
+	}
+}
+
 func TestCaptureRouteClaimMarksAndEnrichesExistingPolledMessage(t *testing.T) {
 	db := openRouteClaimTestDB(t)
 	groupName := "话题群"

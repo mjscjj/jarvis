@@ -72,6 +72,11 @@ import type {
   RuntimeSettingsView,
   AppModule,
   AppModuleInput,
+  SecuritySettings,
+  SecuritySettingsView,
+  AccessAuditActorKind,
+  AccessAuditEventList,
+  AccessAuditOperation,
   AgentIdentity,
   Plugin,
   PluginAuthorization,
@@ -863,4 +868,31 @@ export function listAppModules(signal?: AbortSignal): Promise<{ items: AppModule
 
 export function updateAppModule(key: string, body: AppModuleInput): Promise<AppModule> {
   return request<AppModule>(`/api/app-modules/${encodeURIComponent(key)}`, { method: 'PUT', body })
+}
+
+export function getSecuritySettings(signal?: AbortSignal): Promise<SecuritySettingsView> {
+  return request<SecuritySettingsView>('/api/security-settings', { signal })
+}
+
+export function updateSecuritySettings(body: SecuritySettings): Promise<SecuritySettingsView> {
+  return request<SecuritySettingsView>('/api/security-settings', { method: 'PUT', body })
+}
+
+export function listSecurityAuditEvents(
+  query: {
+    days: 1 | 7 | 30
+    actorKind?: AccessAuditActorKind
+    operation?: AccessAuditOperation
+    route?: string
+    resource?: string
+    limit?: number
+  },
+  signal?: AbortSignal,
+): Promise<AccessAuditEventList> {
+  const params = new URLSearchParams({ days: String(query.days), limit: String(query.limit ?? 200) })
+  if (query.actorKind) params.set('actor_kind', query.actorKind)
+  if (query.operation) params.set('operation', query.operation)
+  if (query.route?.trim()) params.set('route', query.route.trim())
+  if (query.resource?.trim()) params.set('resource', query.resource.trim())
+  return request<AccessAuditEventList>(`/api/security-audit-events?${params.toString()}`, { signal })
 }

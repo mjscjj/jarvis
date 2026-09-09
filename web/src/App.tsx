@@ -13,12 +13,12 @@ import {
   DatabaseOutlined,
   MoreOutlined,
   PoweroffOutlined,
-  RobotOutlined,
   ApiOutlined,
   CheckOutlined,
   CloseOutlined,
   EditOutlined,
   LogoutOutlined,
+  SafetyCertificateOutlined,
   UserOutlined,
 } from '@ant-design/icons'
 import { AgentIdentityProvider, useAgentIdentity } from './agentIdentity'
@@ -41,13 +41,13 @@ const { Title } = Typography
 const Tasks = lazy(() => import('./Tasks'))
 const Progress = lazy(() => import('./Progress'))
 const Background = lazy(() => import('./Background'))
-const AgentSettings = lazy(() => import('./AgentSettings'))
 const Settings = lazy(() => import('./Background').then((module) => ({ default: module.Settings })))
 const Todos = lazy(() => import('./Todos'))
 const ScheduledTasks = lazy(() => import('./ScheduledTasks'))
 const Debug = lazy(() => import('./Debug'))
 const Chat = lazy(() => import('./Chat'))
 const Plugins = lazy(() => import('./Plugins'))
+const SecuritySettings = lazy(() => import('./SecuritySettings'))
 
 const DEFAULT_KEY = 'overview'
 
@@ -75,10 +75,10 @@ const pageLabels: Record<string, string> = {
   tasks: '任务',
   progress: '工作台',
   background: '世界',
-  agents: '工作设定',
   todos: '线索',
   'scheduled-tasks': '任务',
   plugins: '插件',
+  security: '安全保护',
   settings: '系统设置',
   debug: '运行状态',
   ...Object.fromEntries(appModuleRegistry.map((module) => [module.key, module.label])),
@@ -193,7 +193,7 @@ function AppShell() {
     }),
     { key: 'background', label: '世界', icon: <DatabaseOutlined /> },
     pluginMenu,
-    { key: 'agents', label: '工作设定', icon: <RobotOutlined /> },
+    { key: 'security', label: '安全保护', icon: <SafetyCertificateOutlined /> },
     { type: 'divider' },
     {
       key: 'management',
@@ -214,7 +214,7 @@ function AppShell() {
     'scheduled-tasks': <ScheduledTasks />,
     plugins: <Plugins />,
     background: <Background />,
-    agents: <AgentSettings />,
+    security: <SecuritySettings />,
     settings: <Settings />,
     progress: <Progress />,
     debug: <Debug />,
@@ -414,7 +414,6 @@ function AppShell() {
       children: enabledModuleChildren(module, resolvedModuleEnablement, okrManagementAccess),
     })),
     { key: 'background', label: '世界', icon: <DatabaseOutlined /> },
-    { key: 'agents', label: 'Agent', icon: <RobotOutlined /> },
   ]
   const primaryNavigationKey = context.active_key === 'progress'
     ? 'overview'
@@ -636,6 +635,7 @@ function AppShell() {
             </div>
           </div>}
           {[
+            { key: 'security', label: '安全保护', icon: <SafetyCertificateOutlined /> },
             { key: 'todos', label: '线索', icon: <CheckCircleOutlined /> },
             { key: 'settings', label: '系统设置', icon: <SettingOutlined /> },
             { key: 'debug', label: '运行状态', icon: <ToolOutlined /> },

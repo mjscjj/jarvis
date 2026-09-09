@@ -2,15 +2,20 @@ package extract
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"encoding/json"
 	"jarvis/internal/contextpack"
 	"jarvis/internal/contextsnap"
+	"jarvis/internal/datatypes"
 	"jarvis/internal/domain"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func TestPrepareResultsBindsLeaderEvidence(t *testing.T) {
@@ -157,5 +162,70 @@ func TestM3OwnedTodoStatuses(t *testing.T) {
 		if _, ok := allowedTodoStatuses[status]; !ok {
 			t.Fatalf("m3-owned status %q is not an allowed Todo status", status)
 		}
+	}
+}
+
+func TestPersistCandidateCreatesNewTodoAfterPreviousTask(t *testing.T) {
+	for _, previousStatus := range []string{"materialized", "observing"} {
+		t.Run(previousStatus, func(t *testing.T) {
+			db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "todo.db")), &gorm.Config{
+				DisableForeignKeyConstraintWhenMigrating: true,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := db.AutoMigrate(&domain.Group{}, &domain.Todo{}, &domain.Task{}, &domain.TodoEvent{}); err != nil {
+				t.Fatal(err)
+			}
+			group := domain.Group{ChatID: "oc_dedup", ChatMode: "p2p", Tier: "hot"}
+			if err := db.Create(&group).Error; err != nil {
+				t.Fatal(err)
+			}
+			candidate := strictCandidate()
+			fingerprint, err := Fingerprint(&candidate, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			now := time.Now().UTC()
+			previous := domain.Todo{
+				Title: candidate.Title, Description: candidate.Payload,
+				ActionType: candidate.ActionType, Target: candidate.Target,
+				SourceMessageIDs: datatypes.JSON(`["om_old"]`), SourceQuote: "旧指令",
+				GroupID: &group.ID, Status: previousStatus, DedupFingerprint: fingerprint,
+				Revision: 1, FirstSeenAt: now.Add(-time.Hour), LastEvidenceAt: now.Add(-time.Hour),
+			}
+			if err := db.Create(&previous).Error; err != nil {
+				t.Fatal(err)
+			}
+			task := domain.Task{
+				TodoID: &previous.ID, Title: previous.Title, ActionType: previous.ActionType,
+				Target: previous.Target, SourceType: "todo", SourceID: &previous.ID, Status: "completed",
+			}
+			if err := db.Create(&task).Error; err != nil {
+				t.Fatal(err)
+			}
+			writer := &PipelineStore{db: db, location: time.UTC}
+			prepared := &preparedCandidate{
+				Candidate: candidate, Fingerprint: fingerprint,
+				FirstEvidenceAt: now, LastEvidenceAt: now,
+			}
+			created, current, err := writer.persistCandidate(
+				db, ChatBatch{Group: GroupContext{ID: group.ID, ChatID: group.ChatID}},
+				prepared, "test",
+			)
+			if err != nil {
+				t.Fatalf("persistCandidate() error = %v", err)
+			}
+			if !created || current.ID == previous.ID {
+				t.Fatalf("created=%v current=%#v previous_id=%d", created, current, previous.ID)
+			}
+			var count int64
+			if err := db.Model(&domain.Todo{}).Where("dedup_fingerprint = ?", fingerprint).Count(&count).Error; err != nil {
+				t.Fatal(err)
+			}
+			if count != 2 {
+				t.Fatalf("same-fingerprint Todo count = %d, want 2", count)
+			}
+		})
 	}
 }

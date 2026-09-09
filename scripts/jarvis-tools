@@ -222,7 +222,7 @@ usage: jarvis-tools query-messages [--chat-id CHAT_ID] [--sender-open-id OPEN_ID
                                    [--limit N] [--config PATH]
 Query locally captured messages, newest first. At least one narrowing filter is
 recommended. Content is returned because it is the evidence being queried;
---limit defaults to 20 and must not exceed 100.
+--date uses capture.timezone; --limit defaults to 20 and must not exceed 100.
 EOF
       ;;
     get-message) cat <<'EOF'
@@ -336,8 +336,8 @@ usage: jarvis-tools list-facts --subject-type TYPE --subject-id ID
 
 Read a subject's evidence indexes, newest first. description is only a retrieval
 anchor; follow source_kind/source_id to the raw material before relying on it.
---date narrows to one natural day in local time; --limit defaults to 20 and must
-not exceed 100.
+--date narrows to one natural day in capture.timezone; --limit defaults to 20
+and must not exceed 100.
 
 example:
   jarvis-tools list-facts --subject-type group --subject-id 12 --date 2026-08-02
@@ -424,8 +424,9 @@ usage: jarvis-tools list-todos [--date YYYY-MM-DD] [--status S] [--limit N]
                               [--source-message-id MESSAGE_ID] [--config PATH]
 
 List compact action-clue summaries newest-evidence first. --date narrows by
-last_evidence_at to one local natural day. --limit defaults to 20. Use get-todo
-for description, context, source evidence, resolution and the frozen snapshot.
+last_evidence_at to one natural day in capture.timezone. --limit defaults to 20.
+Use get-todo for description, context, source evidence, resolution and the
+frozen snapshot.
 
 --group-id is the sharper scope: every clue comes from a chat, while
 --project-id only matches once that chat is bound to a project.
@@ -441,8 +442,9 @@ usage: jarvis-tools list-tasks [--date YYYY-MM-DD] [--status S] [--limit N]
                               [--source-message-id MESSAGE_ID] [--config PATH]
 
 List compact task summaries. --date narrows by COALESCE(last_progress_at,
-created_at) to one local natural day. --limit defaults to 20. Without --status,
-all task statuses are queried. Use get-task for details and recent history.
+created_at) to one natural day in capture.timezone. --limit defaults to 20.
+Without --status, all task statuses are queried. Use get-task for details and
+recent history.
 
 --group-id matches through the source clue, so manual, scheduled and proactive
 tasks belong to no group and are excluded by it.
@@ -630,11 +632,52 @@ delete_id_help() {
   printf 'usage: jarvis-tools %s --id ID [--config PATH]\n%s\n' "$command_name" "$description"
 }
 
+# resolve_config_path CONFIG_PATH → prints the existing config path.
+resolve_config_path() {
+  local config_path="$1"
+  local resolved=""
+  if [[ -f "$config_path" ]]; then
+    resolved="$config_path"
+  elif [[ "$config_path" != /* && -f "${REPO_ROOT}/${config_path}" ]]; then
+    resolved="${REPO_ROOT}/${config_path}"
+  fi
+  if [[ -z "$resolved" ]]; then
+    fail "config file not found: ${config_path}"
+  fi
+  printf '%s' "$resolved"
+}
+
 # resolve_api_base CONFIG_PATH
 # Prefer JARVIS_API_BASE; otherwise use the server's merged configuration.
 resolve_api_base() {
   local config_path="$1"
   "${SCRIPT_DIR}/jarvis-api-base" "$config_path"
+}
+
+# resolve_timezone CONFIG_PATH → prints the configured business timezone.
+resolve_timezone() {
+  if [[ -n "${JARVIS_TIMEZONE:-}" ]]; then
+    printf '%s' "$JARVIS_TIMEZONE"
+    return
+  fi
+  local resolved timezone
+  resolved="$(resolve_config_path "$1")" || return 1
+  timezone="$(awk '
+    /^[^[:space:]#][^:]*:/ {
+      section = $0
+      sub(/:.*/, "", section)
+    }
+    section == "capture" && /^[[:space:]]+timezone:[[:space:]]*/ {
+      value = $0
+      sub(/^[[:space:]]*timezone:[[:space:]]*/, "", value)
+      sub(/[[:space:]]+#.*/, "", value)
+      gsub(/^["'\'']|["'\'']$/, "", value)
+      print value
+      exit
+    }
+  ' "$resolved")"
+  [[ -n "$timezone" ]] || fail "could not parse capture.timezone from ${resolved}"
+  printf '%s' "$timezone"
 }
 
 # api_get PATH_AND_QUERY → prints response body to stdout; fails on HTTP/API error.
@@ -683,8 +726,12 @@ api_write() {
   if [[ "$http_code" == "404" ]]; then
     fail "not found"
   fi
-  if [[ "$http_code" != "200" && "$http_code" != "201" ]]; then
+  if [[ ! "$http_code" =~ ^2[0-9][0-9]$ ]]; then
     fail "HTTP ${http_code} from ${url}: ${body}"
+  fi
+  if [[ -z "$body" && "$http_code" == "204" ]]; then
+    body='{"code":0,"data":null}'
+    code="0"
   fi
   if [[ -z "$code" || "$code" != "0" ]]; then
     fail "invalid API response from ${url}: ${body}"
@@ -1834,8 +1881,9 @@ cmd_query_messages() {
     query="${query}&keyword=${value}"
   fi
   if [[ -n "$DATE" ]]; then
-    local from until
-    read -r from until <<<"$(local_day_bounds "$DATE" query-messages)"
+    local bounds from until
+    bounds="$(local_day_bounds "$DATE" query-messages "$CONFIG_PATH")" || return 1
+    read -r from until <<<"$bounds"
     query="${query}&from=$(jq -rn --arg s "$from" '$s|@uri')&until=$(jq -rn --arg s "$until" '$s|@uri')"
   fi
   emit "$(api_get "/api/messages?${query}" | jq -c '.data')"
@@ -2080,15 +2128,26 @@ cmd_append_facts_batch() {
 }
 
 # local_day_bounds DATE CMD — resolve YYYY-MM-DD to RFC3339 half-open [from, until)
-# in the local timezone. Fail-fast with the calling command name on bad input.
+# in JARVIS_TIMEZONE when provided, otherwise the host timezone. Support both
+# GNU date (Linux) and BSD date (macOS), including 23/25-hour DST days.
 local_day_bounds() {
-  local date="$1" cmd="$2"
+  local date="$1" cmd="$2" config_path="$3" timezone
   [[ "$date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || fail "${cmd} --date must be YYYY-MM-DD"
+  timezone="$(resolve_timezone "$config_path")" || return 1
   local from until
-  from="$(date -j -f '%Y-%m-%d %H:%M:%S' "$date 00:00:00" +%Y-%m-%dT%H:%M:%S%z 2>/dev/null)" ||
-    fail "${cmd} could not parse --date $date"
-  until="$(date -j -v+1d -f '%Y-%m-%d %H:%M:%S' "$date 00:00:00" +%Y-%m-%dT%H:%M:%S%z 2>/dev/null)" ||
-    fail "${cmd} could not advance --date $date"
+  local -a date_command=(env "TZ=$timezone" date)
+  if date --version >/dev/null 2>&1; then
+    from="$("${date_command[@]}" -d "$date" +%Y-%m-%dT%H:%M:%S%z 2>/dev/null)" ||
+      fail "${cmd} could not parse --date $date"
+    until="$("${date_command[@]}" -d "$date +1 day" +%Y-%m-%dT%H:%M:%S%z 2>/dev/null)" ||
+      fail "${cmd} could not advance --date $date"
+  else
+    from="$("${date_command[@]}" -j -f '%Y-%m-%d %H:%M:%S' "$date 00:00:00" +%Y-%m-%dT%H:%M:%S%z 2>/dev/null)" ||
+      fail "${cmd} could not parse --date $date"
+    until="$("${date_command[@]}" -j -v+1d -f '%Y-%m-%d %H:%M:%S' "$date 00:00:00" +%Y-%m-%dT%H:%M:%S%z 2>/dev/null)" ||
+      fail "${cmd} could not advance --date $date"
+  fi
+  [[ "${from:0:10}" == "$date" ]] || fail "${cmd} could not parse --date $date"
   from="$(printf '%s' "$from" | sed -E 's/([0-9]{2})([0-9]{2})$/\1:\2/')"
   until="$(printf '%s' "$until" | sed -E 's/([0-9]{2})([0-9]{2})$/\1:\2/')"
   printf '%s %s' "$from" "$until"
@@ -2109,8 +2168,9 @@ cmd_list_facts() {
   enc_type="$(jq -rn --arg s "$SUBJECT_TYPE" '$s|@uri')"
   query="?subject_type=${enc_type}&subject_id=${SUBJECT_ID}&limit=${LIMIT}"
   if [[ -n "$DATE" ]]; then
-    local from until
-    read -r from until <<<"$(local_day_bounds "$DATE" list-facts)"
+    local bounds from until
+    bounds="$(local_day_bounds "$DATE" list-facts "$CONFIG_PATH")" || return 1
+    read -r from until <<<"$bounds"
     query="${query}&from=$(jq -rn --arg s "$from" '$s|@uri')&until=$(jq -rn --arg s "$until" '$s|@uri')"
   fi
   local body
@@ -2382,8 +2442,9 @@ cmd_list_todos() {
     query="${query}&group_id=${GROUP_ID}"
   fi
   if [[ -n "$DATE" ]]; then
-    local from until
-    read -r from until <<<"$(local_day_bounds "$DATE" list-todos)"
+    local bounds from until
+    bounds="$(local_day_bounds "$DATE" list-todos "$CONFIG_PATH")" || return 1
+    read -r from until <<<"$bounds"
     query="${query}&from=$(jq -rn --arg s "$from" '$s|@uri')&until=$(jq -rn --arg s "$until" '$s|@uri')"
   fi
   local body
@@ -2436,8 +2497,9 @@ cmd_list_tasks() {
     query="${query}&group_id=${GROUP_ID}"
   fi
   if [[ -n "$DATE" ]]; then
-    local from until
-    read -r from until <<<"$(local_day_bounds "$DATE" list-tasks)"
+    local bounds from until
+    bounds="$(local_day_bounds "$DATE" list-tasks "$CONFIG_PATH")" || return 1
+    read -r from until <<<"$bounds"
     query="${query}&from=$(jq -rn --arg s "$from" '$s|@uri')&until=$(jq -rn --arg s "$until" '$s|@uri')"
   fi
   local body

@@ -213,7 +213,7 @@ func TestJarvisWorldModelResolvesWildcardServerAddressLocally(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	configured := strings.Replace(string(baseConfig), `addr: "0.0.0.0:18800"`, `addr: "0.0.0.0:`+port+`"`, 1)
+	configured := strings.Replace(string(baseConfig), `addr: "127.0.0.1:18800"`, `addr: "0.0.0.0:`+port+`"`, 1)
 	if configured == string(baseConfig) {
 		t.Fatal("test config did not contain the expected baseline server address")
 	}

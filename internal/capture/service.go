@@ -22,6 +22,8 @@ const (
 	inactiveChatAge = 5 * 24 * time.Hour
 )
 
+var ErrP2PScanDisabled = errors.New("安全保护已禁止扫描单聊消息")
+
 type runner interface {
 	Run(ctx context.Context, out any, args ...string) error
 }
@@ -45,14 +47,16 @@ type ScanObserver interface {
 
 // Options contains capture policy already decided by the technical design.
 type Options struct {
-	PageSize          int
-	ScanWorkers       int
-	HotAge            time.Duration
-	WarmAge           time.Duration
-	Location          *time.Location
-	PrincipalOpenID   string
-	SearchOverlap     time.Duration
-	ActivationContext time.Duration
+	PageSize            int
+	ScanWorkers         int
+	HotAge              time.Duration
+	WarmAge             time.Duration
+	Location            *time.Location
+	PrincipalOpenID     string
+	SearchOverlap       time.Duration
+	ActivationContext   time.Duration
+	P2PActivationWindow time.Duration
+	P2PScanEnabled      bool
 	// AutoRelatedP2PTopN 是 discover 自动纳入监听的内部真人私聊上限（按 active_time
 	// 取最活跃的前 N 个）。0 表示不自动开任何私聊（全靠手动名单）。
 	AutoRelatedP2PTopN int
@@ -95,6 +99,9 @@ func NewService(db *gorm.DB, lark runner, opts Options) (*Service, error) {
 	if opts.ActivationContext <= 0 {
 		return nil, fmt.Errorf("capture activation context must be positive")
 	}
+	if opts.P2PActivationWindow <= 0 {
+		return nil, fmt.Errorf("capture p2p activation window must be positive")
+	}
 	if opts.AutoRelatedP2PTopN < 0 {
 		return nil, fmt.Errorf("capture auto-related p2p top-n must be non-negative")
 	}
@@ -112,6 +119,21 @@ func (s *Service) SetScanObserver(observer ScanObserver) error {
 		return fmt.Errorf("capture scan observer is already set")
 	}
 	s.observer = observer
+	return nil
+}
+
+func (s *Service) ValidateScanChat(ctx context.Context, chatID string) error {
+	chatID = strings.TrimSpace(chatID)
+	if chatID == "" {
+		return fmt.Errorf("scan chat_id is empty")
+	}
+	var group domain.Group
+	if err := s.db.WithContext(ctx).Select("chat_mode").Where("chat_id = ?", chatID).Take(&group).Error; err != nil {
+		return fmt.Errorf("load group chat_id=%s: %w", chatID, err)
+	}
+	if group.ChatMode == "p2p" && !s.opts.P2PScanEnabled {
+		return ErrP2PScanDisabled
+	}
 	return nil
 }
 
@@ -148,6 +170,9 @@ func (s *Service) ReplaceRelatedGroups(chatIDs []string) error {
 			switch group.ChatMode {
 			case "group", "topic":
 			case "p2p":
+				if !s.opts.P2PScanEnabled {
+					return ErrP2PScanDisabled
+				}
 				// 私聊可手动加入名单，但仅限内部同事；外部私聊不监听。
 				if group.External {
 					return fmt.Errorf("related chat_id=%s is an external p2p and cannot be monitored", group.ChatID)
@@ -186,6 +211,9 @@ func (s *Service) ReplaceRelatedGroups(chatIDs []string) error {
 // now 的），再置 related_group=1。顺序如此是为了规避半成功——即使抬水位后
 // 置位失败，这批仍未 related，重跑时能再次命中并抬水位，不会漏抬。
 func (s *Service) OpenInternalP2P() (int64, error) {
+	if !s.opts.P2PScanEnabled {
+		return 0, ErrP2PScanDisabled
+	}
 	nowMS := s.now().UnixMilli()
 
 	var chatIDs []string
@@ -234,7 +262,7 @@ func normalizeChatIDs(chatIDs []string) ([]string, error) {
 // reconciled only after the complete active_time-sorted list has been fetched
 // successfully, so a failed partial listing can never evict a currently
 // monitored conversation. A newly activated p2p receives only the bounded
-// ActivationContext window needed to capture the message that made it active.
+// P2PActivationWindow needed to capture the message that made it active.
 func (s *Service) DiscoverChats(ctx context.Context) (err error) {
 	record, err := s.beginScan("discover", nil, nil, nil, nil)
 	if err != nil {
@@ -253,8 +281,12 @@ func (s *Service) DiscoverChats(ctx context.Context) (err error) {
 	pageToken := ""
 	for {
 		var response ChatListResponse
+		chatTypes := "group"
+		if s.opts.P2PScanEnabled {
+			chatTypes = "p2p,group"
+		}
 		args := []string{
-			"im", "+chat-list", "--as", "user", "--types", "p2p,group",
+			"im", "+chat-list", "--as", "user", "--types", chatTypes,
 			"--sort", "active_time", "--page-size", "100",
 		}
 		if pageToken != "" {
@@ -267,6 +299,9 @@ func (s *Service) DiscoverChats(ctx context.Context) (err error) {
 			return fmt.Errorf("persist discovered chats page=%d: %w", record.PageCount+1, err)
 		}
 		for _, chat := range response.Data.Chats {
+			if !s.opts.P2PScanEnabled {
+				continue
+			}
 			if !isAutoRelatedP2P(chat) {
 				continue
 			}
@@ -384,7 +419,7 @@ func (s *Service) reconcileAutoRelatedP2P(rankedChatIDs []string) error {
 	}
 
 	if len(desired) > 0 {
-		activationStart := s.now().Add(-s.opts.ActivationContext).UnixMilli()
+		activationStart := s.now().Add(-s.opts.P2PActivationWindow).UnixMilli()
 		if err := s.db.Model(&domain.Checkpoint{}).
 			Where("chat_id IN ? AND last_scan_at IS NULL", desired).
 			Update("high_water_create_time", activationStart).Error; err != nil {
@@ -432,8 +467,8 @@ func (s *Service) recomputeTiers() error {
 // this resets a stale window to now, then does an incremental scan. It never
 // backfills history (window start = now for a fresh related group).
 func (s *Service) ScanChatNow(ctx context.Context, chatID string) error {
-	if chatID == "" {
-		return fmt.Errorf("scan chat_id is empty")
+	if err := s.ValidateScanChat(ctx, chatID); err != nil {
+		return err
 	}
 	if err := s.ensureScanWindow(chatID); err != nil {
 		return err
@@ -442,19 +477,22 @@ func (s *Service) ScanChatNow(ctx context.Context, chatID string) error {
 }
 
 // ensureScanWindow bounds the first scan of a manually related chat. Groups
-// start at now; p2p chats receive the short ActivationContext window so the
+// start at now; p2p chats receive the short P2PActivationWindow so the
 // message that prompted manual monitoring is not skipped.
 func (s *Service) ensureScanWindow(chatID string) error {
 	var group domain.Group
 	if err := s.db.Select("id", "chat_mode", "last_active_at").Where("chat_id = ?", chatID).First(&group).Error; err != nil {
 		return fmt.Errorf("load group chat_id=%s: %w", chatID, err)
 	}
+	if group.ChatMode == "p2p" && !s.opts.P2PScanEnabled {
+		return ErrP2PScanDisabled
+	}
 	if group.LastActiveAt != nil {
 		return nil
 	}
 	windowStart := s.now().UnixMilli()
 	if group.ChatMode == "p2p" {
-		windowStart = s.now().Add(-s.opts.ActivationContext).UnixMilli()
+		windowStart = s.now().Add(-s.opts.P2PActivationWindow).UnixMilli()
 	}
 	if err := s.db.Model(&domain.Checkpoint{}).
 		Where("chat_id = ?", chatID).
@@ -472,6 +510,9 @@ func (s *Service) ScanChat(ctx context.Context, chatID string) (err error) {
 	var group domain.Group
 	if err := s.db.Where("chat_id = ?", chatID).First(&group).Error; err != nil {
 		return fmt.Errorf("load group chat_id=%s: %w", chatID, err)
+	}
+	if group.ChatMode == "p2p" && !s.opts.P2PScanEnabled {
+		return ErrP2PScanDisabled
 	}
 	if !group.RelatedGroup {
 		return fmt.Errorf("chat_id=%s is not a related group", chatID)
@@ -668,12 +709,60 @@ func (s *Service) searchGroupMessages(
 // scan committed and is recovered by the downstream compensation schedule.
 func (s *Service) ScanRelated(ctx context.Context) error {
 	var groups []domain.Group
+	chatModes := []string{"group", "topic"}
+	if !s.opts.P2PScanEnabled {
+		if err := s.advanceDisabledP2PCheckpoints(ctx); err != nil {
+			return err
+		}
+	} else {
+		chatModes = append(chatModes, "p2p")
+	}
 	if err := s.db.Select("id", "chat_id").
-		Where("related_group = ? AND chat_mode IN ?", true, []string{"group", "topic", "p2p"}).
+		Where("related_group = ? AND chat_mode IN ?", true, chatModes).
 		Order("id ASC").Find(&groups).Error; err != nil {
 		return fmt.Errorf("list related chats: %w", err)
 	}
 	return s.scanGroups(ctx, groups)
+}
+
+// AdvanceP2PCheckpoints moves polling cursors without reading any messages.
+// Security settings use it while direct-message scanning is disabled so
+// re-enabling later never backfills the disabled interval.
+func (s *Service) AdvanceP2PCheckpoints(ctx context.Context) error {
+	return s.advanceDisabledP2PCheckpoints(ctx)
+}
+
+func (s *Service) advanceDisabledP2PCheckpoints(ctx context.Context) error {
+	nowMS := s.now().UnixMilli()
+	var chatIDs []string
+	if err := s.db.WithContext(ctx).Model(&domain.Group{}).
+		Where("chat_mode = ?", "p2p").
+		Pluck("chat_id", &chatIDs).Error; err != nil {
+		return fmt.Errorf("list disabled p2p chats: %w", err)
+	}
+	if len(chatIDs) == 0 {
+		return nil
+	}
+	checkpoints := make([]domain.Checkpoint, 0, len(chatIDs))
+	for _, chatID := range chatIDs {
+		checkpoints = append(checkpoints, domain.Checkpoint{
+			ChatID:              chatID,
+			HighWaterCreateTime: nowMS,
+			BackfillDone:        true,
+			BackfillSince:       nowMS,
+		})
+	}
+	if err := s.db.WithContext(ctx).
+		Clauses(clause.OnConflict{DoNothing: true}).
+		Create(&checkpoints).Error; err != nil {
+		return fmt.Errorf("initialize disabled p2p checkpoints: %w", err)
+	}
+	if err := s.db.WithContext(ctx).Model(&domain.Checkpoint{}).
+		Where("chat_id IN ? AND high_water_create_time < ?", chatIDs, nowMS).
+		Update("high_water_create_time", nowMS).Error; err != nil {
+		return fmt.Errorf("advance disabled p2p checkpoints: %w", err)
+	}
+	return nil
 }
 
 // scanGroups runs ScanChat over the given groups with the worker pool. Errors

@@ -61,7 +61,7 @@ const systemTasks: SystemTaskDefinition[] = [
     description: '发现群聊和内部单聊，并更新可采集会话范围。',
     job: 'discover',
     scheduleField: 'capture_discover_schedule',
-    parameters: (s) => `自动关注私聊 ${s.capture_auto_related_p2p_top_n} 个`,
+    parameters: (s) => `自动关注私聊 ${s.capture_auto_related_p2p_top_n} 个 · 首次回看 ${s.capture_p2p_activation_window_minutes} 分钟`,
   },
   {
     key: 'scan-related',

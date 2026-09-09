@@ -143,39 +143,60 @@ func currentLANIPv4() (net.IP, error) {
 // exact wording the principal read without Feishu having to hand the original
 // card back.
 //
-// Everything the principal can interact with lives inside one form container:
-// Feishu returns its inputs as form_value in a single callback, so one click
-// carries both the chosen button and whatever was typed or selected.
+// Questions with inputs use one form so a click carries every entered value.
+// A plain two-button decision needs no form and uses a compact two-column row.
 func questionCard(notice execute.QuestionNotification, detailURL, outcome string) map[string]any {
 	question := notice.Question
 	body := strings.TrimSpace(question.Body)
-	if summary := strings.TrimSpace(notice.Summary); summary != "" {
-		body = strings.TrimSpace(body + "\n\n**目前进展**\n" + summary)
-	}
 	elements := []any{}
 	if body != "" {
-		elements = append(elements, markdown(truncateRunes(body, 2000)))
+		elements = append(elements, markdown(body))
+	}
+	if summary := strings.TrimSpace(notice.Summary); summary != "" {
+		elements = append(elements, progressPanel(truncateRunes(summary, 1000)))
 	}
 
-	details := map[string]any{
-		"tag": "button", "text": plainText("查看详情"),
-		"type": "default", "width": "fill",
-		"behaviors": []any{map[string]any{"type": "open_url", "default_url": detailURL}},
-	}
 	if outcome = strings.TrimSpace(outcome); outcome != "" {
-		return card(append(elements, markdown(outcome), details), notice)
+		return card(append(elements, markdown(outcome), detailLink(detailURL)), notice)
 	}
 
-	controls := make([]any, 0, len(question.Fields)+1)
-	for _, field := range question.Fields {
-		controls = append(controls, renderField(field, notice)...)
+	if compactDecision(question.Fields) {
+		links := make([]any, 0, len(question.Fields)-2)
+		buttons := make([]any, 0, 2)
+		for _, field := range question.Fields {
+			if field.Type == execute.FieldButton {
+				buttons = append(buttons, renderButton(field, notice, false))
+				continue
+			}
+			links = append(links, renderField(field, notice)...)
+		}
+		elements = append(elements, links...)
+		elements = append(elements, actionRow(buttons))
+	} else {
+		controls := make([]any, 0, len(question.Fields))
+		for _, field := range question.Fields {
+			controls = append(controls, renderField(field, notice)...)
+		}
+		elements = append(elements, map[string]any{
+			"tag": "form", "name": "jarvis_ask_form", "elements": controls,
+		})
 	}
-	details["name"], details["action_type"] = "jarvis_ask_details", "link"
-	controls = append(controls, details)
-	elements = append(elements, map[string]any{
-		"tag": "form", "name": "jarvis_ask_form", "elements": controls,
-	})
+	elements = append(elements, detailLink(detailURL))
 	return card(elements, notice)
+}
+
+func compactDecision(fields []execute.QuestionField) bool {
+	buttons := 0
+	for _, field := range fields {
+		switch field.Type {
+		case execute.FieldButton:
+			buttons++
+		case execute.FieldLink:
+		default:
+			return false
+		}
+	}
+	return buttons == 2
 }
 
 // renderField maps one question field to its Feishu elements. Labels for
@@ -184,18 +205,7 @@ func questionCard(notice execute.QuestionNotification, detailURL, outcome string
 func renderField(field execute.QuestionField, notice execute.QuestionNotification) []any {
 	switch field.Type {
 	case execute.FieldButton:
-		// A form's submit button must be a direct child of the form and must
-		// carry no behaviors, otherwise card creation fails with 300123 "there
-		// is no submit button in the form container". Its callback payload
-		// therefore rides on the top-level value the form submission returns.
-		return []any{map[string]any{
-			"tag": "button", "name": field.Name, "action_type": "form_submit",
-			"text": plainText(field.Label), "type": buttonStyle(field.Style), "width": "fill",
-			"value": map[string]any{
-				"action": callbackAction, "task_id": notice.TaskID,
-				"version": notice.Version, "clicked": field.Name,
-			},
-		}}
+		return []any{renderButton(field, notice, true)}
 	case execute.FieldSelect:
 		return []any{markdown("**" + field.Label + "**"), map[string]any{
 			"tag": "select_static", "name": field.Name, "width": "fill",
@@ -217,7 +227,7 @@ func renderField(field execute.QuestionField, notice execute.QuestionNotificatio
 		// rather than sent blank.
 		link := map[string]any{
 			"tag": "button", "action_type": "link",
-			"text": plainText(field.Label), "type": "default", "width": "fill",
+			"text": plainText(field.Label), "type": "default", "size": "small", "width": "default",
 			"behaviors": []any{map[string]any{"type": "open_url", "default_url": field.URL}},
 		}
 		if field.Name != "" {
@@ -227,6 +237,66 @@ func renderField(field execute.QuestionField, notice execute.QuestionNotificatio
 	}
 	// ParseQuestion rejects unknown types before a card is ever rendered.
 	return nil
+}
+
+func renderButton(field execute.QuestionField, notice execute.QuestionNotification, formSubmit bool) map[string]any {
+	value := map[string]any{
+		"action": callbackAction, "task_id": notice.TaskID,
+		"version": notice.Version, "clicked": field.Name,
+	}
+	button := map[string]any{
+		"tag": "button", "text": plainText(field.Label),
+		"type": buttonStyle(field.Style), "size": "small",
+	}
+	if formSubmit {
+		// The deployed Feishu form contract recognizes submit buttons only as
+		// direct form children without behaviors.
+		button["name"], button["action_type"] = field.Name, "form_submit"
+		button["width"], button["value"] = "default", value
+		return button
+	}
+	button["width"] = "fill"
+	button["behaviors"] = []any{map[string]any{"type": "callback", "value": value}}
+	return button
+}
+
+func actionRow(buttons []any) map[string]any {
+	columns := make([]any, 0, len(buttons))
+	for _, button := range buttons {
+		columns = append(columns, map[string]any{
+			"tag": "column", "width": "weighted", "weight": 1,
+			"elements": []any{button},
+		})
+	}
+	return map[string]any{
+		"tag": "column_set", "flex_mode": "bisect",
+		"horizontal_spacing": "8px", "columns": columns,
+	}
+}
+
+func progressPanel(summary string) map[string]any {
+	return map[string]any{
+		"tag": "collapsible_panel", "expanded": false,
+		"header": map[string]any{
+			"title": plainText("目前进展"), "width": "auto_when_fold",
+			"vertical_align": "center",
+			"icon": map[string]any{
+				"tag": "standard_icon", "token": "down-small-ccm_outlined",
+				"size": "14px 14px",
+			},
+			"icon_position": "right", "icon_expanded_angle": -180,
+		},
+		"padding":  "4px 0px 0px 0px",
+		"elements": []any{markdown(summary)},
+	}
+}
+
+func detailLink(url string) map[string]any {
+	return map[string]any{
+		"tag": "markdown", "content": "[查看详情](" + url + ")",
+		"text_size": "notation", "text_align": "right",
+		"margin": "2px 0px 0px 0px",
+	}
 }
 
 func buttonStyle(style string) string {

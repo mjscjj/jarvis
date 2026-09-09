@@ -6,6 +6,8 @@ import (
 	"sync"
 
 	"jarvis/internal/domain"
+
+	"github.com/cloudwego/hertz/pkg/common/hlog"
 )
 
 type ReadyNotifier interface {
@@ -53,7 +55,7 @@ func (s *Submitter) Submit(ctx context.Context, input Input) (*domain.Task, erro
 		return nil, err
 	}
 	if err := notifier.TaskReady(ctx, task.ID, task.Version); err != nil {
-		return task, fmt.Errorf("notify Task ready task_id=%d: %w", task.ID, err)
+		hlog.CtxErrorf(ctx, "notify Task ready failed; pending scan will reconcile task_id=%d error=%+v", task.ID, err)
 	}
 	return task, nil
 }
