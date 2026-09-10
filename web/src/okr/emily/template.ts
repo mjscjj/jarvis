@@ -5,7 +5,7 @@
  * (Done) / Done /【已上线】/【未开始】。所以这里收成封闭枚举，只能从下拉框选。
  */
 
-import type { Light, Status } from './types'
+import type { Light, Status, WeeklyScore } from './types'
 
 export interface StatusOption {
   value: Status
@@ -74,6 +74,13 @@ export const KIND_LABEL = {
 } as const
 
 export const METRIC_GROUP_LABEL = '核心数据'
+
+/** 没打分的一律按 0 分算，界面和导出都不再出现「未评分」这个状态。 */
+export const DEFAULT_WEEKLY_SCORE = 0
+
+export function weeklyScoreLabel(score?: WeeklyScore) {
+  return (score?.value ?? DEFAULT_WEEKLY_SCORE).toFixed(1)
+}
 
 // 红黄绿灯已从界面移除，这里只剩后端 EnumValues 的取值镜像，用于枚举兜底。
 export const LIGHTS: { value: Light; label: string; className: string }[] = [

@@ -1102,6 +1102,9 @@ func main() {
 
 	h := server.Default(
 		server.WithHostPorts(cfg.Server.Addr),
+		// OKR accepts 10 MiB images; keep room for multipart framing so Hertz
+		// does not reject a valid image before the upload handler can validate it.
+		server.WithMaxRequestBodySize(12<<20),
 	)
 	h.Use(observability.Middleware())
 	h.Use(api.StaticAssetCacheHeaders())

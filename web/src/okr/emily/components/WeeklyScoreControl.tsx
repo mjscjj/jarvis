@@ -1,11 +1,12 @@
 import { useState } from 'react'
+import { weeklyScoreLabel } from '../template.ts'
 import type { WeeklyScore } from '../types'
 
 const SCORE_OPTIONS = Array.from({ length: 11 }, (_, index) => (index / 10).toFixed(1))
 
-export function WeeklyScoreControl({ score, onChange, readOnly = false, label = 'OKR 评分' }: { score?: WeeklyScore; onChange?: (score?: number) => Promise<void>; readOnly?: boolean; label?: string }) {
+export function WeeklyScoreControl({ score, onChange, readOnly = false, label = 'OKR 评分' }: { score?: WeeklyScore; onChange?: (score: number) => Promise<void>; readOnly?: boolean; label?: string }) {
   const [busy, setBusy] = useState(false)
-  const display = score ? score.value.toFixed(1) : '0分'
+  const display = weeklyScoreLabel(score)
 
   if (readOnly) {
     return <span aria-label={label} className="inline-flex h-6 shrink-0 items-center rounded-md border border-violet-200 bg-violet-50 px-1.5 text-[10px] font-semibold leading-none text-violet-700">评分 {display}</span>
@@ -17,10 +18,10 @@ export function WeeklyScoreControl({ score, onChange, readOnly = false, label = 
       <select
         aria-label={label}
         disabled={busy}
-        value={score ? score.value.toFixed(1) : ''}
+        value={display}
         onClick={(event) => event.stopPropagation()}
         onChange={(event) => {
-          const next = event.target.value === '' ? undefined : Number(event.target.value)
+          const next = Number(event.target.value)
           setBusy(true)
           void (onChange?.(next) ?? Promise.resolve())
             .catch(() => undefined)
@@ -28,7 +29,6 @@ export function WeeklyScoreControl({ score, onChange, readOnly = false, label = 
         }}
         className="bg-transparent text-[10px] font-semibold leading-none text-violet-700 outline-none disabled:opacity-50"
       >
-        <option value="">0分</option>
         {SCORE_OPTIONS.map((value) => <option key={value} value={value}>{value}</option>)}
       </select>
     </label>
