@@ -175,7 +175,7 @@ func TestSupervisorStopsEveryChildWhenContextEnds(t *testing.T) {
 		StateRoot:       stateRoot,
 		Address:         serverAddress,
 		QdrantHealthURL: "http://" + qdrantAddress + "/healthz",
-		StartupTimeout:  5 * time.Second,
+		StartupTimeout:  20 * time.Second,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -204,6 +204,71 @@ func TestSupervisorStopsEveryChildWhenContextEnds(t *testing.T) {
 	assertAddressAvailable(t, qdrantAddress)
 }
 
+func TestSupervisorStartsCCConnectAndRestartsServerAfterOnboarding(t *testing.T) {
+	resourceRoot := t.TempDir()
+	stateRoot := t.TempDir()
+	writeBundleFixture(t, resourceRoot)
+	serverAddress := freeAddress(t)
+	qdrantAddress := freeAddress(t)
+	testBinary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverStarts := filepath.Join(t.TempDir(), "server-starts")
+	ccStarted := filepath.Join(t.TempDir(), "cc-started")
+	writeRestartableTestChild(
+		t,
+		filepath.Join(resourceRoot, "bin", "jarvis-server"),
+		testBinary,
+		serverAddress,
+		serverStarts,
+	)
+	writeTestChild(t, filepath.Join(resourceRoot, "bin", "qdrant"), testBinary, qdrantAddress)
+	writeLongRunningChild(t, filepath.Join(resourceRoot, "bin", "cc-connect-jarvis"), ccStarted)
+	service, err := New(Options{
+		ResourceRoot:    resourceRoot,
+		StateRoot:       stateRoot,
+		Address:         serverAddress,
+		QdrantHealthURL: "http://" + qdrantAddress + "/healthz",
+		StartupTimeout:  20 * time.Second,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		result <- service.Run(ctx, &safeBuffer{})
+	}()
+	waitForTestHTTP(t, "http://"+serverAddress+"/healthz")
+	waitForFileLines(t, serverStarts, 1)
+
+	if err := os.MkdirAll(filepath.Dir(service.layout.CCConnectConfig), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(service.layout.CCConnectConfig, []byte("[test]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitForFile(t, ccStarted)
+
+	if err := os.WriteFile(service.layout.RestartRequestPath, []byte("test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waitForFileLines(t, serverStarts, 2)
+	waitForTestHTTP(t, "http://"+serverAddress+"/healthz")
+
+	cancel()
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("Run() after cancellation = %v", err)
+		}
+	case <-time.After(8 * time.Second):
+		t.Fatal("app service did not stop")
+	}
+}
+
 type safeBuffer struct {
 	mu sync.Mutex
 	bytes.Buffer
@@ -223,6 +288,14 @@ func (b *safeBuffer) String() string {
 
 func runTestHTTPChild() {
 	address := os.Getenv("JARVIS_APP_SERVICE_TEST_CHILD")
+	if logPath := os.Getenv("JARVIS_APP_SERVICE_TEST_START_LOG"); logPath != "" {
+		file, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+		if err != nil {
+			os.Exit(1)
+		}
+		_, _ = file.WriteString("started\n")
+		_ = file.Close()
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(writer http.ResponseWriter, _ *http.Request) {
 		writer.WriteHeader(http.StatusOK)
@@ -244,6 +317,30 @@ func writeTestChild(t *testing.T, path, testBinary, address string) {
 	}
 }
 
+func writeRestartableTestChild(t *testing.T, path, testBinary, address, startLog string) {
+	t.Helper()
+	script := fmt.Sprintf(
+		"#!/bin/sh\nJARVIS_APP_SERVICE_TEST_CHILD=%q JARVIS_APP_SERVICE_TEST_START_LOG=%q exec %q -test.run=TestSupervisorStopsEveryChildWhenContextEnds\n",
+		address,
+		startLog,
+		testBinary,
+	)
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeLongRunningChild(t *testing.T, path, startedPath string) {
+	t.Helper()
+	script := fmt.Sprintf(
+		"#!/bin/sh\necho started > %q\ntrap 'exit 0' TERM INT\nwhile true; do sleep 1; done\n",
+		startedPath,
+	)
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func freeAddress(t *testing.T) string {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
@@ -256,7 +353,7 @@ func freeAddress(t *testing.T) string {
 
 func waitForTestHTTP(t *testing.T, url string) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
+	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
 		response, err := http.Get(url)
 		if err == nil {
@@ -280,6 +377,31 @@ func waitForOutput(t *testing.T, output *safeBuffer, text string) {
 	t.Fatalf("output did not contain %q: %q", text, output.String())
 }
 
+func waitForFile(t *testing.T, path string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if _, err := os.Stat(path); err == nil {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("file was not created: %s", path)
+}
+
+func waitForFileLines(t *testing.T, path string, count int) {
+	t.Helper()
+	deadline := time.Now().Add(8 * time.Second)
+	for time.Now().Before(deadline) {
+		raw, err := os.ReadFile(path)
+		if err == nil && strings.Count(string(raw), "\n") >= count {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("file %s did not reach %d lines", path, count)
+}
+
 func assertAddressAvailable(t *testing.T, address string) {
 	t.Helper()
 	listener, err := net.Listen("tcp", address)
@@ -294,6 +416,7 @@ func writeBundleFixture(t *testing.T, root string) {
 	files := map[string]string{
 		"bin/jarvis-server":         "#!/bin/sh\n",
 		"bin/qdrant":                "#!/bin/sh\n",
+		"bin/cc-connect-jarvis":     "#!/bin/sh\n",
 		"conf/config.yaml":          "version: 1\n",
 		"conf/qdrant.yaml":          "service: {}\n",
 		"conf/prompts/m3.md":        "prompt-v1\n",

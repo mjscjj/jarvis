@@ -13,6 +13,9 @@ __pycache__/
 /web/node_modules/
 /web/dist/
 /web/*.tsbuildinfo
+/desktop/node_modules/
+/desktop/src-tauri/generated/
+/desktop/src-tauri/target/
 /.worktrees/
 
 # 本地运行时数据

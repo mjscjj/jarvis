@@ -13,6 +13,8 @@ description: 在 Jarvis、CC Connect 与 lark-cli 已安装绑定并运行后，
 
 由整体安装调用时，必须复用 `$install-jarvis` 返回的 `run_dir`，使用其中的 `evidence/`、`evidence/feishu-capabilities.md`、`world-model.md` 和 `INSTALL_CHECKLIST.md`。只更新清单 E 区，不创建或维护整张安装状态页。独立重建世界模型时可在 `var/onboarding/<run-id>/` 建自己的 `evidence/` 与 `world-model.md`；若没有现成的飞书能力证据，按安装 Skill 的能力审计策略只读补做，但不伪造整体项目安装清单，也不发起权限申请。
 
+DMG 首次启动时 `JARVIS_DESKTOP=1`，此时 `$JARVIS_RUNTIME_ROOT` 是可写运行目录，依赖和服务已经由桌面壳管理。使用 `$JARVIS_RUNTIME_ROOT/scripts/jarvis-world-model preflight` 和 `/readyz` 验收，不执行仓库、Go 工具链、launchd 或 `jarvis-install validate` 检查；工作稿写入 `$JARVIS_RUNTIME_ROOT/var/onboarding/<run-id>/`。
+
 ```bash
 ./scripts/jarvis-world-model preflight
 ./scripts/jarvis-install validate

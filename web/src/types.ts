@@ -157,6 +157,45 @@ export interface CreateTaskResult {
   version: number
 }
 
+export interface SetupIdentityStatus {
+  status: string
+  open_id?: string
+  name?: string
+  verified: boolean
+}
+
+export interface SetupStatus {
+  configuration: {
+    machine_configuration_ready: boolean
+    agent_name_configured: boolean
+  }
+  lark: {
+    available: boolean
+    app_id?: string
+    app_name?: string
+    bot: SetupIdentityStatus
+    user: SetupIdentityStatus
+    error?: string
+  }
+  agent: {
+    available: boolean
+    authenticated: boolean
+    version?: string
+    error?: string
+  }
+  world_model_ready: boolean
+  completed: boolean
+}
+
+export interface SetupFlow {
+  id: string
+  status: 'pending' | 'success' | 'failed'
+  verification_url?: string
+  user_code?: string
+  output?: string
+  error?: string
+}
+
 // RunEnrichment 是 codex 主动"多做一步"准备的一条开放语义块：
 //   kind=context      正文/结论段落（如"会议一页纸"）
 //   kind=doc_link     引用的文件/文档路径
