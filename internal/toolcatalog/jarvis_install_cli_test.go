@@ -306,6 +306,10 @@ func TestJarvisInstallPinsPatchedCCConnectWithoutStartingIt(t *testing.T) {
 		`npm run build`,
 		`go test ./platform/feishu`,
 		`TARGET_BIN="${REPO_ROOT}/bin/cc-connect-jarvis"`,
+		`source "${REPO_ROOT}/packaging/macos/runtime-manifest.sh"`,
+		`export MACOSX_DEPLOYMENT_TARGET="$JARVIS_MACOS_MIN_VERSION"`,
+		`packaging/macos/check-macho.sh`,
+		`go build -trimpath -tags goolm`,
 	} {
 		if !strings.Contains(builder, want) {
 			t.Fatalf("CC Connect build implementation missing %q", want)

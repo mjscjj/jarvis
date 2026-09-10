@@ -22,15 +22,24 @@ if [[ ! ( "$platform" == "Darwin" && "$arch" == "arm64" ) && \
       ! ( "$platform" == "Linux" && ( "$arch" == "x86_64" || "$arch" == "amd64" ) ) ]]; then
   fail "the Jarvis CC Connect build supports macOS arm64 and Linux x86_64 only (got ${platform}/${arch})"
 fi
+if [[ "$platform" == "Darwin" ]]; then
+  source "${REPO_ROOT}/packaging/macos/runtime-manifest.sh"
+  export MACOSX_DEPLOYMENT_TARGET="$JARVIS_MACOS_MIN_VERSION"
+  export CGO_CFLAGS="-mmacosx-version-min=$JARVIS_MACOS_MIN_VERSION"
+  export CGO_LDFLAGS="-mmacosx-version-min=$JARVIS_MACOS_MIN_VERSION"
+fi
 [[ -s "$PATCH_PATH" ]] || fail "CC Connect patch is missing or empty: ${PATCH_PATH}"
 
 version_output=""
 if [[ -x "$TARGET_BIN" ]]; then
   version_output="$("$TARGET_BIN" --version 2>/dev/null || true)"
   if [[ "$version_output" == *"cc-connect ${CC_CONNECT_VERSION}"* && "$version_output" == *"${CC_CONNECT_PATCH_COMMIT}"* ]]; then
-    jq -nc --arg path "$TARGET_BIN" --arg version "$CC_CONNECT_VERSION" --arg base_commit "$CC_CONNECT_BASE_COMMIT" --arg patch_commit "$CC_CONNECT_PATCH_COMMIT" \
-      '{ok:true,changed:false,path:$path,version:$version,base_commit:$base_commit,patch_commit:$patch_commit}'
-    exit 0
+    if [[ "$platform" != "Darwin" ]] ||
+      "${REPO_ROOT}/packaging/macos/check-macho.sh" "$TARGET_BIN" cc-connect-jarvis >/dev/null; then
+      jq -nc --arg path "$TARGET_BIN" --arg version "$CC_CONNECT_VERSION" --arg base_commit "$CC_CONNECT_BASE_COMMIT" --arg patch_commit "$CC_CONNECT_PATCH_COMMIT" \
+        '{ok:true,changed:false,path:$path,version:$version,base_commit:$base_commit,patch_commit:$patch_commit}'
+      exit 0
+    fi
   fi
 fi
 
@@ -60,12 +69,15 @@ git -C "$source_dir" apply "$PATCH_PATH"
   )
   go test ./platform/feishu ./agent/cursor >&2
   build_time="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-  go build -tags goolm \
+  go build -trimpath -tags goolm \
     -ldflags "-s -w -X main.version=${CC_CONNECT_VERSION} -X main.commit=${CC_CONNECT_PATCH_COMMIT} -X main.buildTime=${build_time}" \
     -o "$built_binary" ./cmd/cc-connect
 )
 version_output="$("$built_binary" --version)"
 [[ "$version_output" == *"cc-connect ${CC_CONNECT_VERSION}"* && "$version_output" == *"${CC_CONNECT_PATCH_COMMIT}"* ]] || fail "built CC Connect binary does not report the pinned Jarvis version"
+if [[ "$platform" == "Darwin" ]]; then
+  "${REPO_ROOT}/packaging/macos/check-macho.sh" "$built_binary" cc-connect-jarvis
+fi
 
 mkdir -p "${REPO_ROOT}/bin"
 target_temp="$(mktemp "${REPO_ROOT}/bin/.cc-connect-jarvis.XXXXXX")"
