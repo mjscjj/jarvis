@@ -88,6 +88,85 @@ func TestServiceReadsAndUpdatesYAMLConfiguration(t *testing.T) {
 	}
 }
 
+func TestServiceUpdatesSkillMarkdownWithRevisionGuard(t *testing.T) {
+	root := t.TempDir()
+	skillDirectory := filepath.Join(root, "product-doc-review")
+	if err := os.Mkdir(skillDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := "---\nname: product-doc-review\ndescription: Review product docs\nmodule: product-management\n---\n\n# Original\n"
+	path := filepath.Join(skillDirectory, "SKILL.md")
+	if err := os.WriteFile(path, []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(t.TempDir(), "skills.yaml")
+	if err := os.WriteFile(configPath, []byte("skills:\n  - name: product-doc-review\n    enabled: true\n    stages: [execute]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(root, configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := service.EditableContent(t.Context(), "product-doc-review")
+	if err != nil {
+		t.Fatal(err)
+	}
+	updatedText := strings.Replace(original, "# Original", "# Updated", 1)
+	updated, err := service.UpdateContent(t.Context(), "product-doc-review", ContentInput{
+		Content: updatedText, ExpectedRevision: current.Revision,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Content != updatedText || updated.Revision == current.Revision {
+		t.Fatalf("updated = %#v", updated)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil || string(raw) != updatedText {
+		t.Fatalf("file = %q err=%v", raw, err)
+	}
+	if _, err := service.UpdateContent(t.Context(), "product-doc-review", ContentInput{
+		Content: original, ExpectedRevision: current.Revision,
+	}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale UpdateContent() error = %v, want ErrConflict", err)
+	}
+}
+
+func TestServiceRejectsSkillIdentityChangesAndEmptyBody(t *testing.T) {
+	root := t.TempDir()
+	directory := filepath.Join(root, "product-doc-review")
+	if err := os.Mkdir(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	original := "---\nname: product-doc-review\ndescription: Review product docs\nmodule: product-management\n---\n\n# Original\n"
+	if err := os.WriteFile(filepath.Join(directory, "SKILL.md"), []byte(original), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(t.TempDir(), "skills.yaml")
+	if err := os.WriteFile(configPath, []byte("skills:\n  - name: product-doc-review\n    enabled: true\n    stages: [execute]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(root, configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := service.EditableContent(t.Context(), "product-doc-review")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, content := range []string{
+		strings.Replace(original, "name: product-doc-review", "name: product-doc-read", 1),
+		strings.Replace(original, "module: product-management", "module: okr", 1),
+		"---\nname: product-doc-review\ndescription: Review product docs\nmodule: product-management\n---\n",
+	} {
+		if _, err := service.UpdateContent(t.Context(), "product-doc-review", ContentInput{
+			Content: content, ExpectedRevision: current.Revision,
+		}); !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("UpdateContent(%q) error = %v, want ErrInvalidInput", content, err)
+		}
+	}
+}
+
 func TestServiceAvailabilityGateHidesPluginSkill(t *testing.T) {
 	root := t.TempDir()
 	skillDirectory := filepath.Join(root, "plugin-collector")
@@ -163,6 +242,13 @@ func TestRenderingServiceRendersCatalogAndContentWithoutChangingSource(t *testin
 	}
 	if !strings.Contains(raw.Content, "{{AGENT_NAME}}") {
 		t.Fatalf("source content was mutated: %q", raw.Content)
+	}
+	editable, err := service.EditableContent(t.Context(), "example-skill")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(editable.Content, "{{AGENT_NAME}}") {
+		t.Fatalf("editable content was rendered: %q", editable.Content)
 	}
 }
 

@@ -15,6 +15,8 @@ type SkillService interface {
 	Scan(ctx context.Context) ([]skill.View, error)
 	Update(ctx context.Context, name string, input skill.Input) (*skill.View, error)
 	Content(ctx context.Context, name string) (*skill.ContentView, error)
+	EditableContent(ctx context.Context, name string) (*skill.ContentView, error)
+	UpdateContent(ctx context.Context, name string, input skill.ContentInput) (*skill.ContentView, error)
 }
 
 func ListSkills(service SkillService) app.HandlerFunc {
@@ -66,12 +68,41 @@ func GetSkillContent(service SkillService) app.HandlerFunc {
 	}
 }
 
+func GetSkillSource(service SkillService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		view, err := service.EditableContent(ctx, c.Param("skill_name"))
+		if err != nil {
+			writeSkillError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": view})
+	}
+}
+
+func UpdateSkillSource(service SkillService) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		var input skill.ContentInput
+		if err := decodeStrictJSON(c.Request.Body(), &input); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40051, err)
+			return
+		}
+		view, err := service.UpdateContent(ctx, c.Param("skill_name"), input)
+		if err != nil {
+			writeSkillError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": view})
+	}
+}
+
 func writeSkillError(c *app.RequestContext, err error) {
 	switch {
 	case errors.Is(err, skill.ErrInvalidInput):
 		writeAPIError(c, consts.StatusBadRequest, 40052, err)
 	case errors.Is(err, skill.ErrNotFound):
 		writeAPIError(c, consts.StatusNotFound, 40450, err)
+	case errors.Is(err, skill.ErrConflict):
+		writeAPIError(c, consts.StatusConflict, 40950, err)
 	default:
 		writeAPIError(c, consts.StatusInternalServerError, 50050, err)
 	}

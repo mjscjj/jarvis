@@ -550,8 +550,9 @@ Required: content (Markdown), idempotency_key (stable, <=50 bytes).
 Optional: type (defaults to Notice), links [{label,url}], details (folded
 Markdown), extra (free text or open JSON, displayed in a supplemental panel),
 task_id (defaults to JARVIS_TASK_ID; validates/audits the task and adds its details link).
-The task link uses the runtime listen address; packaged local links require the
-computer running Jarvis. Use links for business materials, not hand-built task URLs.
+The task link uses the platform-specific UI address: local on macOS, and
+server.public_url or the LAN address on Linux. Use links for business materials,
+not hand-built task URLs.
 
 Type suggestions: Notice, Update, Reminder, Alert, Brief. These are examples,
 not an enum; custom words work unchanged. Type never selects a workflow.

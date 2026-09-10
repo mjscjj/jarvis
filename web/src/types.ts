@@ -1086,6 +1086,12 @@ export interface AgentSkillContent {
   name: string
   path: string
   content: string
+  revision: string
+}
+
+export interface AgentSkillContentInput {
+  content: string
+  expected_revision: string
 }
 
 export type AgentCLI = 'codex' | 'traex'

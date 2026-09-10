@@ -24,14 +24,14 @@ Plugin lifecycle -> Scheduled Task -> Collector Skill -> /api/clues -> M2 -> M3 
 
 ## 内置插件
 
-Codebase、Meego、Oncall、“我的交办”和“产品管理”随仓库安装，但对新用户默认关闭。用户在“插件”
+Codebase、Meego、Oncall、“我的交办”和“产品流程”随仓库安装，但对新用户默认关闭。用户在“插件”
 页面主动开启。前三者是采集插件：需要额外身份时先完成对应授权，授权成功后创建周期
 采集任务并立即执行一次。“我的交办”是能力插件，启用后直接激活阶段规则。
 
-“产品管理”是能力插件，汇总产品文档阅读、Review、Skill 维护及用户配置的定时任务。
-Skills 正文由 Agent 维护仓库文件；页面提供查看与启停。计划使用通用 ScheduledTask，
+“产品流程”是能力插件，汇总产品文档阅读、Review、Skill 维护及用户配置的定时任务。
+Skills 正文由 Agent 持续维护仓库文件，人也可在页面查看、编辑与启停；两者共用同一份 Markdown 真源。计划使用通用 ScheduledTask，
 到期生成普通 Task，由 M5 读取所选 Skill；插件页面与任务中心编辑同一记录。
-启用本身不自动创建计划或执行 Review。详见 [产品管理](modules/product-management.md)。
+启用本身不自动创建计划或执行 Review。详见 [产品流程](modules/product-management.md)。
 
 “插件”入口始终显示；某个插件开启后才在左侧“插件”下显示同名二级入口，
 关闭后立即移除。插件自己的配置和运行详情只放在该二级页面，不塞进管理列表。

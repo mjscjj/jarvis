@@ -60,6 +60,14 @@ func (s *RenderingService) Content(ctx context.Context, name string) (*ContentVi
 	return &rendered, nil
 }
 
+func (s *RenderingService) EditableContent(ctx context.Context, name string) (*ContentView, error) {
+	return s.source.EditableContent(ctx, name)
+}
+
+func (s *RenderingService) UpdateContent(ctx context.Context, name string, input ContentInput) (*ContentView, error) {
+	return s.source.UpdateContent(ctx, name, input)
+}
+
 func (s *RenderingService) Catalog(ctx context.Context, stage string) (string, error) {
 	content, err := s.source.Catalog(ctx, stage)
 	if err != nil {

@@ -4,6 +4,7 @@ package skill
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
@@ -27,6 +28,7 @@ const (
 var (
 	ErrInvalidInput = errors.New("invalid agent skill input")
 	ErrNotFound     = errors.New("agent skill not found")
+	ErrConflict     = errors.New("agent skill content changed")
 	stageOrder      = map[string]int{StageExtract: 0, StageExecute: 1, StageProactive: 2}
 	skillName       = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 )
@@ -48,9 +50,15 @@ type View struct {
 }
 
 type ContentView struct {
-	Name    string `json:"name"`
-	Path    string `json:"path"`
-	Content string `json:"content"`
+	Name     string `json:"name"`
+	Path     string `json:"path"`
+	Content  string `json:"content"`
+	Revision string `json:"revision"`
+}
+
+type ContentInput struct {
+	Content          string `json:"content"`
+	ExpectedRevision string `json:"expected_revision"`
 }
 
 type Reader interface {
@@ -298,7 +306,62 @@ func (s *Service) Content(ctx context.Context, name string) (*ContentView, error
 	if err != nil {
 		return nil, err
 	}
-	return &ContentView{Name: name, Path: path, Content: string(raw)}, nil
+	return &ContentView{Name: name, Path: path, Content: string(raw), Revision: contentRevision(raw)}, nil
+}
+
+// EditableContent returns the repository source rather than a runtime-rendered
+// copy. Humans and Agents edit this same SKILL.md truth.
+func (s *Service) EditableContent(ctx context.Context, name string) (*ContentView, error) {
+	return s.Content(ctx, name)
+}
+
+func (s *Service) UpdateContent(ctx context.Context, name string, input ContentInput) (*ContentView, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	input.ExpectedRevision = strings.TrimSpace(input.ExpectedRevision)
+	if input.ExpectedRevision == "" {
+		return nil, fmt.Errorf("%w: expected_revision is required", ErrInvalidInput)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, err := s.Content(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if current.Revision != input.ExpectedRevision {
+		return nil, fmt.Errorf("%w: reload %s before saving", ErrConflict, name)
+	}
+
+	updatedRaw := []byte(input.Content)
+	currentMeta, err := parseMetadata([]byte(current.Content))
+	if err != nil {
+		return nil, fmt.Errorf("validate current skill %s: %w", name, err)
+	}
+	updatedMeta, err := parseMetadata(updatedRaw)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	if _, err := skillBody(updatedRaw); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	if updatedMeta.Name != currentMeta.Name {
+		return nil, fmt.Errorf("%w: frontmatter name must remain %q", ErrInvalidInput, currentMeta.Name)
+	}
+	if updatedMeta.Module != currentMeta.Module {
+		return nil, fmt.Errorf("%w: frontmatter module must remain %q", ErrInvalidInput, currentMeta.Module)
+	}
+	if err := fileconfig.WriteAtomic(current.Path, updatedRaw); err != nil {
+		return nil, err
+	}
+	return &ContentView{
+		Name: name, Path: current.Path, Content: input.Content, Revision: contentRevision(updatedRaw),
+	}, nil
+}
+
+func contentRevision(raw []byte) string {
+	return fmt.Sprintf("%x", sha256.Sum256(raw))
 }
 
 func (s *Service) available(ctx context.Context, name string) (bool, error) {

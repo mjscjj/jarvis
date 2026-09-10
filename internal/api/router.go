@@ -393,6 +393,8 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.POST("/api/skills/scan", ScanSkills(deps.Skills))
 	h.PUT("/api/skills/:skill_name", UpdateSkill(deps.Skills))
 	h.GET("/api/skills/:skill_name/content", GetSkillContent(deps.Skills))
+	h.GET("/api/skills/:skill_name/source", GetSkillSource(deps.Skills))
+	h.PUT("/api/skills/:skill_name/source", UpdateSkillSource(deps.Skills))
 	// Overview 看板 + 进度：跨模块只读聚合，无表无 cron；总结按需调 codex。
 	h.GET("/api/overview", GetOverview(deps.Overview))
 	h.GET("/api/digests", GetDigests(deps.Digests))

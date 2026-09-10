@@ -1,8 +1,8 @@
-# 产品管理插件
+# 产品流程插件
 
-产品管理是内置 capability 插件（`product-management`）。页面汇总 Skills、定时任务和插件计划产生的历史 Task，任务、运行结果与计划仍以现有 Task / ExecutionRun / ScheduledTask 为真源，无独立业务表。
+产品流程是内置 capability 插件（`product-management`）。页面汇总 Skills、定时任务和插件计划产生的历史 Task，任务、运行结果与计划仍以现有 Task / ExecutionRun / ScheduledTask 为真源，无独立业务表。
 
-在「插件管理」开启后出现「产品管理」二级入口。启用本身不创建计划、不立即执行外部动作。Skills 页查看正文和启停，正文由 Agent 维护项目文件。提供 product-doc-read、product-doc-review、product-prd-review、product-skill-maintain 四个 execute Skill；Manifest 的 Skills 列表决定归属，conf/skills.yaml 决定阶段与启用。product-prd-review 从指定群定位最近一次产品会议，只处理该次会议关联的 PRD，逐份生成飞书评审文档并通知 Principal；它不使用固定天数扫描历史会议。
+在「插件管理」开启后出现「产品流程」二级入口。启用本身不创建计划、不立即执行外部动作。Skills 页支持查看、直接编辑 Markdown 和启停；人和 Agent 修改的是同一份 `.agents/skills/<name>/SKILL.md`，不复制到数据库。保存使用内容版本校验，期间若 Agent 或其他人已经改过文件则拒绝覆盖并保留页面草稿；新正文从 Agent 下次读取开始生效，已运行的 Session 不热更新。提供 product-doc-read、product-doc-review、product-prd-review、product-skill-maintain 四个 execute Skill；Manifest 的 Skills 列表决定归属，conf/skills.yaml 决定阶段与启用。product-prd-review 从指定群定位最近一次产品会议，只处理该次会议关联的 PRD，逐份生成飞书评审文档并通知 Principal；它不使用固定天数扫描历史会议。
 
 定时任务页复用 ScheduledTasks 组件，选择 Skill，填写文档 URL 或 Resource、范围、关注点与周期。上下文保存 `plugin: product-management` 和 `skill`，其余业务背景宽松保留。Agent 通过现有 create-scheduled-task 工具可设置相同上下文；程序不按产品 Skill 名称选择执行链路。调度到点创建普通 Task，M5 读取任务背景和当前 Skills 目录，再按指定 Skill 调查执行。
 

@@ -3,6 +3,7 @@ import type {
   DelegationCheck,
   AgentSkill,
   AgentSkillContent,
+  AgentSkillContentInput,
   AgentSkillInput,
   AgentProcessSnapshot,
   CommitWorklog,
@@ -910,6 +911,14 @@ export function updateSkill(name: string, body: AgentSkillInput): Promise<AgentS
 
 export function getSkillContent(name: string): Promise<AgentSkillContent> {
   return request<AgentSkillContent>(`/api/skills/${encodeURIComponent(name)}/content`)
+}
+
+export function getSkillSource(name: string): Promise<AgentSkillContent> {
+  return request<AgentSkillContent>(`/api/skills/${encodeURIComponent(name)}/source`)
+}
+
+export function updateSkillSource(name: string, body: AgentSkillContentInput): Promise<AgentSkillContent> {
+  return request<AgentSkillContent>(`/api/skills/${encodeURIComponent(name)}/source`, { method: 'PUT', body })
 }
 
 export function getRuntimeSettings(signal?: AbortSignal): Promise<RuntimeSettingsView> {

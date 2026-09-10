@@ -74,7 +74,7 @@
 - Runtime settings：`GET/PUT /api/runtime-settings`
 - Work rules：`GET /api/work-rules`、`GET/PUT /api/work-rules/:work_rule_key`
 - Text files：`GET /api/text-files`、`GET/PUT /api/text-files/:text_file_key`
-- Skills：`GET /api/skills`、`POST /api/skills/scan`、`PUT /api/skills/:skill_name`、`GET /api/skills/:skill_name/content`
+- Skills：`GET /api/skills`、`POST /api/skills/scan`、`PUT /api/skills/:skill_name`、`GET /api/skills/:skill_name/content`、`GET/PUT /api/skills/:skill_name/source`。`content` 是 Agent 使用的运行时渲染结果；`source` 直接读写仓库 `SKILL.md` 原文，写入必须携带 GET 返回的 `expected_revision`，文件期间发生变化时返回 409，避免人与 Agent 相互覆盖。
 - App modules：`GET /api/app-modules`、`PUT /api/app-modules/:module_key`
 - 通用 OKR：`GET /api/okr/scope|enums|board` 读取 Objective、KR、Metric、Point 与负责人；图片、Objective/KR 定义维护也位于 `/api/okr/*`。这些接口不读取 Biz 标签、评分、评论、Meego 或身份表。
 - 定义的窄接口：`PUT /api/okr/krs/:kr_id/definition` 只接受 KR 与已有要点的标题和负责人，收不到指标、灯、标签，也不能增删要点。Biz 周报和 Review 页面手里的指标值属于当周副本，靠这个接口的字段边界保证它们到不了主干定义；改完由前端重新取一次 Biz 组合视图当基线。Biz 完整编辑器走 `PUT /api/biz-okr/krs/:kr_id`，标签走 `/api/biz-okr/.../tags`。
