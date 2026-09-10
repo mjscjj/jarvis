@@ -249,7 +249,7 @@ func prepare(raw json.RawMessage, links *uilink.Resolver) (cardInput, json.RawMe
 		return invalid("rendered card exceeds 200 elements; reduce links or supplementary sections")
 	}
 	card, err := json.Marshal(map[string]any{
-		"schema": "2.0", "config": map[string]any{"width_mode": "compact"},
+		"schema": "2.0", "config": map[string]any{"width_mode": "fill"},
 		"body": map[string]any{"direction": "vertical", "padding": "12px", "vertical_spacing": "8px", "elements": elements},
 	})
 	if err != nil {
