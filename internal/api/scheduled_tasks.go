@@ -72,7 +72,7 @@ func ListScheduledTasks(service ScheduledTaskService) app.HandlerFunc {
 			writeAPIError(c, consts.StatusBadRequest, 40060, err)
 			return
 		}
-		items, err := service.List(ctx, scheduledtask.ListFilter{Status: c.Query("status"), Limit: limit})
+		items, err := service.List(ctx, scheduledtask.ListFilter{Status: c.Query("status"), Limit: limit, PluginID: c.Query("plugin")})
 		if err != nil {
 			writeScheduledTaskError(c, err)
 			return

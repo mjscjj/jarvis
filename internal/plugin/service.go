@@ -123,6 +123,18 @@ type InstallationView struct {
 	Enabled bool   `json:"enabled"`
 }
 
+// Enabled reads local installation state without probing external services.
+func (s *Service) Enabled(ctx context.Context, id string) (bool, error) {
+	if _, ok := s.registry.Get(id); !ok {
+		return false, fmt.Errorf("%w: id=%s", ErrNotFound, id)
+	}
+	var row domain.PluginInstallation
+	if err := s.db.WithContext(ctx).Where("plugin_id = ?", id).First(&row).Error; err != nil {
+		return false, err
+	}
+	return row.Enabled, nil
+}
+
 func (s *Service) Get(ctx context.Context, id string) (*View, error) {
 	manifest, ok := s.registry.Get(id)
 	if !ok {

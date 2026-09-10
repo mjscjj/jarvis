@@ -32,6 +32,7 @@ import { usePageContext } from './pageContext'
 import { useAgentIdentity } from './agentIdentity'
 import type { ScheduledTask, ScheduledTaskInput, ScheduledTaskScheduleType, ScheduledTaskStatus } from './types'
 import './styles/clues-automation.css'
+import { bindScheduleScope, type ScheduleScope } from './scheduledTaskScope'
 
 const { Paragraph, Text } = Typography
 
@@ -50,6 +51,7 @@ const viewOptions = [
 ] satisfies Array<{ value: ScheduleView; label: string }>
 
 interface FormValue {
+  skill?: string
   title: string
   instruction: string
   context_snapshot: string
@@ -134,10 +136,10 @@ function lastRunText(task: ScheduledTask): string {
   return '尚未触发'
 }
 
-export default function ScheduledTasks({ delegationsEnabled }: { delegationsEnabled: boolean }) {
+export default function ScheduledTasks({ delegationsEnabled, scope }: { delegationsEnabled: boolean; scope?: ScheduleScope }) {
   const { name: agentName } = useAgentIdentity()
-  const { context, navigate, setViewState } = usePageContext()
-  const routeView: ScheduleView = context.view_state.view === 'wakeups' ? 'wakeups' : 'automations'
+  const { context, navigate, setViewState, setSelection } = usePageContext()
+  const routeView: ScheduleView = !scope && context.view_state.view === 'wakeups' ? 'wakeups' : 'automations'
   const routeStatus = context.view_state.status || ''
   const [items, setItems] = useState<ScheduledTask[]>([])
   const [view, setView] = useState<ScheduleView>(routeView)
@@ -157,13 +159,13 @@ export default function ScheduledTasks({ delegationsEnabled }: { delegationsEnab
 
   const load = useCallback((signal?: AbortSignal) => {
     setLoading(true)
-    listScheduledTasks(status, signal)
+    listScheduledTasks(status, signal, scope?.pluginID)
       .then((data) => setItems(data.items))
       .catch((cause) => {
         if (!signal?.aborted) message.error(`加载自动化失败：${errorText(cause)}`)
       })
       .finally(() => { if (!signal?.aborted) setLoading(false) })
-  }, [status])
+  }, [status, scope?.pluginID])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -193,6 +195,7 @@ export default function ScheduledTasks({ delegationsEnabled }: { delegationsEnab
     setEditing(null)
     form.setFieldsValue({
       title: '', instruction: '', context_snapshot: '{}',
+      skill: scope?.skills.find((item) => item.available)?.name,
       schedule_type: 'weekly', daily_time: dailyTimeValue('09:00'), weekday: 1,
       interval_minutes: 10, run_at: dayjs().add(10, 'minute'), enabled: true,
     })
@@ -203,6 +206,7 @@ export default function ScheduledTasks({ delegationsEnabled }: { delegationsEnab
     setEditing(task)
     form.setFieldsValue({
       title: task.title,
+      skill: typeof task.context_snapshot?.skill === 'string' ? task.context_snapshot.skill : undefined,
       instruction: task.instruction,
       context_snapshot: JSON.stringify(task.context_snapshot ?? {}, null, 2),
       schedule_type: task.schedule_type,
@@ -218,7 +222,9 @@ export default function ScheduledTasks({ delegationsEnabled }: { delegationsEnab
   const save = async () => {
     try {
       const value = await form.validateFields()
-      const input = toInput(value)
+      const rawInput = toInput(value)
+      if (editing) rawInput.action_type = editing.action_type
+      const input = scope ? bindScheduleScope(rawInput, scope, value.skill || '') : rawInput
       setSaving(true)
       if (editing) {
         await updateScheduledTask(editing.id, input)
@@ -298,6 +304,10 @@ export default function ScheduledTasks({ delegationsEnabled }: { delegationsEnab
           >
             {lastRunText(task)}
           </Text>
+          {task.last_task_id && <Button type="link" size="small" onClick={(event) => {
+            event.stopPropagation()
+            setSelection({ kind: 'task', id: task.last_task_id!, label: `Task #${task.last_task_id}` })
+          }}>查看执行结果</Button>}
         </Space>
       ),
     },
@@ -369,7 +379,15 @@ export default function ScheduledTasks({ delegationsEnabled }: { delegationsEnab
 
   return (
     <div>
-      <MergedPageHeader
+      {scope ? (
+        <Flex justify="space-between" align="center" style={{ marginBottom: 16 }}>
+          <Text type="secondary">这些定时任务也显示在「任务 → 自动化」，每次触发生成普通 Task。</Text>
+          <Space>
+            <Button onClick={() => load()}>刷新</Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建定时任务</Button>
+          </Space>
+        </Flex>
+      ) : <MergedPageHeader
         title="任务"
         subtitle={`管理你与 ${agentName} 正在推进的工作`}
         activeKey="automations"
@@ -385,11 +403,11 @@ export default function ScheduledTasks({ delegationsEnabled }: { delegationsEnab
         }}
       >
         {view === 'automations' && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建自动化</Button>}
-      </MergedPageHeader>
+      </MergedPageHeader>}
 
       <Card className="automation-toolbar" variant="borderless">
         <Flex align="center" justify="space-between" gap={16} wrap>
-          <Segmented<ScheduleView>
+          {!scope && <Segmented<ScheduleView>
             value={view}
             options={viewOptions.map((option) => ({
               ...option,
@@ -400,14 +418,14 @@ export default function ScheduledTasks({ delegationsEnabled }: { delegationsEnab
               setSelected(null)
               setViewState({ view: nextView, status })
             }}
-          />
+          />}
           <Space>
             <Text type="secondary">状态</Text>
             <Select
               value={status}
               onChange={(nextStatus) => {
                 setStatus(nextStatus)
-                setViewState({ view, status: nextStatus })
+                setViewState({ ...context.view_state, view, status: nextStatus })
               }}
               style={{ width: 130 }}
               options={[
@@ -508,6 +526,9 @@ export default function ScheduledTasks({ delegationsEnabled }: { delegationsEnab
         width={720}
       >
         <Form form={form} layout="vertical">
+          {scope && <Form.Item name="skill" label="使用的 Skill" rules={[{ required: true, message: '请选择 Skill' }]}>
+            <Select options={scope.skills.map((item) => ({ value: item.name, label: `${item.name} · ${item.description}`, disabled: !item.available }))} />
+          </Form.Item>}
           <Form.Item name="title" label="标题" rules={[{ required: true, whitespace: true, message: '请输入标题' }]}>
             <Input placeholder="例如：每天检查 Agent Runtime 项目进展" />
           </Form.Item>

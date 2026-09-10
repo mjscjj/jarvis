@@ -24,9 +24,14 @@ Plugin lifecycle -> Scheduled Task -> Collector Skill -> /api/clues -> M2 -> M3 
 
 ## 内置插件
 
-Codebase、Meego、Oncall 和“我的交办”随仓库安装，但对新用户默认关闭。用户在“插件”
+Codebase、Meego、Oncall、“我的交办”和“产品管理”随仓库安装，但对新用户默认关闭。用户在“插件”
 页面主动开启。前三者是采集插件：需要额外身份时先完成对应授权，授权成功后创建周期
 采集任务并立即执行一次。“我的交办”是能力插件，启用后直接激活阶段规则。
+
+“产品管理”是能力插件，汇总产品文档阅读、Review、Skill 维护及用户配置的定时任务。
+Skills 正文由 Agent 维护仓库文件；页面提供查看与启停。计划使用通用 ScheduledTask，
+到期生成普通 Task，由 M5 读取所选 Skill；插件页面与任务中心编辑同一记录。
+启用本身不自动创建计划或执行 Review。详见 [产品管理](modules/product-management.md)。
 
 “插件”入口始终显示；某个插件开启后才在左侧“插件”下显示同名二级入口，
 关闭后立即移除。插件自己的配置和运行详情只放在该二级页面，不塞进管理列表。
@@ -35,6 +40,10 @@ Codebase、Meego、Oncall 和“我的交办”随仓库安装，但对新用户
 原始线索、Todo、Task 和执行记录继续保留，作为历史证据和审计记录。
 此开关控制后续采集和新组装的 Skill 目录，不自动取消已有 Task 或其等待续跑，
 也不会移除运行中 Session 已收到的正文；它不是本机 Agent 的工具权限边界。
+
+用户创建的计划可通过 `context_snapshot.plugin` 标记插件归属。每次派发前读取插件开关，
+关闭时跳过该轮，不删除计划或历史 Task；若指定 `context_snapshot.skill`，还检查该 Skill
+当前是否可用于 execute。普通无绑定计划不受影响，已在等待的 Task 仍走原续跑机制。
 
 “我的交办”复用 M3 的 Todo 作为交办主体。M3 输出 `action_type=delegated_followup`
 后即可展示，不依赖 Task 是否创建或成功。原始来源与完整理解保存在 Todo.content，

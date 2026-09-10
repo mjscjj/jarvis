@@ -749,9 +749,10 @@ export function getAgentConfigPreview(stage: AgentConfigStage, signal?: AbortSig
   return request<AgentConfigPreview>(`/api/agent-config/stages/${encodeURIComponent(stage)}/preview`, { signal })
 }
 
-export function listScheduledTasks(status = '', signal?: AbortSignal): Promise<{ items: ScheduledTask[] }> {
+export function listScheduledTasks(status = '', signal?: AbortSignal, pluginID?: string): Promise<{ items: ScheduledTask[] }> {
   const params = new URLSearchParams({ limit: '200' })
   if (status) params.set('status', status)
+  if (pluginID) params.set('plugin', pluginID)
   return request<{ items: ScheduledTask[] }>(`/api/scheduled-tasks?${params.toString()}`, { signal })
 }
 

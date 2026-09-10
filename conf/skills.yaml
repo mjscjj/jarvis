@@ -1,4 +1,13 @@
 skills:
+    - name: product-doc-read
+      enabled: true
+      stages: [execute]
+    - name: product-doc-review
+      enabled: true
+      stages: [execute]
+    - name: product-skill-maintain
+      enabled: true
+      stages: [execute]
     - name: feishu-group-daily-summary
       enabled: true
       stages:

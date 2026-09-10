@@ -32,6 +32,7 @@ import PageHeader from './components/PageHeader'
 import { usePageContext } from './pageContext'
 import type { AppModule, Plugin, PluginAuthorization, PluginState } from './types'
 import OKRPluginPage from './okr/OKRPluginPage'
+import ProductManagement from './plugins/ProductManagement'
 
 const { Text, Title } = Typography
 
@@ -565,7 +566,7 @@ export default function Plugins() {
           }
         />
       ))}
-      {selectedOKR ? <OKRPluginPage /> : selectedPlugin ? pluginTab(selectedPlugin) : managementTable}
+      {selectedOKR ? <OKRPluginPage /> : selectedPlugin?.id === 'product-management' ? <ProductManagement plugin={selectedPlugin} /> : selectedPlugin ? pluginTab(selectedPlugin) : managementTable}
     </div>
   )
 }

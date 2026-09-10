@@ -76,8 +76,9 @@ type View struct {
 }
 
 type ListFilter struct {
-	Status string
-	Limit  int
+	Status   string
+	Limit    int
+	PluginID string
 }
 
 type TaskSubmitter interface {
@@ -102,6 +103,18 @@ type Service struct {
 	now        func() time.Time
 	location   *time.Location
 	moduleGate func(context.Context, string) (bool, error)
+	pluginGate func(context.Context, string) (bool, error)
+	skillGate  func(context.Context, string) (bool, error)
+}
+
+// SetPluginGate suspends new dispatches for schedules owned by disabled plugins.
+// Existing Tasks and their continuation schedules keep their lifecycle.
+func (s *Service) SetPluginGate(gate func(context.Context, string) (bool, error)) {
+	s.pluginGate = gate
+}
+
+func (s *Service) SetSkillGate(gate func(context.Context, string) (bool, error)) {
+	s.skillGate = gate
 }
 
 // SetModuleGate makes module-owned schedules dormant while their module is
@@ -149,6 +162,9 @@ func (s *Service) List(ctx context.Context, filter ListFilter) ([]View, error) {
 		return nil, fmt.Errorf("%w: limit must be between 1 and 500", ErrInvalidInput)
 	}
 	query := s.db.WithContext(ctx).Model(&domain.ScheduledTask{})
+	if pluginID := strings.TrimSpace(filter.PluginID); pluginID != "" {
+		query = query.Where("json_extract(context_snapshot, '$.plugin') = ?", pluginID)
+	}
 	if status := strings.TrimSpace(filter.Status); status != "" {
 		if _, ok := validStatuses[status]; !ok {
 			return nil, fmt.Errorf("%w: unknown status %q", ErrInvalidInput, status)
@@ -473,6 +489,36 @@ func (s *Service) dispatch(ctx context.Context, row *domain.ScheduledTask, occur
 			return s.skipDisabledModule(ctx, row, moduleKey)
 		}
 	}
+	pluginID, err := scheduledContextKey(row.ContextSnapshot, "plugin")
+	if err != nil {
+		s.fail(ctx, row.ID, err)
+		return err
+	}
+	if pluginID != "" && s.pluginGate != nil {
+		enabled, err := s.pluginGate(ctx, pluginID)
+		if err != nil {
+			s.fail(ctx, row.ID, err)
+			return err
+		}
+		if !enabled {
+			return s.skipDisabledOwner(ctx, row, "插件 "+pluginID)
+		}
+	}
+	skillName, err := scheduledContextKey(row.ContextSnapshot, "skill")
+	if err != nil {
+		s.fail(ctx, row.ID, err)
+		return err
+	}
+	if skillName != "" && s.skillGate != nil {
+		enabled, err := s.skillGate(ctx, skillName)
+		if err != nil {
+			s.fail(ctx, row.ID, err)
+			return err
+		}
+		if !enabled {
+			return s.skipDisabledOwner(ctx, row, "Skill "+skillName)
+		}
+	}
 	input, err := taskInput(row, occurrenceKey)
 	if err != nil {
 		s.fail(ctx, row.ID, err)
@@ -500,6 +546,10 @@ func (s *Service) dispatch(ctx context.Context, row *domain.ScheduledTask, occur
 }
 
 func scheduledModuleKey(raw []byte) (string, error) {
+	return scheduledContextKey(raw, "module")
+}
+
+func scheduledContextKey(raw []byte, key string) (string, error) {
 	if len(raw) == 0 {
 		return "", nil
 	}
@@ -507,20 +557,24 @@ func scheduledModuleKey(raw []byte) (string, error) {
 	if err := json.Unmarshal(raw, &snapshot); err != nil {
 		return "", fmt.Errorf("decode scheduled task module context: %w", err)
 	}
-	encoded, ok := snapshot["module"]
+	encoded, ok := snapshot[key]
 	if !ok {
 		return "", nil
 	}
-	var key string
-	if err := json.Unmarshal(encoded, &key); err != nil {
-		return "", fmt.Errorf("scheduled task module must be a string")
+	var value string
+	if err := json.Unmarshal(encoded, &value); err != nil {
+		return "", fmt.Errorf("scheduled task %s must be a string", key)
 	}
-	return strings.TrimSpace(key), nil
+	return strings.TrimSpace(value), nil
 }
 
 func (s *Service) skipDisabledModule(ctx context.Context, row *domain.ScheduledTask, moduleKey string) error {
+	return s.skipDisabledOwner(ctx, row, "模块 "+moduleKey)
+}
+
+func (s *Service) skipDisabledOwner(ctx context.Context, row *domain.ScheduledTask, owner string) error {
 	finishedAt := s.now().UTC()
-	result := fmt.Sprintf("模块 %s 已关闭，本轮未创建 Task", moduleKey)
+	result := fmt.Sprintf("%s 已关闭，本轮未创建 Task", owner)
 	update := s.db.WithContext(ctx).Model(&domain.ScheduledTask{}).
 		Where("id = ? AND status = ?", row.ID, "running").
 		Updates(map[string]any{

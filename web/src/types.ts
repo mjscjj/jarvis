@@ -1071,6 +1071,7 @@ export interface AgentSkill {
   file_path: string
   stages: SkillStage[]
   is_enabled: boolean
+  is_available: boolean
   inline: boolean
 }
 

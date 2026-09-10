@@ -611,6 +611,8 @@ func main() {
 		fatalf("initialize plugin service failed: %v", err)
 	}
 	skillService.SetAvailability(pluginService)
+	scheduledTaskService.SetPluginGate(pluginService.Enabled)
+	scheduledTaskService.SetSkillGate(skillService.Executable)
 	projectService, err := background.NewProjectService(db)
 	if err != nil {
 		fatalf("initialize project service failed: %v", err)

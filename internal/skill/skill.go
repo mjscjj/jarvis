@@ -135,6 +135,26 @@ func (s *Service) SetAvailability(availability Availability) {
 	s.availability = availability
 }
 
+// Executable reports availability of an explicitly selected execution Skill.
+func (s *Service) Executable(ctx context.Context, name string) (bool, error) {
+	items, err := s.List(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, item := range items {
+		if item.Name != name {
+			continue
+		}
+		for _, stage := range item.Stages {
+			if stage == StageExecute {
+				return item.IsEnabled && item.IsAvailable, nil
+			}
+		}
+		return false, nil
+	}
+	return false, fmt.Errorf("%w: name=%s", ErrNotFound, name)
+}
+
 func (s *Service) List(ctx context.Context) ([]View, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
