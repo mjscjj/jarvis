@@ -65,7 +65,7 @@ type ServerConfig struct {
 	// PublicBaseURL 是这台部署对外可打开的根地址（形如 http://host.example:18800）。
 	// 分享链接用它替换浏览器地址栏里的 IP；留空表示沿用当前地址。
 	PublicBaseURL string   `yaml:"public_base_url"`
-	PublicURL     string   `yaml:"public_url"` // 浏览器访问入口；空值按实际监听地址生成卡片链接
+	PublicURL     string   `yaml:"public_url"` // Linux 的卡片访问入口覆盖；空值用局域网 IP，Mac 始终本地
 	WebRoot       string   `yaml:"web_root"`   // React production build directory
 	LogFiles      []string `yaml:"log_files"`  // 运行日志文件（供调试面板尾读并归并）；默认 server 的 stdout+stderr 两个文件。cron 日志走 stderr，必须都读。
 }

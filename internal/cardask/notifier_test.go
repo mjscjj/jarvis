@@ -3,6 +3,7 @@ package cardask
 import (
 	"context"
 	"encoding/json"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -67,7 +68,11 @@ func TestSendQuestionKeepsComplexControlsInOneForm(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SendQuestion() error = %v", err)
 	}
-	if delivery.MessageID != "om_card" || !strings.Contains(delivery.URL, "192.168.1.20:18800") {
+	host := "192.168.1.20:18800"
+	if runtime.GOOS == "darwin" {
+		host = "127.0.0.1:18800"
+	}
+	if delivery.MessageID != "om_card" || !strings.Contains(delivery.URL, host) {
 		t.Fatalf("delivery = %#v", delivery)
 	}
 
@@ -179,8 +184,12 @@ func TestSendQuestionFoldsProgressAndUsesTextDetailLink(t *testing.T) {
 	}
 
 	detail, _ := elements[len(elements)-1].(map[string]any)
+	wantDetail := "[查看详情](http://192.168.1.20:18800/#/work/task/7)"
+	if runtime.GOOS == "darwin" {
+		wantDetail = "[查看详情（本机访问）](http://127.0.0.1:18800/#/work/task/7)"
+	}
 	if detail["tag"] != "markdown" || detail["text_size"] != "notation" ||
-		!strings.Contains(detail["content"].(string), "[查看详情](http://192.168.1.20:18800/#/work/task/7)") {
+		detail["content"] != wantDetail {
 		t.Fatalf("detail link = %#v", detail)
 	}
 	if strings.Contains(mustJSON(t, detail), `"tag":"button"`) {
@@ -357,12 +366,15 @@ func mustJSON(t *testing.T, value any) string {
 
 func TestPackagedQuestionAndApprovalDetails(t *testing.T) {
 	for _, tc := range []struct{ base, want, label string }{
-		{"", "http://127.0.0.1:19900/#/work/task/7", "查看详情（本机访问）"},
+		{"", "http://192.168.1.20:19900/#/work/task/7", "查看详情"},
 		{"https://jarvis.example.com:8443/", "https://jarvis.example.com:8443/#/work/task/7", "查看详情"},
 	} {
+		if runtime.GOOS == "darwin" {
+			tc.want, tc.label = "http://127.0.0.1:19900/#/work/task/7", "查看详情（本机访问）"
+		}
 		for _, decision := range []bool{false, true} {
 			lark := &fakeLark{response: map[string]any{"data": map[string]any{"message_id": "om_card"}}}
-			notifier, err := NewNotifier(lark, "Jarvis", "ou_principal", "127.0.0.1:19900", tc.base)
+			notifier, err := NewNotifier(lark, "Jarvis", "ou_principal", "192.168.1.20:19900", tc.base)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { createScheduledTask, createTask, deleteScheduledTask, executeTask, getTask, listScheduledTasks, updateScheduledTask } from '../../../api'
+import { createScheduledTask, createTask, deleteScheduledTask, executeTask, getScheduledTask, getTask, listScheduledTasks, updateScheduledTask } from '../../../api'
 import type { ScheduledTask, Task, TextFile } from '../../../types'
 import {
   OKR_ACTIONS,
@@ -98,7 +98,10 @@ export function AgentActionCenter({ prompts, promptsLoading, actionsEnabled, ini
     setLoading(true)
     try {
       const response = await listScheduledTasks('', signal)
-      const fixedSchedules = response.items.filter((item) => actionKeyForSchedule(item))
+      const fixedTitles = new Set(OKR_ACTIONS.map((item) => `OKR · ${item.title}`))
+      const candidates = response.items.filter((item) => item.action_type === 'agent_task' && fixedTitles.has(item.title))
+      const details = await Promise.all(candidates.map((item) => getScheduledTask(item.id, signal)))
+      const fixedSchedules = details.filter((item) => actionKeyForSchedule(item))
       setSchedules(fixedSchedules)
       const taskPairs = await Promise.all(fixedSchedules
         .filter((item) => item.last_task_id)

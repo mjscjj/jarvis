@@ -68,6 +68,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/common/hlog"
+	hertzgzip "github.com/hertz-contrib/gzip"
 	"gorm.io/gorm"
 )
 
@@ -1106,6 +1107,7 @@ func main() {
 		// does not reject a valid image before the upload handler can validate it.
 		server.WithMaxRequestBodySize(12<<20),
 	)
+	h.Use(hertzgzip.Gzip(hertzgzip.BestSpeed, hertzgzip.WithExcludedPaths([]string{"/api/chat"})))
 	h.Use(observability.Middleware())
 	h.Use(api.StaticAssetCacheHeaders())
 	authService, err := authn.NewService("bytedcli", 12*time.Hour, cfg.Auth.IsEnabled())

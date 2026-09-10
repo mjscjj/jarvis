@@ -95,7 +95,9 @@ Runtime settings 写入后需要重启进程生效；模块开关保存后也需
 ## 调度、线索与总结
 
 - 已采集消息：`GET /api/messages`；`message_ids` 可传逗号分隔的原始消息 ID 做批量精确查询，数量不得超过 `limit`（最大 100），不截断存在性查询结果。CLI 的 `query-messages --message-ids ... --limit 100` 只返回命中的数据库 ID 与原始消息 ID。
-- Scheduled tasks：`GET/POST /api/scheduled-tasks`、`POST /api/scheduled-tasks/yield`、`PUT/DELETE /api/scheduled-tasks/:scheduled_task_id`、`POST .../trigger`
+- Scheduled tasks：`GET/POST /api/scheduled-tasks`、`GET/PUT/DELETE /api/scheduled-tasks/:scheduled_task_id`、`POST /api/scheduled-tasks/yield`、`POST .../trigger`
+  - 列表只返回调度、状态和展示摘要，不读取或返回 `context_snapshot`、`dispatch_payload`；需要完整冻结上下文时按 ID 读取详情。
+  - 列表可带 `plugin` 按插件归属过滤。
   - `schedule_type` 支持 `once`、`daily`、`weekly`、`interval`。周度传 `weekday`（ISO 1=周一，…，7=周日）和 `daily_time`（`HH:mm`，Jarvis 运行机器本地时区），例如 `{"title":"每周汇总","instruction":"汇总上周进展","context_snapshot":{},"schedule_type":"weekly","weekday":1,"daily_time":"09:00"}`。
   - 周度复用普通 Task 触发链路；停机错过多周后只补触发一次，并排到未来的下一个指定星期和时间。立即执行不改变下次自动触发时间，编辑计划则重新计算；切换非周度时清除 `weekday`。列表和详情返回 `weekday` 与 `next_run_at`。
 - 通用线索：`POST /api/clues`

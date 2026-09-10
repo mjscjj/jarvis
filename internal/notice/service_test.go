@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -58,7 +59,7 @@ func testService(t *testing.T, f *fakeRunner) *Service {
 	if err := store.Migrate(db); err != nil {
 		t.Fatal(err)
 	}
-	s, err := NewService(db, f, "ou_principal", filepath.Join(dir, "notices.jsonl"), "127.0.0.1:18800", "")
+	s, err := NewService(db, f, "ou_principal", filepath.Join(dir, "notices.jsonl"), "192.168.1.20:18800", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +96,11 @@ func TestRemoteNoticeDetails(t *testing.T) {
 	for i, arg := range f.calls[0] {
 		if arg == "--content" {
 			card := f.calls[0][i+1]
-			if !strings.Contains(card, "[查看详情](https://jarvis.example.com:8443/#/work/task/") || strings.Contains(card, "127.0.0.1") || strings.Contains(card, "本机访问") {
+			want := "[查看详情](https://jarvis.example.com:8443/#/work/task/"
+			if runtime.GOOS == "darwin" {
+				want = "[查看详情（本机访问）](http://127.0.0.1:18800/#/work/task/"
+			}
+			if !strings.Contains(card, want) {
 				t.Fatal(card)
 			}
 			return
@@ -282,7 +287,11 @@ func TestTaskNoticeUsesRuntimeDetailsLink(t *testing.T) {
 		if !strings.Contains(card, "https://example.com/mr/139") {
 			t.Fatal(card)
 		}
-		hasDetails := strings.Contains(card, "[查看详情（本机访问）](http://127.0.0.1:18800/#/work/task/")
+		want := "[查看详情](http://192.168.1.20:18800/#/work/task/"
+		if runtime.GOOS == "darwin" {
+			want = "[查看详情（本机访问）](http://127.0.0.1:18800/#/work/task/"
+		}
+		hasDetails := strings.Contains(card, want)
 		if hasDetails != withTask {
 			t.Fatalf("withTask=%v card=%s", withTask, card)
 		}

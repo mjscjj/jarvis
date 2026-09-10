@@ -1050,6 +1050,8 @@ export interface ScheduledTask {
   updated_at: string
 }
 
+export type ScheduledTaskListItem = Omit<ScheduledTask, 'dispatch_payload' | 'context_snapshot'>
+
 export interface ScheduledTaskInput {
   title: string
   action_type: string

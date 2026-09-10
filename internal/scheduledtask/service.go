@@ -75,6 +75,36 @@ type View struct {
 	UpdatedAt       time.Time       `json:"updated_at"`
 }
 
+// ListItem is the compact scheduled-task projection used by list consumers.
+// Frozen context and dispatch payload remain available from Get, but are not
+// read or serialized for every row in the index.
+type ListItem struct {
+	ID              uint64     `json:"id"`
+	DispatchKind    string     `json:"dispatch_kind"`
+	SubjectType     *string    `json:"subject_type"`
+	SubjectID       *uint64    `json:"subject_id"`
+	SourceRunID     *uint64    `json:"source_run_id"`
+	Title           string     `json:"title"`
+	ActionType      string     `json:"action_type"`
+	Instruction     string     `json:"instruction"`
+	ScheduleType    string     `json:"schedule_type"`
+	DailyTime       *string    `json:"daily_time"`
+	Weekday         *int       `json:"weekday"`
+	IntervalMinutes *int       `json:"interval_minutes"`
+	RunAt           *time.Time `json:"run_at"`
+	NextRunAt       time.Time  `json:"next_run_at"`
+	Enabled         bool       `json:"enabled"`
+	Status          string     `json:"status"`
+	LastRunStatus   *string    `json:"last_run_status"`
+	LastTaskID      *uint64    `json:"last_task_id"`
+	LastResult      *string    `json:"last_result"`
+	LastErrorDetail *string    `json:"last_error_detail"`
+	LastStartedAt   *time.Time `json:"last_started_at"`
+	LastFinishedAt  *time.Time `json:"last_finished_at"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+}
+
 type ListFilter struct {
 	Status   string
 	Limit    int
@@ -157,7 +187,7 @@ func NewService(db *gorm.DB, submitter TaskSubmitter, resumer TaskResumer, batch
 	return service, nil
 }
 
-func (s *Service) List(ctx context.Context, filter ListFilter) ([]View, error) {
+func (s *Service) List(ctx context.Context, filter ListFilter) ([]ListItem, error) {
 	if filter.Limit <= 0 || filter.Limit > 500 {
 		return nil, fmt.Errorf("%w: limit must be between 1 and 500", ErrInvalidInput)
 	}
@@ -171,15 +201,18 @@ func (s *Service) List(ctx context.Context, filter ListFilter) ([]View, error) {
 		}
 		query = query.Where("status = ?", status)
 	}
-	var rows []domain.ScheduledTask
-	if err := query.Order("enabled DESC, next_run_at ASC, id ASC").Limit(filter.Limit).Find(&rows).Error; err != nil {
+	var items []ListItem
+	if err := query.Select(
+		"id", "dispatch_kind", "subject_type", "subject_id", "source_run_id",
+		"title", "action_type", "instruction", "schedule_type", "daily_time",
+		"weekday", "interval_minutes", "run_at", "next_run_at", "enabled",
+		"status", "last_run_status", "last_task_id", "last_result",
+		"last_error_detail", "last_started_at", "last_finished_at",
+		"created_at", "updated_at",
+	).Order("enabled DESC, next_run_at ASC, id ASC").Limit(filter.Limit).Scan(&items).Error; err != nil {
 		return nil, fmt.Errorf("list scheduled tasks: %w", err)
 	}
-	views := make([]View, len(rows))
-	for i := range rows {
-		views[i] = toView(&rows[i])
-	}
-	return views, nil
+	return items, nil
 }
 
 func (s *Service) Get(ctx context.Context, id uint64) (*View, error) {
