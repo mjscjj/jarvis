@@ -1,5 +1,7 @@
 # Jarvis 插件扩展与解耦规范
 
+飞书阅读版：[Jarvis 插件扩展与解耦规范](https://bytedance.my.larkoffice.com/docx/Xo3wdIXGKo3xw6xvJUIm4Nlgyuh)。
+
 > Status: proposal
 > Authority: non-normative proposal；现行约束仍以 AGENTS.md 为准
 > Last verified: 2026-09-10 @ 1681280 + 当时工作区改动

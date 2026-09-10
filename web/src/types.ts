@@ -165,6 +165,8 @@ export interface SetupIdentityStatus {
 }
 
 export interface SetupStatus {
+  runtime_id: string
+  agent_name?: string
   configuration: {
     machine_configuration_ready: boolean
     agent_name_configured: boolean
@@ -173,6 +175,7 @@ export interface SetupStatus {
     available: boolean
     app_id?: string
     app_name?: string
+    credential_available?: boolean
     bot: SetupIdentityStatus
     user: SetupIdentityStatus
     error?: string

@@ -4,6 +4,7 @@ import { Button, Result, Spin, Typography } from 'antd'
 import { LinkOutlined, LoginOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
 import { completeByteDanceLogin, getAuthStatus, loginWithByteDance, logoutFromJarvis } from './api'
 import type { AuthUser, AuthView } from './types'
+import { DeveloperDocumentLinks } from './components/DeveloperDocuments'
 
 interface AuthContextValue {
   loading: boolean
@@ -25,9 +26,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const controller = new AbortController()
     getAuthStatus(controller.signal)
-      .then((view) => setUser(view.user ?? null))
-      .catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
-      .finally(() => setLoading(false))
+      .then(async (view) => {
+        if (controller.signal.aborted) return
+        // Reuse the existing bytedcli login before asking for another click.
+        const next = view.user ? view : await loginWithByteDance()
+        if (controller.signal.aborted) return
+        setUser(next.user ?? null)
+        setPending(next.status === 'pending' ? next : null)
+      })
+      .catch((cause) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause)) })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
   }, [])
 
@@ -124,6 +132,10 @@ export function AuthGate({ agentName, children }: { agentName: string; children:
           </Button>
         )}
         {error && <Result status="error" subTitle={error} extra={<Button onClick={() => void login()}>重试</Button>} />}
+        <section className="setup-documents">
+          <Typography.Text type="secondary">开发文档</Typography.Text>
+          <DeveloperDocumentLinks />
+        </section>
       </section>
     </main>
   )

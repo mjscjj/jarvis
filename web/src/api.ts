@@ -138,11 +138,8 @@ export function getSetupStatus(signal?: AbortSignal): Promise<SetupStatus> {
   return request<SetupStatus>('/api/setup/status', { signal })
 }
 
-export function bindSetupLarkApp(appId: string, appSecret: string): Promise<SetupStatus['lark']> {
-  return request<SetupStatus['lark']>('/api/setup/lark/bind', {
-    method: 'POST',
-    body: { app_id: appId, app_secret: appSecret },
-  })
+export function beginSetupLarkConnection(): Promise<SetupFlow> {
+  return request<SetupFlow>('/api/setup/lark/connect', { method: 'POST' })
 }
 
 export function beginSetupLarkLogin(): Promise<SetupFlow> {
@@ -157,10 +154,14 @@ export function getSetupFlow(flowId: string, signal?: AbortSignal): Promise<Setu
   return request<SetupFlow>(`/api/setup/flows/${encodeURIComponent(flowId)}`, { signal })
 }
 
-export function finalizeSetup(agentName: string, appId: string, appSecret: string): Promise<SetupStatus> {
+export function cancelSetupFlow(flowId: string): Promise<SetupFlow> {
+  return request<SetupFlow>(`/api/setup/flows/${encodeURIComponent(flowId)}/cancel`, { method: 'POST' })
+}
+
+export function finalizeSetup(appSecret: string): Promise<SetupStatus> {
   return request<SetupStatus>('/api/setup/finalize', {
     method: 'POST',
-    body: { agent_name: agentName, app_id: appId, app_secret: appSecret },
+    body: { app_secret: appSecret },
   })
 }
 

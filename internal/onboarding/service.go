@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -111,16 +112,17 @@ type Options struct {
 	TaskSubmitter *taskcreate.Submitter
 	Runner        CommandRunner
 	HTTPClient    *http.Client
+	Desktop       bool
 }
 
 type Service struct {
 	options Options
 	runner  CommandRunner
 
-	mu    sync.Mutex
-	flows map[string]*Flow
-	credentialAppID string
-	credentialSecret string
+	mu          sync.Mutex
+	flows       map[string]*Flow
+	runtimeID   string
+	bootstrapMu sync.Mutex
 }
 
 type IdentityStatus struct {
@@ -131,13 +133,13 @@ type IdentityStatus struct {
 }
 
 type LarkStatus struct {
-	Available bool           `json:"available"`
-	AppID     string         `json:"app_id,omitempty"`
-	AppName   string         `json:"app_name,omitempty"`
-	Bot       IdentityStatus `json:"bot"`
-	User      IdentityStatus `json:"user"`
-	Error     string         `json:"error,omitempty"`
-	CredentialAvailable bool `json:"credential_available"`
+	Available           bool           `json:"available"`
+	AppID               string         `json:"app_id,omitempty"`
+	AppName             string         `json:"app_name,omitempty"`
+	Bot                 IdentityStatus `json:"bot"`
+	User                IdentityStatus `json:"user"`
+	Error               string         `json:"error,omitempty"`
+	CredentialAvailable bool           `json:"credential_available"`
 }
 
 type AgentStatus struct {
@@ -154,6 +156,7 @@ type Status struct {
 	WorldModelReady bool                         `json:"world_model_ready"`
 	Completed       bool                         `json:"completed"`
 	AgentName       string                       `json:"agent_name"`
+	RuntimeID       string                       `json:"runtime_id"`
 }
 
 type Flow struct {
@@ -202,7 +205,11 @@ func NewService(options Options) (*Service, error) {
 	if options.Runner == nil {
 		options.Runner = execRunner{}
 	}
-	return &Service{options: options, runner: options.Runner, flows: make(map[string]*Flow)}, nil
+	runtimeID, err := randomID()
+	if err != nil {
+		return nil, err
+	}
+	return &Service{options: options, runner: options.Runner, flows: make(map[string]*Flow), runtimeID: runtimeID}, nil
 }
 
 func (s *Service) Status(ctx context.Context) (*Status, error) {
@@ -211,7 +218,10 @@ func (s *Service) Status(ctx context.Context) (*Status, error) {
 		return nil, err
 	}
 	lark := s.larkStatus(ctx)
-	cfg, err := config.Load(s.options.ConfigPath)
+	if s.options.Desktop && !lark.CredentialAvailable {
+		configuration.MachineConfigurationReady = false
+	}
+	agentName, savedOpenID, err := s.savedIdentity()
 	if err != nil {
 		return nil, err
 	}
@@ -220,12 +230,18 @@ func (s *Service) Status(ctx context.Context) (*Status, error) {
 	if err != nil {
 		return nil, err
 	}
+	if savedOpenID != "" && savedOpenID != lark.User.OpenID {
+		configuration.MachineConfigurationReady = false
+		worldModelReady = false
+		lark.Error = "当前飞书用户与本机已保存身份不同，请使用原账号重新授权；已有世界模型不会自动覆盖"
+	}
 	result := &Status{
 		Configuration:   configuration,
 		Lark:            lark,
 		Agent:           agent,
 		WorldModelReady: worldModelReady,
-		AgentName: cfg.Identity.DisplayName,
+		AgentName:       agentName,
+		RuntimeID:       s.runtimeID,
 	}
 	result.Completed = configuration.MachineConfigurationReady &&
 		lark.Bot.Status == "ready" && lark.Bot.Verified && lark.User.Status == "ready" && lark.User.Verified &&
@@ -233,33 +249,37 @@ func (s *Service) Status(ctx context.Context) (*Status, error) {
 	return result, nil
 }
 
-func (s *Service) BindLarkApp(ctx context.Context, appID, appSecret string) (LarkStatus, error) {
-	appID = strings.TrimSpace(appID)
-	appSecret = strings.TrimSpace(appSecret)
-	if err := verifyAppCredentials(ctx, s.options.HTTPClient, appID, appSecret); err != nil {
-		return LarkStatus{}, err
+func (s *Service) BeginLarkSetup(ctx context.Context) (*Flow, error) {
+	current := s.larkStatus(ctx)
+	if current.AppID != "" {
+		return &Flow{Status: flowSuccess}, nil // Never create a second App.
 	}
-	output, err := s.runner.Run(ctx, s.options.LarkCLIBin, []string{
-		"config", "init", "--app-id", appID, "--app-secret-stdin",
-		"--brand", "feishu", "--lang", "zh_cn",
-	}, appSecret+"\n")
+	if current.Error != "" {
+		return nil, errors.New(current.Error)
+	}
+	id, err := randomID()
 	if err != nil {
-		return LarkStatus{}, fmt.Errorf("%s", strings.ReplaceAll(commandError("绑定飞书应用", output, err).Error(), appSecret, "[已隐藏]"))
+		return nil, err
 	}
 	s.mu.Lock()
-	s.credentialAppID, s.credentialSecret = appID, appSecret
+	for _, flow := range s.flows {
+		if flow.Status == flowPending {
+			s.mu.Unlock()
+			return nil, fmt.Errorf("请先完成或取消当前连接")
+		}
+	}
+	flow := &Flow{ID: id, Status: flowPending}
+	s.flows[id] = flow
+	result := cloneFlow(flow)
 	s.mu.Unlock()
-	status := s.larkStatus(ctx)
-	// Credentials may be valid while Bot capability is not enabled. Return the
-	// actual status so the UI can show setup guidance, not a false green check.
-	return status, nil
+	go s.completeLarkSetup(id)
+	return result, nil
 }
 
 func (s *Service) BeginLarkLogin(ctx context.Context) (*Flow, error) {
 	output, err := s.runner.Run(ctx, s.options.LarkCLIBin, []string{
 		"auth", "login",
-		"--domain", "im", "--domain", "contact", "--domain", "docs",
-		"--domain", "drive", "--domain", "calendar", "--domain", "vc",
+		"--recommend", "--scope", "im:message:readonly",
 		"--no-wait", "--json",
 	}, "")
 	if err != nil {
@@ -313,30 +333,40 @@ func (s *Service) Flow(flowID string) (*Flow, error) {
 	return cloneFlow(flow), nil
 }
 
-func (s *Service) Finalize(ctx context.Context, agentName, gitAuthor, appID, appSecret string) (*Status, error) {
+func (s *Service) Finalize(ctx context.Context, agentName, gitAuthor, appSecret string) (*Status, error) {
 	lark := s.larkStatus(ctx)
 	if lark.Bot.Status != "ready" || !lark.Bot.Verified || lark.User.Status != "ready" || !lark.User.Verified || lark.User.OpenID == "" {
 		return nil, fmt.Errorf("飞书 Bot 和用户授权必须先完成")
-	}
-	if strings.TrimSpace(appID) != lark.AppID {
-		return nil, fmt.Errorf("提交的 App ID 与当前 lark-cli 默认应用不一致")
 	}
 	if !s.agentStatus(ctx).Authenticated {
 		return nil, fmt.Errorf("Trae CLI 尚未登录")
 	}
 	appSecret = strings.TrimSpace(appSecret)
 	if appSecret == "" {
-		appSecret = s.pendingSecret(lark.AppID)
+		var err error
+		appSecret, err = s.savedSecret(lark.AppID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if err := verifyAppCredentials(ctx, s.options.HTTPClient, lark.AppID, appSecret); err != nil {
 		return nil, err
 	}
-	before, err := config.Load(s.options.ConfigPath)
+	if err := s.checkBotEvents(ctx); err != nil {
+		return nil, err
+	}
+	savedName, savedOpenID, err := s.savedIdentity()
 	if err != nil {
 		return nil, err
 	}
-	if before.Extract.PrincipalOpenID != "" && before.Extract.PrincipalOpenID != lark.User.OpenID {
+	if savedOpenID != "" && savedOpenID != lark.User.OpenID {
 		return nil, fmt.Errorf("当前飞书用户与本机已保存身份不同。请使用原账号授权；迁移到另一位用户需单独确认世界模型处理方式，不会自动覆盖旧数据")
+	}
+	if strings.TrimSpace(agentName) == "" {
+		agentName = savedName
+		if agentName == "" {
+			agentName = "Jarvis"
+		}
 	}
 	if _, err := config.ConfigurePrincipal(
 		s.options.ConfigPath,
@@ -379,8 +409,11 @@ func (s *Service) Finalize(ctx context.Context, agentName, gitAuthor, appID, app
 }
 
 func (s *Service) BootstrapWorldModel(ctx context.Context) (*domain.Task, error) {
+	// Browser reload/retry may overlap a previous request. Reuse one task.
+	s.bootstrapMu.Lock()
+	defer s.bootstrapMu.Unlock()
 	lark := s.larkStatus(ctx)
-	if lark.User.Status != "ready" || lark.User.OpenID == "" {
+	if lark.User.Status != "ready" || !lark.User.Verified || lark.User.OpenID == "" {
 		return nil, fmt.Errorf("飞书用户授权必须先完成")
 	}
 	if err := s.requireWorldModel(); err != nil {
@@ -398,7 +431,7 @@ func (s *Service) BootstrapWorldModel(ctx context.Context) (*domain.Task, error)
 	if result.Error != nil {
 		return nil, fmt.Errorf("find world model initialization task: %w", result.Error)
 	}
-	if result.RowsAffected == 1 && existing.Status != "failed" {
+	if result.RowsAffected == 1 && existing.Status != "failed" && existing.Status != "observing" {
 		return &existing, nil
 	}
 	payload := json.RawMessage(`{"source":"desktop_onboarding","requested_action":"bootstrap_world_model"}`)
@@ -412,6 +445,27 @@ func (s *Service) BootstrapWorldModel(ctx context.Context) (*domain.Task, error)
 		ActorType:     "user",
 		EventDetail:   map[string]any{"channel": "desktop_onboarding"},
 	})
+}
+
+func (s *Service) checkBotEvents(ctx context.Context) error {
+	for _, event := range []string{"im.message.receive_v1", "card.action.trigger"} {
+		output, err := s.runner.Run(ctx, s.options.LarkCLIBin, []string{"event", "consume", event, "--as", "bot", "--dry-run"}, "")
+		if err != nil {
+			return commandError("检查飞书应用事件 "+event, output, err)
+		}
+		var result struct {
+			OK   bool `json:"ok"`
+			Data struct {
+				Decision struct {
+					Status string `json:"status"`
+				} `json:"decision"`
+			} `json:"data"`
+		}
+		if json.Unmarshal(output, &result) != nil || !result.OK || result.Data.Decision.Status != "ready" {
+			return fmt.Errorf("当前飞书应用的 %s 尚未就绪，请检查消息权限、事件订阅和版本发布后重试", event)
+		}
+	}
+	return nil
 }
 
 func (s *Service) ensurePrincipalProfile(ctx context.Context, identity IdentityStatus) error {
@@ -480,7 +534,9 @@ func (s *Service) requireWorldModel() error {
 func (s *Service) completeLarkLogin(flowID, deviceCode string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
-	if !s.registerFlowCancel(flowID, cancel) { return }
+	if !s.registerFlowCancel(flowID, cancel) {
+		return
+	}
 	output, err := s.runner.Run(ctx, s.options.LarkCLIBin, []string{
 		"auth", "login", "--device-code", deviceCode,
 	}, "")
@@ -490,7 +546,9 @@ func (s *Service) completeLarkLogin(flowID, deviceCode string) {
 func (s *Service) completeAgentLogin(flowID string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
 	defer cancel()
-	if !s.registerFlowCancel(flowID, cancel) { return }
+	if !s.registerFlowCancel(flowID, cancel) {
+		return
+	}
 	var output []byte
 	var err error
 	if runner, ok := s.runner.(streamingCommandRunner); ok {
@@ -505,6 +563,41 @@ func (s *Service) completeAgentLogin(flowID string) {
 		output, err = s.runner.Run(ctx, s.options.AgentCLIBin, []string{"login", "--sso-device"}, "")
 	}
 	s.finishFlow(flowID, output, err)
+}
+
+// lark-cli owns app creation and credential persistence. Only publish its
+// browser link, never its raw config output (which may contain credentials).
+func (s *Service) completeLarkSetup(flowID string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+	if !s.registerFlowCancel(flowID, cancel) {
+		return
+	}
+	runner, ok := s.runner.(streamingCommandRunner)
+	if !ok {
+		s.finishFlow(flowID, nil, fmt.Errorf("当前执行器不支持连接流程"))
+		return
+	}
+	var output strings.Builder
+	urlPattern := regexp.MustCompile(`https?://[^\s<>"\x1b]+`)
+	_, err := runner.RunStreaming(ctx, s.options.LarkCLIBin, []string{"config", "init", "--new"}, "", func(chunk []byte) {
+		output.Write(chunk)
+		link := findString(decodeJSON([]byte(output.String())), "verification_url", "verification_uri_complete", "verification_uri")
+		if link == "" {
+			link = urlPattern.FindString(output.String())
+		}
+		if link != "" {
+			s.mu.Lock()
+			if flow := s.flows[flowID]; flow != nil && flow.Status == flowPending {
+				flow.VerificationURL = link
+			}
+			s.mu.Unlock()
+		}
+	})
+	if err != nil {
+		err = fmt.Errorf("飞书连接未完成，请重试；已有授权不会被清除")
+	}
+	s.finishFlow(flowID, nil, err)
 }
 
 func (s *Service) appendFlowOutput(flowID string, output []byte) {
@@ -535,7 +628,9 @@ func (s *Service) registerFlowCancel(id string, cancel context.CancelFunc) bool 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	flow := s.flows[id]
-	if flow == nil || flow.Status != flowPending { return false }
+	if flow == nil || flow.Status != flowPending {
+		return false
+	}
 	flow.cancel = cancel
 	return true
 }
@@ -544,11 +639,15 @@ func (s *Service) CancelFlow(id string) (*Flow, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	flow := s.flows[id]
-	if flow == nil { return nil, fmt.Errorf("授权流程不存在或已过期") }
+	if flow == nil {
+		return nil, fmt.Errorf("授权流程不存在或已过期")
+	}
 	if flow.Status == flowPending {
 		flow.Status = flowFailed
 		flow.Error = "已取消本次授权，可重新发起；已有授权不会被撤销"
-		if flow.cancel != nil { flow.cancel() }
+		if flow.cancel != nil {
+			flow.cancel()
+		}
 	}
 	return cloneFlow(flow), nil
 }
@@ -562,11 +661,12 @@ func (s *Service) larkStatus(ctx context.Context) LarkStatus {
 	if err := json.Unmarshal(output, &payload); err != nil {
 		return LarkStatus{Available: true, Error: "无法解析飞书授权状态"}
 	}
-	return LarkStatus{
-		Available: true,
-		AppID:     payload.AppID,
-		AppName:   payload.Identities.Bot.AppName,
-		CredentialAvailable: s.pendingSecret(payload.AppID) != "",
+	secret, secretErr := s.savedSecret(payload.AppID)
+	status := LarkStatus{
+		Available:           true,
+		AppID:               payload.AppID,
+		AppName:             payload.Identities.Bot.AppName,
+		CredentialAvailable: secret != "",
 		Bot: IdentityStatus{
 			Status: payload.Identities.Bot.Status, OpenID: payload.Identities.Bot.OpenID,
 			Name: payload.Identities.Bot.AppName, Verified: payload.Identities.Bot.Verified,
@@ -577,6 +677,10 @@ func (s *Service) larkStatus(ctx context.Context) LarkStatus {
 			Verified: payload.Identities.User.Verified && payload.Identities.User.TokenStatus == "valid",
 		},
 	}
+	if secretErr != nil {
+		status.Error = secretErr.Error()
+	}
+	return status
 }
 
 func (s *Service) agentStatus(ctx context.Context) AgentStatus {

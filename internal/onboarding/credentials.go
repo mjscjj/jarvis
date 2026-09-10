@@ -4,10 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/pelletier/go-toml/v2"
 )
 
 // Verify the submitted pair, not a possibly cached lark-cli token. Never return
@@ -52,13 +57,42 @@ func verifyAppCredentials(ctx context.Context, client *http.Client, appID, secre
 	return nil
 }
 
-// The verified draft lives only in this process until Finalize writes the
-// existing CC Connect configuration. Page refreshes need not request it again.
-func (s *Service) pendingSecret(appID string) string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.credentialAppID == appID {
-		return s.credentialSecret
+// Reuse the existing channel configuration, never a second credential store.
+func (s *Service) savedSecret(appID string) (string, error) {
+	if appID == "" {
+		return "", nil
 	}
-	return ""
+	raw, err := os.ReadFile(filepath.Join(s.options.StateRoot, "cc-connect", "config.toml"))
+	if errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("无法读取已有聊天配置")
+	}
+	var saved struct {
+		Projects []struct {
+			Name      string `toml:"name"`
+			Platforms []struct {
+				Type    string `toml:"type"`
+				Options struct {
+					AppID     string `toml:"app_id"`
+					AppSecret string `toml:"app_secret"`
+				} `toml:"options"`
+			} `toml:"platforms"`
+		} `toml:"projects"`
+	}
+	if err := toml.Unmarshal(raw, &saved); err != nil {
+		return "", fmt.Errorf("已有聊天配置格式错误，请先修复；不会覆盖现有配置")
+	}
+	for _, project := range saved.Projects {
+		if project.Name != "jarvis-codex" {
+			continue
+		}
+		for _, platform := range project.Platforms {
+			if platform.Type == "feishu" && platform.Options.AppID == appID && platform.Options.AppSecret != "replace-during-bind" {
+				return platform.Options.AppSecret, nil
+			}
+		}
+	}
+	return "", nil
 }

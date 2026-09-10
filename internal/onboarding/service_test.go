@@ -233,4 +233,28 @@ func TestBootstrapWorldModelCreatesPrincipalBeforeManualTask(t *testing.T) {
 	if profile.Name != "Principal" {
 		t.Fatalf("profile name = %q", profile.Name)
 	}
+	// A parked/running task is reused; an observing task is terminal and must
+	// not leave the setup wizard polling forever when the user clicks retry.
+	for _, state := range []string{"pending", "executing", "waiting", "needs_human"} {
+		if err := db.Model(task).Update("status", state).Error; err != nil {
+			t.Fatal(err)
+		}
+		again, err := service.BootstrapWorldModel(t.Context())
+		if err != nil || again.ID != task.ID {
+			t.Fatalf("reuse %s: %v, %v", state, again, err)
+		}
+	}
+	for _, state := range []string{"observing", "failed"} {
+		if err := db.Model(task).Update("status", state).Error; err != nil {
+			t.Fatal(err)
+		}
+		again, err := service.BootstrapWorldModel(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if again.ID == task.ID || again.Status != "pending" {
+			t.Fatalf("retry %s did not create runnable task", state)
+		}
+		task = again
+	}
 }

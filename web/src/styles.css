@@ -2424,6 +2424,16 @@ pre {
   margin-top: 12px;
 }
 
+.setup-simple { width: min(600px, 100%); line-height: 1.7; }
+.setup-connected { color: #5b6470; margin: 0 0 18px; }
+.setup-form, .setup-field { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+.setup-form { margin: 20px 0; max-width: 600px; gap: 18px; }
+.setup-field label { font-weight: 600; }
+.setup-field > .ant-typography { font-size: 13px; }
+.setup-help { margin: 16px 0; padding: 14px 18px; border: 1px solid #e8eaed; border-radius: 8px; background: white; }
+.setup-help summary { cursor: pointer; font-weight: 600; }
+.setup-help li { margin: 8px 0; }
+
 @media (max-width: 680px) {
   .setup-page {
     padding: 20px 16px;

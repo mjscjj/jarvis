@@ -4,6 +4,7 @@ go 1.26.4
 
 require (
 	github.com/cloudwego/hertz v0.10.3
+	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/qdrant/go-client v1.18.2
 	github.com/robfig/cron/v3 v3.0.1
 	golang.org/x/text v0.36.0

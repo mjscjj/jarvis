@@ -1,5 +1,7 @@
 # 代码提交与评审方案
 
+飞书阅读版：[Jarvis 代码提交与评审方案](https://bytedance.my.larkoffice.com/docx/G3qVd66DuoIDmHxGCY9mCXrXy2c)。
+
 > Status: proposal
 > Authority: non-normative proposal，待与 principal 对齐
 > Last verified: 2026-09-10 @ 8f86e8d + 当时工作区改动

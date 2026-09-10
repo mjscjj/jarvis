@@ -944,6 +944,7 @@ func main() {
 		resourceRoot = runtimeRoot
 	}
 	onboardingService, err := onboarding.NewService(onboarding.Options{
+		Desktop:       os.Getenv("JARVIS_DESKTOP") == "1",
 		ConfigPath:    configPathAbsolute,
 		RuntimeRoot:   runtimeRoot,
 		StateRoot:     desktopStateRoot,
