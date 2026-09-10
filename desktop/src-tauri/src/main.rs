@@ -1,4 +1,3 @@
-use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
@@ -8,7 +7,7 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 use tauri::Manager;
 
-const CONNECTION_PREFIX: &str = "JARVIS_RUNTIME_CONNECTION ";
+mod runtime_output;
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -61,47 +60,23 @@ fn spawn_runtime(app: &tauri::AppHandle) -> Result<Child, String> {
         .spawn()
         .map_err(|error| format!("启动 Go 服务失败：{error}"))?;
 
-    if let Some(stderr) = child.stderr.take() {
-        thread::spawn(move || {
-            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-                eprintln!("[jarvis-runtime] {line}");
-            }
-        });
-    }
-
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "Go 服务没有提供启动输出".to_string())?;
-    let (sender, receiver) = std::sync::mpsc::channel();
-    thread::spawn(move || {
-        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-            if let Some(raw) = line.strip_prefix(CONNECTION_PREFIX) {
-                let _ = sender.send(raw.to_string());
-            } else {
-                println!("[jarvis-runtime] {line}");
-            }
-        }
-    });
-
-    let deadline = Instant::now() + Duration::from_secs(60);
-    let connection = loop {
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            let _ = child.kill();
-            return Err("Go 服务未在 60 秒内就绪".into());
-        }
-        match receiver.recv_timeout(remaining.min(Duration::from_millis(250))) {
-            Ok(raw) => {
-                break serde_json::from_str::<RuntimeConnection>(&raw)
-                    .map_err(|error| format!("Go 服务返回了无效连接信息：{error}"))?;
-            }
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                if let Ok(Some(status)) = child.try_wait() {
-                    return Err(format!("Go 服务启动失败：{status}"));
-                }
-            }
-            Err(error) => return Err(format!("读取 Go 服务连接信息失败：{error}")),
+    let connection_result = (|| {
+        let stdout = child.stdout.take().ok_or("Go 服务没有提供启动输出")?;
+        let stderr = child.stderr.take().ok_or("Go 服务没有提供诊断输出")?;
+        // Go waits up to 30 seconds for each service, then cleans up on error.
+        let raw = runtime_output::read_connection(stdout, stderr, Duration::from_secs(75))?;
+        serde_json::from_str::<RuntimeConnection>(&raw)
+            .map_err(|error| format!("Go 服务返回了无效连接信息：{error}"))
+    })();
+    let connection = match connection_result {
+        Ok(connection) => connection,
+        Err(error) => {
+            let status = child.try_wait().ok().flatten();
+            stop_runtime(&mut child);
+            return Err(match status {
+                Some(status) => format!("{error}\n退出状态：{status}"),
+                None => error,
+            });
         }
     };
 
@@ -128,6 +103,13 @@ fn shutdown_runtime(state: &RuntimeState) {
     let Some(mut child) = state.child.lock().unwrap().take() else {
         return;
     };
+    stop_runtime(&mut child);
+}
+
+fn stop_runtime(child: &mut Child) {
+    if matches!(child.try_wait(), Ok(Some(_))) {
+        return;
+    }
     #[cfg(unix)]
     unsafe {
         libc::kill(child.id() as i32, libc::SIGTERM);
@@ -152,7 +134,7 @@ fn show_startup_error(app: &tauri::AppHandle, error: &str) {
     if let Some(window) = app.get_webview_window("main") {
         let message = serde_json::to_string(error).unwrap_or_else(|_| "\"启动失败\"".into());
         let script = format!(
-            "document.body.innerHTML='<main style=\"font:14px -apple-system;padding:32px;color:#202428\"><h2>Jarvis 启动失败</h2><pre style=\"white-space:pre-wrap\">'+{}+'</pre></main>';",
+            "document.body.innerHTML='<main style=\"font:14px -apple-system;padding:32px;color:#202428\"><h2>Jarvis 启动失败</h2><pre style=\"white-space:pre-wrap\"></pre></main>'; document.querySelector('pre').textContent={};",
             message
         );
         let _ = window.eval(&script);
