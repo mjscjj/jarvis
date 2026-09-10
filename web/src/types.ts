@@ -137,7 +137,7 @@ export interface TaskList {
 
 export interface CreateTaskInput {
   title: string
-  action_type: 'agent_task'
+  action_type: string
   target: string
   background: Record<string, unknown>
   source_payload: unknown
@@ -713,6 +713,8 @@ export interface MeetingReviewItem {
   meeting_url: string
   task_id: number | null
   task_status: string
+  todo_status: string
+  processing_summary: string
   summary: string
   summary_generated_at: string | null
   effects: Array<Record<string, unknown>>
@@ -1021,7 +1023,7 @@ export interface ScheduledTask {
   source_run_id: number | null
   dispatch_payload: Record<string, unknown> | null
   title: string
-  action_type: 'agent_task'
+  action_type: string
   instruction: string
   context_snapshot: Record<string, unknown>
   schedule_type: ScheduledTaskScheduleType
@@ -1043,7 +1045,7 @@ export interface ScheduledTask {
 
 export interface ScheduledTaskInput {
   title: string
-  action_type: 'agent_task'
+  action_type: string
   instruction: string
   context_snapshot: Record<string, unknown>
   schedule_type: ScheduledTaskScheduleType
@@ -1053,7 +1055,7 @@ export interface ScheduledTaskInput {
   enabled: boolean
 }
 
-export type SkillStage = WorkRuleStage
+export type SkillStage = WorkRuleStage | 'proactive'
 
 export interface AgentSkill {
   name: string
@@ -1061,6 +1063,7 @@ export interface AgentSkill {
   file_path: string
   stages: SkillStage[]
   is_enabled: boolean
+  inline: boolean
 }
 
 export interface AgentSkillInput {
@@ -1237,8 +1240,10 @@ export interface Plugin {
   id: string
   name: string
   description: string
+  kind?: 'collector' | 'capability'
   source: string
   collector_skill: string
+  skills: string[]
   permissions: string[]
   interval_minutes: number
   enabled: boolean
@@ -1301,4 +1306,23 @@ export interface ChatDeltaEvent {
 
 export interface ChatErrorEvent {
   message: string
+}
+
+export interface Delegation {
+  id: number
+  title: string
+  source_quote: string
+  source_payload?: unknown
+  content?: unknown
+  summary: string
+  closed_at: string | null
+  version: number
+  updated_at: string
+}
+export interface DelegationCheck {
+  id: number
+  title: string
+  status: TaskStatus
+  summary: string | null
+  created_at: string
 }

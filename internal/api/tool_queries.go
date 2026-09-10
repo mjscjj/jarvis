@@ -43,8 +43,13 @@ func ListToolMessages(service ToolQueryService) app.HandlerFunc {
 			writeAPIError(c, consts.StatusBadRequest, 40070, err)
 			return
 		}
+		var messageIDs []string
+		if value := c.Query("message_ids"); value != "" {
+			messageIDs = strings.Split(value, ",")
+		}
 		items, err := service.ListMessages(ctx, toolquery.MessageFilter{
-			ChatID: c.Query("chat_id"), SenderOpenID: c.Query("sender_open_id"),
+			MessageIDs: messageIDs,
+			ChatID:     c.Query("chat_id"), SenderOpenID: c.Query("sender_open_id"),
 			Keyword: c.Query("keyword"), From: from, Until: until, Limit: limit,
 		})
 		if err != nil {

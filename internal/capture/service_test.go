@@ -158,6 +158,36 @@ func TestP2PScanDisabledSkipsAutomaticAndManualScanning(t *testing.T) {
 	}
 }
 
+func TestScanRelatedPrioritizesHumanPinnedChats(t *testing.T) {
+	db := newDiscoverTestDB(t)
+	fixture := &scanOrderFixture{}
+	service := newDiscoverTestService(t, db, fixture, 1)
+	now := service.now().UnixMilli()
+	groups := []domain.Group{
+		{ChatID: "oc_regular", ChatMode: "group", RelatedGroup: true, Tier: "hot"},
+		{ChatID: "oc_key", ChatMode: "group", RelatedGroup: true, IsKeyGroup: true, Tier: "hot"},
+		{ChatID: "oc_pinned", ChatMode: "topic", RelatedGroup: true, Pinned: true, Tier: "hot"},
+	}
+	if err := db.Create(&groups).Error; err != nil {
+		t.Fatalf("create scan groups: %v", err)
+	}
+	for _, group := range groups {
+		if err := db.Create(&domain.Checkpoint{
+			ChatID: group.ChatID, HighWaterCreateTime: now, BackfillDone: true,
+		}).Error; err != nil {
+			t.Fatalf("create checkpoint %s: %v", group.ChatID, err)
+		}
+	}
+
+	if err := service.ScanRelated(context.Background()); err != nil {
+		t.Fatalf("ScanRelated() error = %v", err)
+	}
+	want := []string{"oc_pinned", "oc_regular", "oc_key"}
+	if strings.Join(fixture.chatIDs, ",") != strings.Join(want, ",") {
+		t.Fatalf("scan order = %v, want %v", fixture.chatIDs, want)
+	}
+}
+
 type discoverPage struct {
 	chats     []CLIChat
 	hasMore   bool
@@ -167,6 +197,20 @@ type discoverPage struct {
 
 type discoverRotationFixture struct {
 	pages map[string]discoverPage
+}
+
+type scanOrderFixture struct {
+	chatIDs []string
+}
+
+func (f *scanOrderFixture) Run(_ context.Context, out any, args ...string) error {
+	if !strings.Contains(strings.Join(args, " "), "+messages-search") {
+		return fmt.Errorf("unexpected command: %s", strings.Join(args, " "))
+	}
+	f.chatIDs = append(f.chatIDs, argValue(args, "--chat-id"))
+	response := out.(*MessageSearchListResponse)
+	response.OK = true
+	return nil
 }
 
 func (f *discoverRotationFixture) Run(_ context.Context, out any, args ...string) error {

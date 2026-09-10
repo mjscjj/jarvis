@@ -52,6 +52,16 @@ function formatTime(value: string | null): string {
   return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '尚未运行'
 }
 
+function pluginStateLabel(item: Plugin): string {
+  if (item.kind === 'capability') return item.enabled ? '已启用' : '已关闭'
+  return stateLabels[item.state]
+}
+
+function pluginStateColor(item: Plugin): string {
+  if (item.kind === 'capability') return item.enabled ? 'success' : 'default'
+  return stateColors[item.state]
+}
+
 function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
 }
@@ -339,21 +349,20 @@ export default function Plugins() {
     },
     {
       title: '状态',
-      dataIndex: 'state',
       width: 110,
-      render: (state: PluginState) => <Tag color={stateColors[state]}>{stateLabels[state]}</Tag>,
+      render: (_: unknown, item: Plugin) => <Tag color={pluginStateColor(item)}>{pluginStateLabel(item)}</Tag>,
     },
     {
       title: '线索',
       dataIndex: 'clue_count',
       width: 80,
-      render: (count: number) => `${count} 条`,
+      render: (count: number, item: Plugin) => item.kind === 'collector' ? `${count} 条` : '—',
     },
     {
       title: '最近同步',
       dataIndex: 'last_finished_at',
       width: 180,
-      render: formatTime,
+      render: (value: string | null, item: Plugin) => item.kind === 'collector' ? formatTime(value) : '—',
     },
     {
       title: '操作',
@@ -361,7 +370,7 @@ export default function Plugins() {
       width: 260,
       render: (_: unknown, item: Plugin) => (
         <Space>
-          {item.enabled && item.authorization.status !== 'authorized' && (
+          {item.kind === 'collector' && item.enabled && item.authorization.status !== 'authorized' && (
             <Button
               icon={<SafetyCertificateOutlined />}
               loading={busy === item.id}
@@ -370,14 +379,16 @@ export default function Plugins() {
               授权
             </Button>
           )}
-          <Button
-            icon={<SyncOutlined />}
-            disabled={!item.enabled || item.authorization.status !== 'authorized'}
-            loading={busy === item.id}
-            onClick={() => void trigger(item)}
-          >
-            立即同步
-          </Button>
+          {item.kind === 'collector' && (
+            <Button
+              icon={<SyncOutlined />}
+              disabled={!item.enabled || item.authorization.status !== 'authorized'}
+              loading={busy === item.id}
+              onClick={() => void trigger(item)}
+            >
+              立即同步
+            </Button>
+          )}
           <Switch
             checked={item.enabled}
             loading={busy === item.id}
@@ -408,20 +419,22 @@ export default function Plugins() {
           <Text type="secondary">{item.description}</Text>
         </div>
         <Space>
-          <Tag color={stateColors[item.state]}>{stateLabels[item.state]}</Tag>
-          {item.authorization.status !== 'authorized' && (
+          <Tag color={pluginStateColor(item)}>{pluginStateLabel(item)}</Tag>
+          {item.kind === 'collector' && item.authorization.status !== 'authorized' && (
             <Button icon={<SafetyCertificateOutlined />} loading={busy === item.id} onClick={() => void authorize(item)}>
               授权
             </Button>
           )}
-          <Button
-            icon={<SyncOutlined />}
-            disabled={item.authorization.status !== 'authorized'}
-            loading={busy === item.id}
-            onClick={() => void trigger(item)}
-          >
-            立即同步
-          </Button>
+          {item.kind === 'collector' && (
+            <Button
+              icon={<SyncOutlined />}
+              disabled={item.authorization.status !== 'authorized'}
+              loading={busy === item.id}
+              onClick={() => void trigger(item)}
+            >
+              立即同步
+            </Button>
+          )}
         </Space>
       </div>
       {item.last_error && <Alert type="error" showIcon message={item.last_error} />}
@@ -448,20 +461,28 @@ export default function Plugins() {
           }}
         />
       )}
-      <Descriptions size="small" column={2}>
-        <Descriptions.Item label="数据来源">{item.source}</Descriptions.Item>
-        <Descriptions.Item label="采集周期">每 {item.interval_minutes} 分钟</Descriptions.Item>
-        <Descriptions.Item label="Skill">{item.collector_skill}</Descriptions.Item>
-        <Descriptions.Item label="下次同步">{formatTime(item.next_run_at)}</Descriptions.Item>
-        <Descriptions.Item label="权限" span={2}>{item.permissions.join('、')}</Descriptions.Item>
-      </Descriptions>
+      {item.kind === 'collector' ? (
+        <Descriptions size="small" column={2}>
+          <Descriptions.Item label="数据来源">{item.source}</Descriptions.Item>
+          <Descriptions.Item label="采集周期">每 {item.interval_minutes} 分钟</Descriptions.Item>
+          <Descriptions.Item label="Skill">{item.collector_skill}</Descriptions.Item>
+          <Descriptions.Item label="下次同步">{formatTime(item.next_run_at)}</Descriptions.Item>
+          <Descriptions.Item label="权限" span={2}>{item.permissions.join('、')}</Descriptions.Item>
+        </Descriptions>
+      ) : (
+        <Descriptions size="small" column={1}>
+          <Descriptions.Item label="工作方式">复用现有消息、Todo、Task 与 M3/M5，不建立独立采集链路</Descriptions.Item>
+          <Descriptions.Item label="阶段规则">{item.skills.join('、')}</Descriptions.Item>
+          <Descriptions.Item label="数据位置">现有 Task 的冻结 source_payload 与执行历史</Descriptions.Item>
+        </Descriptions>
+      )}
     </div>
   )
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {messageContext}
-      <PageHeader title="插件" subtitle="按需连接外部工作系统；关闭后不再采集新线索">
+      <PageHeader title="插件" subtitle="按需启用外部来源与工作能力；关闭后保留已有历史">
         <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()}>刷新</Button>
       </PageHeader>
       {error && <Alert type="error" showIcon closable message={error} onClose={() => setError(undefined)} />}

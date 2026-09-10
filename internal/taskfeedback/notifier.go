@@ -15,9 +15,9 @@ type larkRunner interface {
 
 const processingEmoji = "OnIt"
 
-// Notifier projects only M5's best-effort execution-start acknowledgement onto
-// the source Feishu message. Ordinary business messages are explicit M5 tool
-// actions and never pass through this package.
+// Notifier projects M5's best-effort execution indicator onto the source
+// Feishu message. Ordinary business messages are explicit M5 tool actions and
+// never pass through this package.
 type Notifier struct {
 	lark larkRunner
 }
@@ -59,5 +59,31 @@ func (n *Notifier) AddProcessingReaction(ctx context.Context, target execute.Tas
 	if reactionID == "" {
 		return nil, fmt.Errorf("add Task processing reaction source_message_id=%s returned no reaction_id", sourceMessageID)
 	}
-	return &execute.TaskFeedbackReaction{ReactionID: reactionID}, nil
+	return &execute.TaskFeedbackReaction{SourceMessageID: sourceMessageID, ReactionID: reactionID}, nil
+}
+
+func (n *Notifier) RemoveProcessingReaction(ctx context.Context, reaction execute.TaskFeedbackReaction) error {
+	sourceMessageID := strings.TrimSpace(reaction.SourceMessageID)
+	reactionID := strings.TrimSpace(reaction.ReactionID)
+	if sourceMessageID == "" || reactionID == "" {
+		return fmt.Errorf("Task feedback reaction identity is invalid")
+	}
+	params, err := json.Marshal(map[string]string{
+		"message_id":  sourceMessageID,
+		"reaction_id": reactionID,
+	})
+	if err != nil {
+		return fmt.Errorf("encode Task processing reaction removal params: %w", err)
+	}
+	var response struct{}
+	if err := n.lark.Run(ctx, &response,
+		"im", "reactions", "delete",
+		"--params", string(params), "--as", "bot",
+	); err != nil {
+		return fmt.Errorf(
+			"remove Task processing reaction source_message_id=%s reaction_id=%s: %w",
+			sourceMessageID, reactionID, err,
+		)
+	}
+	return nil
 }

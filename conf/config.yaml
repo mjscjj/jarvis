@@ -88,7 +88,7 @@ capture:
   discover_schedule: "@every 6h"
   scan_schedule: "@every 2m"
   # 是否允许 Jarvis 主动扫描单聊消息；不影响 CC Connect 已接管消息的路由落库。
-  p2p_scan_enabled: false
+  p2p_scan_enabled: true
   # 私聊首次进入监听时只回看最近 15 分钟；与 M3 的通用上下文窗口独立。
   p2p_activation_window_minutes: 15
   # discover 时按 active_time 轮换自动监听的内部真人私聊：保留当前最活跃的前 N 个。

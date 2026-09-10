@@ -484,6 +484,12 @@ func (s *Service) dispatchResume(ctx context.Context, row *domain.ScheduledTask)
 	var payload struct {
 		Reason string `json:"reason"`
 	}
+	if finished, err := s.finishTerminalResume(ctx, row); err != nil || finished {
+		if err != nil {
+			s.fail(ctx, row.ID, err)
+		}
+		return err
+	}
 	if err := json.Unmarshal(row.DispatchPayload, &payload); err != nil {
 		cause := fmt.Errorf("decode resume scheduled task id=%d payload: %w", row.ID, err)
 		s.fail(ctx, row.ID, cause)
@@ -496,6 +502,13 @@ func (s *Service) dispatchResume(ctx context.Context, row *domain.ScheduledTask)
 		return err
 	}
 	if err := s.resumer.ResumeTask(ctx, *row.SubjectID, *row.SourceRunID, payload.Reason); err != nil {
+		// Close can win the Task version check after this trigger was claimed.
+		if finished, checkErr := s.finishTerminalResume(ctx, row); checkErr != nil || finished {
+			if checkErr != nil {
+				s.fail(ctx, row.ID, checkErr)
+			}
+			return checkErr
+		}
 		s.fail(ctx, row.ID, err)
 		return err
 	}
@@ -511,6 +524,29 @@ func (s *Service) dispatchResume(ctx context.Context, row *domain.ScheduledTask)
 		return fmt.Errorf("store resume scheduled task result: %w", update.Error)
 	}
 	return nil
+}
+
+// A trigger can outlive its Task when close cleanup was interrupted, or be
+// claimed concurrently with close. Preserve that fact without starting M5.
+func (s *Service) finishTerminalResume(ctx context.Context, row *domain.ScheduledTask) (bool, error) {
+	var task domain.Task
+	if err := s.db.WithContext(ctx).Select("id,status").First(&task, *row.SubjectID).Error; err != nil {
+		return false, fmt.Errorf("check resume Task #%d: %w", *row.SubjectID, err)
+	}
+	if task.Status != "done" && task.Status != "failed" && task.Status != "observing" {
+		return false, nil
+	}
+	result := s.db.WithContext(ctx).Model(&domain.ScheduledTask{}).
+		Where("id = ? AND status = ?", row.ID, "running").
+		Updates(map[string]any{
+			"status": "completed", "last_run_status": "done", "last_error_detail": nil,
+			"last_result":      fmt.Sprintf("Task #%d 已为 %s，恢复触发已失效，未启动执行", task.ID, task.Status),
+			"last_finished_at": s.now().UTC(),
+		})
+	if result.Error != nil {
+		return false, fmt.Errorf("finish obsolete resume #%d: %w", row.ID, result.Error)
+	}
+	return true, nil
 }
 
 func taskInput(row *domain.ScheduledTask, occurrenceKey string) (taskcreate.Input, error) {

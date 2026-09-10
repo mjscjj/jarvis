@@ -2,16 +2,18 @@ package capture
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
+	"jarvis/internal/datatypes"
 	"jarvis/internal/domain"
 )
 
 func TestCapturePreservesAndEnrichesMessageLink(t *testing.T) {
 	const link = "https://applink.feishu.cn/client/chat/open?openChatId=oc_group&position=42"
 	var item CLIMessage
-	if err := json.Unmarshal([]byte(`{"message_id":"om_trigger","message_app_link":"`+link+`","content":"请处理","msg_type":"text","create_time":"2026-09-10 10:00","sender":{"id":"ou_sender","name":"发起人","sender_type":"user"}}`), &item); err != nil {
+	if err := json.Unmarshal([]byte(`{"message_id":"om_trigger","message_app_link":"`+link+`","content":"请处理","mentions":[{"id":"ou_owner","key":"@_user_1","name":"负责人"}],"msg_type":"text","create_time":"2026-09-10 10:00","sender":{"id":"ou_sender","name":"发起人","sender_type":"user"}}`), &item); err != nil {
 		t.Fatal(err)
 	}
 	svc := &Service{opts: Options{Location: time.UTC}}
@@ -22,9 +24,13 @@ func TestCapturePreservesAndEnrichesMessageLink(t *testing.T) {
 	if message.SourceURL == nil || *message.SourceURL != link {
 		t.Fatalf("source URL lost: %#v", message.SourceURL)
 	}
+	if !strings.Contains(string(message.MentionsJSON), `"id":"ou_owner"`) {
+		t.Fatalf("mentions lost: %s", message.MentionsJSON)
+	}
 	db := newCaptureTestDB(t)
 	original := *message
 	original.SourceURL = nil
+	original.MentionsJSON = datatypes.JSON(`[]`)
 	if inserted, err := upsertMessage(db, &original); err != nil || !inserted {
 		t.Fatalf("initial capture: %v %v", inserted, err)
 	}
@@ -40,5 +46,8 @@ func TestCapturePreservesAndEnrichesMessageLink(t *testing.T) {
 	}
 	if stored.SourceURL == nil || *stored.SourceURL != link || stored.Content != original.Content {
 		t.Fatalf("stored message: %#v", stored)
+	}
+	if !strings.Contains(string(stored.MentionsJSON), `"id":"ou_owner"`) {
+		t.Fatalf("stored mentions lost: %s", stored.MentionsJSON)
 	}
 }

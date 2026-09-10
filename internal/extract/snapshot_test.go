@@ -21,7 +21,9 @@ func TestBuildContextSnapshotFreezesSummary(t *testing.T) {
 		Group: GroupContext{ID: 7, ChatID: "oc_1", Name: "公会群", Summary: groupSummary},
 	}
 	unit := ConversationUnit{Key: "chat", Messages: []MessageContext{{
-		MessageID: "om_1", Content: "请跟进", CreateTime: 1, IsNew: true, Extractable: true,
+		MessageID: "om_1", Content: "请跟进", Mentions: json.RawMessage(
+			`[{"id":"ou_owner","key":"@_user_1","name":"负责人"}]`,
+		), CreateTime: 1, IsNew: true, Extractable: true,
 	}}}
 	projectID := uint64(44)
 	snapshot, err := store.buildContextSnapshot(t.Context(), batch, unit, Candidate{SourceMessageIDs: []string{"om_1"}}, &projectID, nil)
@@ -36,6 +38,9 @@ func TestBuildContextSnapshotFreezesSummary(t *testing.T) {
 	}
 	if snapshot.Group == nil || snapshot.Group.Summary == nil || *snapshot.Group.Summary != groupSummary {
 		t.Fatalf("group.summary = %#v", snapshot.Group)
+	}
+	if len(snapshot.Messages) != 1 || !strings.Contains(string(snapshot.Messages[0].Mentions), `"id":"ou_owner"`) {
+		t.Fatalf("message mentions = %s", snapshot.Messages[0].Mentions)
 	}
 }
 

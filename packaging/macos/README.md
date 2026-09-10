@@ -67,6 +67,10 @@ codesign --verify --deep --strict --verbose=2 \
 5. 助手名称与本机身份配置
 6. 世界模型初始化
 
+DMG 挂载窗口同时提供“插件扩展与解耦规范”和“代码提交与评审方案”两个网页快捷方式。
+初始化页面直接展示这两份飞书文档；进入应用后可点击左侧导航下方的小问号查看。
+链接统一维护在 `web/src/helpDocuments.json`，Web 与 DMG 打包共同读取。
+
 ## 签名
 
 默认使用 ad-hoc 签名，仅用于内部测试。对外分发前需配置 Apple Developer ID，

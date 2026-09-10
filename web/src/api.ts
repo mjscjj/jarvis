@@ -1,4 +1,6 @@
 import type {
+  Delegation,
+  DelegationCheck,
   AgentSkill,
   AgentSkillContent,
   AgentSkillInput,
@@ -189,8 +191,21 @@ export function setTodoStatus(id: number, status: TodoStatus, reason: string): P
   })
 }
 
-export function listTasks(statuses: TaskStatus[], page = 1, pageSize = 20, signal?: AbortSignal): Promise<TaskList> {
+export interface TaskListQuery {
+  actionType?: string
+  excludeActionType?: string
+}
+
+export function listTasks(
+  statuses: TaskStatus[],
+  page = 1,
+  pageSize = 20,
+  signal?: AbortSignal,
+  filters: TaskListQuery = {},
+): Promise<TaskList> {
   const params = new URLSearchParams({ status: statuses.join(','), page: String(page), page_size: String(pageSize) })
+  if (filters.actionType) params.set('action_type', filters.actionType)
+  if (filters.excludeActionType) params.set('exclude_action_type', filters.excludeActionType)
   return request<TaskList>(`/api/tasks?${params.toString()}`, { signal })
 }
 
@@ -752,4 +767,21 @@ export function listSecurityAuditEvents(
   if (query.route?.trim()) params.set('route', query.route.trim())
   if (query.resource?.trim()) params.set('resource', query.resource.trim())
   return request<AccessAuditEventList>(`/api/security-audit-events?${params.toString()}`, { signal })
+}
+
+export function listPluginInstallations(signal?: AbortSignal): Promise<{ items: Array<Pick<Plugin, 'id' | 'name' | 'kind' | 'enabled'>> }> {
+  return request('/api/plugin-installations', { signal })
+}
+export function listDelegations(state: string, query: string, page = 1, signal?: AbortSignal): Promise<{ items: Delegation[]; total: number }> {
+  const params = new URLSearchParams({ state, query, page: String(page), page_size: '20' })
+  return request(`/api/delegations?${params}`, { signal })
+}
+export function getDelegation(id: number, signal?: AbortSignal): Promise<Delegation> {
+  return request(`/api/delegations/${id}`, { signal })
+}
+export function updateDelegation(id: number, expectedVersion: number, content: unknown, closed: boolean): Promise<Delegation> {
+  return request(`/api/delegations/${id}`, { method: 'PATCH', body: { expected_version: expectedVersion, content, closed, actor: 'user' } })
+}
+export function listDelegationTasks(id: number, page = 1, signal?: AbortSignal): Promise<{ items: DelegationCheck[] }> {
+  return request(`/api/delegations/${id}/tasks?page=${page}&page_size=20`, { signal })
 }

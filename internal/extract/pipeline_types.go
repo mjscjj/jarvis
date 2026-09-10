@@ -2,6 +2,7 @@ package extract
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 
 	"jarvis/internal/agentusage"
@@ -91,6 +92,7 @@ type MessageContext struct {
 	MessageType  string
 	Content      string
 	SourceURL    string
+	Mentions     json.RawMessage
 	RootID       string
 	ThreadID     string
 	CreateTime   int64
@@ -141,6 +143,7 @@ type ConversationUnit struct {
 type RecentTaskContext struct {
 	ID             uint64
 	Title          string
+	ActionType     string
 	Status         string
 	Summary        string
 	LastProgressAt string // RFC3339; empty when unknown

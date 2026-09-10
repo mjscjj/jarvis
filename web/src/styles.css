@@ -105,6 +105,54 @@ body {
   border-top: 1px solid var(--color-border);
 }
 
+.sider-help {
+  display: flex;
+  padding: 4px 16px 8px;
+}
+
+.sider-help.is-collapsed {
+  justify-content: center;
+  padding-inline: 8px;
+}
+
+.developer-document-links {
+  display: grid;
+  gap: 8px;
+  max-width: 300px;
+}
+
+.developer-document-links a {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.developer-document-links strong,
+.developer-document-links small {
+  display: block;
+}
+
+.developer-document-links strong {
+  font-weight: 500;
+}
+
+.developer-document-links small {
+  margin-top: 3px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.setup-documents {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+.setup-documents .developer-document-links {
+  margin-top: 8px;
+}
+
 .sider-footer > .ant-btn {
   min-width: 0;
 }

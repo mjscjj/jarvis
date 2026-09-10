@@ -251,11 +251,13 @@ func (s *GroupBackgroundService) UpdateBackground(ctx context.Context, id uint64
 	}
 
 	pinned := in.Pinned
-	// Enabling an unmonitored p2p from the human-curated background UI is an
-	// explicit fixed choice, not an automatic Top-N decision. The user can later
-	// clear pinned while keeping it related to hand it back to automatic rotation.
-	if previous.ChatMode == "p2p" && !previous.RelatedGroup && in.RelatedGroup {
+	// Enabling monitoring here is always an explicit human choice. Keep it above
+	// automatic inactivity eviction and p2p Top-N rotation until the user clears
+	// pinned. A disabled conversation cannot remain pinned.
+	if !previous.RelatedGroup && in.RelatedGroup {
 		pinned = true
+	} else if !in.RelatedGroup {
+		pinned = false
 	}
 	updates := map[string]any{
 		"project_id":        in.ProjectID,

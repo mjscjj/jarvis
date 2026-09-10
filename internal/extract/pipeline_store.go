@@ -2,6 +2,7 @@ package extract
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -471,19 +472,22 @@ func (s *PipelineStore) loadRecentTasks(ctx context.Context, group GroupContext,
 	type row struct {
 		ID             uint64
 		Title          string
+		ActionType     string
 		Status         string
 		Summary        *string
 		LastProgressAt *time.Time
 	}
 	var rows []row
-	if err := query.Select("t.id, t.title, t.status, t.summary, t.last_progress_at").
+	if err := query.Select("t.id, t.title, t.action_type, t.status, t.summary, t.last_progress_at").
 		Order("COALESCE(t.last_progress_at, t.created_at) DESC, t.id DESC").
 		Limit(limit).Scan(&rows).Error; err != nil {
 		return nil, fmt.Errorf("load recent tasks group_id=%d: %w", group.ID, err)
 	}
 	result := make([]RecentTaskContext, len(rows))
 	for i := range rows {
-		item := RecentTaskContext{ID: rows[i].ID, Title: rows[i].Title, Status: rows[i].Status}
+		item := RecentTaskContext{
+			ID: rows[i].ID, Title: rows[i].Title, ActionType: rows[i].ActionType, Status: rows[i].Status,
+		}
 		if rows[i].Summary != nil {
 			item.Summary = *rows[i].Summary
 		}
@@ -500,8 +504,8 @@ func messageContext(message *domain.Message, isNew bool) MessageContext {
 		DatabaseID: message.ID, MessageID: message.MessageID, ChatID: message.ChatID, ChatMode: message.ChatMode,
 		SenderOpenID: message.SenderOpenID, SenderName: message.SenderName, SenderType: message.SenderType,
 		Source: message.Source, MessageType: message.MessageType, Content: message.Content,
-		SourceURL: stringValue(message.SourceURL),
-		RootID:    stringValue(message.RootID), ThreadID: stringValue(message.ThreadID),
+		SourceURL: stringValue(message.SourceURL), Mentions: append(json.RawMessage(nil), message.MentionsJSON...),
+		RootID: stringValue(message.RootID), ThreadID: stringValue(message.ThreadID),
 		CreateTime: message.CreateTime, IsNew: isNew, Extractable: extractableMessage(message),
 	}
 }

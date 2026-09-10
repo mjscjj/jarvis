@@ -1,6 +1,7 @@
 package extract
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"strings"
@@ -170,6 +171,7 @@ func TestBuildPromptCarriesMessageType(t *testing.T) {
 		MessageID:   "om_1",
 		MessageType: "post",
 		Content:     "周会结论：下周三前完成灰度",
+		Mentions:    json.RawMessage(`[{"id":"ou_owner","key":"@_user_1","name":"负责人"}]`),
 		CreateTime:  1_700_000_001_000,
 		IsNew:       true,
 		Extractable: true,
@@ -186,6 +188,9 @@ func TestBuildPromptCarriesMessageType(t *testing.T) {
 	}
 	if !strings.Contains(prompt.User, "message_type=post") {
 		t.Fatalf("prompt missing message_type:\n%s", prompt.User)
+	}
+	if !strings.Contains(prompt.User, `mentions=[{"id":"ou_owner","key":"@_user_1","name":"负责人"}]`) {
+		t.Fatalf("prompt missing mention identity:\n%s", prompt.User)
 	}
 }
 
@@ -212,6 +217,16 @@ func TestExtractionPromptDefinesTaskAdmissionBoundary(t *testing.T) {
 		// 语义边界二：principal 直接给当前助手的指令必须绕过价值判断。名称由
 		// agentidentity 在运行时渲染，原始提示词必须保留统一占位符。
 		"principal 直接要求 {{AGENT_NAME}}",
+		// 语义边界三：复合消息不能让一个已承接的子项吞掉其它交付物。
+		"多个可以分别完成、分配或验收的结果",
+		"同一现实动作和同一交付物",
+		// 语义边界四：阶段规则中的专项准入要求不能被通用 observing
+		// 判断反向覆盖。
+		"当前阶段工作规则明确要求持续建 Task 或跟踪",
+		// 语义边界五：认领、临时缓解或约定稍后处理仍可能需要跟踪。
+		"只有口头认领、临时缓解、约定稍后处理、等待新数据或尚待验收，都不算闭环",
+		// 语义边界六：clue 正文中的外部消息 ID 不能冒充当前输入证据。
+		"source_message_ids 必须引用外层 clue 的 `[new] message_id`",
 	} {
 		if !strings.Contains(system, want) {
 			t.Fatalf("system prompt missing %q", want)

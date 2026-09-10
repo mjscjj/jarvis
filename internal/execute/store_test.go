@@ -136,6 +136,51 @@ func TestListTasksScopesByGroupThroughSourceTodo(t *testing.T) {
 	}
 }
 
+func TestListTasksFiltersOpenActionType(t *testing.T) {
+	db, err := gorm.Open(
+		sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())),
+		&gorm.Config{DisableForeignKeyConstraintWhenMigrating: true},
+	)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&domain.Task{}, &domain.TaskEvent{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	rows := []domain.Task{
+		{ID: 1, Title: "普通任务", ActionType: "investigate", Target: "问题", SourcePayload: []byte(`{"source":{},"capture":{},"annotation":{}}`), SourceType: "manual", Status: "pending"},
+		{ID: 2, Title: "张三补方案", ActionType: "delegated_followup", Target: "张三补方案", SourcePayload: []byte(`{"source":{},"capture":{},"annotation":{"delegation":{"assignee":{"name":"张三"},"matter":"补齐方案"}}}`), SourceType: "manual", Status: "waiting"},
+	}
+	if err := db.Create(&rows).Error; err != nil {
+		t.Fatalf("create tasks: %v", err)
+	}
+	store, err := NewStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delegated, err := store.ListTasks(t.Context(), TaskFilter{
+		Statuses: []string{"pending", "waiting"}, ActionType: "delegated_followup", Page: 1, PageSize: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if delegated.Total != 1 || len(delegated.Items) != 1 || delegated.Items[0].ID != 2 {
+		t.Fatalf("delegated = %#v", delegated)
+	}
+	if strings.Contains(string(delegated.Items[0].SourcePayload), `"delegation"`) {
+		t.Fatal("Task list must not project commitment state from its frozen annotation")
+	}
+	ordinary, err := store.ListTasks(t.Context(), TaskFilter{
+		Statuses: []string{"pending", "waiting"}, ExcludeActionType: "delegated_followup", Page: 1, PageSize: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ordinary.Total != 1 || len(ordinary.Items) != 1 || ordinary.Items[0].ID != 1 {
+		t.Fatalf("ordinary = %#v", ordinary)
+	}
+}
+
 func TestRunViewIncludesFullPrompt(t *testing.T) {
 	prompt := strings.Repeat("完整原始提示词\n", 10_000)
 	view := runView(&domain.ExecutionRun{ID: 1, Prompt: prompt})
@@ -376,12 +421,16 @@ func TestCloseResolvesTaskAndProjectsProactiveActor(t *testing.T) {
 		`CREATE TABLE scheduled_task (
 			id INTEGER PRIMARY KEY, subject_type TEXT, subject_id INTEGER,
 			dispatch_kind TEXT, source_run_id INTEGER, status TEXT, last_run_status TEXT,
-			last_error_detail TEXT, last_finished_at DATETIME, updated_at DATETIME
+			last_error_detail TEXT, last_result TEXT, last_finished_at DATETIME, updated_at DATETIME
 		)`,
 		`INSERT INTO task(id, status, execution_result, version, created_at, updated_at)
 		 VALUES (7, 'waiting', '{"stage":"executed","summary":"原执行结论"}', 3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
 		`INSERT INTO scheduled_task(id, subject_type, subject_id, dispatch_kind, status)
 		 VALUES (9, 'task', 7, 'resume_task', 'binding')`,
+		`INSERT INTO scheduled_task(id, subject_type, subject_id, dispatch_kind, source_run_id, status)
+		 VALUES (10, 'task', 7, 'resume_task', 20, 'active'),
+		        (11, 'task', 8, 'resume_task', 21, 'active'),
+		        (12, 'task', 7, 'create_task', NULL, 'active')`,
 	} {
 		if err := db.Exec(statement).Error; err != nil {
 			t.Fatalf("fixture statement failed: %v", err)
@@ -430,6 +479,14 @@ func TestCloseResolvesTaskAndProjectsProactiveActor(t *testing.T) {
 	}
 	if scheduleStatus != "completed" {
 		t.Fatalf("scheduled task status = %q, want completed", scheduleStatus)
+	}
+	for id, want := range map[int]string{10: "completed", 11: "active", 12: "active"} {
+		if err := db.Raw("SELECT status FROM scheduled_task WHERE id = ?", id).Scan(&scheduleStatus).Error; err != nil {
+			t.Fatal(err)
+		}
+		if scheduleStatus != want {
+			t.Fatalf("schedule #%d status=%s, want %s", id, scheduleStatus, want)
+		}
 	}
 }
 

@@ -25,6 +25,7 @@ const maxLimit = 100
 
 type MessageFilter struct {
 	ChatID       string
+	MessageIDs   []string
 	SenderOpenID string
 	Keyword      string
 	From         *time.Time
@@ -33,19 +34,20 @@ type MessageFilter struct {
 }
 
 type MessageView struct {
-	ID           uint64  `json:"id"`
-	MessageID    string  `json:"message_id"`
-	ChatID       string  `json:"chat_id"`
-	GroupID      *uint64 `json:"group_id"`
-	SenderOpenID string  `json:"sender_open_id"`
-	SenderName   string  `json:"sender_name"`
-	MessageType  string  `json:"message_type"`
-	Content      string  `json:"content"`
-	ReplyTo      *string `json:"reply_to"`
-	RootID       *string `json:"root_id"`
-	ThreadID     *string `json:"thread_id"`
-	CreateTime   int64   `json:"create_time"`
-	Source       string  `json:"source"`
+	ID           uint64          `json:"id"`
+	MessageID    string          `json:"message_id"`
+	ChatID       string          `json:"chat_id"`
+	GroupID      *uint64         `json:"group_id"`
+	SenderOpenID string          `json:"sender_open_id"`
+	SenderName   string          `json:"sender_name"`
+	MessageType  string          `json:"message_type"`
+	Content      string          `json:"content"`
+	Mentions     json.RawMessage `json:"mentions,omitempty"`
+	ReplyTo      *string         `json:"reply_to"`
+	RootID       *string         `json:"root_id"`
+	ThreadID     *string         `json:"thread_id"`
+	CreateTime   int64           `json:"create_time"`
+	Source       string          `json:"source"`
 }
 
 type MessageDetailView struct {
@@ -126,10 +128,21 @@ func (s *Service) ListMessages(ctx context.Context, filter MessageFilter) ([]Mes
 	if err := validateLimit(filter.Limit); err != nil {
 		return nil, err
 	}
+	if len(filter.MessageIDs) > filter.Limit {
+		return nil, fmt.Errorf("%w: message_ids count must not exceed limit (maximum %d)", ErrInvalidInput, maxLimit)
+	}
+	for _, id := range filter.MessageIDs {
+		if strings.TrimSpace(id) == "" || strings.TrimSpace(id) != id {
+			return nil, fmt.Errorf("%w: message_ids must contain nonblank, unpadded IDs", ErrInvalidInput)
+		}
+	}
 	if filter.From != nil && filter.Until != nil && !filter.From.Before(*filter.Until) {
 		return nil, fmt.Errorf("%w: from must be before until", ErrInvalidInput)
 	}
 	query := s.db.WithContext(ctx).Model(&domain.Message{})
+	if len(filter.MessageIDs) > 0 {
+		query = query.Where("message_id IN ?", filter.MessageIDs)
+	}
 	if value := strings.TrimSpace(filter.ChatID); value != "" {
 		query = query.Where("chat_id = ?", value)
 	}
@@ -269,7 +282,7 @@ func messageView(row *domain.Message) MessageView {
 	return MessageView{
 		ID: row.ID, MessageID: row.MessageID, ChatID: row.ChatID, GroupID: row.GroupID,
 		SenderOpenID: row.SenderOpenID, SenderName: row.SenderName,
-		MessageType: row.MessageType, Content: row.Content, ReplyTo: row.ReplyTo,
+		MessageType: row.MessageType, Content: row.Content, Mentions: rawJSON(row.MentionsJSON), ReplyTo: row.ReplyTo,
 		RootID: row.RootID, ThreadID: row.ThreadID, CreateTime: row.CreateTime, Source: row.Source,
 	}
 }

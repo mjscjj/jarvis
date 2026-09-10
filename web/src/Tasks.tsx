@@ -78,7 +78,7 @@ interface CreateTaskFields {
   project_id?: number
 }
 
-export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
+export default function Tasks({ onDetailOpen, delegationsEnabled = false }: { onDetailOpen?: () => void; delegationsEnabled?: boolean }) {
   const { name: agentName } = useAgentIdentity()
   const { context, navigate, setSelection, setViewState } = usePageContext()
   const tabLabels: Record<TaskTab, string> = {
@@ -513,8 +513,11 @@ export default function Tasks({ onDetailOpen }: { onDetailOpen?: () => void }) {
       title="任务"
       subtitle={`管理你与 ${agentName} 正在推进的工作`}
       activeKey="tasks"
-      tabs={[{ key: 'tasks', label: '任务' }, { key: 'automations', label: '自动化' }]}
-      onChange={(key) => navigate(key === 'automations' ? 'scheduled-tasks' : 'tasks')}
+      tabs={[{ key: 'tasks', label: '任务' }, { key: 'automations', label: '自动化' }, ...(delegationsEnabled ? [{ key: 'delegated', label: '我的交办' }] : [])]}
+      onChange={(key) => {
+        if (key === 'delegated') navigate('tasks', { mode: 'delegated' })
+        else navigate(key === 'automations' ? 'scheduled-tasks' : 'tasks')
+      }}
     >
       <Button type="primary" onClick={openCreate}>新建任务</Button>
       <Button onClick={() => setRefreshKey((value) => value + 1)} loading={loading}>刷新</Button>

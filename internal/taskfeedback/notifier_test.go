@@ -40,6 +40,9 @@ func TestNotifierAddsOnItReactionAsBot(t *testing.T) {
 	if reaction.ReactionID != "reaction_on_it" {
 		t.Fatalf("reaction = %#v", reaction)
 	}
+	if reaction.SourceMessageID != "om_source" {
+		t.Fatalf("source message id = %q", reaction.SourceMessageID)
+	}
 	if len(runner.calls) != 1 {
 		t.Fatalf("calls = %d, want 1", len(runner.calls))
 	}
@@ -47,6 +50,36 @@ func TestNotifierAddsOnItReactionAsBot(t *testing.T) {
 	for _, want := range []string{"im\nreactions\ncreate", `"message_id":"om_source"`, `"emoji_type":"OnIt"`, "--as\nbot"} {
 		if !strings.Contains(reactionCall, want) {
 			t.Fatalf("reaction args missing %q: %s", want, reactionCall)
+		}
+	}
+}
+
+func TestNotifierRemovesOnItReactionAsBot(t *testing.T) {
+	runner := &fakeRunner{responses: []any{
+		map[string]any{"data": map[string]any{"reaction_id": "reaction_on_it"}},
+	}}
+	notifier, err := NewNotifier(runner)
+	if err != nil {
+		t.Fatalf("NewNotifier() error = %v", err)
+	}
+	if err := notifier.RemoveProcessingReaction(t.Context(), execute.TaskFeedbackReaction{
+		SourceMessageID: "om_source",
+		ReactionID:      "reaction_on_it",
+	}); err != nil {
+		t.Fatalf("RemoveProcessingReaction() error = %v", err)
+	}
+	if len(runner.calls) != 1 {
+		t.Fatalf("calls = %d, want 1", len(runner.calls))
+	}
+	call := strings.Join(runner.calls[0], "\n")
+	for _, want := range []string{
+		"im\nreactions\ndelete",
+		`"message_id":"om_source"`,
+		`"reaction_id":"reaction_on_it"`,
+		"--as\nbot",
+	} {
+		if !strings.Contains(call, want) {
+			t.Fatalf("reaction delete args missing %q: %s", want, call)
 		}
 	}
 }
@@ -59,6 +92,21 @@ func TestNotifierRejectsMissingReactionID(t *testing.T) {
 	}
 	if _, err := notifier.AddProcessingReaction(t.Context(), execute.TaskFeedbackTarget{SourceMessageID: "om_source"}); err == nil {
 		t.Fatal("AddProcessingReaction() error = nil, want missing reaction_id rejected")
+	}
+}
+
+func TestNotifierRejectsIncompleteReactionRemoval(t *testing.T) {
+	notifier, err := NewNotifier(&fakeRunner{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, reaction := range []execute.TaskFeedbackReaction{
+		{ReactionID: "reaction_on_it"},
+		{SourceMessageID: "om_source"},
+	} {
+		if err := notifier.RemoveProcessingReaction(t.Context(), reaction); err == nil {
+			t.Fatalf("RemoveProcessingReaction(%#v) error = nil", reaction)
+		}
 	}
 }
 

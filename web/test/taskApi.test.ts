@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { getTask, getTaskRun, listTaskRuns } from '../src/api.ts'
+import { getTask, getTaskRun, listTaskRuns, listTasks } from '../src/api.ts'
 
 test('task detail and paged run index use separate reads from run bodies', async (t) => {
   const calls: string[] = []
@@ -22,4 +22,21 @@ test('task detail and paged run index use separate reads from run bodies', async
   const run = await getTaskRun(page.items[0].id)
   assert.equal(run.output?.summary, '完整运行结果')
   assert.equal(calls.at(-1), '/api/task-runs/5')
+})
+
+test('task list forwards open action type filters', async (t) => {
+  const calls: string[] = []
+  t.mock.method(globalThis, 'fetch', async (path: string) => {
+    calls.push(path)
+    return new Response(JSON.stringify({
+      code: 0,
+      data: { total: 0, page: 1, page_size: 20, items: [] },
+    }), { status: 200 })
+  })
+
+  await listTasks(['waiting'], 1, 20, undefined, { actionType: 'delegated_followup' })
+  await listTasks(['pending'], 2, 20, undefined, { excludeActionType: 'delegated_followup' })
+
+  assert.equal(calls[0], '/api/tasks?status=waiting&page=1&page_size=20&action_type=delegated_followup')
+  assert.equal(calls[1], '/api/tasks?status=pending&page=2&page_size=20&exclude_action_type=delegated_followup')
 })

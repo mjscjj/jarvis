@@ -131,8 +131,8 @@ func BuiltinRegistry() (*Registry, error) {
 		},
 		{
 			ID: "my-delegations", Name: "我的交办", Kind: KindCapability,
-			Description: "从现有消息和会议任务中识别你交给他人的事项，并沿用 Task 持续跟进。",
-			Skills:      []string{"my-delegations-extract", "my-delegations-execute"},
+			Description: "从消息和会议中识别交办待办，独立记录交付进展，由 Task 按需核验。",
+			Skills:      []string{"my-delegations-extract", "my-delegations-execute", "my-delegations-review"},
 			Permissions: []string{"jarvis:tasks.read", "lark:im.read"},
 		},
 	})

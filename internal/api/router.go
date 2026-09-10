@@ -13,6 +13,7 @@ import (
 	"jarvis/internal/chat"
 	"jarvis/internal/config"
 	"jarvis/internal/contextsnap"
+	"jarvis/internal/delegation"
 	"jarvis/internal/effectops"
 	"jarvis/internal/execute"
 	"jarvis/internal/extract"
@@ -325,6 +326,15 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.DELETE("/api/scheduled-tasks/:scheduled_task_id", DeleteScheduledTask(deps.ScheduledTasks))
 	h.POST("/api/scheduled-tasks/:scheduled_task_id/trigger", TriggerScheduledTask(deps.ScheduledTasks))
 	// 插件只管理外部能力的启停、授权和采集调度；采集结果仍走统一 clue 流水线。
+	delegations, err := delegation.NewService(deps.DB)
+	if err != nil {
+		return err
+	}
+	h.GET("/api/delegations", ListDelegations(delegations))
+	h.GET("/api/delegations/:todo_id", GetDelegation(delegations))
+	h.PATCH("/api/delegations/:todo_id", UpdateDelegation(delegations))
+	h.GET("/api/delegations/:todo_id/tasks", ListDelegationTasks(delegations))
+	h.GET("/api/plugin-installations", ListPluginInstallations(deps.Plugins))
 	h.GET("/api/plugins", ListPlugins(deps.Plugins))
 	h.GET("/api/plugins/:plugin_id", GetPlugin(deps.Plugins))
 	h.PATCH("/api/plugins/:plugin_id", UpdatePlugin(deps.Plugins))

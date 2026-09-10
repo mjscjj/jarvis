@@ -54,7 +54,7 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 | 会议巡扫 | 采集已结束会议和未来 24 小时日程，分别触发会后整理与逐场处理判断 | `internal/meetingsweep/` |
 | 晨间简报 | 工作日开工对齐：Skill 取证写稿，定时/手动触发，产物在本地 Markdown | `internal/morningbrief/` |
 | 定时任务 | 周期/单次 Task，以及等待 Session 的未来唤醒 | `internal/scheduledtask/`, `internal/taskcreate/` |
-| 插件 | 按需启用和授权外部来源，以定时任务 + Skill 向通用 clue 入口投递原始证据 | `internal/plugin/`, [`docs/plugin-system.md`](docs/plugin-system.md) |
+| 插件 | 按需启用外部来源或阶段能力；采集插件通过定时任务 + Skill 投递 clue，能力插件复用现有 M3/M5 与 Task 链路 | `internal/plugin/`, [`docs/plugin-system.md`](docs/plugin-system.md) |
 | 实时协调 | 按持久化 ID/version 推进 M3→M5，cron 负责补偿 | `internal/pipeline/` |
 | 背景事实 | 实体长期事实页 `summary`（整体读写、有上限、页内引用）与自然语言 Fact | `internal/background/`, `internal/progress/`, `internal/knowledge/` |
 | 后台与观测 | Overview、日报、worklog、运行状态、日志 | `internal/insight/`, `internal/dailydigest/`, `internal/observability/` |
@@ -102,6 +102,7 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 - 加 HTTP 接口：`internal/api/`，并在 `internal/api/router.go` 注册
 - 改表或字段：`internal/domain/` 与 `internal/store/sqlite.go`
 - 改前端页面：`web/src/`
+- 新增插件或拆分插件耦合：[插件扩展与解耦规范](docs/summery/plugin-extension-spec.md)（含当前接入步骤与尚未实施的改造提案）
 
 ## 给其他人安装（推荐）
 

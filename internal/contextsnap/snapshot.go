@@ -133,16 +133,17 @@ type ManagedResource struct {
 
 // Message is one piece of source evidence, copied verbatim at capture time.
 type Message struct {
-	MessageID    string `json:"message_id"`
-	ChatID       string `json:"chat_id"`
-	ChatMode     string `json:"chat_mode,omitempty"`
-	SenderOpenID string `json:"sender_open_id"`
-	SenderName   string `json:"sender_name"`
-	Content      string `json:"content"`
-	SourceURL    string `json:"source_url,omitempty"`
-	RootID       string `json:"root_id,omitempty"`
-	ThreadID     string `json:"thread_id,omitempty"`
-	CreateTime   int64  `json:"create_time"`
+	MessageID    string          `json:"message_id"`
+	ChatID       string          `json:"chat_id"`
+	ChatMode     string          `json:"chat_mode,omitempty"`
+	SenderOpenID string          `json:"sender_open_id"`
+	SenderName   string          `json:"sender_name"`
+	Content      string          `json:"content"`
+	SourceURL    string          `json:"source_url,omitempty"`
+	Mentions     json.RawMessage `json:"mentions,omitempty"`
+	RootID       string          `json:"root_id,omitempty"`
+	ThreadID     string          `json:"thread_id,omitempty"`
+	CreateTime   int64           `json:"create_time"`
 }
 
 // SnapshotVersion is the current wire version. Bump when the shape changes so

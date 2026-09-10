@@ -31,11 +31,30 @@ skills:
       enabled: true # 实际可见性由 Meego Plugin 启停状态控制
       stages:
         - execute
+    - name: my-delegations-extract
+      enabled: true # 实际可见性由“我的交办”插件启停状态控制
+      inline: true
+      stages:
+        - extract
+    - name: my-delegations-execute
+      enabled: true # 实际可见性由“我的交办”插件启停状态控制
+      inline: true
+      stages:
+        - execute
+    - name: my-delegations-review
+      enabled: true
+      inline: true
+      stages:
+        - proactive
     - name: oncall-clue-collector
       enabled: true # 实际可见性由 Oncall Plugin 启停状态控制
       stages:
         - execute
     - name: bax-feedback-analysis
+      enabled: true
+      stages:
+        - execute
+    - name: bax-weekly-usage-analysis
       enabled: true
       stages:
         - execute

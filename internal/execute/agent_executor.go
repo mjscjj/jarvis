@@ -75,18 +75,20 @@ type QuestionNotifier interface {
 }
 
 type TaskFeedbackReaction struct {
-	ReactionID string
+	SourceMessageID string
+	ReactionID      string
 }
 
 type TaskFeedbackTarget struct {
 	SourceMessageID string
 }
 
-// TaskFeedbackNotifier owns only the best-effort OnIt start acknowledgement.
+// TaskFeedbackNotifier owns the best-effort OnIt indicator for one active run.
 // M5 sends ordinary business messages explicitly through its message Skill;
 // execution output never asks this transport to infer or deliver a result.
 type TaskFeedbackNotifier interface {
 	AddProcessingReaction(context.Context, TaskFeedbackTarget) (*TaskFeedbackReaction, error)
+	RemoveProcessingReaction(context.Context, TaskFeedbackReaction) error
 }
 
 // AgentExecutor is the execution core. It does not hard-code a per-action
@@ -350,7 +352,11 @@ func (e *AgentExecutor) ResumeTask(ctx context.Context, taskID, sourceRunID uint
 	if err != nil {
 		return fmt.Errorf("load M5 approval policy for waiting resume: %w", err)
 	}
-	prompt, err := buildScheduledResumePrompt(systemPrompt, approvalPolicy, reason, workRules, toolCatalog)
+	skills, err := e.skills.Catalog(ctx, skill.StageExecute)
+	if err != nil {
+		return err
+	}
+	prompt, err := buildScheduledResumePrompt(systemPrompt, approvalPolicy, reason, workRules, toolCatalog, skills)
 	if err != nil {
 		return err
 	}
@@ -390,7 +396,11 @@ func (e *AgentExecutor) KickResumeAfterHuman(ctx context.Context, taskID uint64,
 	if err != nil {
 		return nil, fmt.Errorf("load M5 approval policy for human resume: %w", err)
 	}
-	prompt, err := buildHumanResumePrompt(systemPrompt, approvalPolicy, response, workRules, toolCatalog)
+	skills, err := e.skills.Catalog(ctx, skill.StageExecute)
+	if err != nil {
+		return nil, err
+	}
+	prompt, err := buildHumanResumePrompt(systemPrompt, approvalPolicy, response, workRules, toolCatalog, skills)
 	if err != nil {
 		return nil, err
 	}
@@ -508,13 +518,13 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 // carries the approval policy because a resumed session runs under the same
 // result contract as a first pass: it may well decide the next step needs
 // approval, and it cannot make that call without the policy text.
-func buildScheduledResumePrompt(systemPrompt, approvalPolicy, reason, workRules, toolCatalog string) (string, error) {
+func buildScheduledResumePrompt(systemPrompt, approvalPolicy, reason, workRules, toolCatalog, skills string) (string, error) {
 	systemPrompt = strings.TrimSpace(systemPrompt)
 	reason = strings.TrimSpace(reason)
 	if systemPrompt == "" || reason == "" {
 		return "", fmt.Errorf("waiting resume system prompt and reason are required")
 	}
-	prompt, err := renderResumeInstructions(systemPrompt, approvalPolicy, m5PhaseResumeWaiting, workRules, toolCatalog)
+	prompt, err := renderResumeInstructions(systemPrompt, approvalPolicy, m5PhaseResumeWaiting, workRules, toolCatalog, skills)
 	if err != nil {
 		return "", err
 	}
@@ -524,13 +534,13 @@ func buildScheduledResumePrompt(systemPrompt, approvalPolicy, reason, workRules,
 // buildHumanResumePrompt builds the prompt that continues a session after the
 // principal answered. It carries the approval policy for the same reason as the
 // waiting resume above.
-func buildHumanResumePrompt(systemPrompt, approvalPolicy, response, workRules, toolCatalog string) (string, error) {
+func buildHumanResumePrompt(systemPrompt, approvalPolicy, response, workRules, toolCatalog, skills string) (string, error) {
 	systemPrompt = strings.TrimSpace(systemPrompt)
 	response = strings.TrimSpace(response)
 	if systemPrompt == "" || response == "" {
 		return "", fmt.Errorf("human resume system prompt and response are required")
 	}
-	prompt, err := renderResumeInstructions(systemPrompt, approvalPolicy, m5PhaseResumeHuman, workRules, toolCatalog)
+	prompt, err := renderResumeInstructions(systemPrompt, approvalPolicy, m5PhaseResumeHuman, workRules, toolCatalog, skills)
 	if err != nil {
 		return "", err
 	}
@@ -539,12 +549,15 @@ func buildHumanResumePrompt(systemPrompt, approvalPolicy, response, workRules, t
 
 // renderResumeInstructions assembles the shared resume preamble: phase, approval
 // policy, work rules and tool catalog.
-func renderResumeInstructions(systemPrompt, approvalPolicy, phase, workRules, toolCatalog string) (string, error) {
+func renderResumeInstructions(systemPrompt, approvalPolicy, phase, workRules, toolCatalog, skills string) (string, error) {
 	renderedSystemPrompt, err := prompttemplate.Render(prompttemplate.StageM5, systemPrompt, workRules, approvalPolicy)
 	if err != nil {
 		return "", fmt.Errorf("render M5 resume system prompt: %w", err)
 	}
 	prompt := renderedSystemPrompt + "\n\n" + phase
+	if block := strings.TrimSpace(skills); block != "" {
+		prompt += "\n\n" + block
+	}
 	if block := strings.TrimSpace(toolCatalog); block != "" {
 		prompt += "\n\n" + block
 	}
@@ -878,6 +891,7 @@ func (e *AgentExecutor) finishRun(ctx context.Context, task *domain.Task, execVe
 		if _, err := e.store.MarkWaiting(ctx, task.ID, execVersion, run.ID, waiting.ScheduledTaskID, resultJSON); err != nil {
 			return nil, fmt.Errorf("park Task id=%d waiting: %w", task.ID, err)
 		}
+		e.finishTaskFeedback(ctx, run)
 		return &ExecuteResult{
 			TaskID: task.ID, RunID: run.ID, Status: "waiting",
 			Summary: derefString(run.Summary),
@@ -891,6 +905,7 @@ func (e *AgentExecutor) finishRun(ctx context.Context, task *domain.Task, execVe
 		if _, err := e.store.MarkNeedsHuman(ctx, task.ID, execVersion, run.ID, resultJSON); err != nil {
 			return nil, fmt.Errorf("park Task id=%d needs_human: %w", task.ID, err)
 		}
+		e.finishTaskFeedback(ctx, run)
 		return &ExecuteResult{
 			TaskID: task.ID, RunID: run.ID, Status: "needs_human",
 			Summary: derefString(run.Summary),
@@ -916,6 +931,7 @@ func (e *AgentExecutor) finishRun(ctx context.Context, task *domain.Task, execVe
 	}); err != nil {
 		return nil, fmt.Errorf("finish Task id=%d after execution: %w", task.ID, err)
 	}
+	e.finishTaskFeedback(ctx, run)
 	result := &ExecuteResult{
 		TaskID: task.ID, RunID: run.ID, Status: finishStatus,
 		Summary: derefString(run.Summary),
@@ -1075,6 +1091,54 @@ func (e *AgentExecutor) normalizeInterrupted(ctx context.Context, run *domain.Ex
 
 func (e *AgentExecutor) persistRun(ctx context.Context, run *domain.ExecutionRun) error {
 	return e.store.SaveRun(ctx, run)
+}
+
+func (e *AgentExecutor) finishTaskFeedback(ctx context.Context, run *domain.ExecutionRun) {
+	if e.feedback == nil || run == nil || run.Status == "running" || len(run.Effects) == 0 {
+		return
+	}
+	var effects []map[string]any
+	if err := json.Unmarshal(run.Effects, &effects); err != nil {
+		hlog.CtxWarnf(ctx, "decode Task feedback effects failed run_id=%d error=%+v", run.ID, err)
+		return
+	}
+	changed := false
+	for _, effect := range effects {
+		if stringEffectField(effect, "purpose") != "task_processing" ||
+			stringEffectField(effect, "removed_at") != "" {
+			continue
+		}
+		reaction := TaskFeedbackReaction{
+			SourceMessageID: stringEffectField(effect, "source_message_id"),
+			ReactionID:      stringEffectField(effect, "reaction_id"),
+		}
+		if reaction.SourceMessageID == "" || reaction.ReactionID == "" {
+			continue
+		}
+		if err := e.feedback.RemoveProcessingReaction(ctx, reaction); err != nil {
+			hlog.CtxWarnf(ctx, "remove Task processing reaction failed task_id=%d run_id=%d source_message_id=%s reaction_id=%s error=%+v",
+				run.TaskID, run.ID, reaction.SourceMessageID, reaction.ReactionID, err)
+			continue
+		}
+		effect["removed_at"] = e.now().UTC().Format(time.RFC3339)
+		changed = true
+	}
+	if changed {
+		encoded, err := json.Marshal(effects)
+		if err != nil {
+			hlog.CtxWarnf(ctx, "encode cleaned Task feedback effects failed run_id=%d error=%+v", run.ID, err)
+			return
+		}
+		run.Effects = encoded
+		if err := e.store.SaveRun(ctx, run); err != nil {
+			hlog.CtxWarnf(ctx, "persist cleaned Task feedback effects failed run_id=%d error=%+v", run.ID, err)
+		}
+	}
+}
+
+func stringEffectField(effect map[string]any, key string) string {
+	value, _ := effect[key].(string)
+	return strings.TrimSpace(value)
 }
 
 // markRunStarted lands the run row before the agent is invoked. Until it

@@ -1,0 +1,4 @@
+interface:
+  display_name: "BAX 周度用量分析"
+  short_description: "按周分析 BAX AM 用户对话使用变化，拆解 WAU、会话、人群和场景归因"
+  default_prompt: "使用 $bax-weekly-usage-analysis 分析最近一个完整自然周的 BAX AM 用户对话使用数据，比较上一周，输出可追溯结论。"

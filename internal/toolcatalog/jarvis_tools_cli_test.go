@@ -91,6 +91,24 @@ func TestJarvisToolsCloseTaskHelpContainsOnlyMachineContract(t *testing.T) {
 	}
 }
 
+func TestJarvisToolsMessageIDLookupIsExactAndCompact(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/messages" || r.URL.Query().Get("message_ids") != "clue:source:123,om_other" || r.URL.Query().Get("limit") != "100" {
+			t.Errorf("unexpected query: %s", r.URL)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"code":0,"data":{"items":[{"id":7,"message_id":"clue:source:123","content":"full evidence"}]}}`)
+	}))
+	defer server.Close()
+	out, err := runJarvisTools(t, server.URL, nil, "query-messages", "--message-ids", "clue:source:123,om_other", "--limit", "100")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, `"message_id":"clue:source:123"`) || strings.Contains(out, "full evidence") {
+		t.Fatalf("lookup output = %s", out)
+	}
+}
+
 func TestJarvisToolsRejectsFlagsFromAnotherCommand(t *testing.T) {
 	_, err := runJarvisTools(t, "http://unused.test", nil, "list-projects", "--id", "7")
 	if err == nil || !strings.Contains(err.Error(), "list-projects does not accept --id") {
@@ -742,6 +760,7 @@ func TestFrozenContextCLIUsesNativeMessageIDs(t *testing.T) {
 		{[]string{"get-task", "--id", "9", "--message-id", "om_a/b"}, "/api/tasks/9", "message_id", "om_a/b"},
 		{[]string{"get-todo", "--id", "9", "--context", "conversation"}, "/api/todos/9", "context", "conversation"},
 		{[]string{"list-tasks", "--source-message-id", "om_source"}, "/api/tasks", "source_message_id", "om_source"},
+		{[]string{"list-tasks", "--action-type", "delegated_followup"}, "/api/tasks", "action_type", "delegated_followup"},
 		{[]string{"list-todos", "--source-message-id", "om_source"}, "/api/todos", "source_message_id", "om_source"},
 	} {
 		t.Run(strings.Join(test.args, "_"), func(t *testing.T) {
@@ -760,5 +779,46 @@ func TestFrozenContextCLIUsesNativeMessageIDs(t *testing.T) {
 	}
 	if _, err := runJarvisTools(t, "", nil, "get-task", "--id", "9", "--material", "source"); err == nil {
 		t.Fatal("retired material flag accepted")
+	}
+}
+
+func TestDelegationToolsPreserveLooseProgressAndUseTodoIdentity(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		switch r.URL.Path {
+		case "/api/delegations":
+			if r.URL.Query().Get("state") != "all" || r.URL.Query().Get("query") != "张三" || r.URL.Query().Get("page") != "2" {
+				t.Errorf("query=%s", r.URL.RawQuery)
+			}
+		case "/api/delegations/7":
+			if r.Method == "PATCH" {
+				raw, _ := io.ReadAll(r.Body)
+				if !strings.Contains(string(raw), "9007199254740993") || !strings.Contains(string(raw), `"free":[1,"a"]`) {
+					t.Errorf("changed JSON: %s", raw)
+				}
+			}
+		case "/api/delegations/7/tasks":
+			if r.URL.Query().Get("page") != "2" {
+				t.Errorf("page=%s", r.URL.RawQuery)
+			}
+		default:
+			t.Errorf("path=%s", r.URL.Path)
+		}
+		fmt.Fprint(w, `{"code":0,"data":{"items":[],"id":7}}`)
+	}))
+	defer server.Close()
+	for _, args := range [][]string{
+		{"list-delegations", "--state", "all", "--query", "张三", "--page", "2"},
+		{"get-delegation", "--id", "7"},
+		{"list-delegation-tasks", "--id", "7", "--page", "2"},
+		{"update-delegation", "--id", "7", "--payload", `{"expected_version":0,"actor":"m5","content":{"proof":9007199254740993,"free":[1,"a"]},"closed":false}`},
+	} {
+		if out, err := runJarvisTools(t, server.URL, nil, args...); err != nil {
+			t.Fatalf("%v: %v %s", args, err, out)
+		}
+	}
+	if calls != 4 {
+		t.Fatalf("calls=%d", calls)
 	}
 }

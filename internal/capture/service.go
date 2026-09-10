@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"jarvis/internal/datatypes"
 	"jarvis/internal/domain"
 	"jarvis/internal/larkcli"
 
@@ -137,9 +138,9 @@ func (s *Service) ValidateScanChat(ctx context.Context, chatID string) error {
 	return nil
 }
 
-// ReplaceRelatedGroups atomically replaces the capture allowlist. Every chat
-// must already be discovered and must be a group/topic conversation. The list
-// is runtime data, not a compiled-in or configured fixed-size allowlist.
+// ReplaceRelatedGroups atomically replaces the human-curated capture allowlist.
+// Every selected chat is pinned so automatic inactivity eviction and p2p
+// rotation cannot override this explicit choice.
 func (s *Service) ReplaceRelatedGroups(chatIDs []string) error {
 	chatIDs, err := normalizeChatIDs(chatIDs)
 	if err != nil {
@@ -182,13 +183,17 @@ func (s *Service) ReplaceRelatedGroups(chatIDs []string) error {
 			}
 		}
 
-		if err := tx.Model(&domain.Group{}).Where("related_group = ?", true).Update("related_group", false).Error; err != nil {
+		if err := tx.Model(&domain.Group{}).
+			Where("related_group = ? OR pinned = ?", true, true).
+			Updates(map[string]any{"related_group": false, "pinned": false}).Error; err != nil {
 			return fmt.Errorf("clear related groups: %w", err)
 		}
 		if len(chatIDs) == 0 {
 			return nil
 		}
-		result := tx.Model(&domain.Group{}).Where("chat_id IN ?", chatIDs).Update("related_group", true)
+		result := tx.Model(&domain.Group{}).
+			Where("chat_id IN ?", chatIDs).
+			Updates(map[string]any{"related_group": true, "pinned": true})
 		if result.Error != nil {
 			return fmt.Errorf("set related groups: %w", result.Error)
 		}
@@ -719,7 +724,7 @@ func (s *Service) ScanRelated(ctx context.Context) error {
 	}
 	if err := s.db.Select("id", "chat_id").
 		Where("related_group = ? AND chat_mode IN ?", true, chatModes).
-		Order("id ASC").Find(&groups).Error; err != nil {
+		Order("pinned DESC, id ASC").Find(&groups).Error; err != nil {
 		return fmt.Errorf("list related chats: %w", err)
 	}
 	return s.scanGroups(ctx, groups)
@@ -921,6 +926,7 @@ func (s *Service) toDomainMessage(group *domain.Group, item CLIMessage) (*domain
 	if senderID == "" {
 		return nil, fmt.Errorf("message %s sender id is empty", item.MessageID)
 	}
+	mentions := append(datatypes.JSON(nil), item.Mentions...)
 	return &domain.Message{
 		MessageID:    item.MessageID,
 		ChatID:       group.ChatID,
@@ -931,6 +937,7 @@ func (s *Service) toDomainMessage(group *domain.Group, item CLIMessage) (*domain
 		SenderType:   senderType,
 		MessageType:  item.MessageType,
 		Content:      item.Content,
+		MentionsJSON: mentions,
 		SourceURL:    nullableString(item.MessageAppLink),
 		ReplyTo:      nullableString(item.ParentID),
 		RootID:       nullableString(item.RootID),
@@ -961,6 +968,11 @@ func upsertMessage(tx *gorm.DB, incoming *domain.Message) (bool, error) {
 			return false, fmt.Errorf("update message link %s: %w", incoming.MessageID, err)
 		}
 	}
+	if mentionMetadataPresent(incoming.MentionsJSON) && !mentionMetadataPresent(existing.MentionsJSON) {
+		if err := tx.Model(&existing).Update("mentions_json", incoming.MentionsJSON).Error; err != nil {
+			return false, fmt.Errorf("update message mentions %s: %w", incoming.MessageID, err)
+		}
+	}
 	if incoming.UpdateTime == nil || (existing.UpdateTime != nil && *incoming.UpdateTime <= *existing.UpdateTime) {
 		return false, nil
 	}
@@ -974,10 +986,22 @@ func upsertMessage(tx *gorm.DB, incoming *domain.Message) (bool, error) {
 		"update_time":    incoming.UpdateTime,
 		"render_ok":      incoming.RenderOK,
 	}
+	if len(incoming.MentionsJSON) > 0 {
+		updates["mentions_json"] = incoming.MentionsJSON
+	}
 	if err := tx.Model(&existing).Updates(updates).Error; err != nil {
 		return false, fmt.Errorf("update edited message %s: %w", incoming.MessageID, err)
 	}
 	return false, nil
+}
+
+func mentionMetadataPresent(raw []byte) bool {
+	switch strings.TrimSpace(string(raw)) {
+	case "", "null", "[]":
+		return false
+	default:
+		return true
+	}
 }
 
 func sinkResources(tx *gorm.DB, message *domain.Message, refs []resourceRef) error {

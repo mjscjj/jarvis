@@ -19,14 +19,15 @@ import (
 )
 
 const (
-	StageExtract = "extract"
-	StageExecute = "execute"
+	StageExtract   = "extract"
+	StageExecute   = "execute"
+	StageProactive = "proactive"
 )
 
 var (
 	ErrInvalidInput = errors.New("invalid agent skill input")
 	ErrNotFound     = errors.New("agent skill not found")
-	stageOrder      = map[string]int{StageExtract: 0, StageExecute: 1}
+	stageOrder      = map[string]int{StageExtract: 0, StageExecute: 1, StageProactive: 2}
 	skillName       = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 )
 
@@ -41,6 +42,7 @@ type View struct {
 	FilePath    string   `json:"file_path"`
 	Stages      []string `json:"stages"`
 	IsEnabled   bool     `json:"is_enabled"`
+	Inline      bool     `json:"inline"`
 }
 
 type ContentView struct {
@@ -72,6 +74,7 @@ type setting struct {
 	Name      string   `yaml:"name"`
 	IsEnabled bool     `yaml:"enabled"`
 	Stages    []string `yaml:"stages"`
+	Inline    bool     `yaml:"inline,omitempty"`
 }
 
 type metadata struct {
@@ -260,6 +263,21 @@ func (s *Service) Catalog(ctx context.Context, stage string) (string, error) {
 		if !item.IsEnabled || !contains(item.Stages, stage) {
 			continue
 		}
+		if item.Inline {
+			raw, err := fileconfig.Read(filepath.Join(s.root, filepath.FromSlash(item.FilePath)))
+			if err != nil {
+				return "", fmt.Errorf("read inline skill %s: %w", item.Name, err)
+			}
+			body, err := skillBody(raw)
+			if err != nil {
+				return "", fmt.Errorf("read inline skill %s: %w", item.Name, err)
+			}
+			lines = append(lines, fmt.Sprintf(
+				"BEGIN_INLINE_SKILL name=%s\n%s\nEND_INLINE_SKILL name=%s",
+				item.Name, body, item.Name,
+			))
+			continue
+		}
 		lines = append(lines, fmt.Sprintf("- %s：%s\n  读取：jarvis-tools get-skill --name %s", item.Name, item.Description, item.Name))
 	}
 	if len(lines) == 0 {
@@ -349,6 +367,7 @@ func join(metadataByName map[string]metadata, cfg configFile) ([]View, error) {
 		views = append(views, View{
 			Name: name, Description: item.Description, FilePath: item.FilePath,
 			Stages: append([]string(nil), control.Stages...), IsEnabled: control.IsEnabled,
+			Inline: control.Inline,
 		})
 	}
 	sort.Slice(views, func(i, j int) bool { return views[i].Name < views[j].Name })
@@ -374,6 +393,22 @@ func parseMetadata(raw []byte) (metadata, error) {
 		return metadata{}, fmt.Errorf("frontmatter requires a valid name and non-empty description")
 	}
 	return item, nil
+}
+
+func skillBody(raw []byte) (string, error) {
+	text := string(raw)
+	if !strings.HasPrefix(text, "---\n") {
+		return "", fmt.Errorf("SKILL.md must start with YAML frontmatter")
+	}
+	end := strings.Index(text[4:], "\n---")
+	if end < 0 {
+		return "", fmt.Errorf("SKILL.md frontmatter is not closed")
+	}
+	body := strings.TrimLeft(text[4+end+len("\n---"):], "\r\n")
+	if strings.TrimSpace(body) == "" {
+		return "", fmt.Errorf("SKILL.md body is empty")
+	}
+	return strings.TrimSpace(body), nil
 }
 
 func normalizeStages(input []string) ([]string, error) {

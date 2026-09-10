@@ -318,6 +318,7 @@ func main() {
 	proactiveWorker, err := proactive.NewWorker(proactive.Options{
 		Runner:        proactiveRunner,
 		Recorder:      proactiveStore,
+		Skills:        runtimeSkills,
 		Prompts:       runtimePrompts,
 		SharedMemory:  sharedMemoryService,
 		Sandbox:       cfg.Proactive.Sandbox,

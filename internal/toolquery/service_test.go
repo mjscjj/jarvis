@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"jarvis/internal/datatypes"
 	"jarvis/internal/domain"
 
 	"gorm.io/driver/sqlite"
@@ -17,7 +18,7 @@ func TestServiceProgressivelyLoadsCapturedData(t *testing.T) {
 	base := time.Date(2026, 8, 2, 12, 0, 0, 0, time.UTC)
 	contentRaw := `{"text":"project alpha started"}`
 	messages := []domain.Message{
-		{MessageID: "m1", ChatID: "chat-a", ChatMode: "group", SenderOpenID: "ou-a", SenderName: "Alice", SenderType: "user", MessageType: "text", Content: "project alpha started", ContentRaw: &contentRaw, CreateTime: base.UnixMilli(), Source: "poll"},
+		{MessageID: "m1", ChatID: "chat-a", ChatMode: "group", SenderOpenID: "ou-a", SenderName: "Alice", SenderType: "user", MessageType: "text", Content: "project alpha started", ContentRaw: &contentRaw, MentionsJSON: datatypes.JSON(`[{"id":"ou-owner","name":"Owner"}]`), CreateTime: base.UnixMilli(), Source: "poll"},
 		{MessageID: "m2", ChatID: "chat-b", ChatMode: "group", SenderOpenID: "ou-b", SenderName: "Bob", SenderType: "user", MessageType: "text", Content: "unrelated", CreateTime: base.Add(time.Minute).UnixMilli(), Source: "poll"},
 	}
 	for i := range messages {
@@ -57,9 +58,15 @@ func TestServiceProgressivelyLoadsCapturedData(t *testing.T) {
 	if len(gotMessages) != 1 || gotMessages[0].MessageID != "m1" || gotMessages[0].Content != "project alpha started" {
 		t.Fatalf("messages = %#v", gotMessages)
 	}
+	if !strings.Contains(string(gotMessages[0].Mentions), `"id":"ou-owner"`) {
+		t.Fatalf("message list mentions = %s", gotMessages[0].Mentions)
+	}
 	message, err := service.GetMessage(t.Context(), messages[0].ID)
 	if err != nil || message.ID != messages[0].ID || message.Content != "project alpha started" || message.ContentRaw == nil || *message.ContentRaw != contentRaw {
 		t.Fatalf("message = %#v, error = %v", message, err)
+	}
+	if !strings.Contains(string(message.Mentions), `"id":"ou-owner"`) {
+		t.Fatalf("message detail mentions = %s", message.Mentions)
 	}
 	todoEvent, err := service.GetTodoEvent(t.Context(), 7)
 	if err != nil || todoEvent.TodoID != 11 || !strings.Contains(string(todoEvent.Snapshot), `"source"`) {
@@ -84,6 +91,37 @@ func TestServiceProgressivelyLoadsCapturedData(t *testing.T) {
 	}
 	if detail.LocalPath == nil || *detail.LocalPath != localPath || detail.ExtractedText == nil || *detail.ExtractedText != extracted {
 		t.Fatalf("resource detail = %#v", detail)
+	}
+}
+
+func TestMessageIDBatchMatchesExactlyAndCannotTruncate(t *testing.T) {
+	db := openTestDB(t)
+	ids := []string{"clue:feishu_meeting:7683413135382417461", "clue:feishu_meeting:7683413135382417461:followup", "om_other"}
+	for _, id := range ids {
+		if err := db.Create(&domain.Message{
+			MessageID: id, ChatID: "chat", ChatMode: "clue", SenderOpenID: "system",
+			SenderName: "source", SenderType: "system", MessageType: "clue", Content: "same meeting ID in all bodies",
+			CreateTime: 1, Source: "clue",
+		}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err := service.ListMessages(t.Context(), MessageFilter{MessageIDs: []string{ids[0], "missing"}, Limit: 100})
+	if err != nil || len(items) != 1 || items[0].MessageID != ids[0] {
+		t.Fatalf("exact batch = %+v, error=%v", items, err)
+	}
+	for _, filter := range []MessageFilter{
+		{MessageIDs: ids, Limit: 2},
+		{MessageIDs: []string{""}, Limit: 100},
+		{MessageIDs: []string{" padded"}, Limit: 100},
+	} {
+		if _, err := service.ListMessages(t.Context(), filter); err == nil {
+			t.Fatalf("invalid or truncated batch accepted: %+v", filter)
+		}
 	}
 }
 

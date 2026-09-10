@@ -284,8 +284,8 @@ func renderRecentTasks(tasks []RecentTaskContext) string {
 		if progressAt == "" {
 			progressAt = "(unknown)"
 		}
-		lines[i] = fmt.Sprintf("task_id=%d title=%q status=%s summary=%q last_progress_at=%s",
-			task.ID, task.Title, task.Status, summary, progressAt)
+		lines[i] = fmt.Sprintf("task_id=%d action_type=%s title=%q status=%s summary=%q last_progress_at=%s",
+			task.ID, task.ActionType, task.Title, task.Status, summary, progressAt)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -310,10 +310,14 @@ func renderConversation(messages []MessageContext, location *time.Location) stri
 		}
 		content := strings.ReplaceAll(strings.TrimSpace(message.Content), "\r\n", "\n")
 		content = strings.ReplaceAll(content, "\n", "\n    ")
-		lines[i] = fmt.Sprintf("[%s] msg_id=%s source=%s message_type=%s time=%s sender_open_id=%s is_leader=%t sender_name=%q: %s",
+		mentions := strings.TrimSpace(string(message.Mentions))
+		if mentions == "" {
+			mentions = "[]"
+		}
+		lines[i] = fmt.Sprintf("[%s] msg_id=%s source=%s message_type=%s time=%s sender_open_id=%s is_leader=%t sender_name=%q mentions=%s: %s",
 			kind, message.MessageID, message.Source, message.MessageType,
 			time.UnixMilli(message.CreateTime).In(location).Format(time.RFC3339),
-			message.SenderOpenID, message.IsLeader, message.SenderName, content)
+			message.SenderOpenID, message.IsLeader, message.SenderName, mentions, content)
 	}
 	return strings.Join(lines, "\n")
 }

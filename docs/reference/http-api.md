@@ -34,6 +34,16 @@
 - Task 控制：`finish`、`supplement`、`execute`、`interrupt`、`rerun`、`resume`
 - 外部效果：`POST /api/tasks/:task_id/effects/recall-message`
 
+`GET /api/tasks` 支持开放字符串 `action_type` 和 `exclude_action_type` 过滤。
+普通任务页展示检查 Task；“我的交办”独立读取 `/api/delegations`。
+
+交办 API：
+- `GET /api/delegations?state=open|closed|all&query=...&page=1&page_size=20`：M3 已产出的交办 Todo；尚未检查也可见。
+- `GET /api/delegations/:todo_id`：原始 source_payload、当前 content、closed_at、version。
+- `PATCH /api/delegations/:todo_id`：expected_version、开放 JSON content、actor、可选 closed；只更新核验结果，不改变 Todo/Task 流转状态，冲突返回 409。
+- `GET /api/delegations/:todo_id/tasks?page=1&page_size=20`：首次检查及通过 delegation_id 关联的后续普通 Task，覆盖所有状态。
+- `GET /api/plugin-installations`：本地插件开关和导航元信息，不探测外部授权。
+
 `output` 和执行控制接口只有在 Executor 注入时注册。
 
 ## 背景与世界状态
@@ -60,11 +70,14 @@ Runtime settings 写入后需要重启进程生效；prompts/rules/Skills 按各
 
 ## 调度、线索与总结
 
+- 已采集消息：`GET /api/messages`；`message_ids` 可传逗号分隔的原始消息 ID 做批量精确查询，数量不得超过 `limit`（最大 100），不截断存在性查询结果。CLI 的 `query-messages --message-ids ... --limit 100` 只返回命中的数据库 ID 与原始消息 ID。
 - Scheduled tasks：`GET/POST /api/scheduled-tasks`、`POST /api/scheduled-tasks/yield`、`PUT/DELETE /api/scheduled-tasks/:scheduled_task_id`、`POST .../trigger`
 - 通用线索：`POST /api/clues`
 - Overview / digests：`GET /api/overview`、`GET /api/digests`、`POST /api/digests/summarize`
 - Daily digests：`GET /api/daily-digests`、`POST /api/daily-digests/generate`
 - Worklog：`GET /api/worklog/commits`、`GET /api/worklog/documents`
+
+会议回顾页只投影以 meeting_id 为外部幂等键的原始会议线索，按配置时区归属日期。回顾仍是普通 M5 Task 的 `meeting_summary` 产物；页面同时展示已有 Todo/Task 状态和处理说明，派生行动线索不单独生成会议条目。关闭 Task 会清理其未来恢复调度；已被领取的陈旧触发核验终态后留下未执行记录。
 
 `/api/clues` 只有在 Capture 注入时注册；daily digest 和 worklog 也按依赖条件注册。
 

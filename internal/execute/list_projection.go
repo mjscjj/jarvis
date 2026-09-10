@@ -25,8 +25,12 @@ func projectTaskListItem(task *TaskView) error {
 		}
 	}
 	task.SourcePayload = nil
+	previewSource := map[string]any{}
 	if len(names) > 0 {
-		task.SourcePayload, _ = json.Marshal(map[string]any{"capture": names})
+		previewSource["capture"] = names
+	}
+	if len(previewSource) > 0 {
+		task.SourcePayload, _ = json.Marshal(previewSource)
 	}
 	preview := previewStrings(result, "stage", "summary", "error")
 	question := previewObject(result["question"])

@@ -67,7 +67,7 @@ func TestWorkerBuildsHeartbeatPromptAndUsesProactiveStage(t *testing.T) {
 	recorder := &fakeRecorder{}
 	worker, err := NewWorker(Options{
 		Runner: runner, Recorder: recorder, Prompts: fakePromptReader{text: "system mission"},
-		SharedMemory:  fakeMemoryReader{text: "trusted memory"},
+		SharedMemory: fakeMemoryReader{text: "trusted memory"}, Skills: fakeSkillReader{text: "ENABLED_PLUGIN_MARKER"},
 		Sandbox:       "danger-full-access",
 		WorkspaceRoot: "/tmp/jarvis", Location: time.FixedZone("CST", 8*60*60),
 		Engine: "traex", Model: "DeepSeek-V4-Pro",
@@ -85,6 +85,7 @@ func TestWorkerBuildsHeartbeatPromptAndUsesProactiveStage(t *testing.T) {
 	}
 	for _, want := range []string{
 		"system mission",
+		"ENABLED_PLUGIN_MARKER",
 		"trusted memory",
 		"BEGIN_AVAILABLE_TOOLS",
 		"BEGIN_HEARTBEAT",
@@ -128,8 +129,8 @@ func TestRepositoryPromptDoesNotCloseTasksByAge(t *testing.T) {
 func TestWorkerFailsOnDependencyOrEmptyResult(t *testing.T) {
 	base := Options{
 		Runner: &fakeRunner{result: "ok"}, Recorder: &fakeRecorder{}, Prompts: fakePromptReader{text: "system"},
-		SharedMemory: fakeMemoryReader{},
-		Sandbox:      "danger-full-access", WorkspaceRoot: "/tmp/jarvis", Location: time.UTC,
+		SharedMemory: fakeMemoryReader{}, Skills: fakeSkillReader{},
+		Sandbox: "danger-full-access", WorkspaceRoot: "/tmp/jarvis", Location: time.UTC,
 		Engine: "traex", Model: "model",
 	}
 	worker, err := NewWorker(base)
@@ -149,3 +150,10 @@ func TestWorkerFailsOnDependencyOrEmptyResult(t *testing.T) {
 		t.Fatalf("recorded failure detail = %q", detail)
 	}
 }
+
+type fakeSkillReader struct {
+	text string
+	err  error
+}
+
+func (f fakeSkillReader) Catalog(context.Context, string) (string, error) { return f.text, f.err }

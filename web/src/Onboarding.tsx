@@ -23,6 +23,7 @@ import {
 } from './api'
 import type { SetupFlow, SetupStatus } from './types'
 import jarvisIcon from './assets/jarvis-icon.png'
+import { DeveloperDocumentLinks } from './components/DeveloperDocuments'
 
 type FlowKind = 'lark' | 'agent'
 
@@ -312,6 +313,10 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
           />
         )}
         {error && <Alert type="error" showIcon message="初始化未完成" description={error} />}
+        <section className="setup-documents">
+          <Typography.Text type="secondary">开发文档</Typography.Text>
+          <DeveloperDocumentLinks />
+        </section>
       </section>
     </main>
   )

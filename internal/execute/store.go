@@ -53,10 +53,12 @@ func validateTaskSummary(summary string) error {
 }
 
 type TaskFilter struct {
-	Query           string
-	SourceMessageID string
-	Statuses        []string
-	ProjectID       *uint64
+	Query             string
+	SourceMessageID   string
+	Statuses          []string
+	ActionType        string
+	ExcludeActionType string
+	ProjectID         *uint64
 	// GroupID matches through the source Todo: a Task has no group of its own,
 	// and manual/scheduled/proactive Tasks legitimately belong to no group.
 	GroupID *uint64
@@ -262,6 +264,12 @@ func (s *Store) ListTasks(ctx context.Context, filter TaskFilter) (*TaskList, er
 	if len(filter.Statuses) > 0 {
 		query = query.Where("status IN ?", filter.Statuses)
 	}
+	if filter.ActionType != "" {
+		query = query.Where("action_type = ?", filter.ActionType)
+	}
+	if filter.ExcludeActionType != "" {
+		query = query.Where("action_type <> ?", filter.ExcludeActionType)
+	}
 	if filter.ProjectID != nil {
 		query = query.Where("project_id = ?", *filter.ProjectID)
 	}
@@ -436,58 +444,60 @@ func (s *Store) Close(ctx context.Context, input CloseInput) (*TaskView, error) 
 	if err := validateTaskSummary(summary); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidInput, err)
 	}
+	db := s.db.WithContext(ctx)
 	var closed domain.Task
-	var occurredAt time.Time
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var task domain.Task
-		err := tx.First(&task, input.TaskID).Error
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, input.TaskID)
-		}
-		if err != nil {
-			return fmt.Errorf("load Task for close id=%d: %w", input.TaskID, err)
-		}
-		if task.Version != input.ExpectedVersion {
-			return fmt.Errorf("%w: task_id=%d expected=%d actual=%d", ErrVersionConflict, task.ID, input.ExpectedVersion, task.Version)
-		}
-		if isTerminalTaskStatus(task.Status) {
-			return fmt.Errorf("%w: task_id=%d status=%s is already terminal", ErrInvalidTransition, task.ID, task.Status)
-		}
-		fromStatus := task.Status
-		occurredAt = time.Now().UTC()
-		update := tx.Model(&domain.Task{}).
-			Where("id = ? AND version = ? AND status = ?", task.ID, input.ExpectedVersion, fromStatus).
-			Updates(map[string]any{
-				"status": "done", "summary": summary,
-				"version": gorm.Expr("version + 1"), "last_progress_at": occurredAt,
-			})
-		if update.Error != nil {
-			return fmt.Errorf("close Task id=%d: %w", task.ID, update.Error)
-		}
-		if update.RowsAffected != 1 {
-			return fmt.Errorf("%w: task_id=%d expected=%d", ErrVersionConflict, task.ID, input.ExpectedVersion)
-		}
-		if err := closeUnboundContinuations(tx, task.ID, "task was closed by the proactive agent"); err != nil {
-			return err
-		}
-		if err := progress.AppendTaskEvent(tx, progress.TaskEventInput{
-			TaskID: task.ID, TaskVersion: task.Version + 1, EventType: "closed",
-			FromStatus: &fromStatus, ToStatus: "done", ActorType: input.ActorType,
-			ActorRef: input.ActorRef, Detail: json.RawMessage(result), OccurredAt: occurredAt,
-		}); err != nil {
-			return err
-		}
-		task.Status = "done"
-		task.Summary = &summary
-		task.LastProgressAt = &occurredAt
-		task.Version++
-		task.UpdatedAt = occurredAt
-		closed = task
-		return nil
-	})
+	err = db.First(&closed, input.TaskID).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("%w: task_id=%d", ErrTaskNotFound, input.TaskID)
+	}
 	if err != nil {
+		return nil, fmt.Errorf("load Task for close id=%d: %w", input.TaskID, err)
+	}
+	if closed.Version != input.ExpectedVersion {
+		return nil, fmt.Errorf("%w: task_id=%d expected=%d actual=%d", ErrVersionConflict, closed.ID, input.ExpectedVersion, closed.Version)
+	}
+	if isTerminalTaskStatus(closed.Status) {
+		return nil, fmt.Errorf("%w: task_id=%d status=%s is already terminal", ErrInvalidTransition, closed.ID, closed.Status)
+	}
+	fromStatus := closed.Status
+	occurredAt := time.Now().UTC()
+	update := db.Model(&domain.Task{}).
+		Where("id = ? AND version = ? AND status = ?", closed.ID, input.ExpectedVersion, fromStatus).
+		Updates(map[string]any{
+			"status": "done", "summary": summary,
+			"version": gorm.Expr("version + 1"), "last_progress_at": occurredAt,
+		})
+	if update.Error != nil {
+		return nil, fmt.Errorf("close Task id=%d: %w", closed.ID, update.Error)
+	}
+	if update.RowsAffected != 1 {
+		return nil, fmt.Errorf("%w: task_id=%d expected=%d", ErrVersionConflict, closed.ID, input.ExpectedVersion)
+	}
+	if err := progress.AppendTaskEvent(db, progress.TaskEventInput{
+		TaskID: closed.ID, TaskVersion: closed.Version + 1, EventType: "closed",
+		FromStatus: &fromStatus, ToStatus: "done", ActorType: input.ActorType,
+		ActorRef: input.ActorRef, Detail: json.RawMessage(result), OccurredAt: occurredAt,
+	}); err != nil {
 		return nil, err
 	}
+	// A claimed trigger rechecks the Task; future bound and unbound triggers
+	// can be completed here. No semantic close decision belongs in this layer.
+	cleanup := db.Model(&domain.ScheduledTask{}).
+		Where("dispatch_kind = ? AND subject_type = ? AND subject_id = ? AND status IN ?",
+			"resume_task", "task", closed.ID, []string{"binding", "active"}).
+		Updates(map[string]any{
+			"status": "completed", "last_run_status": "done",
+			"last_error_detail": nil, "last_result": "Task closed: " + summary,
+			"last_finished_at": occurredAt,
+		})
+	if cleanup.Error != nil {
+		return nil, fmt.Errorf("close continuation schedules for task_id=%d: %w", closed.ID, cleanup.Error)
+	}
+	closed.Status = "done"
+	closed.Summary = &summary
+	closed.LastProgressAt = &occurredAt
+	closed.Version++
+	closed.UpdatedAt = occurredAt
 	view := taskView(ctx, &closed)
 	view.Resolution = &TaskResolutionView{
 		EventType: "closed", ActorType: input.ActorType, ActorRef: input.ActorRef, OccurredAt: occurredAt,
@@ -958,6 +968,7 @@ func (s *Store) ClaimWaiting(ctx context.Context, taskID, sourceRunID uint64) (i
 	}
 	update := s.db.WithContext(ctx).Model(&domain.Task{}).
 		Where("id = ? AND version = ? AND status = ?", task.ID, task.Version, "waiting").
+		Where("NOT EXISTS (SELECT 1 FROM execution_run WHERE task_id = ? AND id > ?)", taskID, sourceRunID).
 		Updates(map[string]any{"status": "executing", "version": gorm.Expr("version + 1")})
 	if update.Error != nil {
 		return 0, fmt.Errorf("claim waiting Task id=%d: %w", taskID, update.Error)

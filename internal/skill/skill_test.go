@@ -276,6 +276,128 @@ func TestRepositoryFeishuMessageSkillIsNotExposedToExtract(t *testing.T) {
 	}
 }
 
+func TestInlineSkillCatalogCarriesBodyInsteadOfReadInstruction(t *testing.T) {
+	root := t.TempDir()
+	skillDirectory := filepath.Join(root, "inline-policy")
+	if err := os.MkdirAll(skillDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	skillText := "---\nname: inline-policy\ndescription: trusted stage policy\n---\n\n# Inline contract\n\nBODY_MARKER\n"
+	if err := os.WriteFile(filepath.Join(skillDirectory, "SKILL.md"), []byte(skillText), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(t.TempDir(), "skills.yaml")
+	if err := os.WriteFile(configPath, []byte(
+		"skills:\n  - name: inline-policy\n    enabled: true\n    inline: true\n    stages: [extract]\n",
+	), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(root, configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := service.Catalog(t.Context(), StageExtract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"BEGIN_INLINE_SKILL name=inline-policy", "# Inline contract", "BODY_MARKER"} {
+		if !strings.Contains(catalog, want) {
+			t.Fatalf("inline catalog missing %q:\n%s", want, catalog)
+		}
+	}
+	if strings.Contains(catalog, "jarvis-tools get-skill") || strings.Contains(catalog, "description: trusted stage policy") {
+		t.Fatalf("inline catalog contains metadata or deferred read instruction:\n%s", catalog)
+	}
+}
+
+func TestRepositoryDelegationSkillsAreInlineAndPluginGated(t *testing.T) {
+	service, err := NewService(
+		filepath.Join("..", "..", ".agents", "skills"),
+		filepath.Join("..", "..", "conf", "skills.yaml"),
+	)
+	if err != nil {
+		t.Fatalf("load repository skills: %v", err)
+	}
+	items, err := service.List(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := map[string]View{}
+	for _, item := range items {
+		if strings.HasPrefix(item.Name, "my-delegations-") {
+			found[item.Name] = item
+		}
+	}
+	for _, name := range []string{"my-delegations-extract", "my-delegations-execute", "my-delegations-review"} {
+		item, ok := found[name]
+		if !ok || !item.Inline || !item.IsEnabled {
+			t.Fatalf("%s = %#v", name, item)
+		}
+	}
+	extractCatalog, err := service.Catalog(t.Context(), StageExtract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	executeCatalog, err := service.Catalog(t.Context(), StageExecute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(extractCatalog, "action_type=delegated_followup") {
+		t.Fatalf("extract catalog missing delegation policy:\n%s", extractCatalog)
+	}
+	if !strings.Contains(executeCatalog, "update-delegation") {
+		t.Fatalf("execute catalog missing delegation policy:\n%s", executeCatalog)
+	}
+	availability := testAvailability{"my-delegations-extract": false, "my-delegations-execute": false, "my-delegations-review": false}
+	service.SetAvailability(availability)
+	for _, stage := range []string{StageExtract, StageExecute, StageProactive} {
+		catalog, err := service.Catalog(t.Context(), stage)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(catalog, "BEGIN_INLINE_SKILL name=my-delegations-") {
+			t.Fatalf("disabled plugin leaked into %s", stage)
+		}
+	}
+	availability["my-delegations-review"] = true
+	catalog, err := service.Catalog(t.Context(), StageProactive)
+	if err != nil || !strings.Contains(catalog, "BEGIN_INLINE_SKILL name=my-delegations-review") {
+		t.Fatalf("review plugin missing: %v %s", err, catalog)
+	}
+
+}
+
+func TestInlineSkillRespectsAvailabilityGate(t *testing.T) {
+	root := t.TempDir()
+	skillDirectory := filepath.Join(root, "inline-policy")
+	if err := os.MkdirAll(skillDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDirectory, "SKILL.md"), []byte(
+		"---\nname: inline-policy\ndescription: optional policy\n---\n\nINLINE_MARKER\n",
+	), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(t.TempDir(), "skills.yaml")
+	if err := os.WriteFile(configPath, []byte(
+		"skills:\n  - name: inline-policy\n    enabled: true\n    inline: true\n    stages: [extract]\n",
+	), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(root, configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.SetAvailability(testAvailability{"inline-policy": false})
+	catalog, err := service.Catalog(t.Context(), StageExtract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(catalog, "INLINE_MARKER") || strings.Contains(catalog, "inline-policy") {
+		t.Fatalf("disabled inline skill leaked into catalog:\n%s", catalog)
+	}
+}
+
 func TestRepositoryInstallationSkillsAreStandalone(t *testing.T) {
 	service, err := NewService(
 		filepath.Join("..", "..", ".agents", "skills"),
@@ -314,6 +436,47 @@ func TestRepositoryInstallationSkillsAreStandalone(t *testing.T) {
 		if strings.Contains(executeCatalog, name) {
 			t.Fatalf("M5 catalog exposes standalone %s:\n%s", name, executeCatalog)
 		}
+	}
+}
+
+func TestRepositoryBaxWeeklyUsageAnalysisSkillIsExecutable(t *testing.T) {
+	service, err := NewService(
+		filepath.Join("..", "..", ".agents", "skills"),
+		filepath.Join("..", "..", "conf", "skills.yaml"),
+	)
+	if err != nil {
+		t.Fatalf("load repository skills: %v", err)
+	}
+	content, err := service.Content(t.Context(), "bax-weekly-usage-analysis")
+	if err != nil {
+		t.Fatalf("Content(bax-weekly-usage-analysis) error = %v", err)
+	}
+	skill := content.Content
+	for _, want := range []string{
+		"按周分析 BAX AM 用户对话使用数据",
+		"bytedcli --site i18n-tt --json aeolus dataset-fields -r sg 3574811",
+		"dry-run.sh",
+		"周期任务只需把 instruction 写成",
+		"不要为 BAX 周报新建 Go 专用链路",
+		"未获批准",
+	} {
+		if !strings.Contains(skill, want) {
+			t.Fatalf("BAX weekly usage skill missing contract %q:\n%s", want, skill)
+		}
+	}
+	catalog, err := service.Catalog(t.Context(), StageExecute)
+	if err != nil {
+		t.Fatalf("execute Catalog() error = %v", err)
+	}
+	if !strings.Contains(catalog, "bax-weekly-usage-analysis") {
+		t.Fatalf("execute catalog is missing bax-weekly-usage-analysis:\n%s", catalog)
+	}
+	extractCatalog, err := service.Catalog(t.Context(), StageExtract)
+	if err != nil {
+		t.Fatalf("extract Catalog() error = %v", err)
+	}
+	if strings.Contains(extractCatalog, "bax-weekly-usage-analysis") {
+		t.Fatalf("extract catalog exposes bax-weekly-usage-analysis:\n%s", extractCatalog)
 	}
 }
 

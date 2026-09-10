@@ -42,7 +42,7 @@ func TestGroupListKeyOnly(t *testing.T) {
 	}
 }
 
-func TestGroupManualP2PMonitoringPinsTheConversation(t *testing.T) {
+func TestGroupManualMonitoringPinsTheConversation(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:group-manual-p2p?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
@@ -54,21 +54,34 @@ func TestGroupManualP2PMonitoringPinsTheConversation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewGroupBackgroundService() error = %v", err)
 	}
-	name := "手工固定私聊"
-	group := domain.Group{
-		ChatID: "oc_manual_p2p", ChatMode: "p2p", Name: &name, P2PTargetType: stringPointer("user"), Tier: "cold",
+	groups := []domain.Group{
+		{ChatID: "oc_manual_group", ChatMode: "group", Name: stringPointer("手工固定群聊"), Tier: "cold"},
+		{ChatID: "oc_manual_topic", ChatMode: "topic", Name: stringPointer("手工固定话题群"), Tier: "cold"},
+		{ChatID: "oc_manual_p2p", ChatMode: "p2p", Name: stringPointer("手工固定私聊"), P2PTargetType: stringPointer("user"), Tier: "cold"},
 	}
-	if err := db.Create(&group).Error; err != nil {
-		t.Fatalf("create p2p: %v", err)
+	if err := db.Create(&groups).Error; err != nil {
+		t.Fatalf("create conversations: %v", err)
 	}
-	updated, err := service.UpdateBackground(context.Background(), group.ID, GroupBackgroundInput{
-		RelatedGroup: true, IncludeInMemory: true,
-	})
-	if err != nil {
-		t.Fatalf("UpdateBackground() error = %v", err)
-	}
-	if !updated.RelatedGroup || !updated.Pinned {
-		t.Fatalf("manual p2p flags = related:%t pinned:%t, want true/true", updated.RelatedGroup, updated.Pinned)
+	for _, group := range groups {
+		updated, err := service.UpdateBackground(context.Background(), group.ID, GroupBackgroundInput{
+			RelatedGroup: true, IncludeInMemory: true,
+		})
+		if err != nil {
+			t.Fatalf("UpdateBackground(%s) error = %v", group.ChatMode, err)
+		}
+		if !updated.RelatedGroup || !updated.Pinned {
+			t.Fatalf("manual %s flags = related:%t pinned:%t, want true/true", group.ChatMode, updated.RelatedGroup, updated.Pinned)
+		}
+
+		updated, err = service.UpdateBackground(context.Background(), group.ID, GroupBackgroundInput{
+			RelatedGroup: false, Pinned: true, IncludeInMemory: true,
+		})
+		if err != nil {
+			t.Fatalf("disable UpdateBackground(%s) error = %v", group.ChatMode, err)
+		}
+		if updated.RelatedGroup || updated.Pinned {
+			t.Fatalf("disabled %s flags = related:%t pinned:%t, want false/false", group.ChatMode, updated.RelatedGroup, updated.Pinned)
+		}
 	}
 }
 

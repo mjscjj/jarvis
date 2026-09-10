@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Card, Descriptions, Empty, Space, Spin, Tabs, Tag, Typography } from 'antd'
 import { ExportOutlined, ProfileOutlined, VideoCameraOutlined } from '@ant-design/icons'
-import dayjs from 'dayjs'
 import { getMeetingReviews } from '../api'
 import MarkdownReport from '../components/MarkdownReport'
-import { taskStatusMeta } from '../status'
-import type { MeetingReviewItem, TaskStatus } from '../types'
+import { taskStatusMeta, todoStatusMeta } from '../status'
+import type { MeetingReviewItem, TaskStatus, TodoStatus } from '../types'
 
 const { Link, Text } = Typography
 
@@ -13,14 +12,20 @@ function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
 }
 
-function statusTag(status: string, hasSummary: boolean) {
-  if (hasSummary) return <Tag color="success">已有总结</Tag>
+function statusTag(item: MeetingReviewItem) {
+  if (item.summary) return <Tag color="success">已有总结</Tag>
+  const status = item.task_status
+  if (status === 'done') return <Tag>已结束处理，但未生成总结</Tag>
   if (status in taskStatusMeta) {
     const meta = taskStatusMeta[status as TaskStatus]
     return <Tag color={meta.color}>{meta.label}</Tag>
   }
   if (status) return <Tag>{status}</Tag>
-  return <Tag>未进入处理</Tag>
+  if (item.todo_status in todoStatusMeta) {
+    const meta = todoStatusMeta[item.todo_status as TodoStatus]
+    return <Tag color={meta.color}>{meta.label}</Tag>
+  }
+  return <Tag>尚无处理结论</Tag>
 }
 
 function effectLink(effect: Record<string, unknown>, index: number) {
@@ -35,7 +40,9 @@ function effectLink(effect: Record<string, unknown>, index: number) {
 
 function meetingContent(item: MeetingReviewItem) {
   const details = [
-    { key: 'time', label: '时间', children: item.start_at && item.end_at ? `${dayjs(item.start_at).format('HH:mm')}–${dayjs(item.end_at).format('HH:mm')}` : '未返回' },
+    // The API normalizes timestamps to the configured review timezone. Keep
+    // that wall time instead of converting it to the browser's timezone.
+    { key: 'time', label: '时间', children: item.start_at && item.end_at ? `${item.start_at.slice(11, 16)}–${item.end_at.slice(11, 16)} (${item.end_at.slice(19)})` : '未返回' },
     { key: 'host', label: '主持人', children: item.host || '未返回' },
     { key: 'participants', label: '参会人', children: item.participants || '未返回', span: 2 },
   ]
@@ -48,7 +55,7 @@ function meetingContent(item: MeetingReviewItem) {
           <span className="review-card-icon review-card-icon-meeting"><VideoCameraOutlined /></span>
           <div>
             <Text className="review-card-eyebrow">MEETING RECAP</Text>
-            <div className="review-card-title"><span>{item.title}</span>{statusTag(item.task_status, Boolean(item.summary))}</div>
+            <div className="review-card-title"><span>{item.title}</span>{statusTag(item)}</div>
           </div>
         </div>
       )}
@@ -67,12 +74,17 @@ function meetingContent(item: MeetingReviewItem) {
               <MarkdownReport className="daily-digest-markdown" content={item.summary} />
             </div>
             <Space orientation="vertical" size={6} className="review-digest-footer">
-              {item.summary_generated_at && <Text type="secondary">生成于 {dayjs(item.summary_generated_at).format('YYYY-MM-DD HH:mm')}</Text>}
+              {item.summary_generated_at && <Text type="secondary">生成于 {item.summary_generated_at.slice(0, 16).replace('T', ' ')}</Text>}
               {item.effects.length > 0 && <Space size={[12, 6]} wrap><Text type="secondary">相关产物：</Text>{item.effects.map(effectLink)}</Space>}
             </Space>
           </>
         ) : (
-          <div className="review-state-panel"><Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无明确的会议总结产物" /></div>
+          <div className="review-state-panel">
+            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={item.task_status === 'done' ? '已结束处理，但未生成总结' : '尚未生成会议总结'} />
+            {item.processing_summary
+              ? <MarkdownReport content={item.processing_summary} />
+              : <Text type="secondary">尚无具体处理说明，可稍后查看。</Text>}
+          </div>
         )}
       </div>
     </Card>
@@ -110,7 +122,7 @@ export default function MeetingSummaryView({ date, selectedMeetingID, onSelectMe
     key: item.meeting_id,
     label: (
       <span className="review-object-tab-label">
-        <small>{item.start_at ? dayjs(item.start_at).format('HH:mm') : '--:--'}</small>
+        <small>{item.start_at ? item.start_at.slice(11, 16) : '--:--'}</small>
         <span>{item.title}</span>
       </span>
     ),
