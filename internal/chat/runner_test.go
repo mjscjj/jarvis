@@ -131,6 +131,67 @@ func TestParseCodexStreamRealSample(t *testing.T) {
 	}
 }
 
+func TestChatStreamsRequireSuccessfulTerminalEvent(t *testing.T) {
+	t.Parallel()
+	for _, sample := range []string{
+		`{"type":"thread.started","thread_id":"tid"}`,
+		`{"type":"thread.started","thread_id":"tid"}
+{"type":"item.completed","item":{"type":"agent_message","text":"partial"}}`,
+		`{"type":"thread.started","thread_id":"tid"}
+{"type":"turn.failed","error":{"message":"upstream disconnected"}}`,
+	} {
+		_, _, err := collect(t, sample)
+		if err == nil {
+			t.Fatalf("incomplete/failed turn was accepted: %s", sample)
+		}
+		if strings.Contains(sample, "upstream disconnected") && !strings.Contains(err.Error(), "upstream disconnected") {
+			t.Fatalf("lost failure detail: %v", err)
+		}
+	}
+	err := parseCursorStream(strings.NewReader(`{"type":"system","subtype":"init","session_id":"sid"}`), func(Event) error { return nil })
+	if !errors.Is(err, errIncompleteCLIStream) {
+		t.Fatalf("missing Cursor result error = %v", err)
+	}
+}
+
+func TestRunnerStopsAfterFailedDelivery(t *testing.T) {
+	t.Parallel()
+	bin := filepath.Join(t.TempDir(), "codex")
+	script := "#!/bin/sh\nprintf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"tid\"}'\nwhile true; do sleep 0.05; done\n"
+	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	r, err := newRunner(bin, "fixture", "read-only", "medium", false, 3*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := errors.New("client disconnected")
+	started := time.Now()
+	err = r.Stream(t.Context(), "hello", "", "", func(Event) error { return want })
+	if !errors.Is(err, want) || time.Since(started) > time.Second {
+		t.Fatalf("failed delivery did not cancel promptly: elapsed=%s err=%v", time.Since(started), err)
+	}
+}
+
+func TestRunnerCancellationUnblocksInheritedStdout(t *testing.T) {
+	t.Parallel()
+	bin := filepath.Join(t.TempDir(), "codex")
+	// The child inherits stdout but not stderr. Cancelling the parent alone
+	// would leave the parser waiting for this child to exit.
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\nsleep 2 2>/dev/null &\nwait\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	r, err := newRunner(bin, "fixture", "read-only", "medium", false, 50*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now()
+	err = r.Stream(t.Context(), "hello", "", "", func(Event) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "timed out") || time.Since(started) > time.Second {
+		t.Fatalf("cancellation did not unblock stdout: elapsed=%s err=%v", time.Since(started), err)
+	}
+}
+
 // 兼容开启流式增量的 codex 构建：item.delta 逐条吐，且不重复发 completed
 // （codex 对同一消息要么发 delta 要么发 completed，二选一）。
 func TestParseCodexStreamDeltaEvents(t *testing.T) {
@@ -166,6 +227,7 @@ func TestParseCodexStreamIgnoresNonAgentItems(t *testing.T) {
 	jsonl := `{"type":"thread.started","thread_id":"tid-2"}
 {"type":"item.completed","item":{"type":"command_execution","text":"ls -la"}}
 {"type":"item.completed","item":{"type":"agent_message","text":"完成"}}
+{"type":"turn.completed"}
 `
 	_, deltas, err := collect(t, jsonl)
 	if err != nil {

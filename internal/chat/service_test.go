@@ -450,7 +450,8 @@ func TestStreamStartsNewSessionWhenResumeHasNoRollout(t *testing.T) {
 		"  fi\n" +
 		"done\n" +
 		"printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"new-tid\"}'\n" +
-		"printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"你好\"}}'\n"
+		"printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"你好\"}}'\n" +
+		"printf '%s\\n' '{\"type\":\"turn.completed\"}'\n"
 	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -574,7 +575,8 @@ func TestSecondTurnOnSameThreadInterruptsTheStuckOne(t *testing.T) {
 		"  while true; do sleep 0.05; done\n" +
 		"fi\n" +
 		"printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"tid-1\"}'\n" +
-		"printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"第二轮\"}}'\n"
+		"printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"第二轮\"}}'\n" +
+		"printf '%s\\n' '{\"type\":\"turn.completed\"}'\n"
 	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -649,7 +651,8 @@ func TestFollowupInterruptsAStuckFirstTurnOfANewSession(t *testing.T) {
 		"  while true; do sleep 0.05; done\n" +
 		"fi\n" +
 		"printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"tid-new\"}'\n" +
-		"printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"第二轮\"}}'\n"
+		"printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"id\":\"item_0\",\"type\":\"agent_message\",\"text\":\"第二轮\"}}'\n" +
+		"printf '%s\\n' '{\"type\":\"turn.completed\"}'\n"
 	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}

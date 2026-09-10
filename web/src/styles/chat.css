@@ -625,6 +625,40 @@
   animation-delay: 280ms;
 }
 
+.chat-activity {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 9px;
+  min-height: 48px;
+  padding: 8px 20px;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-bg-soft);
+  color: var(--color-primary);
+  font-size: 12px;
+}
+
+.chat-activity > span:not(.anticon) { flex: 1; min-width: 0; }
+.chat-activity small {
+  display: block;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  line-height: 18px;
+}
+.chat-activity time { color: var(--color-text-tertiary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chat-activity .ant-btn { flex: none; margin-left: auto; }
+.chat-activity.is-disconnected { color: var(--color-warning); }
+.chat-stream-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 3px;
+  vertical-align: -0.12em;
+  background: var(--color-primary);
+  animation: jarvis-chat-status 1s ease-in-out infinite;
+}
+.chat-bubble-meta button:disabled { cursor: default; opacity: 0.5; }
+
 .jarvis-chat .chat-error {
   margin: 0 20px var(--space-2);
 }
@@ -839,6 +873,8 @@
   .chat-status.is-running > span,
   .chat-suggestion,
   .chat-suggestion-arrow,
+  .chat-stream-cursor,
+  .chat-activity .anticon-spin,
   .chat-typing-dots i {
     animation: none;
     transition: none;

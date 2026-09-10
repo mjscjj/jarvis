@@ -19,7 +19,8 @@ type sseWriter struct {
 }
 
 func newSSEWriter(c *app.RequestContext) *sseWriter {
-	c.Response.Header.Set("Cache-Control", "no-cache")
+	c.Response.Header.Set("Cache-Control", "no-cache, no-transform")
+	c.Response.Header.Set("X-Accel-Buffering", "no")
 	c.Response.Header.SetContentType("text/event-stream; charset=utf-8")
 	writer := c.Response.GetHijackWriter()
 	if writer == nil {

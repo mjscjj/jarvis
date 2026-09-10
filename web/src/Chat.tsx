@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { CloseOutlined, CompressOutlined, CopyOutlined, DeleteOutlined, ExpandOutlined, HistoryOutlined, PaperClipOutlined, PlusOutlined, ReloadOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
+import { CloseOutlined, CompressOutlined, CopyOutlined, DeleteOutlined, ExpandOutlined, HistoryOutlined, LoadingOutlined, ArrowDownOutlined, PaperClipOutlined, PlusOutlined, ReloadOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
 import { Alert, Button, Input, Typography } from 'antd'
 import type { TextAreaRef } from 'antd/es/input/TextArea'
-import { getChatHistory, getChatRuntimeConfig, getSignedInOpenID, isMissingChatHistoryError, listChatThreads, resolveChatBaseURL, stopChatTurn } from './api'
+import { getChatHistory, getSignedInOpenID, isMissingChatHistoryError, listChatThreads, stopChatTurn } from './api'
 import { useAgentIdentity } from './agentIdentity'
 import { usePageContext } from './pageContext'
 import { isOKRTab, isWeeklyWorkspaceTab, OKR_TAB_DEFINITIONS } from './okr/navigation'
 import type { ChatDeltaEvent, ChatErrorEvent, ChatRequest, ChatThreadEvent, ChatThreadSummary, PageContext } from './types'
+import { ChatConnectionError, readChatStream } from './chatStream'
+import { useChatConnection } from './useChatConnection'
 import './styles/chat.css'
 
 const { Text } = Typography
@@ -47,7 +49,6 @@ const CHAT_WORKSPACES_STORAGE_KEY = 'jarvis.chat.workspaces.v1'
 const CHAT_IMAGE_MAX_BYTES = 10 * 1024 * 1024
 const CHAT_IMAGE_TYPES = new Set(['image/png', 'image/jpeg'])
 const CHAT_THREAD_LIST_LIMIT = 30
-const RUNNING_STATUS_STEPS = ['正在理解页面', '正在查找资料', '正在整理回复']
 
 const threadDateFormatter = new Intl.DateTimeFormat('zh-CN', {
   month: '2-digit',
@@ -121,19 +122,6 @@ function pageGroup(context: PageContext): string {
   if (['memory', 'background'].includes(context.active_key)) return 'memory'
   if (['clues', 'todos'].includes(context.active_key)) return 'clues'
   return 'workbench'
-}
-
-// parseSSEBlock turns one `event:\ndata:` block into {event, data}. SSE allows
-// multiple data: lines per event; we join them with \n per spec.
-function parseSSEBlock(block: string): { event: string; data: string } {
-  let event = 'message'
-  const dataLines: string[] = []
-  for (const rawLine of block.split('\n')) {
-    const line = rawLine.replace(/\r$/, '')
-    if (line.startsWith('event:')) event = line.slice(6).trim()
-    else if (line.startsWith('data:')) dataLines.push(line.slice(5).replace(/^ /, ''))
-  }
-  return { event, data: dataLines.join('\n') }
 }
 
 function isAbortError(cause: unknown): boolean {
@@ -268,7 +256,11 @@ function loadWorkspaces(): ChatWorkspace[] {
   } catch {
     // Invalid browser state should not prevent chat from opening.
   }
-  return [defaultWorkspace(1, window.localStorage.getItem(LEGACY_CHAT_THREAD_STORAGE_KEY))]
+  try {
+    return [defaultWorkspace(1, window.localStorage.getItem(LEGACY_CHAT_THREAD_STORAGE_KEY))]
+  } catch {
+    return [defaultWorkspace()]
+  }
 }
 
 function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, onWorkspaceChange }: ChatSessionProps) {
@@ -288,9 +280,14 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
   const [threads, setThreads] = useState<ChatThreadSummary[]>([])
   const [error, setError] = useState<ChatDiagnostic>()
   const [diagnosticOpen, setDiagnosticOpen] = useState(false)
-  const [runningStatusIndex, setRunningStatusIndex] = useState(0)
+  const [clock, setClock] = useState(Date.now)
+  const [followingOutput, setFollowingOutput] = useState(true)
+  const followingOutputRef = useRef(true)
+  const startedAtRef = useRef(0)
+  const lastDeltaAtRef = useRef(0)
+  const loadedThreadRef = useRef<string | null | undefined>(undefined)
   const [notice, setNotice] = useState<string>()
-  const [chatBaseURL, setChatBaseURL] = useState<string>()
+  const { baseURL: chatBaseURL, state: connectionState, reconnect } = useChatConnection()
   const [threadId, setThreadId] = useState<string | null>(workspace.threadId)
   const listRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<TextAreaRef>(null)
@@ -317,42 +314,31 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
     threadIdRef.current = threadId
   }, [threadId])
 
-  useEffect(() => {
+  const scrollToLatest = useCallback(() => {
+    followingOutputRef.current = true
+    setFollowingOutput(true)
     const el = listRef.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [messages])
+  }, [])
+
+  useEffect(() => {
+    if (open && active && followingOutputRef.current) scrollToLatest()
+  }, [messages, open, active, scrollToLatest])
 
   useEffect(() => () => abortRef.current?.abort(), [])
 
   useEffect(() => {
-    if (!sending) {
-      setRunningStatusIndex(0)
-      return undefined
-    }
-    const timer = window.setInterval(() => {
-      setRunningStatusIndex((index) => (index + 1) % RUNNING_STATUS_STEPS.length)
-    }, 5000)
+    if (!sending) return
+    const timer = window.setInterval(() => setClock(Date.now()), 1000)
     return () => window.clearInterval(timer)
   }, [sending])
 
   useEffect(() => {
-    const controller = new AbortController()
-    getChatRuntimeConfig(controller.signal)
-      .then(({ port }) => {
-        setChatBaseURL(resolveChatBaseURL(window.location.origin, port))
-      })
-      .catch((cause: unknown) => {
-        if (!isAbortError(cause)) {
-          setError({
-            message: '对话服务暂时不可用。',
-            detail: errorText(cause),
-            at: new Date().toISOString(),
-            recoverable: true,
-          })
-        }
-      })
-    return () => controller.abort()
-  }, [])
+    if (connectionState === 'offline') {
+      setQueuePaused(true)
+      abortRef.current?.abort(new ChatConnectionError('网络已断开，已保留收到的回复。'))
+    }
+  }, [connectionState])
 
   const refreshThreads = useCallback((baseURL = chatBaseURL) => {
     if (!baseURL) return undefined
@@ -360,6 +346,7 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
     setThreadsLoading(true)
     listChatThreads(baseURL, controller.signal)
       .then((result) => {
+        if (controller.signal.aborted) return
         setThreads(result.threads)
         const selected = workspace.threadId
           ? result.threads.find((item) => item.thread_id === workspace.threadId)
@@ -396,21 +383,24 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
   }, [chatBaseURL, onWorkspaceChange, workspace.id, workspace.threadId, workspace.title])
 
   useEffect(() => {
-    if (!chatBaseURL) return
+    if (!chatBaseURL || connectionState !== 'ready') return
     return refreshThreads(chatBaseURL)
-  }, [chatBaseURL, refreshThreads])
+  }, [chatBaseURL, connectionState, refreshThreads])
 
   useEffect(() => {
-    if (!chatBaseURL) return
+    if (!chatBaseURL || connectionState !== 'ready') return
     if (!threadId) {
       setHistoryLoading(false)
       return
     }
-    if (sending || queue.length > 0) return
+    if (sending || queue.length > 0 || loadedThreadRef.current === threadId) return
     const controller = new AbortController()
     setHistoryLoading(true)
     getChatHistory(chatBaseURL, threadId, controller.signal)
       .then((history) => {
+        if (controller.signal.aborted || processingRef.current) return
+        loadedThreadRef.current = threadId
+        followingOutputRef.current = true
         setMessages(history.messages.map((message) => ({
           id: makeClientId(message.role),
           role: message.role,
@@ -441,7 +431,7 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
         if (!controller.signal.aborted) setHistoryLoading(false)
       })
     return () => controller.abort()
-  }, [chatBaseURL, queue.length, rememberThreadId, sending, threadId])
+  }, [chatBaseURL, connectionState, queue.length, rememberThreadId, sending, threadId])
 
   useEffect(() => {
     if (open && active) inputRef.current?.focus()
@@ -487,13 +477,17 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
   }, [agentName, context, currentActionLabel, currentSelectionType])
 
   const queueStatusText = useMemo(() => {
+    if (connectionState === 'offline') return '网络已断开'
+    if (connectionState === 'disconnected') return '连接不可用'
+    if (connectionState === 'connecting') return '正在连接'
     if (historyLoading) return '正在恢复'
-    if (sending) return RUNNING_STATUS_STEPS[runningStatusIndex]
+    if (stopping) return '正在暂停'
+    if (sending) return lastDeltaAtRef.current > 0 && clock - lastDeltaAtRef.current < 2000 ? '正在输入' : '正在处理'
     if (queue.length > 0 && queuePaused) return `${queue.length} 条待发送`
     if (queue.length > 0) return `${queue.length} 条排队中`
     if (paused) return '已暂停'
     return '就绪'
-  }, [historyLoading, paused, queue.length, queuePaused, runningStatusIndex, sending])
+  }, [clock, connectionState, historyLoading, paused, queue.length, queuePaused, sending, stopping])
 
   const stop = useCallback(async () => {
     const turnID = activeTurnRef.current
@@ -505,7 +499,8 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
       // A false result means the stop beat the streaming POST while identity
       // was still loading. The service keeps a short-lived stop marker; when
       // the POST arrives it is rejected before the Agent starts.
-      await stopChatTurn(chatBaseURL, turnID)
+      await stopChatTurn(chatBaseURL, turnID, AbortSignal.timeout(20_000))
+      if (activeTurnRef.current === turnID) abortRef.current?.abort()
     } catch (cause: unknown) {
       if (activeTurnRef.current === turnID) {
         stoppingTurnRef.current = null
@@ -530,6 +525,7 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
       setNotice('当前还有消息在处理，完成或清空队列后再新建对话。')
       return
     }
+    loadedThreadRef.current = null
     rememberThreadId(null)
     setMessages([])
     setImage(null)
@@ -563,6 +559,8 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
       setThreadsOpen(false)
       return
     }
+    loadedThreadRef.current = undefined
+    setMessages([])
     rememberThreadId(normalized)
     const selected = threads.find((item) => item.thread_id === normalized)
     if (selected?.title) onWorkspaceChange(workspace.id, { title: compactText(selected.title, 18) })
@@ -592,6 +590,8 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
   const enqueueTurn = useCallback((text: string, nextImage: File | null, options?: { reuseMessageId?: string; front?: boolean }) => {
     const message = text.trim()
     if (!message) return
+    followingOutputRef.current = true
+    setFollowingOutput(true)
     const userMessageId = options?.reuseMessageId ?? makeClientId('user')
     const turn: QueuedChatTurn = {
       id: makeClientId('turn'),
@@ -629,7 +629,8 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
   const send = useCallback(() => {
     const message = input.trim()
     if (!message) return
-    if (!chatBaseURL) {
+    if (!chatBaseURL || connectionState !== 'ready') {
+      reconnect()
       setError({
         message: '对话服务还没有准备好。',
         detail: 'chat runtime config is not loaded',
@@ -644,7 +645,7 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
     setNotice(undefined)
     enqueueTurn(message, imageToSend)
     requestAnimationFrame(() => inputRef.current?.focus())
-  }, [chatBaseURL, enqueueTurn, image, input])
+  }, [chatBaseURL, connectionState, enqueueTurn, image, input, reconnect])
 
   const copyDiagnostic = useCallback(async (diagnostic: ChatDiagnostic) => {
     const lines = [
@@ -678,6 +679,9 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
     setNotice(undefined)
     setStopping(false)
     setPaused(false)
+    startedAtRef.current = Date.now()
+    lastDeltaAtRef.current = 0
+    setClock(Date.now())
     setSending(true)
     setMessages((prev) => prev.map((item) => item.id === turn.userMessageId
       ? { ...item, status: 'sending', diagnostic: undefined }
@@ -685,16 +689,21 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
     const assistantMessageId = makeClientId('assistant')
     setMessages((prev) => [...prev, { id: assistantMessageId, role: 'assistant', text: '', status: 'sending' }])
 
-    const appendDelta = (text: string) => setMessages((prev) => {
-      const next = prev.slice()
-      const index = next.findIndex((item) => item.id === assistantMessageId)
-      if (index !== -1) next[index] = { ...next[index], text: next[index].text + text }
-      return next
-    })
+    let pendingText = ''
+    const flushText = () => {
+      if (!pendingText) return
+      const text = pendingText
+      pendingText = ''
+      setClock(Date.now())
+      setMessages((prev) => prev.map((item) => item.id === assistantMessageId
+        ? { ...item, text: item.text + text } : item))
+    }
+    const flushTimer = window.setInterval(flushText, 40)
 
     const controller = new AbortController()
     abortRef.current = controller
     activeTurnRef.current = turn.id
+    const connectionDeadline = window.setTimeout(() => controller.abort(new ChatConnectionError('连接超时，请恢复连接后继续。')), 45_000)
     const threadAtStart = threadIdRef.current
     try {
       // Read the signed-in identity per turn: the person can log in or out
@@ -707,6 +716,7 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
         image: turn.image,
         user_open_id: await getSignedInOpenID(controller.signal),
       }
+      controller.signal.throwIfAborted()
       const form = new FormData()
       form.append('message', req.message)
       form.append('turn_id', req.turn_id)
@@ -719,19 +729,19 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
         body: form,
         signal: controller.signal,
       })
-      if (!response.ok) throw await diagnosticFromResponse(response)
+      window.clearTimeout(connectionDeadline)
+      if (!response.ok) {
+        if (response.status >= 500) reconnect()
+        throw await diagnosticFromResponse(response)
+      }
       if (!response.body) throw new Error('对话响应无数据流（response.body 为空）')
 
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let streamError: ChatDiagnostic | undefined
-
-      const consumeBlock = (block: string) => {
-        if (!block.trim()) return
-        const { event, data } = parseSSEBlock(block)
+      await readChatStream(response.body, ({ event, data }) => {
         if (event === 'thread') {
           const parsed = JSON.parse(data) as ChatThreadEvent
+          // Live turns already own their transcript. Never reload history over
+          // partial output, errors, paused messages or a pending retry.
+          loadedThreadRef.current = parsed.thread_id
           rememberThreadId(parsed.thread_id)
           setThreads((prev) => {
             const withoutCurrent = prev.filter((item) => item.thread_id !== parsed.thread_id)
@@ -739,37 +749,26 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
           })
         } else if (event === 'delta') {
           const parsed = JSON.parse(data) as ChatDeltaEvent
-          appendDelta(parsed.text)
+          if (typeof parsed.text !== 'string') throw new Error('Invalid chat delta')
+          if (parsed.text) {
+            pendingText += parsed.text
+            lastDeltaAtRef.current = Date.now()
+          }
         } else if (event === 'error') {
-          const parsed = JSON.parse(data) as ChatErrorEvent
-          streamError = diagnosticFromEvent(parsed)
-        } else if (event === 'done') {
-          // Round finished; keep reading until the stream closes.
+          throw diagnosticFromEvent(JSON.parse(data) as ChatErrorEvent)
         }
-      }
-
-      // Manual SSE parse: split the byte stream into `\n\n`-delimited blocks.
-      for (;;) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        let sep: number
-        while ((sep = buffer.indexOf('\n\n')) !== -1) {
-          const block = buffer.slice(0, sep)
-          buffer = buffer.slice(sep + 2)
-          consumeBlock(block)
-        }
-      }
-      if (buffer.trim()) consumeBlock(buffer)
-      if (streamError) throw streamError
+      }, controller.signal)
+      flushText()
       setMessages((prev) => prev.map((item) => {
         if (item.id === turn.userMessageId || item.id === assistantMessageId) return { ...item, status: 'sent' }
         return item
       }))
       refreshThreads(chatBaseURL)
       window.dispatchEvent(new Event('jarvis:chat-completed'))
-    } catch (cause: unknown) {
-      if (isAbortError(cause) || stoppingTurnRef.current === turn.id) {
+    } catch (caught: unknown) {
+      flushText()
+      const cause = controller.signal.aborted ? controller.signal.reason : caught
+      if (stoppingTurnRef.current === turn.id || isAbortError(cause)) {
         setPaused(true)
         setQueuePaused(true)
         // Keep any partial reply; drop only a still-empty assistant bubble.
@@ -784,7 +783,10 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
         })
         return
       }
+      const disconnected = cause instanceof ChatConnectionError || cause instanceof TypeError
+      if (disconnected) reconnect()
       const diagnostic = diagnosticFromCause(cause)
+      if (disconnected) diagnostic.message = '连接中断，本轮回复未完成，已保留收到的内容。'
       if (isStaleThreadError(`${diagnostic.detail ?? ''} ${diagnostic.message}`) && threadAtStart) {
         rememberThreadId(null)
         setNotice('这个会话暂时无法继续，已切换到新对话。你可以继续发送。')
@@ -803,6 +805,8 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
         })
       })
     } finally {
+      window.clearTimeout(connectionDeadline)
+      window.clearInterval(flushTimer)
       abortRef.current = null
       if (activeTurnRef.current === turn.id) activeTurnRef.current = null
       if (stoppingTurnRef.current === turn.id) stoppingTurnRef.current = null
@@ -810,12 +814,12 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
       setSending(false)
       processingRef.current = false
     }
-  }, [chatBaseURL, refreshThreads, rememberThreadId])
+  }, [chatBaseURL, reconnect, refreshThreads, rememberThreadId])
 
   useEffect(() => {
-    if (!chatBaseURL || historyLoading || sending || queuePaused || queue.length === 0 || processingRef.current) return
+    if (!chatBaseURL || connectionState !== 'ready' || historyLoading || sending || queuePaused || queue.length === 0 || processingRef.current) return
     void runTurn(queue[0])
-  }, [chatBaseURL, historyLoading, queue, queuePaused, runTurn, sending])
+  }, [chatBaseURL, connectionState, historyLoading, queue, queuePaused, runTurn, sending])
 
   const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
@@ -900,6 +904,13 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
     <div
       className="chat-messages"
       ref={listRef}
+      onScroll={() => {
+        const el = listRef.current
+        if (!el) return
+        const following = el.scrollHeight - el.scrollTop - el.clientHeight < 48
+        followingOutputRef.current = following
+        setFollowingOutput(following)
+      }}
       role="log"
       aria-live="polite"
       aria-relevant="additions text"
@@ -933,27 +944,34 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
             {msg.imageName && <span className="chat-bubble-attachment">截图：{msg.imageName}</span>}
             {msg.role === 'assistant' && msg.text === '' && msg.status === 'sending'
               ? <span className="chat-typing"><span className="chat-typing-dots" aria-hidden="true"><i /><i /><i /></span>{queueStatusText}</span>
-              : msg.text}
+              : <>{msg.text}{msg.role === 'assistant' && msg.status === 'sending' && queueStatusText === '正在输入' && <span className="chat-stream-cursor" aria-hidden="true" />}</>}
             {(msg.status === 'queued' || msg.status === 'failed' || msg.status === 'partial' || msg.status === 'paused') && <div className="chat-bubble-meta">
               {msg.status === 'queued' && '等待发送'}
               {msg.status === 'failed' && '这条消息未完成'}
               {msg.status === 'partial' && '回复未完成'}
               {msg.status === 'paused' && '已暂停'}
-              {msg.status === 'failed' && <button type="button" onClick={() => retryMessage(msg)}>重试</button>}
+              {msg.status === 'failed' && <button type="button" disabled={sending || historyLoading || connectionState !== 'ready'} onClick={() => retryMessage(msg)}>重试</button>}
               {msg.diagnostic && <button type="button" onClick={() => { setError(msg.diagnostic); setDiagnosticOpen(true) }}>诊断</button>}
             </div>}
           </div>
         </div>
       ))}
     </div>
+    {(sending || !followingOutput || connectionState !== 'ready') && <div className={`chat-activity ${connectionState !== 'ready' ? 'is-disconnected' : ''}`} role="status" aria-live="polite">
+      {connectionState !== 'ready'
+        ? <><LoadingOutlined spin={connectionState === 'connecting'} aria-hidden="true" /><span>{connectionState === 'offline' ? '网络已断开，联网后自动重连' : connectionState === 'disconnected' ? '连接不可用，请点击重新连接' : '正在连接对话服务…'}<small>已收到的内容会保留</small></span><Button size="small" type="text" onClick={reconnect}>重新连接</Button></>
+        : <>{sending && <><LoadingOutlined spin aria-hidden="true" /><span>{agentName} {queueStatusText}<small>{stopping ? '正在保存本轮回复' : '可以继续补充，消息会排队发送'}</small></span><time aria-live="off">{Math.max(0, Math.floor((clock - startedAtRef.current) / 1000))} 秒</time></>}
+          {!followingOutput && <Button size="small" type="text" icon={<ArrowDownOutlined />} onClick={scrollToLatest}>最新回复</Button>}</>}
+    </div>}
     {notice && <Alert className="chat-error" type="info" showIcon message="提示" description={notice} closable onClose={() => setNotice(undefined)} />}
     {error && <div className="chat-error-card" role="status" aria-live="polite">
       <div className="chat-error-main">
         <strong>{error.message}</strong>
-        <span>对话可以继续；需要排查时复制诊断给 owner。</span>
+        <span>已保留本轮内容。可以补充说明后继续，或重试未完成的消息。</span>
         {error.logId && <span>日志 ID：{error.logId}</span>}
       </div>
       <div className="chat-error-actions">
+        {!sending && <Button size="small" icon={<ReloadOutlined />} onClick={reconnect}>重新连接</Button>}
         {queuePaused && queue.length > 0 && <Button size="small" onClick={resumeQueue}>继续队列</Button>}
         {queue.length > 0 && <Button size="small" icon={<DeleteOutlined />} onClick={clearQueue}>清空待发送</Button>}
         <Button size="small" icon={<CopyOutlined />} onClick={() => void copyDiagnostic(error)}>复制诊断</Button>
@@ -1019,7 +1037,7 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
             {stopping ? '正在暂停' : '暂停生成'}
           </Button>}
           {!sending && queuePaused && queue.length > 0 && <Button icon={<ReloadOutlined />} onClick={resumeQueue}>继续队列</Button>}
-          <Button type="primary" icon={<SendOutlined />} disabled={historyLoading || !input.trim()} aria-label="发送消息" onClick={send}>{sending || queue.length > 0 ? '加入队列' : '发送'}</Button>
+          <Button type="primary" icon={<SendOutlined />} disabled={historyLoading || connectionState !== 'ready' || !input.trim()} aria-label="发送消息" onClick={send}>{sending || queue.length > 0 ? '加入队列' : '发送'}</Button>
         </div>
       </div>
     </div>
@@ -1033,8 +1051,12 @@ export default function Chat({ open, expanded, onToggleExpanded, onClose }: Chat
 
   useEffect(() => {
     const stored = workspaces.map(({ busy: _busy, ...workspace }) => workspace)
-    window.localStorage.setItem(CHAT_WORKSPACES_STORAGE_KEY, JSON.stringify(stored))
-    window.localStorage.removeItem(LEGACY_CHAT_THREAD_STORAGE_KEY)
+    try {
+      window.localStorage.setItem(CHAT_WORKSPACES_STORAGE_KEY, JSON.stringify(stored))
+      window.localStorage.removeItem(LEGACY_CHAT_THREAD_STORAGE_KEY)
+    } catch {
+      // Browser storage may be unavailable; keep the current conversation usable.
+    }
   }, [workspaces])
 
   const updateWorkspace = useCallback((id: string, change: Partial<ChatWorkspace>) => {

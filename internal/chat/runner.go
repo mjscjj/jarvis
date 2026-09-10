@@ -63,6 +63,7 @@ const (
 )
 
 var errUnresumableThread = errors.New("chat thread belongs to another CLI")
+var errIncompleteCLIStream = errors.New("chat CLI stream ended before turn completion")
 
 func newRunner(bin, model, sandbox, reasoningEffort string, fastMode bool, timeout time.Duration) (*runner, error) {
 	if strings.TrimSpace(bin) == "" {
@@ -189,9 +190,7 @@ func (r *runner) Stream(ctx context.Context, prompt, threadID, imagePath string,
 	command := exec.CommandContext(runCtx, r.bin, r.args(threadID, imagePath)...)
 	// 取消时先发 SIGTERM 而不是默认的 SIGKILL：CLI 要收到信号才会释放 thread-store
 	// 的写入者占用，被 SIGKILL 打死可能留下占用，让这个 thread 之后都 resume 不了。
-	// WaitDelay 只兜住 Wait 里的等待；下面的 parseCodexStream 排在 Wait 之前，真遇到
-	// 孙子进程攥着 stdout 不放仍会卡在读上。等待接管的下一轮由 Service 侧的
-	// threadTakeoverTimeout 兜底，不指望这里。
+	// 取消时也关闭读取端，避免孙子进程持有 stdout 让解析器一直等不到 EOF。
 	command.Cancel = func() error { return command.Process.Signal(syscall.SIGTERM) }
 	command.WaitDelay = 5 * time.Second
 	command.Env = append(os.Environ(), "JARVIS_AGENT_STAGE=chat")
@@ -207,6 +206,8 @@ func (r *runner) Stream(ctx context.Context, prompt, threadID, imagePath string,
 	if err := command.Start(); err != nil {
 		return fmt.Errorf("start chat CLI: %w", err)
 	}
+	stopClosing := context.AfterFunc(runCtx, func() { _ = stdout.Close() })
+	defer stopClosing()
 
 	// 边读边解析 codex JSONL。parseErr 记录解析/回调阶段的第一个错误；
 	// 无论如何都要 Wait 回收子进程，避免僵尸与句柄泄漏。
@@ -216,10 +217,19 @@ func (r *runner) Stream(ctx context.Context, prompt, threadID, imagePath string,
 	} else {
 		parseErr = parseCodexStream(stdout, emit)
 	}
+	if parseErr != nil {
+		cancel()
+	}
 	waitErr := command.Wait()
 
 	if runCtx.Err() == context.DeadlineExceeded {
 		return fmt.Errorf("chat CLI timed out after %s: %s", r.timeout, stderr.text())
+	}
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if parseErr != nil && !errors.Is(parseErr, errIncompleteCLIStream) {
+		return parseErr
 	}
 	if waitErr != nil {
 		return fmt.Errorf("chat CLI exited abnormally: %w: %s", waitErr, stderr.text())
@@ -248,6 +258,7 @@ func parseCursorStream(stdout io.Reader, emit func(Event) error) error {
 	decoder := json.NewDecoder(bufio.NewReader(stdout))
 	sawThread := false
 	sawPartial := false
+	sawResult := false
 	for {
 		var event cursorEvent
 		if err := decoder.Decode(&event); err != nil {
@@ -285,10 +296,14 @@ func parseCursorStream(stdout io.Reader, emit func(Event) error) error {
 			if event.IsError {
 				return fmt.Errorf("Cursor agent failed: %s", strings.TrimSpace(event.Result))
 			}
+			sawResult = true
 		}
 	}
 	if !sawThread {
-		return fmt.Errorf("Cursor JSONL output is missing system init event")
+		return fmt.Errorf("%w: Cursor JSONL output is missing system init event", errIncompleteCLIStream)
+	}
+	if !sawResult {
+		return fmt.Errorf("%w: missing Cursor result event", errIncompleteCLIStream)
 	}
 	return nil
 }
@@ -345,6 +360,7 @@ func (e cursorEvent) assistantText() string {
 func parseCodexStream(stdout io.Reader, emit func(Event) error) error {
 	decoder := json.NewDecoder(bufio.NewReader(stdout))
 	sawThread := false
+	sawCompleted := false
 	for {
 		var event codexEvent
 		err := decoder.Decode(&event)
@@ -355,6 +371,10 @@ func parseCodexStream(stdout io.Reader, emit func(Event) error) error {
 			return fmt.Errorf("decode codex JSONL stream: %w", err)
 		}
 		switch event.Type {
+		case "turn.failed":
+			return fmt.Errorf("codex turn failed: %s", event.Error)
+		case "turn.completed":
+			sawCompleted = true
 		case "thread.started":
 			if strings.TrimSpace(event.ThreadID) == "" {
 				return fmt.Errorf("codex thread.started event is missing thread_id")
@@ -385,7 +405,10 @@ func parseCodexStream(stdout io.Reader, emit func(Event) error) error {
 		}
 	}
 	if !sawThread {
-		return fmt.Errorf("codex JSONL output is missing thread.started event")
+		return fmt.Errorf("%w: codex JSONL output is missing thread.started event", errIncompleteCLIStream)
+	}
+	if !sawCompleted {
+		return fmt.Errorf("%w: missing turn.completed event", errIncompleteCLIStream)
 	}
 	return nil
 }
@@ -396,6 +419,7 @@ type codexEvent struct {
 	ThreadID string          `json:"thread_id"`
 	Delta    string          `json:"delta"`
 	Item     *codexEventItem `json:"item"`
+	Error    json.RawMessage `json:"error"`
 }
 
 type codexEventItem struct {
