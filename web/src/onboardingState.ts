@@ -10,6 +10,7 @@ export function setupAction(status: SetupStatus): 'connect' | 'repair' | 'author
 }
 
 export function setupCanEnter(status: SetupStatus, restartFrom: string | null): boolean {
+  if (!status.onboarding_required) return true
   return status.app_ready && (!restartFrom || status.runtime_id !== restartFrom)
 }
 

@@ -165,6 +165,7 @@ export interface SetupIdentityStatus {
 }
 
 export interface SetupStatus {
+  onboarding_required: boolean
   app_ready: boolean
   runtime_id: string
   agent_name?: string

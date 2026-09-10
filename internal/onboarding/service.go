@@ -150,14 +150,15 @@ type AgentStatus struct {
 }
 
 type Status struct {
-	Configuration   *config.InitializationStatus `json:"configuration"`
-	Lark            LarkStatus                   `json:"lark"`
-	Agent           AgentStatus                  `json:"agent"`
-	AppReady        bool                         `json:"app_ready"`
-	WorldModelReady bool                         `json:"world_model_ready"`
-	Completed       bool                         `json:"completed"`
-	AgentName       string                       `json:"agent_name"`
-	RuntimeID       string                       `json:"runtime_id"`
+	OnboardingRequired bool                         `json:"onboarding_required"`
+	Configuration      *config.InitializationStatus `json:"configuration"`
+	Lark               LarkStatus                   `json:"lark"`
+	Agent              AgentStatus                  `json:"agent"`
+	AppReady           bool                         `json:"app_ready"`
+	WorldModelReady    bool                         `json:"world_model_ready"`
+	Completed          bool                         `json:"completed"`
+	AgentName          string                       `json:"agent_name"`
+	RuntimeID          string                       `json:"runtime_id"`
 }
 
 type Flow struct {
@@ -237,12 +238,13 @@ func (s *Service) Status(ctx context.Context) (*Status, error) {
 		lark.Error = "当前飞书用户与本机已保存身份不同，请使用原账号重新授权；已有世界模型不会自动覆盖"
 	}
 	result := &Status{
-		Configuration:   configuration,
-		Lark:            lark,
-		Agent:           agent,
-		WorldModelReady: worldModelReady,
-		AgentName:       agentName,
-		RuntimeID:       s.runtimeID,
+		OnboardingRequired: s.options.Desktop,
+		Configuration:      configuration,
+		Lark:               lark,
+		Agent:              agent,
+		WorldModelReady:    worldModelReady,
+		AgentName:          agentName,
+		RuntimeID:          s.runtimeID,
 	}
 	result.AppReady = configuration.MachineConfigurationReady &&
 		lark.Bot.Status == "ready" && lark.Bot.Verified && lark.User.Status == "ready" && lark.User.Verified &&

@@ -87,7 +87,7 @@ func TestFreshDesktopIdentityAndOneAppFinalize(t *testing.T) {
 	if err := db.AutoMigrate(&domain.PrincipalProfile{}, &domain.Task{}); err != nil {
 		t.Fatal(err)
 	}
-	service := &Service{options: Options{ConfigPath: path, RuntimeRoot: root, StateRoot: root, DB: db, HTTPClient: credentialClient(t, `{"code":0,"tenant_access_token":"test-token"}`)}, runtimeID: "before-restart"}
+	service := &Service{options: Options{Desktop: true, ConfigPath: path, RuntimeRoot: root, StateRoot: root, DB: db, HTTPClient: credentialClient(t, `{"code":0,"tenant_access_token":"test-token"}`)}, runtimeID: "before-restart"}
 	service.runner = commandFunc(func(ctx context.Context, bin string, args []string, input string) ([]byte, error) {
 		if strings.Join(args, " ") == "login status" {
 			return []byte("Logged in"), nil
@@ -108,7 +108,7 @@ func TestFreshDesktopIdentityAndOneAppFinalize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.AgentName != "Jarvis" || !result.Configuration.MachineConfigurationReady || result.RuntimeID != "before-restart" {
+	if !result.OnboardingRequired || result.AgentName != "Jarvis" || !result.Configuration.MachineConfigurationReady || result.RuntimeID != "before-restart" {
 		t.Fatalf("unexpected final state: %#v", result)
 	}
 	if !result.AppReady || result.WorldModelReady || result.Completed {

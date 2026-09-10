@@ -6,6 +6,7 @@ import { beginSetupLarkConnection, cancelSetupFlow, finalizeSetup, rerunTask } f
 import type { SetupStatus, Task } from '../src/types.ts'
 
 const ready = (): SetupStatus => ({
+  onboarding_required: true,
   runtime_id: 'test-runtime',
   app_ready: false,
   configuration: { machine_configuration_ready: false, agent_name_configured: false },
@@ -37,6 +38,12 @@ test('app entry depends on usable runtime, not world model completion', () => {
   assert.equal(setupCanEnter(status, null), true)
   assert.equal(setupCanEnter(status, 'test-runtime'), false)
   assert.equal(setupCanEnter(status, 'previous-runtime'), true)
+})
+
+test('source installations bypass desktop first-run onboarding', () => {
+  const status = ready()
+  status.onboarding_required = false
+  assert.equal(setupCanEnter(status, null), true)
 })
 
 test('background progress shows recorded waiting reason, wake time and failure', () => {
