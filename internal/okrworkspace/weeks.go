@@ -120,20 +120,31 @@ func (s *Service) OpenWeek(ctx context.Context, input OpenWeekInput) (OpenWeekRe
 // follow-ups and reminder batches are keyed by (quarter, week) with no foreign
 // key to this anchor, so a partial delete would resurface them on the next
 // week opened under the same key.
-func (s *Service) DeleteWeek(ctx context.Context, quarter, week string) (DeleteWeekResult, error) {
+func (s *Service) DeleteWeek(ctx context.Context, quarter, week, expectedToken string) (DeleteWeekResult, error) {
 	quarter = strings.TrimSpace(quarter)
 	week = strings.TrimSpace(week)
+	expectedToken = strings.TrimSpace(expectedToken)
 	if !quarterPattern.MatchString(quarter) {
 		return DeleteWeekResult{}, fmt.Errorf("quarter must use YYYY-Qn")
 	}
 	if !weekPattern.MatchString(week) {
 		return DeleteWeekResult{}, fmt.Errorf("week must use YYYY-Www")
 	}
+	if expectedToken == "" {
+		return DeleteWeekResult{}, fmt.Errorf("delete_token is required")
+	}
 	if err := s.db.WithContext(ctx).First(&domain.WeeklyReportWeek{}, "quarter = ? AND week = ?", quarter, week).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return DeleteWeekResult{}, ErrWeekNotFound
 		}
 		return DeleteWeekResult{}, fmt.Errorf("read weekly report week before delete: %w", err)
+	}
+	currentToken, err := s.weekDeletionToken(ctx, quarter, week)
+	if err != nil {
+		return DeleteWeekResult{}, fmt.Errorf("read weekly report deletion guard: %w", err)
+	}
+	if currentToken != expectedToken {
+		return DeleteWeekResult{}, ErrConflict
 	}
 
 	var krIDs []string

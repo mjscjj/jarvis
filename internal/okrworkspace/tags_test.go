@@ -51,7 +51,7 @@ func TestReplaceKRTagsPreservesDefinitionsAndWeeklyFacts(t *testing.T) {
 	if !reflect.DeepEqual(after.Tags, tags) {
 		t.Fatalf("stale write changed tags: %+v", after.Tags)
 	}
-	after.Tags, after.Version = before.Tags, before.Version
+	after.Tags, after.Version, after.DeleteToken = before.Tags, before.Version, before.DeleteToken
 	if !reflect.DeepEqual(after, before) {
 		t.Fatalf("tag write changed definition or weekly facts:\nbefore=%+v\nafter=%+v", before, after)
 	}

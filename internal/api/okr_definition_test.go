@@ -246,6 +246,37 @@ func TestGenericKRRouteCanMaintainDecompositionWithoutBizSchema(t *testing.T) {
 	if payload.Data.Tags == nil || len(payload.Data.Tags) != 0 || payload.Data.Points[0].Tags == nil || payload.Data.Points[0].MeegoWorkItemID != "" {
 		t.Fatalf("generic KR leaked Biz data: %+v", payload.Data)
 	}
+	if payload.Data.DeleteToken == "" {
+		t.Fatal("generic KR response is missing its structure deletion snapshot")
+	}
+	pointPatch := `{"expected_version":0,"title":"协作者刚保存的 Point"}`
+	response = ut.PerformRequest(h.Engine, "PATCH", "/api/okr/points/point-1/definition", &ut.Body{Body: strings.NewReader(pointPatch), Len: len(pointPatch)}).Result()
+	if response.StatusCode() != 200 {
+		t.Fatalf("collaborator point patch status=%d body=%s", response.StatusCode(), response.Body())
+	}
+	staleRemoval, err := json.Marshal(map[string]any{
+		"expected_version": payload.Data.Version,
+		"delete_token":     payload.Data.DeleteToken,
+		"title":            payload.Data.Title,
+		"metric_note":      payload.Data.MetricNote,
+		"metrics":          payload.Data.Metrics,
+		"points":           []any{},
+		"owners":           payload.Data.Owners,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	response = ut.PerformRequest(h.Engine, "PUT", "/api/okr/krs/kr-generic", &ut.Body{Body: strings.NewReader(string(staleRemoval)), Len: len(staleRemoval)}).Result()
+	if response.StatusCode() != 409 {
+		t.Fatalf("stale point removal status=%d body=%s", response.StatusCode(), response.Body())
+	}
+	current, err := workspace.GetCoreKR(t.Context(), "kr-generic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current.Points) != 1 || current.Points[0].Title != "协作者刚保存的 Point" {
+		t.Fatalf("stale structural save removed collaborator point: %+v", current.Points)
+	}
 
 	for _, forbidden := range []string{
 		`{"expected_version":1,"title":"越界","metric_note":"","metrics":[],"points":[],"owners":[],"tags":[]}`,

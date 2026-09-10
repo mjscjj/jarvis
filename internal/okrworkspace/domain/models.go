@@ -255,7 +255,7 @@ type WeeklyScore struct {
 	TargetKind WeeklyScoreTargetKind `gorm:"primaryKey;size:16"`
 	TargetID   string                `gorm:"primaryKey;size:64"`
 	Score      float64               `gorm:"not null"`
-	Version    int32                 `gorm:"not null;default:0"`
+	Version    int32                 `gorm:"not null;default:1"`
 	UpdatedBy  string                `gorm:"not null"`
 	CreatedAt  time.Time             `gorm:"not null"`
 	UpdatedAt  time.Time             `gorm:"not null"`
@@ -269,7 +269,7 @@ func (WeeklyScore) TableName() string { return "okr_workspace_weekly_score" }
 type WeeklyKRCore struct {
 	KRID       string         `gorm:"primaryKey;size:64"`
 	Week       string         `gorm:"primaryKey;size:16"`
-	Version    int32          `gorm:"not null;default:0"`
+	Version    int32          `gorm:"not null;default:1"`
 	MetricNote string         `gorm:"not null;default:''"`
 	Metrics    []WeeklyMetric `gorm:"serializer:json;type:text"`
 	CreatedBy  string         `gorm:"not null;default:''"`
@@ -386,6 +386,7 @@ type CommentMention struct {
 // reply. Target fields keep discussion history independent from target edits.
 type PageComment struct {
 	ID              string           `gorm:"primaryKey;size:64"`
+	Version         int32            `gorm:"not null;default:1"`
 	Quarter         string           `gorm:"not null;index:idx_page_comment_scope,priority:1"`
 	Week            string           `gorm:"not null;index:idx_page_comment_scope,priority:2"`
 	PlanID          string           `gorm:"not null;default:'';index:idx_page_comment_plan"`

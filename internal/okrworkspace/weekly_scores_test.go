@@ -45,7 +45,7 @@ func TestWeeklyScoresArePreviewOnlyAndVersionedPerTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if parent.Score == nil || parent.Score.Value != 0.7 || parent.Score.Version != 0 {
+	if parent.Score == nil || parent.Score.Value != 0.7 || parent.Score.Version != 1 {
 		t.Fatalf("parent score = %+v", parent.Score)
 	}
 	pointResult, err := service.ReplaceWeeklyScore(t.Context(), WeeklyScoreInput{
@@ -62,9 +62,15 @@ func TestWeeklyScoresArePreviewOnlyAndVersionedPerTarget(t *testing.T) {
 	if pointScores[strategy.ID] == nil || pointScores[strategy.ID].Value != 0.5 || pointScores[product.ID] != nil {
 		t.Fatalf("point scores = %+v", pointResult.Points)
 	}
+	if _, err := service.ReplaceWeeklyScore(t.Context(), WeeklyScoreInput{
+		Quarter: objective.Quarter, Week: preview.Week, TargetKind: domain.WeeklyScoreTargetPoint,
+		TargetID: strategy.ID, Score: 0.6, ExpectedVersion: 0, UpdatedBy: "ou_stale",
+	}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("second first-write score error = %v, want ErrConflict", err)
+	}
 	updated, err := service.ReplaceWeeklyScore(t.Context(), WeeklyScoreInput{
 		Quarter: objective.Quarter, Week: preview.Week, TargetKind: domain.WeeklyScoreTargetPoint,
-		TargetID: strategy.ID, Score: 0.8, ExpectedVersion: 0, UpdatedBy: "ou_owner",
+		TargetID: strategy.ID, Score: 0.8, ExpectedVersion: 1, UpdatedBy: "ou_owner",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -73,7 +79,7 @@ func TestWeeklyScoresArePreviewOnlyAndVersionedPerTarget(t *testing.T) {
 	for _, point := range updated.Points {
 		pointScores[point.ID] = point.Score
 	}
-	if pointScores[strategy.ID] == nil || pointScores[strategy.ID].Value != 0.8 || pointScores[strategy.ID].Version != 1 {
+	if pointScores[strategy.ID] == nil || pointScores[strategy.ID].Value != 0.8 || pointScores[strategy.ID].Version != 2 {
 		t.Fatalf("updated point score = %+v", pointScores[strategy.ID])
 	}
 	if _, err := service.ReplaceWeeklyScore(t.Context(), WeeklyScoreInput{
@@ -97,7 +103,7 @@ func TestWeeklyScoresArePreviewOnlyAndVersionedPerTarget(t *testing.T) {
 	}
 	deleted, err := service.DeleteWeeklyScore(t.Context(), DeleteWeeklyScoreInput{
 		Quarter: objective.Quarter, Week: preview.Week, TargetKind: domain.WeeklyScoreTargetKR,
-		TargetID: kr.ID, ExpectedVersion: 0, UpdatedBy: "ou_owner",
+		TargetID: kr.ID, ExpectedVersion: 1, UpdatedBy: "ou_owner",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -109,7 +115,11 @@ func TestWeeklyScoresArePreviewOnlyAndVersionedPerTarget(t *testing.T) {
 	if deleted.Score != nil || pointScores[strategy.ID] == nil {
 		t.Fatalf("delete parent score changed wrong target: %+v", deleted)
 	}
-	weekDeleted, err := service.DeleteWeek(t.Context(), objective.Quarter, preview.Week)
+	boardBeforeWeekDelete, err := service.Board(t.Context(), objective.Quarter, preview.Week)
+	if err != nil {
+		t.Fatal(err)
+	}
+	weekDeleted, err := service.DeleteWeek(t.Context(), objective.Quarter, preview.Week, boardBeforeWeekDelete.DeleteToken)
 	if err != nil {
 		t.Fatal(err)
 	}

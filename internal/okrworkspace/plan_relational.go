@@ -31,6 +31,11 @@ func (s *Service) planObjectives(ctx context.Context, planID string) ([]PlanObje
 			}
 			view.KRs = append(view.KRs, planKRFromDefinition(definition))
 		}
+		structureToken, err := planObjectiveStructureToken(view)
+		if err != nil {
+			return nil, err
+		}
+		view.StructureToken = structureToken
 		result = append(result, view)
 	}
 	return normalizePlanObjectives(result)

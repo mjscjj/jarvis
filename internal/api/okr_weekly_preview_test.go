@@ -128,10 +128,10 @@ func TestWeeklyPreviewRoutesRequireTemplateAndExposeVersionedScores(t *testing.T
 	if err := json.Unmarshal(response.Body(), &payload); err != nil {
 		t.Fatal(err)
 	}
-	if payload.Data.Score == nil || payload.Data.Score.Value != 0.7 || payload.Data.Score.Version != 0 {
+	if payload.Data.Score == nil || payload.Data.Score.Value != 0.7 || payload.Data.Score.Version != 1 {
 		t.Fatalf("score response = %+v", payload.Data.Score)
 	}
-	staleBody := `{"quarter":"2026-Q3","week":"2026-W37","score":0.4,"expected_version":1}`
+	staleBody := `{"quarter":"2026-Q3","week":"2026-W37","score":0.4,"expected_version":0}`
 	if response := request("PUT", "/api/biz-okr/scores/kr/"+kr.ID, staleBody); response.StatusCode() != 409 {
 		t.Fatalf("score conflict status=%d body=%s", response.StatusCode(), response.Body())
 	}

@@ -14,15 +14,16 @@ import (
 )
 
 type PlanView struct {
-	ID         string              `json:"id"`
-	Quarter    string              `json:"quarter"`
-	Title      string              `json:"title"`
-	Version    int32               `json:"version"`
-	Objectives []PlanObjectiveView `json:"objectives"`
-	CreatedBy  string              `json:"created_by"`
-	UpdatedBy  string              `json:"updated_by"`
-	CreatedAt  string              `json:"created_at"`
-	UpdatedAt  string              `json:"updated_at"`
+	ID          string              `json:"id"`
+	Quarter     string              `json:"quarter"`
+	Title       string              `json:"title"`
+	Version     int32               `json:"version"`
+	DeleteToken string              `json:"delete_token"`
+	Objectives  []PlanObjectiveView `json:"objectives"`
+	CreatedBy   string              `json:"created_by"`
+	UpdatedBy   string              `json:"updated_by"`
+	CreatedAt   string              `json:"created_at"`
+	UpdatedAt   string              `json:"updated_at"`
 }
 
 type PlanSummaryView struct {
@@ -42,10 +43,11 @@ type PlanListView struct {
 }
 
 type PlanObjectiveView struct {
-	ID      string       `json:"id"`
-	Title   string       `json:"title"`
-	Version int32        `json:"version"`
-	KRs     []PlanKRView `json:"krs"`
+	ID             string       `json:"id"`
+	Title          string       `json:"title"`
+	Version        int32        `json:"version"`
+	StructureToken string       `json:"structure_token"`
+	KRs            []PlanKRView `json:"krs"`
 }
 
 type PlanKRView struct {
@@ -295,13 +297,18 @@ func (s *Service) CreatePlan(ctx context.Context, input CreatePlanInput) (PlanVi
 	return s.planFromRecord(ctx, record)
 }
 
-func (s *Service) DeletePlan(ctx context.Context, id string) error {
+func (s *Service) DeletePlan(ctx context.Context, id, expectedToken string) error {
 	id = strings.TrimSpace(id)
-	if id == "" {
-		return fmt.Errorf("plan id is required")
+	expectedToken = strings.TrimSpace(expectedToken)
+	if id == "" || expectedToken == "" {
+		return fmt.Errorf("plan id and delete_token are required")
 	}
-	if _, err := s.commentPlan(ctx, id); err != nil {
+	current, err := s.GetPlan(ctx, id)
+	if err != nil {
 		return err
+	}
+	if current.DeleteToken != expectedToken {
+		return ErrConflict
 	}
 	if err := s.deletePlanDefinitionRows(ctx, id); err != nil {
 		return err
@@ -325,11 +332,17 @@ func (s *Service) planFromRecord(ctx context.Context, record domain.OKRPlan) (Pl
 		return PlanView{}, err
 	}
 	objectives = withPlanOwnerIdentityNamespaces(objectives)
-	return PlanView{
+	view := PlanView{
 		ID: record.ID, Quarter: record.Quarter, Title: record.Title, Version: record.Version, Objectives: objectives,
 		CreatedBy: record.CreatedBy, UpdatedBy: record.UpdatedBy,
 		CreatedAt: record.CreatedAt.UTC().Format(time.RFC3339), UpdatedAt: record.UpdatedAt.UTC().Format(time.RFC3339),
-	}, nil
+	}
+	deleteToken, err := s.planDeletionToken(ctx, view)
+	if err != nil {
+		return PlanView{}, err
+	}
+	view.DeleteToken = deleteToken
+	return view, nil
 }
 
 func withPlanOwnerIdentityNamespaces(objectives []PlanObjectiveView) []PlanObjectiveView {

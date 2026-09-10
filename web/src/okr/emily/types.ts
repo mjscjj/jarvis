@@ -126,6 +126,7 @@ export interface MeegoBatchPreviewItem {
 export interface Kr {
   id: string
   title: string
+	deleteToken?: string
   /** 核心数据的口径说明，可选，如「6 月 vs 7 月」 */
   metricNote: string
   metrics: MetricLine[]
@@ -205,6 +206,7 @@ export interface Objective {
   id: string
   title: string
   version?: number
+	structureToken?: string
   krs: Kr[]
 }
 
@@ -213,6 +215,7 @@ export interface OKRPlan {
   quarter: string
   title: string
   version: number
+	deleteToken: string
   objectives: Objective[]
   createdBy: string
   updatedBy: string
@@ -256,6 +259,8 @@ export interface CommentMention {
 
 export interface PageComment {
   id: string
+  version: number
+  deleteToken: string
   planId?: string
   parentId?: string
   targetType: 'page' | 'objective' | 'kr' | 'metric' | 'point' | 'entry' | 'follow_up'

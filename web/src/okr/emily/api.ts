@@ -22,6 +22,7 @@ interface APIEntry {
 interface APIKr {
   id: string
   title: string
+	delete_token?: string
   owner_open_id: string
 	owner_name: string
 	owners: Array<{ open_id: string; name: string; identity_namespace?: 'main_feishu_app' }>
@@ -38,16 +39,18 @@ interface APIBoard {
   quarter: string
   week: string
   template_key: WeekTemplateKey
+	delete_token?: string
   previous_week?: string
   available_quarters: string[]
   available_weeks: string[]
-  objectives: Array<{ id: string; title: string; krs: APIKr[] }>
+  objectives: Array<{ id: string; title: string; version: number; krs: APIKr[] }>
 }
 
 interface APIPlanObjective {
   id: string
   title: string
   version?: number
+	structure_token?: string
   krs: Array<{
     id: string
     title: string
@@ -65,6 +68,7 @@ interface APIPlan {
   quarter: string
   title: string
   version: number
+	delete_token: string
   objectives: APIPlanObjective[]
   created_by: string
   updated_by: string
@@ -84,16 +88,22 @@ interface APIPlanSummary {
 
 interface APIPointDefinitionPatchResult {
   point_id: string
-	  version: number
-	  title: string
-	  owners: Array<{ open_id: string; name: string; identity_namespace?: 'main_feishu_app' }>
+	version: number
+	structure_token?: string
+	delete_token?: string
+	plan_delete_token?: string
+	title: string
+	owners: Array<{ open_id: string; name: string; identity_namespace?: 'main_feishu_app' }>
 }
 
 export interface PointDefinitionPatchResult {
   pointId: string
-	  version: number
-	  title: string
-	  owners: KrOwner[]
+	version: number
+	structureToken?: string
+	deleteToken?: string
+	planDeleteToken?: string
+	title: string
+	owners: KrOwner[]
 }
 
 interface APIPlanList {
@@ -138,6 +148,8 @@ export interface WeeklyReportWeekList {
 
 interface APIPageComment {
   id: string
+  version: number
+  delete_token: string
   plan_id?: string
   parent_id?: string
   target_type: 'page' | 'objective' | 'kr' | 'metric' | 'point' | 'entry' | 'follow_up'
@@ -382,6 +394,7 @@ function fromAPIKr(value: APIKr): Kr {
   return {
     id: value.id,
     title: normalizeKRTitle(value.title),
+	deleteToken: value.delete_token,
     ownerOpenId: value.owner_open_id,
     ownerName: value.owner_name,
     owners: (value.owners ?? []).map((owner): KrOwner => ({ openId: owner.open_id, name: owner.name, identityNamespace: owner.identity_namespace })),
@@ -430,6 +443,7 @@ function fromAPIPlanObjectives(value: APIPlanObjective[]): Objective[] {
       id: objective.id,
       title: objective.title,
       version: objective.version ?? 0,
+		structureToken: objective.structure_token ?? '',
       krs: (objective.krs ?? []).map((kr) => ({
         id: kr.id,
         title: normalizeKRTitle(kr.title),
@@ -462,6 +476,7 @@ function toAPIPlanObjective(objective: Objective): APIPlanObjective {
     id: objective.id,
     title: objective.title,
     version: objective.version ?? 0,
+	structure_token: objective.structureToken,
     krs: objective.krs.map((kr) => ({
       id: kr.id,
       title: normalizeKRTitle(kr.title),
@@ -492,6 +507,7 @@ function fromAPIPlan(value: APIPlan): OKRPlan {
     quarter: value.quarter,
     title: value.title,
     version: value.version,
+	deleteToken: value.delete_token,
     objectives: fromAPIPlanObjectives(value.objectives),
     createdBy: value.created_by,
     updatedBy: value.updated_by,
@@ -516,6 +532,7 @@ export interface BoardData {
   quarter: string
   week: string
   templateKey: WeekTemplateKey
+	deleteToken?: string
   previousWeek?: string
   availableQuarters: string[]
   availableWeeks: string[]
@@ -575,7 +592,7 @@ export async function listWeeklyReportWeeks(quarter = ''): Promise<WeeklyReportW
   }
 }
 
-export async function deleteWeeklyReportWeek(quarter: string, week: string): Promise<DeleteWeekResult> {
+export async function deleteWeeklyReportWeek(quarter: string, week: string, deleteToken: string): Promise<DeleteWeekResult> {
   const value = await request<{
     quarter: string
     week: string
@@ -589,7 +606,10 @@ export async function deleteWeeklyReportWeek(quarter: string, week: string): Pro
       meego_snapshots: number
       reminder_batches: number
     }
-  }>(`/api/biz-okr/weeks/${encodeURIComponent(week)}?quarter=${encodeURIComponent(quarter)}`, { method: 'DELETE' })
+	}>(`/api/biz-okr/weeks/${encodeURIComponent(week)}?quarter=${encodeURIComponent(quarter)}`, {
+		method: 'DELETE',
+		body: JSON.stringify({ delete_token: deleteToken }),
+	})
   return {
     quarter: value.quarter,
     week: value.week,
@@ -616,10 +636,11 @@ export async function getBoard(quarter: string, week: string, surface: BoardSurf
     quarter: board.quarter,
     week: board.week,
     templateKey: board.template_key,
+	deleteToken: board.delete_token,
     previousWeek: board.previous_week,
     availableQuarters: board.available_quarters,
     availableWeeks: board.available_weeks,
-    objectives: board.objectives.map((objective) => ({ id: objective.id, title: objective.title, krs: objective.krs.map(fromAPIKr) })),
+    objectives: board.objectives.map((objective) => ({ id: objective.id, title: objective.title, version: objective.version, krs: objective.krs.map(fromAPIKr) })),
   }
 }
 
@@ -634,7 +655,7 @@ export async function getGenericOKRBoard(quarter = '', signal?: AbortSignal): Pr
     previousWeek: board.previous_week,
     availableQuarters: board.available_quarters,
     availableWeeks: board.available_weeks,
-    objectives: board.objectives.map((objective) => ({ id: objective.id, title: objective.title, krs: objective.krs.map(fromAPIKr) })),
+    objectives: board.objectives.map((objective) => ({ id: objective.id, title: objective.title, version: objective.version, krs: objective.krs.map(fromAPIKr) })),
   }
 }
 
@@ -648,7 +669,7 @@ export async function getGenericOKRProgressBoard(quarter: string, week: string):
     previousWeek: board.previous_week,
     availableQuarters: board.available_quarters,
     availableWeeks: board.available_weeks,
-    objectives: board.objectives.map((objective) => ({ id: objective.id, title: objective.title, krs: objective.krs.map(fromAPIKr) })),
+    objectives: board.objectives.map((objective) => ({ id: objective.id, title: objective.title, version: objective.version, krs: objective.krs.map(fromAPIKr) })),
   }
 }
 
@@ -688,7 +709,11 @@ export async function updateOKRPlanObjective(planId: string, objective: Objectiv
   try {
     return fromAPIPlan(await request<APIPlan>(`/api/biz-okr/plans/${encodeURIComponent(planId)}/objectives/${encodeURIComponent(objective.id)}`, {
       method: 'PATCH',
-      body: JSON.stringify({ expected_version: objective.version ?? 0, objective: toAPIPlanObjective(objective) }),
+		body: JSON.stringify({
+			expected_version: objective.version ?? 0,
+			expected_structure_token: objective.structureToken ?? '',
+			objective: toAPIPlanObjective(objective),
+		}),
     }))
   } catch (error) {
     if (error instanceof APIError && error.status === 409 && error.data) {
@@ -713,6 +738,9 @@ export async function patchPointDefinition(input: { pointId: string; planId?: st
 	  return {
 	    pointId: value.point_id,
 	    version: value.version,
+		structureToken: value.structure_token,
+		deleteToken: value.delete_token,
+		planDeleteToken: value.plan_delete_token,
 	    title: value.title,
 	    owners: (value.owners ?? []).map((owner) => ({ openId: owner.open_id, name: owner.name, identityNamespace: owner.identity_namespace })),
 	  }
@@ -722,7 +750,7 @@ export async function deleteOKRPlanObjective(planId: string, objective: Objectiv
   try {
     await request(`/api/biz-okr/plans/${encodeURIComponent(planId)}/objectives/${encodeURIComponent(objective.id)}`, {
       method: 'DELETE',
-      body: JSON.stringify({ expected_version: objective.version ?? 0 }),
+		body: JSON.stringify({ expected_version: objective.version ?? 0, expected_structure_token: objective.structureToken ?? '' }),
     })
   } catch (error) {
     if (error instanceof APIError && error.status === 409 && error.data) {
@@ -732,15 +760,25 @@ export async function deleteOKRPlanObjective(planId: string, objective: Objectiv
   }
 }
 
-export async function reorderOKRPlanObjectives(planId: string, ids: string[]): Promise<OKRPlan> {
-  return fromAPIPlan(await request<APIPlan>(`/api/biz-okr/plans/${encodeURIComponent(planId)}/objectives/order`, {
-    method: 'PUT',
-    body: JSON.stringify({ ids }),
-  }))
+export async function reorderOKRPlanObjectives(planId: string, ids: string[], expectedVersion: number): Promise<OKRPlan> {
+  try {
+    return fromAPIPlan(await request<APIPlan>(`/api/biz-okr/plans/${encodeURIComponent(planId)}/objectives/order`, {
+      method: 'PUT',
+      body: JSON.stringify({ ids, expected_version: expectedVersion }),
+    }))
+  } catch (error) {
+    if (error instanceof APIError && error.status === 409 && error.data) {
+      throw new APIError(error.message, error.status, error.code, fromAPIPlan(error.data as APIPlan), error.logid)
+    }
+    throw error
+  }
 }
 
-export async function deleteOKRPlan(id: string): Promise<void> {
-  await request<{ id: string }>(`/api/biz-okr/plans/${encodeURIComponent(id)}`, { method: 'DELETE' })
+export async function deleteOKRPlan(id: string, deleteToken: string): Promise<void> {
+	await request<{ id: string }>(`/api/biz-okr/plans/${encodeURIComponent(id)}`, {
+		method: 'DELETE',
+		body: JSON.stringify({ delete_token: deleteToken }),
+	})
 }
 
 export async function getOKRActivities(input: {
@@ -772,6 +810,8 @@ export async function getOKRActivities(input: {
 function fromAPIComment(value: APIPageComment): PageComment {
   return {
     id: value.id,
+    version: value.version,
+    deleteToken: value.delete_token,
     planId: value.plan_id,
     parentId: value.parent_id,
     targetType: value.target_type,
@@ -890,11 +930,18 @@ export async function createFollowUp(item: FollowUpItem): Promise<FollowUpItem> 
 }
 
 export async function updateFollowUp(item: FollowUpItem): Promise<FollowUpItem> {
-  const value = await request<APIFollowUpItem>(`/api/biz-okr/follow-ups/${encodeURIComponent(item.id)}`, {
-    method: 'PUT',
-    body: JSON.stringify(followUpBody(item)),
-  })
-  return fromAPIFollowUp(value)
+  try {
+    const value = await request<APIFollowUpItem>(`/api/biz-okr/follow-ups/${encodeURIComponent(item.id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(followUpBody(item)),
+    })
+    return fromAPIFollowUp(value)
+  } catch (error) {
+    if (error instanceof APIError && error.status === 409 && error.data) {
+      throw new APIError(error.message, error.status, error.code, fromAPIFollowUp(error.data as APIFollowUpItem), error.logid)
+    }
+    throw error
+  }
 }
 
 export async function deleteFollowUp(item: FollowUpItem): Promise<void> {
@@ -1023,19 +1070,23 @@ export async function logout(): Promise<void> {
   await request<{ logged_out: boolean }>('/api/biz-okr/auth/logout', { method: 'POST' })
 }
 
-export async function updateComment(id: string, patch: { content?: string; mentions?: CommentMention[]; images?: ImageRef[]; todo?: boolean; resolved?: boolean }): Promise<PageComment> {
-  const value = await request<APIPageComment>(`/api/biz-okr/comments/${encodeURIComponent(id)}`, {
+export async function updateComment(comment: Pick<PageComment, 'id' | 'version'>, patch: { content?: string; mentions?: CommentMention[]; images?: ImageRef[]; todo?: boolean; resolved?: boolean }): Promise<PageComment> {
+  const value = await request<APIPageComment>(`/api/biz-okr/comments/${encodeURIComponent(comment.id)}`, {
     method: 'PUT',
     body: JSON.stringify({
       ...patch,
+      expected_version: comment.version,
       mentions: patch.mentions?.map((mention) => ({ open_id: mention.openId, name: mention.name })),
     }),
   })
   return fromAPIComment(value)
 }
 
-export async function deleteComment(id: string): Promise<void> {
-  await request<{ id: string }>(`/api/biz-okr/comments/${encodeURIComponent(id)}`, { method: 'DELETE' })
+export async function deleteComment(comment: Pick<PageComment, 'id' | 'version' | 'deleteToken'>): Promise<void> {
+  await request<{ id: string }>(`/api/biz-okr/comments/${encodeURIComponent(comment.id)}`, {
+    method: 'DELETE',
+    body: JSON.stringify({ expected_version: comment.version, delete_token: comment.deleteToken }),
+  })
 }
 
 export async function getEnums(): Promise<EnumValues> {
@@ -1333,6 +1384,7 @@ export async function replaceKR(kr: Kr): Promise<Kr> {
   try {
 		const body = {
 			expected_version: kr.version ?? 0,
+			delete_token: kr.deleteToken ?? '',
 			title: kr.title,
 			owners: (kr.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
 			metric_note: kr.metricNote,
@@ -1370,38 +1422,50 @@ export async function getPeopleAvatars(names: string[], signal?: AbortSignal): P
 }
 
 export async function createObjective(input: { quarter: string; title: string }): Promise<Objective> {
-  const value = await request<{ id: string; title: string; krs: APIKr[] }>('/api/okr/objectives', {
+  const value = await request<{ id: string; title: string; version: number; krs: APIKr[] }>('/api/okr/objectives', {
     method: 'POST',
     body: JSON.stringify(input),
   })
-  return { id: value.id, title: value.title, krs: value.krs.map(fromAPIKr) }
+  return { id: value.id, title: value.title, version: value.version, krs: value.krs.map(fromAPIKr) }
 }
 
-export async function updateObjective(id: string, title: string): Promise<void> {
-  await request<{ id: string; title: string; krs: APIKr[] }>(`/api/okr/objectives/${encodeURIComponent(id)}`, {
-    method: 'PUT',
-    body: JSON.stringify({ title }),
-  })
+export async function updateObjective(objective: Pick<Objective, 'id' | 'version'>, title: string): Promise<Objective> {
+  try {
+    const value = await request<{ id: string; title: string; version: number; krs: APIKr[] }>(`/api/okr/objectives/${encodeURIComponent(objective.id)}`, {
+      method: 'PUT',
+      body: JSON.stringify({ expected_version: objective.version ?? 0, title }),
+    })
+    return { id: value.id, title: value.title, version: value.version, krs: value.krs.map(fromAPIKr) }
+  } catch (error) {
+    if (error instanceof APIError && error.status === 409 && error.data) {
+      const current = error.data as { id: string; title: string; version: number; krs: APIKr[] }
+      throw new APIError(error.message, error.status, error.code, { id: current.id, title: current.title, version: current.version, krs: current.krs.map(fromAPIKr) }, error.logid)
+    }
+    throw error
+  }
 }
 
-export async function reorderObjectives(quarter: string, objectiveIds: string[]): Promise<string[]> {
+export async function reorderObjectives(quarter: string, objectiveIds: string[], expectedOrder: string[]): Promise<string[]> {
   const value = await request<{ order: string[] }>('/api/okr/objectives/order', {
     method: 'PUT',
-    body: JSON.stringify({ quarter, objective_ids: objectiveIds }),
+    body: JSON.stringify({ quarter, objective_ids: objectiveIds, expected_order: expectedOrder }),
   })
   return value.order
 }
 
-export async function reorderKRs(objectiveId: string, krIds: string[]): Promise<string[]> {
+export async function reorderKRs(objectiveId: string, krIds: string[], expectedOrder: string[]): Promise<string[]> {
   const value = await request<{ order: string[] }>(`/api/okr/objectives/${encodeURIComponent(objectiveId)}/kr-order`, {
     method: 'PUT',
-    body: JSON.stringify({ kr_ids: krIds }),
+    body: JSON.stringify({ kr_ids: krIds, expected_order: expectedOrder }),
   })
   return value.order
 }
 
-export async function deleteObjective(id: string): Promise<void> {
-  await request<{ id: string }>(`/api/okr/objectives/${encodeURIComponent(id)}`, { method: 'DELETE' })
+export async function deleteObjective(objective: Pick<Objective, 'id' | 'version'>): Promise<void> {
+  await request<{ id: string }>(`/api/okr/objectives/${encodeURIComponent(objective.id)}`, {
+    method: 'DELETE',
+    body: JSON.stringify({ expected_version: objective.version ?? 0 }),
+  })
 }
 
 export async function createKR(objectiveId: string, input: { title: string; owners?: KrOwner[]; businessCategory: string; priority: KrPriority }): Promise<Kr> {
@@ -1420,8 +1484,8 @@ export async function createKR(objectiveId: string, input: { title: string; owne
 }
 
 export async function deleteKR(kr: Kr): Promise<void> {
-  await request<{ id: string }>(`/api/okr/krs/${encodeURIComponent(kr.id)}`, {
-    method: 'DELETE',
-    body: JSON.stringify({ expected_version: kr.version ?? 0 }),
+	await request<{ id: string }>(`/api/okr/krs/${encodeURIComponent(kr.id)}`, {
+		method: 'DELETE',
+		body: JSON.stringify({ expected_version: kr.version ?? 0, delete_token: kr.deleteToken ?? '' }),
   })
 }

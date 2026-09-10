@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { APIError, createKR, createObjective as createObjectiveRequest, createProgress, deleteKR, deleteObjective as deleteObjectiveRequest, deleteProgress, deleteWeeklyReportWeek, deleteWeeklyScore, getBoard, getEnums, getWeeklyKR, listWeeklyReportWeeks, patchPointDefinition, reorderKRs, reorderObjectives, replaceKR, replaceKRDefinition, replaceWeeklyKRCore, replaceWeeklyScore, updateObjective as updateObjectiveRequest, updateProgress, type BoardData, type BoardSurface } from './api'
 import { BoardContext, uid, type BoardApi, type SyncState } from './board'
 import { definitionSignature } from './definition'
+import { adoptRemoteVersionsForOverwrite, mergePointProgressOnly, mergeScoreOnly, rebasePendingChanges } from './concurrency'
 import { findKrDraftIssue } from './draftValidation'
 import { BUSINESS_CATEGORY_TAG, PRIORITY_TAG, replaceSingleTag } from './hierarchy'
 import { swappedOrder, swappedPointsWithinKind } from './ordering'
@@ -73,23 +74,6 @@ function sameEntry(left: Entry, right: Entry): boolean {
     JSON.stringify(left.images ?? []) === JSON.stringify(right.images ?? []) &&
     (left.source ?? 'manual') === (right.source ?? 'manual') &&
     (left.needsReview ?? false) === (right.needsReview ?? false)
-}
-
-function applyEntryVersions(local: Kr, remote: Kr): Kr {
-  const merged = clone(local)
-  const remoteEntries = entriesById(remote)
-	const remotePoints = new Map(remote.points.map((point) => [point.id, point]))
-  merged.version = remote.version
-  merged.weeklyCoreVersion = remote.weeklyCoreVersion
-  for (const point of merged.points) {
-		const remotePoint = remotePoints.get(point.id)
-		if (remotePoint) point.version = remotePoint.version
-    for (const entry of point.entries) {
-      const current = remoteEntries.get(entry.id)
-      if (current) entry.version = current.entry.version
-    }
-  }
-  return merged
 }
 
 function sameWeeklyCore(left: Kr, right: Kr): boolean {
@@ -166,6 +150,7 @@ export function BoardProvider({
   const objectivesRef = useRef(objectives)
   const weekRef = useRef('')
   const quarterRef = useRef(initialQuarter)
+	const deleteTokenRef = useRef('')
   const remoteReady = useRef(false)
   const serverKrs = useRef(new Map<string, Kr>())
   const revisions = useRef(new Map<string, number>())
@@ -202,6 +187,7 @@ export function BoardProvider({
       const current = findKr(objectivesRef.current, patch.krId)
       if (current) {
         const next = clone(current)
+				if (saved.deleteToken !== undefined) next.deleteToken = saved.deleteToken
 				const point = next.points.find((item) => item.id === pointId)
 				if (point) point.version = saved.version
         publish(replaceKrIn(objectivesRef.current, patch.krId, next))
@@ -209,6 +195,7 @@ export function BoardProvider({
       const baseline = serverKrs.current.get(patch.krId)
       if (baseline) {
         const nextBaseline = clone(baseline)
+		if (saved.deleteToken !== undefined) nextBaseline.deleteToken = saved.deleteToken
         const point = nextBaseline.points.find((item) => item.id === pointId)
         if (point) {
 					point.version = saved.version
@@ -292,13 +279,14 @@ export function BoardProvider({
       }
       serverKrs.current.set(krId, clone(saved))
       lastFailedKr.current = null
+      const latest = findKr(objectivesRef.current, krId)
+      if (latest) {
+        const merged = rebasePendingChanges(snapshot, latest, saved)
+        publish(replaceKrIn(objectivesRef.current, krId, merged))
+      }
       if ((revisions.current.get(krId) ?? 0) === revision) {
-				const latest = findKr(objectivesRef.current, krId)
-				if (latest) publish(replaceKrIn(objectivesRef.current, krId, applyEntryVersions(latest, saved)))
         setSyncState({ kind: 'saved', message: '已自动保存' })
       } else {
-        const latest = findKr(objectivesRef.current, krId)
-        if (latest) publish(replaceKrIn(objectivesRef.current, krId, applyEntryVersions(latest, saved)))
         scheduleSaveRef.current(krId)
       }
     } catch (error) {
@@ -360,6 +348,7 @@ export function BoardProvider({
       setAvailableQuarters(board.availableQuarters)
       onQuarterChange?.(board.quarter)
       weekRef.current = board.week
+		deleteTokenRef.current = board.deleteToken ?? ''
       setWeekState(board.week)
       setTemplateKey(board.templateKey)
       setPreviousWeek(board.previousWeek)
@@ -438,7 +427,7 @@ export function BoardProvider({
 
   const resolveConflict = useCallback((choice: 'remote' | 'local') => {
     if (syncState.kind !== 'conflict') return
-    const selected = choice === 'remote' ? syncState.remote : applyEntryVersions(syncState.local, syncState.remote)
+    const selected = choice === 'remote' ? syncState.remote : adoptRemoteVersionsForOverwrite(syncState.local, syncState.remote)
     serverKrs.current.set(syncState.krId, clone(syncState.remote))
     publish(replaceKrIn(objectivesRef.current, syncState.krId, selected))
     if (choice === 'remote') {
@@ -463,14 +452,18 @@ export function BoardProvider({
       const saved = score === undefined
         ? await deleteWeeklyScore(input)
         : await replaceWeeklyScore({ ...input, score })
-      serverKrs.current.set(krId, clone(saved))
-      publish(replaceKrIn(objectivesRef.current, krId, saved))
+      const baseline = serverKrs.current.get(krId)
+      if (baseline) serverKrs.current.set(krId, mergeScoreOnly(baseline, saved, targetKind, targetId))
+      const current = findKr(objectivesRef.current, krId)
+      if (current) publish(replaceKrIn(objectivesRef.current, krId, mergeScoreOnly(current, saved, targetKind, targetId)))
       setSyncState({ kind: 'saved', message: '评分已保存' })
     } catch (error) {
       if (error instanceof APIError && error.status === 409 && error.data) {
         const current = error.data as Kr
-        serverKrs.current.set(krId, clone(current))
-        publish(replaceKrIn(objectivesRef.current, krId, current))
+        const baseline = serverKrs.current.get(krId)
+        if (baseline) serverKrs.current.set(krId, mergeScoreOnly(baseline, current, targetKind, targetId))
+        const local = findKr(objectivesRef.current, krId)
+        if (local) publish(replaceKrIn(objectivesRef.current, krId, mergeScoreOnly(local, current, targetKind, targetId)))
         setSyncState({ kind: 'error', message: '评分已被其他人更新，已载入最新值。' })
         return
       }
@@ -528,12 +521,15 @@ export function BoardProvider({
 			remoteReady.current = false
 			setSyncState({ kind: 'saving', message: `正在删除 ${selectedWeek} ${lifecycleName}…` })
 			try {
-				const result = await deleteWeeklyReportWeek(selectedQuarter, selectedWeek)
+				if (!deleteTokenRef.current) throw new Error('当前周次缺少删除校验，请重新载入后再试。')
+				const result = await deleteWeeklyReportWeek(selectedQuarter, selectedWeek, deleteTokenRef.current)
 				const loaded = await loadRemote('', selectedQuarter)
 				return { ...result, nextWeek: loaded?.week || undefined }
 			} catch (error) {
 				remoteReady.current = true
-				setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '删除本周失败。' })
+				setSyncState({ kind: 'error', message: error instanceof APIError && error.status === 409
+					? '这个周次已被其他人更新，请重新载入后再删除。'
+					: error instanceof Error ? error.message : '删除本周失败。' })
 				throw error
 			}
 		},
@@ -556,10 +552,12 @@ export function BoardProvider({
     updateObjective: async (id, title) => {
       const clean = title.trim()
       if (!clean) throw new Error('目标名称不能为空。')
+			const current = objectivesRef.current.find((objective) => objective.id === id)
+			if (!current) throw new Error('目标不存在，请重新载入。')
       setSyncState({ kind: 'saving', message: '正在更新目标…' })
       try {
-        await updateObjectiveRequest(id, clean)
-        publish(objectivesRef.current.map((objective) => objective.id === id ? { ...objective, title: clean } : objective))
+        const saved = await updateObjectiveRequest(current, clean)
+				publish(objectivesRef.current.map((objective) => objective.id === id ? { ...objective, title: saved.title, version: saved.version } : objective))
         setSyncState({ kind: 'saved', message: '目标已更新' })
       } catch (error) {
         setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '更新目标失败。' })
@@ -568,9 +566,11 @@ export function BoardProvider({
     },
 
     deleteObjective: async (id) => {
+			const current = objectivesRef.current.find((objective) => objective.id === id)
+			if (!current) throw new Error('目标不存在，请重新载入。')
       setSyncState({ kind: 'saving', message: '正在删除空目标…' })
       try {
-        await deleteObjectiveRequest(id)
+        await deleteObjectiveRequest(current)
         publish(objectivesRef.current.filter((objective) => objective.id !== id))
         setSyncState({ kind: 'saved', message: '空目标已删除' })
       } catch (error) {
@@ -582,7 +582,8 @@ export function BoardProvider({
     swapObjectives: async (id, targetId) => {
       setSyncState({ kind: 'saving', message: '正在调整顺序…' })
       try {
-        const order = await reorderObjectives(quarterRef.current, swappedOrder(objectivesRef.current.map((objective) => objective.id), id, targetId))
+				const expectedOrder = objectivesRef.current.map((objective) => objective.id)
+        const order = await reorderObjectives(quarterRef.current, swappedOrder(expectedOrder, id, targetId), expectedOrder)
         const byId = new Map(objectivesRef.current.map((objective) => [objective.id, objective]))
         publish(order.map((objectiveId) => {
           const objective = byId.get(objectiveId)
@@ -599,7 +600,8 @@ export function BoardProvider({
     reorderObjectives: async (ids) => {
       setSyncState({ kind: 'saving', message: '正在调整顺序…' })
       try {
-        const order = await reorderObjectives(quarterRef.current, ids)
+				const expectedOrder = objectivesRef.current.map((objective) => objective.id)
+        const order = await reorderObjectives(quarterRef.current, ids, expectedOrder)
         const byId = new Map(objectivesRef.current.map((objective) => [objective.id, objective]))
         publish(order.map((objectiveId) => {
           const objective = byId.get(objectiveId)
@@ -618,7 +620,8 @@ export function BoardProvider({
       if (!objective) throw new Error('目标分组不存在，请重新载入。')
       setSyncState({ kind: 'saving', message: '正在调整顺序…' })
       try {
-        const order = await reorderKRs(objectiveId, swappedOrder(objective.krs.map((kr) => kr.id), krId, targetId))
+				const expectedOrder = objective.krs.map((kr) => kr.id)
+        const order = await reorderKRs(objectiveId, swappedOrder(expectedOrder, krId, targetId), expectedOrder)
         const next = clone(objectivesRef.current)
         const target = next.find((item) => item.id === objectiveId)
         if (!target) throw new Error('目标分组不存在，请重新载入。')
@@ -834,7 +837,13 @@ export function BoardProvider({
       else void loadRemote()
     },
     resolveConflict,
-    applySavedKr: (kr) => publish(replaceKrIn(objectivesRef.current, kr.id, kr)),
+    applySavedKr: (kr, pointId) => {
+      if (!pointId) return
+      const baseline = serverKrs.current.get(kr.id)
+      if (baseline) serverKrs.current.set(kr.id, mergePointProgressOnly(baseline, kr, pointId, 'meego'))
+      const current = findKr(objectivesRef.current, kr.id)
+      if (current) publish(replaceKrIn(objectivesRef.current, kr.id, mergePointProgressOnly(current, kr, pointId, 'meego')))
+    },
   }), [availableQuarters, availableWeeks, enums, loadRemote, mutate, mutatePointDefinition, objectives, previousWeek, publish, quarter, resolveConflict, saveNow, saveWeeklyScore, schedulePointSave, syncState, templateKey, week, weekTemplateKey])
 
   return <BoardContext.Provider value={api}>{children}</BoardContext.Provider>

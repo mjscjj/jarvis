@@ -50,7 +50,10 @@ func MigrateCore(db *gorm.DB) error {
 	if err := migrateLegacyKROwnerProjection(db); err != nil {
 		return err
 	}
-	return backfillProgressWeeks(db)
+	if err := backfillProgressWeeks(db); err != nil {
+		return err
+	}
+	return backfillCoreWriteVersions(db)
 }
 
 func MigrateIdentity(db *gorm.DB) error {
@@ -129,6 +132,29 @@ func MigrateBizOKR(db *gorm.DB) error {
 	}
 	if err := db.AutoMigrate(domain.BizModels()...); err != nil {
 		return fmt.Errorf("migrate Biz OKR module schema: %w", err)
+	}
+	return backfillBizWriteVersions(db)
+}
+
+// Version zero is the create precondition in the HTTP protocol. Persisted
+// rows therefore start at one; otherwise two browsers that both loaded an
+// absent row can use expected_version=0 and silently overwrite each other.
+func backfillCoreWriteVersions(db *gorm.DB) error {
+	if err := db.Model(&domain.WeeklyKRCore{}).Where("version = 0").Update("version", 1).Error; err != nil {
+		return fmt.Errorf("backfill weekly core versions: %w", err)
+	}
+	if err := db.Model(&domain.KRProgress{}).Where("source = ? AND version = 0", "meego").Update("version", 1).Error; err != nil {
+		return fmt.Errorf("backfill Meego progress versions: %w", err)
+	}
+	return nil
+}
+
+func backfillBizWriteVersions(db *gorm.DB) error {
+	if err := db.Model(&domain.WeeklyScore{}).Where("version = 0").Update("version", 1).Error; err != nil {
+		return fmt.Errorf("backfill weekly score versions: %w", err)
+	}
+	if err := db.Model(&domain.PageComment{}).Where("version = 0").Update("version", 1).Error; err != nil {
+		return fmt.Errorf("backfill comment versions: %w", err)
 	}
 	return nil
 }

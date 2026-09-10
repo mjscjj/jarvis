@@ -77,7 +77,7 @@ func TestCommentTodoAndResolutionAreIndependentRootActions(t *testing.T) {
 	}
 
 	todo := true
-	updated, err := service.UpdateComment(t.Context(), root.ID, UpdateCommentInput{Todo: &todo})
+	updated, err := service.UpdateComment(t.Context(), root.ID, UpdateCommentInput{ExpectedVersion: root.Version, Todo: &todo})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,14 +86,14 @@ func TestCommentTodoAndResolutionAreIndependentRootActions(t *testing.T) {
 	}
 
 	resolved := true
-	updated, err = service.UpdateComment(t.Context(), root.ID, UpdateCommentInput{Resolved: &resolved})
+	updated, err = service.UpdateComment(t.Context(), root.ID, UpdateCommentInput{ExpectedVersion: updated.Version, Resolved: &resolved})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !updated.Todo || !updated.Resolved || updated.Content != "下周确认区域名单" {
 		t.Fatalf("resolution should preserve todo and content: %#v", updated)
 	}
-	if _, err := service.UpdateComment(t.Context(), reply.ID, UpdateCommentInput{Todo: &todo}); err == nil {
+	if _, err := service.UpdateComment(t.Context(), reply.ID, UpdateCommentInput{ExpectedVersion: reply.Version, Todo: &todo}); err == nil {
 		t.Fatal("reply unexpectedly accepted todo marker")
 	}
 	if _, err := service.UpdateComment(t.Context(), root.ID, UpdateCommentInput{}); err == nil {
@@ -125,7 +125,7 @@ func TestCommentContentPatchStillValidatesText(t *testing.T) {
 		t.Fatal(err)
 	}
 	content := "  修改后的评论  "
-	updated, err := service.UpdateComment(t.Context(), comment.ID, UpdateCommentInput{Content: &content})
+	updated, err := service.UpdateComment(t.Context(), comment.ID, UpdateCommentInput{ExpectedVersion: comment.Version, Content: &content})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,8 +133,67 @@ func TestCommentContentPatchStillValidatesText(t *testing.T) {
 		t.Fatalf("updated content = %q", updated.Content)
 	}
 	empty := "   "
-	if _, err := service.UpdateComment(t.Context(), comment.ID, UpdateCommentInput{Content: &empty}); err == nil {
+	if _, err := service.UpdateComment(t.Context(), comment.ID, UpdateCommentInput{ExpectedVersion: updated.Version, Content: &empty}); err == nil {
 		t.Fatal("blank comment content unexpectedly succeeded")
+	}
+}
+
+func TestCommentEditRejectsAStaleVersion(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	if err := db.Create(&domain.WeeklyReportWeek{Quarter: "2026-Q3", Week: "2026-W35", OpenedBy: "test"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	created, err := service.CreateComment(t.Context(), CreateCommentInput{Quarter: "2026-Q3", Week: "2026-W35", Content: "原评论"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := "第一位填写者的修改"
+	updated, err := service.UpdateComment(t.Context(), created.ID, UpdateCommentInput{ExpectedVersion: created.Version, Content: &first})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := "旧页面的覆盖"
+	if _, err := service.UpdateComment(t.Context(), created.ID, UpdateCommentInput{ExpectedVersion: created.Version, Content: &second}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale comment update error = %v, want ErrConflict", err)
+	}
+	if updated.Version != created.Version+1 || updated.Content != first {
+		t.Fatalf("updated comment = %#v", updated)
+	}
+}
+
+func TestCommentDeleteRejectsAStaleThreadSnapshot(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	if err := db.Create(&domain.WeeklyReportWeek{Quarter: "2026-Q3", Week: "2026-W35", OpenedBy: "test"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := service.CreateComment(t.Context(), CreateCommentInput{Quarter: "2026-Q3", Week: "2026-W35", Content: "根评论"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CreateComment(t.Context(), CreateCommentInput{Quarter: "2026-Q3", Week: "2026-W35", ParentID: root.ID, Content: "另一位填写者刚添加的回复"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.DeleteComment(t.Context(), root.ID, DeleteCommentInput{ExpectedVersion: root.Version, DeleteToken: root.DeleteToken}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale thread delete error = %v, want ErrConflict", err)
+	}
+	list, err := service.Comments(t.Context(), "2026-Q3", "2026-W35")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if list.Count != 2 || len(list.Comments) != 1 || len(list.Comments[0].Replies) != 1 {
+		t.Fatalf("stale delete changed thread: %#v", list)
+	}
+	current := list.Comments[0]
+	if err := service.DeleteComment(t.Context(), current.ID, DeleteCommentInput{ExpectedVersion: current.Version, DeleteToken: current.DeleteToken}); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -167,11 +226,11 @@ func TestCommentSupportsUploadedImagesAndImageOnlyReplies(t *testing.T) {
 		t.Fatalf("image-only reply = %#v", reply)
 	}
 	empty := []CommentImage{}
-	if _, err := service.UpdateComment(t.Context(), root.ID, UpdateCommentInput{Images: &empty}); err == nil || !strings.Contains(err.Error(), "content or image") {
+	if _, err := service.UpdateComment(t.Context(), root.ID, UpdateCommentInput{ExpectedVersion: root.Version, Images: &empty}); err == nil || !strings.Contains(err.Error(), "content or image") {
 		t.Fatalf("removing the only image error = %v", err)
 	}
 	content := "补充文字"
-	updated, err := service.UpdateComment(t.Context(), root.ID, UpdateCommentInput{Content: &content, Images: &empty})
+	updated, err := service.UpdateComment(t.Context(), root.ID, UpdateCommentInput{ExpectedVersion: root.Version, Content: &content, Images: &empty})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,11 +392,15 @@ func TestPlanCommentsAreScopedValidatedAndDeletedWithPlan(t *testing.T) {
 		t.Fatalf("other plan leaked comments: %#v", empty)
 	}
 	todo := true
-	if _, err := service.UpdateComment(t.Context(), root.ID, UpdateCommentInput{Todo: &todo}); err == nil {
+	if _, err := service.UpdateComment(t.Context(), root.ID, UpdateCommentInput{ExpectedVersion: root.Version, Todo: &todo}); err == nil {
 		t.Fatal("plan comment unexpectedly accepted todo")
 	}
 
-	if err := service.DeletePlan(t.Context(), "plan-comment-a"); err != nil {
+	planBeforeDelete, err := service.GetPlan(t.Context(), "plan-comment-a")
+	if err != nil {
+		t.Fatalf("get plan before delete: %v", err)
+	}
+	if err := service.DeletePlan(t.Context(), "plan-comment-a", planBeforeDelete.DeleteToken); err != nil {
 		t.Fatal(err)
 	}
 	var count int64
@@ -444,7 +507,7 @@ func TestCommentMentionRequiresSelectedTokenAndEditsDoNotNotify(t *testing.T) {
 	content := "@Bob 已提醒，@Carol 新加入"
 	mentions := []CommentMention{{OpenID: "ou_bob", Name: "Bob"}, {OpenID: "ou_carol", Name: "Carol"}}
 	if _, err := service.UpdateComment(t.Context(), created.ID, UpdateCommentInput{
-		Content: &content, Mentions: &mentions,
+		ExpectedVersion: created.Version, Content: &content, Mentions: &mentions,
 	}); err != nil {
 		t.Fatal(err)
 	}

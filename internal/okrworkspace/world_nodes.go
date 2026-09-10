@@ -53,9 +53,9 @@ func (s *Service) resolveObjectiveNode(ctx context.Context, id string, plan bool
 	if err := s.db.WithContext(ctx).Where("objective_id = ?", objective.ID).Order("sort_order, id").Find(&records).Error; err != nil {
 		return WorldNodeView{}, fmt.Errorf("list objective KRs: %w", err)
 	}
-	view := ObjectiveView{ID: objective.ID, Title: objective.Title, KRs: make([]KRView, 0, len(records))}
+	view := ObjectiveView{ID: objective.ID, Title: objective.Title, Version: objective.Version, KRs: make([]KRView, 0, len(records))}
 	for _, record := range records {
-		kr, err := s.loadKRDefinition(ctx, record, plan)
+		kr, err := s.loadKRDefinitionWithGuard(ctx, record, plan, false)
 		if err != nil {
 			return WorldNodeView{}, err
 		}

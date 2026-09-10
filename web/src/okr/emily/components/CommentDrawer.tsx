@@ -439,8 +439,17 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
     setComments((current) => current.map((comment) => comment.id === rootId ? { ...comment, replies: [...comment.replies, reply] } : comment))
   }
 
+  const currentComment = (id: string) => {
+    for (const comment of comments) {
+      if (comment.id === id) return comment
+      const reply = comment.replies.find((candidate) => candidate.id === id)
+      if (reply) return reply
+    }
+    throw new Error('评论已变化，请刷新后重试')
+  }
+
   const editExistingComment = async (id: string, content: string, mentions: CommentMention[], images: ImageRef[]) => {
-    const updated = await updateComment(id, { content, mentions, images })
+    const updated = await updateComment(currentComment(id), { content, mentions, images })
     setComments((current) => current.map((comment) => {
       if (comment.id === id) return { ...updated, replies: comment.replies }
       return { ...comment, replies: comment.replies.map((reply) => reply.id === id ? { ...updated, replies: [] } : reply) }
@@ -448,7 +457,7 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
   }
 
   const patchExistingComment = async (id: string, patch: { todo?: boolean; resolved?: boolean }) => {
-    const updated = await updateComment(id, patch)
+    const updated = await updateComment(currentComment(id), patch)
     setComments((current) => current.map((comment) => {
       if (comment.id === id) return { ...updated, replies: comment.replies }
       return { ...comment, replies: comment.replies.map((reply) => reply.id === id ? { ...updated, replies: [] } : reply) }
@@ -456,7 +465,7 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
   }
 
   const removeExistingComment = async (id: string) => {
-    await deleteComment(id)
+    await deleteComment(currentComment(id))
     setComments((current) => current
       .filter((comment) => comment.id !== id)
       .map((comment) => ({ ...comment, replies: comment.replies.filter((reply) => reply.id !== id) })))

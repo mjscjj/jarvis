@@ -14,14 +14,19 @@ import (
 func ReorderObjectives(service *okrworkspace.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		var input struct {
-			Quarter      string   `json:"quarter"`
-			ObjectiveIDs []string `json:"objective_ids"`
+			Quarter       string   `json:"quarter"`
+			ObjectiveIDs  []string `json:"objective_ids"`
+			ExpectedOrder []string `json:"expected_order"`
 		}
 		if err := decodeStrictJSON(c.Request.Body(), &input); err != nil {
 			writeAPIError(c, consts.StatusBadRequest, 40047, err)
 			return
 		}
-		order, err := service.ReorderObjectives(ctx, input.Quarter, input.ObjectiveIDs)
+		order, err := service.ReorderObjectives(ctx, input.Quarter, input.ObjectiveIDs, input.ExpectedOrder)
+		if errors.Is(err, okrworkspace.ErrConflict) {
+			writeAPIConflict(c, 40947, err, nil)
+			return
+		}
 		if errors.Is(err, okrworkspace.ErrNotFound) {
 			writeAPIError(c, consts.StatusNotFound, 40447, err)
 			return
@@ -37,14 +42,19 @@ func ReorderObjectives(service *okrworkspace.Service) app.HandlerFunc {
 func ReorderKRs(service *okrworkspace.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		var input struct {
-			KRIDs []string `json:"kr_ids"`
+			KRIDs         []string `json:"kr_ids"`
+			ExpectedOrder []string `json:"expected_order"`
 		}
 		if err := decodeStrictJSON(c.Request.Body(), &input); err != nil {
 			writeAPIError(c, consts.StatusBadRequest, 40048, err)
 			return
 		}
 		objectiveID := strings.TrimSpace(c.Param("objective_id"))
-		order, err := service.ReorderKRs(ctx, objectiveID, input.KRIDs)
+		order, err := service.ReorderKRs(ctx, objectiveID, input.KRIDs, input.ExpectedOrder)
+		if errors.Is(err, okrworkspace.ErrConflict) {
+			writeAPIConflict(c, 40948, err, nil)
+			return
+		}
 		if errors.Is(err, okrworkspace.ErrNotFound) {
 			writeAPIError(c, consts.StatusNotFound, 40448, err)
 			return

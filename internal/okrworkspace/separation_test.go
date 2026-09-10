@@ -221,7 +221,12 @@ func TestCoreAndWeeklyWritesHaveSeparateOwnership(t *testing.T) {
 	}
 	// Deleting a KR takes its weekly progress with it. Every week renders from
 	// the same point rows, so leaving the progress behind would only strand it.
-	if err := service.DeleteKR(t.Context(), kr.ID, DeleteKRInput{ExpectedVersion: core.Version}); err != nil {
+	currentBoard, err := service.CoreBoard(t.Context(), objective.Quarter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	currentKR := currentBoard.Objectives[0].KRs[0]
+	if err := service.DeleteKR(t.Context(), kr.ID, DeleteKRInput{ExpectedVersion: currentKR.Version, DeleteToken: currentKR.DeleteToken}); err != nil {
 		t.Fatal(err)
 	}
 	var remainingProgress, remainingPoints, remainingKR int64
@@ -269,6 +274,15 @@ func TestWeeklyCoreDataIsIsolatedByWeek(t *testing.T) {
 	if w35.MetricNote != "W35 数据" || w35.Metrics[0].Text != "本周累计 120" || w35.Metrics[0].Light != domain.LightYellow {
 		t.Fatalf("W35 weekly core = %+v", w35)
 	}
+	if w35.WeeklyCoreVersion != 1 {
+		t.Fatalf("created W35 weekly core version = %d, want 1", w35.WeeklyCoreVersion)
+	}
+	if _, err := service.ReplaceWeeklyKRCore(t.Context(), kr.ID, WeeklyKRCoreInput{
+		ExpectedVersion: 0, Week: "2026-W35", MetricNote: "stale first writer", UpdatedBy: "ou_stale",
+		Metrics: []MetricView{{ID: metric.ID, Text: "stale", Light: domain.LightRed}},
+	}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("second first-write weekly core error = %v, want conflict", err)
+	}
 
 	w36Board, err := service.Board(t.Context(), objective.Quarter, "2026-W36")
 	if err != nil {
@@ -295,7 +309,7 @@ func TestWeeklyCoreDataIsIsolatedByWeek(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.WeeklyCoreVersion != 1 || updated.MetricNote != "W35 复盘" || updated.Metrics[0].Text != "本周累计 125" {
+	if updated.WeeklyCoreVersion != 2 || updated.MetricNote != "W35 复盘" || updated.Metrics[0].Text != "本周累计 125" {
 		t.Fatalf("updated W35 weekly core = %+v", updated)
 	}
 	if _, err := service.ReplaceWeeklyKRCore(t.Context(), kr.ID, WeeklyKRCoreInput{
@@ -507,7 +521,11 @@ func TestDeleteWeekRemovesOnlySelectedWeeklyReportScope(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	deleted, err := service.DeleteWeek(t.Context(), "2026-Q2", "2026-W15")
+	deleteToken, err := service.weekDeletionToken(t.Context(), "2026-Q2", "2026-W15")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleted, err := service.DeleteWeek(t.Context(), "2026-Q2", "2026-W15", deleteToken)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -544,7 +562,7 @@ func TestDeleteWeekRemovesOnlySelectedWeeklyReportScope(t *testing.T) {
 	assertCount(&domain.KR{}, "id IN ?", []any{[]string{q2KR.ID, q3KR.ID}}, 2)
 	assertCount(&domain.KRPoint{}, "id IN ?", []any{[]string{q2Point.ID, q3Point.ID}}, 2)
 
-	if _, err := service.DeleteWeek(t.Context(), "2026-Q2", "2026-W15"); err != ErrWeekNotFound {
+	if _, err := service.DeleteWeek(t.Context(), "2026-Q2", "2026-W15", "already-deleted"); err != ErrWeekNotFound {
 		t.Fatalf("delete missing week error = %v, want ErrWeekNotFound", err)
 	}
 }
@@ -641,6 +659,53 @@ func TestMigrateCoreBackfillsHistoricalProgressScopes(t *testing.T) {
 	}
 }
 
+func TestMigrateBackfillsWriteVersionsIdempotently(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	for _, value := range []any{
+		&domain.WeeklyKRCore{KRID: "legacy-core", Week: "2026-W35"},
+		&domain.KRProgress{ID: "legacy-meego", PointID: "legacy-point", Week: "2026-W35", Status: domain.StatusDone, Text: "同步进展", Source: "meego"},
+		&domain.WeeklyScore{Quarter: "2026-Q3", Week: "2026-W35", TargetKind: domain.WeeklyScoreTargetKR, TargetID: "legacy-kr", Score: 0.5, UpdatedBy: "legacy"},
+		&domain.PageComment{ID: "legacy-comment", Quarter: "2026-Q3", Week: "2026-W35", Content: "历史评论"},
+	} {
+		if err := db.Create(value).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, table := range []string{
+		"okr_workspace_weekly_kr_core",
+		"okr_workspace_progress",
+		"okr_workspace_weekly_score",
+		"okr_workspace_comment",
+	} {
+		if err := db.Exec("UPDATE " + table + " SET version = 0").Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for attempt := 0; attempt < 2; attempt++ {
+		if err := MigrateCore(db); err != nil {
+			t.Fatal(err)
+		}
+		if err := MigrateBizOKR(db); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, table := range []string{
+		"okr_workspace_weekly_kr_core",
+		"okr_workspace_progress",
+		"okr_workspace_weekly_score",
+		"okr_workspace_comment",
+	} {
+		var count int64
+		if err := db.Table(table).Where("version = 0").Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		if count != 0 {
+			t.Fatalf("%s still has %d zero-version rows", table, count)
+		}
+	}
+}
+
 func TestMigrateBizOKRRejectsLegacyPlanContentSchema(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
@@ -732,7 +797,11 @@ func TestCoreWorkspaceSupportsFormalProgressWithoutBizSchema(t *testing.T) {
 	if len(progress.Objectives[0].KRs[0].Points[0].Entries) != 1 || progress.Objectives[0].KRs[0].Points[0].Entries[0].Text != "通用正式进展" {
 		t.Fatalf("generic progress board = %+v", progress)
 	}
-	if err := service.DeleteKR(t.Context(), created.ID, DeleteKRInput{ExpectedVersion: decomposed.Version}); err != nil {
+	currentBeforeDelete, err := service.GetCoreKR(t.Context(), created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.DeleteKR(t.Context(), created.ID, DeleteKRInput{ExpectedVersion: currentBeforeDelete.Version, DeleteToken: currentBeforeDelete.DeleteToken}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -747,24 +816,27 @@ func TestObjectiveCanBeRenamedAndOnlyDeletedWhenEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	updated, err := service.UpdateObjective(t.Context(), objective.ID, UpdateObjectiveInput{Title: "新方向"})
+	updated, err := service.UpdateObjective(t.Context(), objective.ID, UpdateObjectiveInput{ExpectedVersion: objective.Version, Title: "新方向"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if updated.Title != "新方向" {
 		t.Fatalf("updated objective = %+v", updated)
 	}
+	if _, err := service.UpdateObjective(t.Context(), objective.ID, UpdateObjectiveInput{ExpectedVersion: objective.Version, Title: "旧页面覆盖"}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale objective rename error = %v, want ErrConflict", err)
+	}
 	kr, err := service.CreateKR(t.Context(), objective.ID, CreateKRInput{Title: "仍有关联 KR"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := service.DeleteObjective(t.Context(), objective.ID); err == nil {
+	if err := service.DeleteObjective(t.Context(), objective.ID, DeleteObjectiveInput{ExpectedVersion: updated.Version}); err == nil {
 		t.Fatal("DeleteObjective() succeeded while KRs still exist")
 	}
-	if err := service.DeleteKR(t.Context(), kr.ID, DeleteKRInput{ExpectedVersion: kr.Version}); err != nil {
+	if err := service.DeleteKR(t.Context(), kr.ID, DeleteKRInput{ExpectedVersion: kr.Version, DeleteToken: kr.DeleteToken}); err != nil {
 		t.Fatal(err)
 	}
-	if err := service.DeleteObjective(t.Context(), objective.ID); err != nil {
+	if err := service.DeleteObjective(t.Context(), objective.ID, DeleteObjectiveInput{ExpectedVersion: updated.Version}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -879,8 +951,13 @@ func TestReplaceKRCoreDropsWeeklyRowsOfRemovedPoints(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	currentKR, err := service.GetBizCoreKR(t.Context(), kr.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := service.ReplaceKRCore(t.Context(), kr.ID, ReplaceKRInput{
 		ExpectedVersion: 0,
+		DeleteToken:     currentKR.DeleteToken,
 		Title:           kr.Title,
 		Points:          []PointView{{ID: kept.ID, Kind: kept.Kind, Title: kept.Title, Tags: []TagView{}}},
 	}); err != nil {

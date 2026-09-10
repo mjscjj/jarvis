@@ -61,7 +61,7 @@ export interface BoardApi {
   reset: () => void
   retry: () => void
   resolveConflict: (choice: 'remote' | 'local') => void
-  applySavedKr: (kr: Kr) => void
+  applySavedKr: (kr: Kr, pointId?: string) => void
 }
 
 export const BoardContext = createContext<BoardApi | null>(null)

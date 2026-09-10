@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -102,7 +103,7 @@ func TestOKRPlanRoutesUseOwnLifecycle(t *testing.T) {
 	if point := patchedPlan.Data.Objectives[0].KRs[0].Points[0]; point.Title != "更新后的产品 KR" || len(point.Owners) != 1 || point.Owners[0].Name != "乙" {
 		t.Fatalf("patched plan point = %+v", point)
 	}
-	reorderBody := `{"ids":["plan-o"]}`
+	reorderBody := fmt.Sprintf(`{"ids":["plan-o"],"expected_version":%d}`, patchedPlan.Data.Version)
 	reorderResponse := ut.PerformRequest(h.Engine, "PUT", "/api/biz-okr/plans/"+created.Data.ID+"/objectives/order", &ut.Body{Body: strings.NewReader(reorderBody), Len: len(reorderBody)}).Result()
 	if reorderResponse.StatusCode() != 200 {
 		t.Fatalf("reorder objective status=%d body=%s", reorderResponse.StatusCode(), reorderResponse.Body())
@@ -151,7 +152,12 @@ func TestOKRPlanRoutesUseOwnLifecycle(t *testing.T) {
 		t.Fatalf("listed plans = %+v", listed.Data)
 	}
 
-	deleteResponse := ut.PerformRequest(h.Engine, "DELETE", "/api/biz-okr/plans/"+created.Data.ID, nil).Result()
+	currentPlan, err := workspace.GetPlan(t.Context(), created.Data.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	deleteBody := `{"delete_token":"` + currentPlan.DeleteToken + `"}`
+	deleteResponse := ut.PerformRequest(h.Engine, "DELETE", "/api/biz-okr/plans/"+created.Data.ID, &ut.Body{Body: strings.NewReader(deleteBody), Len: len(deleteBody)}).Result()
 	if deleteResponse.StatusCode() != 200 {
 		t.Fatalf("delete status=%d body=%s", deleteResponse.StatusCode(), deleteResponse.Body())
 	}

@@ -29,10 +29,13 @@ type PatchPointDefinitionInput struct {
 // was written. Parent versions are deliberately absent: a point owns its own
 // concurrency boundary and never invalidates a sibling point or its KR.
 type PointDefinitionPatchResult struct {
-	PointID string      `json:"point_id"`
-	Version int32       `json:"version"`
-	Title   string      `json:"title"`
-	Owners  []OwnerView `json:"owners"`
+	PointID         string      `json:"point_id"`
+	Version         int32       `json:"version"`
+	StructureToken  string      `json:"structure_token,omitempty"`
+	DeleteToken     string      `json:"delete_token,omitempty"`
+	PlanDeleteToken string      `json:"plan_delete_token,omitempty"`
+	Title           string      `json:"title"`
+	Owners          []OwnerView `json:"owners"`
 }
 
 // PatchPointDefinition updates one point in the committed OKR definition used
@@ -187,5 +190,33 @@ func (s *Service) pointDefinitionResult(ctx context.Context, pointID string) (Po
 	for _, owner := range records {
 		owners = append(owners, storedOwnerView(owner.OpenID, owner.Name))
 	}
-	return PointDefinitionPatchResult{PointID: point.ID, Version: point.Version, Title: point.Title, Owners: owners}, nil
+	result := PointDefinitionPatchResult{PointID: point.ID, Version: point.Version, Title: point.Title, Owners: owners}
+	var kr domain.KR
+	if err := s.db.WithContext(ctx).First(&kr, "id = ?", point.KRID).Error; err != nil {
+		return PointDefinitionPatchResult{}, fmt.Errorf("get point KR result: %w", err)
+	}
+	var objective domain.Objective
+	if err := s.db.WithContext(ctx).First(&objective, "id = ?", kr.ObjectiveID).Error; err != nil {
+		return PointDefinitionPatchResult{}, fmt.Errorf("get point objective result: %w", err)
+	}
+	if objective.PlanID == "" {
+		deleteToken, err := s.krDeletionToken(ctx, kr.ID)
+		if err != nil {
+			return PointDefinitionPatchResult{}, err
+		}
+		result.DeleteToken = deleteToken
+	} else {
+		plan, err := s.GetPlan(ctx, objective.PlanID)
+		if err != nil {
+			return PointDefinitionPatchResult{}, err
+		}
+		result.PlanDeleteToken = plan.DeleteToken
+		for _, item := range plan.Objectives {
+			if item.ID == objective.ID {
+				result.StructureToken = item.StructureToken
+				break
+			}
+		}
+	}
+	return result, nil
 }

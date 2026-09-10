@@ -65,12 +65,20 @@ func (s *Service) ReplaceWeeklyKRCore(ctx context.Context, krID string, input We
 		}
 		row := domain.WeeklyKRCore{
 			KRID: krID, Week: input.Week, MetricNote: input.MetricNote, Metrics: metrics,
-			CreatedBy: input.UpdatedBy, UpdatedBy: input.UpdatedBy,
+			Version: 1, CreatedBy: input.UpdatedBy, UpdatedBy: input.UpdatedBy,
 		}
 		if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
+			var count int64
+			if countErr := s.db.WithContext(ctx).Model(&domain.WeeklyKRCore{}).
+				Where("kr_id = ? AND week = ?", krID, input.Week).Count(&count).Error; countErr == nil && count > 0 {
+				return KRView{}, ErrConflict
+			}
 			return KRView{}, fmt.Errorf("create weekly core data: %w", err)
 		}
 		return s.GetProgressKR(ctx, krID, input.Week)
+	}
+	if input.ExpectedVersion == 0 {
+		return KRView{}, ErrConflict
 	}
 
 	result := s.db.WithContext(ctx).Model(&domain.WeeklyKRCore{}).

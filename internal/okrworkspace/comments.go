@@ -27,6 +27,8 @@ type CommentImage = domain.ImageRef
 
 type CommentView struct {
 	ID                 string           `json:"id"`
+	Version            int32            `json:"version"`
+	DeleteToken        string           `json:"delete_token"`
 	PlanID             string           `json:"plan_id,omitempty"`
 	ParentID           string           `json:"parent_id,omitempty"`
 	TargetType         string           `json:"target_type"`
@@ -87,11 +89,17 @@ type CreateCommentInput struct {
 type UpdateCommentInput struct {
 	// Pointers distinguish an omitted field from an explicit false value. Text
 	// edits, To do toggles and resolution are independent comment actions.
-	Content  *string           `json:"content"`
-	Mentions *[]CommentMention `json:"mentions"`
-	Images   *[]CommentImage   `json:"images"`
-	Todo     *bool             `json:"todo"`
-	Resolved *bool             `json:"resolved"`
+	Content         *string           `json:"content"`
+	Mentions        *[]CommentMention `json:"mentions"`
+	Images          *[]CommentImage   `json:"images"`
+	Todo            *bool             `json:"todo"`
+	Resolved        *bool             `json:"resolved"`
+	ExpectedVersion int32             `json:"expected_version"`
+}
+
+type DeleteCommentInput struct {
+	ExpectedVersion int32  `json:"expected_version"`
+	DeleteToken     string `json:"delete_token"`
 }
 
 func (service *Service) Comments(ctx context.Context, quarter, week string) (CommentList, error) {
@@ -112,7 +120,7 @@ func (service *Service) Comments(ctx context.Context, quarter, week string) (Com
 		Order("created_at ASC").Find(&rows).Error; err != nil {
 		return CommentList{}, fmt.Errorf("list page comments: %w", err)
 	}
-	return buildCommentList(quarter, week, rows), nil
+	return buildCommentList(quarter, week, rows)
 }
 
 func (service *Service) PlanComments(ctx context.Context, planID string) (CommentList, error) {
@@ -126,7 +134,10 @@ func (service *Service) PlanComments(ctx context.Context, planID string) (Commen
 		Order("created_at ASC").Find(&rows).Error; err != nil {
 		return CommentList{}, fmt.Errorf("list plan comments: %w", err)
 	}
-	result := buildCommentList(plan.Quarter, "", rows)
+	result, err := buildCommentList(plan.Quarter, "", rows)
+	if err != nil {
+		return CommentList{}, err
+	}
 	result.PlanID = plan.ID
 	return result, nil
 }
@@ -244,6 +255,7 @@ func (service *Service) CreateComment(ctx context.Context, input CreateCommentIn
 	now := time.Now().UTC()
 	row := domain.PageComment{
 		ID:              newCommentID(now, input),
+		Version:         1,
 		Quarter:         input.Quarter,
 		Week:            input.Week,
 		PlanID:          input.PlanID,
@@ -291,6 +303,10 @@ func (service *Service) CreateComment(ctx context.Context, input CreateCommentIn
 		return CommentView{}, fmt.Errorf("create page comment: %w", err)
 	}
 	view := commentView(row)
+	view.DeleteToken, err = service.commentDeleteToken(ctx, row.ID)
+	if err != nil {
+		return CommentView{}, err
+	}
 	view.NotificationErrors = service.notifyCreatedComment(ctx, row, input.AuthorEmail, input.Mentions, input.SourceTab)
 	return view, nil
 }
@@ -303,6 +319,9 @@ func (service *Service) UpdateComment(ctx context.Context, id string, input Upda
 	if input.Content == nil && input.Mentions == nil && input.Images == nil && input.Todo == nil && input.Resolved == nil {
 		return CommentView{}, fmt.Errorf("content, mentions, images, todo or resolved is required")
 	}
+	if input.ExpectedVersion <= 0 {
+		return CommentView{}, fmt.Errorf("expected_version must be positive")
+	}
 
 	var row domain.PageComment
 	err := service.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -311,6 +330,9 @@ func (service *Service) UpdateComment(ctx context.Context, id string, input Upda
 				return ErrNotFound
 			}
 			return err
+		}
+		if row.Version != input.ExpectedVersion {
+			return ErrConflict
 		}
 		updates := map[string]any{}
 		if input.Content != nil {
@@ -374,18 +396,33 @@ func (service *Service) UpdateComment(ctx context.Context, id string, input Upda
 		}
 		row.UpdatedAt = time.Now().UTC()
 		updates["updated_at"] = row.UpdatedAt
-		return tx.Model(&domain.PageComment{}).Where("id = ?", id).Updates(updates).Error
+		updates["version"] = gorm.Expr("version + 1")
+		result := tx.Model(&domain.PageComment{}).Where("id = ? AND version = ?", id, input.ExpectedVersion).Updates(updates)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrConflict
+		}
+		row.Version++
+		return nil
 	})
 	if err != nil {
 		return CommentView{}, fmt.Errorf("update page comment: %w", err)
 	}
-	return commentView(row), nil
+	view := commentView(row)
+	view.DeleteToken, err = service.commentDeleteToken(ctx, row.ID)
+	if err != nil {
+		return CommentView{}, err
+	}
+	return view, nil
 }
 
-func (service *Service) DeleteComment(ctx context.Context, id string) error {
+func (service *Service) DeleteComment(ctx context.Context, id string, input DeleteCommentInput) error {
 	id = strings.TrimSpace(id)
-	if id == "" {
-		return fmt.Errorf("comment_id is required")
+	input.DeleteToken = strings.TrimSpace(input.DeleteToken)
+	if id == "" || input.ExpectedVersion <= 0 || input.DeleteToken == "" {
+		return fmt.Errorf("comment_id, positive expected_version and delete_token are required")
 	}
 	if err := service.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var row domain.PageComment
@@ -395,19 +432,36 @@ func (service *Service) DeleteComment(ctx context.Context, id string) error {
 			}
 			return err
 		}
+		if row.Version != input.ExpectedVersion {
+			return ErrConflict
+		}
+		currentToken, err := commentDeleteTokenWithDB(tx, row)
+		if err != nil {
+			return err
+		}
+		if currentToken != input.DeleteToken {
+			return ErrConflict
+		}
 		if row.ParentID == "" {
 			if err := tx.Where("parent_id = ?", row.ID).Delete(&domain.PageComment{}).Error; err != nil {
 				return err
 			}
 		}
-		return tx.Delete(&domain.PageComment{}, "id = ?", row.ID).Error
+		result := tx.Where("id = ? AND version = ?", row.ID, input.ExpectedVersion).Delete(&domain.PageComment{})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return ErrConflict
+		}
+		return nil
 	}); err != nil {
 		return fmt.Errorf("delete page comment: %w", err)
 	}
 	return nil
 }
 
-func buildCommentList(quarter, week string, rows []domain.PageComment) CommentList {
+func buildCommentList(quarter, week string, rows []domain.PageComment) (CommentList, error) {
 	roots := make([]CommentView, 0)
 	rootIndex := make(map[string]int)
 	for _, row := range rows {
@@ -422,15 +476,34 @@ func buildCommentList(quarter, week string, rows []domain.PageComment) CommentLi
 			continue
 		}
 		if index, ok := rootIndex[row.ParentID]; ok {
-			roots[index].Replies = append(roots[index].Replies, commentView(row))
+			reply := commentView(row)
+			var err error
+			reply.DeleteToken, err = deletionToken(row)
+			if err != nil {
+				return CommentList{}, err
+			}
+			roots[index].Replies = append(roots[index].Replies, reply)
 		}
 	}
-	return CommentList{Quarter: quarter, Week: week, Count: len(rows), Comments: roots}
+	for index := range roots {
+		thread := []domain.PageComment{}
+		for _, row := range rows {
+			if row.ID == roots[index].ID || row.ParentID == roots[index].ID {
+				thread = append(thread, row)
+			}
+		}
+		var err error
+		roots[index].DeleteToken, err = deletionToken(thread)
+		if err != nil {
+			return CommentList{}, err
+		}
+	}
+	return CommentList{Quarter: quarter, Week: week, Count: len(rows), Comments: roots}, nil
 }
 
 func commentView(row domain.PageComment) CommentView {
 	return CommentView{
-		ID: row.ID, PlanID: row.PlanID, ParentID: row.ParentID, TargetType: row.TargetType,
+		ID: row.ID, Version: row.Version, PlanID: row.PlanID, ParentID: row.ParentID, TargetType: row.TargetType,
 		TargetID: row.TargetID, TargetTitle: row.TargetTitle,
 		SelectedText: row.SelectedText, SelectionStart: row.SelectionStart, SelectionEnd: row.SelectionEnd,
 		SelectionPrefix: row.SelectionPrefix, SelectionSuffix: row.SelectionSuffix,
@@ -438,6 +511,29 @@ func commentView(row domain.PageComment) CommentView {
 		Content: row.Content, Mentions: append([]CommentMention(nil), row.Mentions...), Images: nonNilImages(row.Images), Todo: row.Todo, Resolved: row.Resolved,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt, Replies: []CommentView{},
 	}
+}
+
+func (service *Service) commentDeleteToken(ctx context.Context, id string) (string, error) {
+	var row domain.PageComment
+	if err := service.db.WithContext(ctx).First(&row, "id = ?", strings.TrimSpace(id)).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", ErrNotFound
+		}
+		return "", fmt.Errorf("get comment deletion snapshot: %w", err)
+	}
+	return commentDeleteTokenWithDB(service.db.WithContext(ctx), row)
+}
+
+func commentDeleteTokenWithDB(db *gorm.DB, row domain.PageComment) (string, error) {
+	if row.ParentID != "" {
+		return deletionToken(row)
+	}
+	var thread []domain.PageComment
+	if err := db.Where("id = ? OR parent_id = ?", row.ID, row.ID).
+		Order("created_at ASC, id ASC").Find(&thread).Error; err != nil {
+		return "", fmt.Errorf("load comment deletion snapshot: %w", err)
+	}
+	return deletionToken(thread)
 }
 
 func normalizeCommentImages(images []CommentImage) ([]CommentImage, error) {

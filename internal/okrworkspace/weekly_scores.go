@@ -56,14 +56,23 @@ func (s *Service) ReplaceWeeklyScore(ctx context.Context, input WeeklyScoreInput
 		now := time.Now().UTC()
 		row := domain.WeeklyScore{
 			Quarter: input.Quarter, Week: input.Week, TargetKind: input.TargetKind, TargetID: input.TargetID,
-			Score: input.Score, Version: 0, UpdatedBy: input.UpdatedBy, CreatedAt: now, UpdatedAt: now,
+			Score: input.Score, Version: 1, UpdatedBy: input.UpdatedBy, CreatedAt: now, UpdatedAt: now,
 		}
 		if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
+			var count int64
+			if countErr := s.db.WithContext(ctx).Model(&domain.WeeklyScore{}).
+				Where("quarter = ? AND week = ? AND target_kind = ? AND target_id = ?", input.Quarter, input.Week, input.TargetKind, input.TargetID).
+				Count(&count).Error; countErr == nil && count > 0 {
+				return KRView{}, ErrConflict
+			}
 			return KRView{}, fmt.Errorf("create weekly score: %w", err)
 		}
 	} else if err != nil {
 		return KRView{}, fmt.Errorf("read weekly score: %w", err)
 	} else {
+		if input.ExpectedVersion == 0 {
+			return KRView{}, ErrConflict
+		}
 		result := s.db.WithContext(ctx).Model(&domain.WeeklyScore{}).
 			Where("quarter = ? AND week = ? AND target_kind = ? AND target_id = ? AND version = ?",
 				input.Quarter, input.Week, input.TargetKind, input.TargetID, input.ExpectedVersion).

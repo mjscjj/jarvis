@@ -67,12 +67,12 @@ func TestReorderRoutesRewriteSortOrderWithoutTouchingContent(t *testing.T) {
 		body   string
 		status int
 	}{
-		{"partial objective order", "/api/okr/objectives/order", `{"quarter":"2026-Q3","objective_ids":["o-3","o-1"]}`, 400},
-		{"foreign objective", "/api/okr/objectives/order", `{"quarter":"2026-Q3","objective_ids":["o-1","o-2","other-quarter"]}`, 400},
-		{"duplicate objective", "/api/okr/objectives/order", `{"quarter":"2026-Q3","objective_ids":["o-1","o-1","o-2"]}`, 400},
-		{"unknown quarter", "/api/okr/objectives/order", `{"quarter":"1999-Q1","objective_ids":[]}`, 404},
-		{"kr from another objective", "/api/okr/objectives/o-1/kr-order", `{"kr_ids":["kr-a","kr-elsewhere"]}`, 400},
-		{"unknown objective", "/api/okr/objectives/missing/kr-order", `{"kr_ids":["kr-a"]}`, 404},
+		{"partial objective order", "/api/okr/objectives/order", `{"quarter":"2026-Q3","objective_ids":["o-3","o-1"],"expected_order":["o-1","o-2","o-3"]}`, 400},
+		{"foreign objective", "/api/okr/objectives/order", `{"quarter":"2026-Q3","objective_ids":["o-1","o-2","other-quarter"],"expected_order":["o-1","o-2","o-3"]}`, 400},
+		{"duplicate objective", "/api/okr/objectives/order", `{"quarter":"2026-Q3","objective_ids":["o-1","o-1","o-2"],"expected_order":["o-1","o-2","o-3"]}`, 400},
+		{"unknown quarter", "/api/okr/objectives/order", `{"quarter":"1999-Q1","objective_ids":[],"expected_order":[]}`, 404},
+		{"kr from another objective", "/api/okr/objectives/o-1/kr-order", `{"kr_ids":["kr-a","kr-elsewhere"],"expected_order":["kr-a","kr-b"]}`, 400},
+		{"unknown objective", "/api/okr/objectives/missing/kr-order", `{"kr_ids":["kr-a"],"expected_order":[]}`, 404},
 	} {
 		response := ut.PerformRequest(h.Engine, "PUT", test.path, &ut.Body{Body: strings.NewReader(test.body), Len: len(test.body)}).Result()
 		if response.StatusCode() != test.status {
@@ -80,7 +80,7 @@ func TestReorderRoutesRewriteSortOrderWithoutTouchingContent(t *testing.T) {
 		}
 	}
 
-	body := `{"quarter":"2026-Q3","objective_ids":["o-3","o-2","o-1"]}`
+	body := `{"quarter":"2026-Q3","objective_ids":["o-3","o-2","o-1"],"expected_order":["o-1","o-2","o-3"]}`
 	response := ut.PerformRequest(h.Engine, "PUT", "/api/okr/objectives/order", &ut.Body{Body: strings.NewReader(body), Len: len(body)}).Result()
 	if response.StatusCode() != 200 {
 		t.Fatalf("objective order status=%d body=%s", response.StatusCode(), response.Body())
@@ -95,6 +95,11 @@ func TestReorderRoutesRewriteSortOrderWithoutTouchingContent(t *testing.T) {
 	}
 	if strings.Join(payload.Data.Order, ",") != "o-3,o-2,o-1" {
 		t.Fatalf("order = %v", payload.Data.Order)
+	}
+	staleBody := `{"quarter":"2026-Q3","objective_ids":["o-2","o-1","o-3"],"expected_order":["o-1","o-2","o-3"]}`
+	staleResponse := ut.PerformRequest(h.Engine, "PUT", "/api/okr/objectives/order", &ut.Body{Body: strings.NewReader(staleBody), Len: len(staleBody)}).Result()
+	if staleResponse.StatusCode() != 409 {
+		t.Fatalf("stale objective order status=%d body=%s", staleResponse.StatusCode(), staleResponse.Body())
 	}
 	var objectives []domain.Objective
 	if err := db.Where("quarter = ?", "2026-Q3").Order("sort_order, id").Find(&objectives).Error; err != nil {
@@ -111,10 +116,15 @@ func TestReorderRoutesRewriteSortOrderWithoutTouchingContent(t *testing.T) {
 		t.Fatalf("another quarter must keep its order: %+v", untouched)
 	}
 
-	krBody := `{"kr_ids":["kr-b","kr-a"]}`
+	krBody := `{"kr_ids":["kr-b","kr-a"],"expected_order":["kr-a","kr-b"]}`
 	response = ut.PerformRequest(h.Engine, "PUT", "/api/okr/objectives/o-1/kr-order", &ut.Body{Body: strings.NewReader(krBody), Len: len(krBody)}).Result()
 	if response.StatusCode() != 200 {
 		t.Fatalf("kr order status=%d body=%s", response.StatusCode(), response.Body())
+	}
+	staleKRBody := `{"kr_ids":["kr-a","kr-b"],"expected_order":["kr-a","kr-b"]}`
+	staleResponse = ut.PerformRequest(h.Engine, "PUT", "/api/okr/objectives/o-1/kr-order", &ut.Body{Body: strings.NewReader(staleKRBody), Len: len(staleKRBody)}).Result()
+	if staleResponse.StatusCode() != 409 {
+		t.Fatalf("stale KR order status=%d body=%s", staleResponse.StatusCode(), staleResponse.Body())
 	}
 	var krs []domain.KR
 	if err := db.Where("objective_id = ?", "o-1").Order("sort_order, id").Find(&krs).Error; err != nil {

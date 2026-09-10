@@ -97,15 +97,17 @@ func TestReplaceKRCoreClearsOwnersOfRemovedPoints(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.ReplaceKRCore(t.Context(), kr.ID, ReplaceKRInput{
+	current, err := service.ReplaceKRCore(t.Context(), kr.ID, ReplaceKRInput{
 		ExpectedVersion: 0,
 		Title:           kr.Title,
 		Points:          []PointView{{ID: point.ID, Kind: point.Kind, Title: point.Title, Tags: []TagView{}, Owners: []OwnerView{{OpenID: "ou_a", Name: "甲"}}}},
-	}); err != nil {
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := service.ReplaceKRCore(t.Context(), kr.ID, ReplaceKRInput{
 		ExpectedVersion: 1,
+		DeleteToken:     current.DeleteToken,
 		Title:           kr.Title,
 		Points:          []PointView{},
 	}); err != nil {
@@ -137,7 +139,11 @@ func TestDeleteKRRemovesPointOwners(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := service.DeleteKR(t.Context(), kr.ID, DeleteKRInput{ExpectedVersion: 0}); err != nil {
+	current, err := service.GetCoreKR(t.Context(), kr.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.DeleteKR(t.Context(), kr.ID, DeleteKRInput{ExpectedVersion: 0, DeleteToken: current.DeleteToken}); err != nil {
 		t.Fatal(err)
 	}
 	var remaining int64

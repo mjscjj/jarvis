@@ -15,13 +15,15 @@ import (
 // used by Review. The optimistic version is scoped to one objective, not the
 // entire Plan.
 type PlanObjectiveWriteInput struct {
-	ExpectedVersion int32             `json:"expected_version"`
-	Objective       PlanObjectiveView `json:"objective"`
-	UpdatedBy       string            `json:"-"`
+	ExpectedVersion        int32             `json:"expected_version"`
+	ExpectedStructureToken string            `json:"expected_structure_token"`
+	Objective              PlanObjectiveView `json:"objective"`
+	UpdatedBy              string            `json:"-"`
 }
 
 type PlanObjectiveDeleteInput struct {
-	ExpectedVersion int32 `json:"expected_version"`
+	ExpectedVersion        int32  `json:"expected_version"`
+	ExpectedStructureToken string `json:"expected_structure_token"`
 }
 
 func (s *Service) CreatePlanObjective(ctx context.Context, planID string, objective PlanObjectiveView, actor string) (PlanView, error) {
@@ -98,6 +100,9 @@ func (s *Service) UpdatePlanObjective(ctx context.Context, planID, objectiveID s
 	if current.ID == "" {
 		return PlanView{}, ErrNotFound
 	}
+	if planObjectiveRemovesChildren(current, input.Objective) && current.StructureToken != strings.TrimSpace(input.ExpectedStructureToken) {
+		return PlanView{}, ErrConflict
+	}
 	currentPoints := make(map[string]PlanPointView)
 	for _, kr := range current.KRs {
 		for _, point := range kr.Points {
@@ -149,13 +154,23 @@ func (s *Service) DeletePlanObjective(ctx context.Context, planID, objectiveID s
 	if planID == "" || objectiveID == "" || input.ExpectedVersion < 0 {
 		return fmt.Errorf("plan id, objective id and non-negative expected_version are required")
 	}
-	current, err := s.planObjective(ctx, planID, objectiveID)
+	objectives, err := s.planObjectives(ctx, planID)
 	if err != nil {
 		return err
 	}
+	var current PlanObjectiveView
+	for _, objective := range objectives {
+		if objective.ID == objectiveID {
+			current = objective
+			break
+		}
+	}
+	if current.ID == "" {
+		return ErrNotFound
+	}
 	// Check the objective version before touching any child rows. A stale
 	// delete must never remove the latest editor's KR/metric/point definitions.
-	if current.Version != input.ExpectedVersion {
+	if current.Version != input.ExpectedVersion || current.StructureToken != strings.TrimSpace(input.ExpectedStructureToken) {
 		return ErrConflict
 	}
 	if err := s.deletePlanObjectiveChildren(ctx, objectiveID); err != nil {
@@ -171,7 +186,7 @@ func (s *Service) DeletePlanObjective(ctx context.Context, planID, objectiveID s
 	return s.bumpPlan(ctx, planID, actor)
 }
 
-func (s *Service) ReorderPlanObjectives(ctx context.Context, planID string, ids []string, actor string) (PlanView, error) {
+func (s *Service) ReorderPlanObjectives(ctx context.Context, planID string, ids []string, expectedVersion int32, actor string) (PlanView, error) {
 	planID = strings.TrimSpace(planID)
 	if planID == "" {
 		return PlanView{}, fmt.Errorf("plan id is required")
@@ -188,13 +203,28 @@ func (s *Service) ReorderPlanObjectives(ctx context.Context, planID string, ids 
 	if err != nil {
 		return PlanView{}, err
 	}
+	updates := map[string]any{"version": gorm.Expr("version + 1"), "updated_at": time.Now().UTC()}
+	if strings.TrimSpace(actor) != "" {
+		updates["updated_by"] = strings.TrimSpace(actor)
+	}
+	reserved := s.db.WithContext(ctx).Model(&domain.OKRPlan{}).Where("id = ? AND version = ?", planID, expectedVersion).Updates(updates)
+	if reserved.Error != nil {
+		return PlanView{}, fmt.Errorf("reserve plan objective order: %w", reserved.Error)
+	}
+	if reserved.RowsAffected != 1 {
+		var count int64
+		if err := s.db.WithContext(ctx).Model(&domain.OKRPlan{}).Where("id = ?", planID).Count(&count).Error; err != nil {
+			return PlanView{}, fmt.Errorf("check plan objective order conflict: %w", err)
+		}
+		if count == 0 {
+			return PlanView{}, ErrNotFound
+		}
+		return PlanView{}, ErrConflict
+	}
 	for index, id := range ordered {
 		if err := s.db.WithContext(ctx).Model(&domain.Objective{}).Where("id = ? AND plan_id = ?", id, planID).Updates(map[string]any{"sort_order": index, "updated_at": time.Now().UTC()}).Error; err != nil {
 			return PlanView{}, fmt.Errorf("write plan objective order: %w", err)
 		}
-	}
-	if err := s.bumpPlan(ctx, planID, actor); err != nil {
-		return PlanView{}, err
 	}
 	return s.GetPlan(ctx, planID)
 }

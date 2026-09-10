@@ -63,15 +63,21 @@ func TestStoreMeegoObservationUsesSuppliedSnapshotWithoutExternalReader(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := service.ConfirmMeegoProgress(t.Context(), point.ID, ConfirmMeegoProgressInput{
+		ExpectedVersion: 0, Week: week.Week, UpdatedBy: "agent:stale", MeegoWorkItemID: point.MeegoWorkItemID,
+		Status: domain.StatusDone, Text: "旧页面覆盖",
+	}); err != ErrConflict {
+		t.Fatalf("second first-write Meego error = %v, want conflict", err)
+	}
 	confirmed, err = service.ConfirmMeegoProgress(t.Context(), point.ID, ConfirmMeegoProgressInput{
-		ExpectedVersion: 0, Week: week.Week, UpdatedBy: "agent:task-1", MeegoWorkItemID: point.MeegoWorkItemID,
+		ExpectedVersion: 1, Week: week.Week, UpdatedBy: "agent:task-1", MeegoWorkItemID: point.MeegoWorkItemID,
 		Status: domain.StatusDone, Text: "Meego 进展已完成",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	entries := confirmed.Points[0].Entries
-	if len(entries) != 2 || entries[1].Version != 1 || entries[1].Status != domain.StatusDone || len(entries[1].Docs) != 1 || entries[1].Docs[0].URL != point.MeegoURL {
+	if len(entries) != 2 || entries[1].Version != 2 || entries[1].Status != domain.StatusDone || len(entries[1].Docs) != 1 || entries[1].Docs[0].URL != point.MeegoURL {
 		t.Fatalf("confirmed Meego progress = %+v", entries)
 	}
 }

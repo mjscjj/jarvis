@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import MarkdownReport from '../../../components/MarkdownReport'
-import { createFollowUp, deleteFollowUp, getFollowUps, updateFollowUp } from '../api'
+import { APIError, createFollowUp, deleteFollowUp, getFollowUps, updateFollowUp } from '../api'
 import { useBoard, uid } from '../board'
 import { commentTargetElementId, scrollToCommentSource, useCommentInteraction } from '../commenting'
 import { commentTargetKey } from '../comments'
@@ -110,8 +110,13 @@ export function WeeklyFocus({ comments, onOpenComment, onCommentOrderChange, rea
       const saved = await updateFollowUp(next)
       setItems((current) => current.map((candidate) => candidate.id === saved.id ? saved : candidate))
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : '保存待跟进事项失败')
-      await load()
+      if (cause instanceof APIError && cause.status === 409 && cause.data) {
+        const remote = cause.data as FollowUpItem
+        setItems((current) => current.map((candidate) => candidate.id === item.id ? { ...remote, ...patch } : candidate))
+        setError('另一位填写者刚修改了这条事项。你的当前字段已保留，请核对后再次保存。')
+      } else {
+        setError(cause instanceof Error ? cause.message : '保存待跟进事项失败；本地输入已保留')
+      }
     } finally {
       setSavingID('')
     }

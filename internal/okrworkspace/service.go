@@ -56,6 +56,7 @@ type Board struct {
 	Quarter           string                 `json:"quarter"`
 	Week              string                 `json:"week"`
 	TemplateKey       domain.WeekTemplateKey `json:"template_key"`
+	DeleteToken       string                 `json:"delete_token,omitempty"`
 	PreviousWeek      string                 `json:"previous_week,omitempty"`
 	AvailableQuarters []string               `json:"available_quarters"`
 	AvailableWeeks    []string               `json:"available_weeks"`
@@ -216,14 +217,16 @@ type ReminderKR struct {
 }
 
 type ObjectiveView struct {
-	ID    string   `json:"id"`
-	Title string   `json:"title"`
-	KRs   []KRView `json:"krs"`
+	ID      string   `json:"id"`
+	Title   string   `json:"title"`
+	Version int32    `json:"version"`
+	KRs     []KRView `json:"krs"`
 }
 
 type KRView struct {
 	ID                string       `json:"id"`
 	Title             string       `json:"title"`
+	DeleteToken       string       `json:"delete_token,omitempty"`
 	OwnerOpenID       string       `json:"owner_open_id"`
 	OwnerName         string       `json:"owner_name"`
 	MetricNote        string       `json:"metric_note"`
@@ -385,6 +388,7 @@ type TagView struct {
 
 type ReplaceKRInput struct {
 	ExpectedVersion int32        `json:"expected_version"`
+	DeleteToken     string       `json:"delete_token,omitempty"`
 	UpdatedBy       string       `json:"updated_by"`
 	Title           string       `json:"title"`
 	MetricNote      string       `json:"metric_note"`
@@ -398,6 +402,7 @@ type ReplaceKRInput struct {
 // fields and point structure; existing point content is deliberately ignored.
 type ReplaceGenericKRInput struct {
 	ExpectedVersion int32              `json:"expected_version"`
+	DeleteToken     string             `json:"delete_token,omitempty"`
 	UpdatedBy       string             `json:"-"`
 	Title           string             `json:"title"`
 	MetricNote      string             `json:"metric_note"`
@@ -436,11 +441,17 @@ type CreateObjectiveInput struct {
 }
 
 type UpdateObjectiveInput struct {
-	Title string `json:"title"`
+	ExpectedVersion int32  `json:"expected_version"`
+	Title           string `json:"title"`
+}
+
+type DeleteObjectiveInput struct {
+	ExpectedVersion int32 `json:"expected_version"`
 }
 
 type DeleteKRInput struct {
-	ExpectedVersion int32 `json:"expected_version"`
+	ExpectedVersion int32  `json:"expected_version"`
+	DeleteToken     string `json:"delete_token"`
 }
 
 func (s *Service) Board(ctx context.Context, quarter, week string) (Board, error) {
@@ -485,7 +496,7 @@ func (s *Service) weeklyBoard(ctx context.Context, quarter, week string, include
 		if err := s.db.WithContext(ctx).Where("objective_id = ?", objective.ID).Order("sort_order, id").Find(&records).Error; err != nil {
 			return Board{}, fmt.Errorf("list krs: %w", err)
 		}
-		view := ObjectiveView{ID: objective.ID, Title: objective.Title, KRs: make([]KRView, 0, len(records))}
+		view := ObjectiveView{ID: objective.ID, Title: objective.Title, Version: objective.Version, KRs: make([]KRView, 0, len(records))}
 		for _, record := range records {
 			krView, err := s.loadKR(ctx, record, quarter, week, previousWeek, includeBiz)
 			if err != nil {
@@ -495,6 +506,11 @@ func (s *Service) weeklyBoard(ctx context.Context, quarter, week string, include
 		}
 		result.Objectives = append(result.Objectives, view)
 	}
+	deleteToken, err := s.weekDeletionToken(ctx, quarter, week)
+	if err != nil {
+		return Board{}, err
+	}
+	result.DeleteToken = deleteToken
 	return result, nil
 }
 
@@ -537,7 +553,7 @@ func (s *Service) coreBoard(ctx context.Context, quarter string, includeBiz bool
 		if err := s.db.WithContext(ctx).Where("objective_id = ?", objective.ID).Order("sort_order, id").Find(&records).Error; err != nil {
 			return Board{}, fmt.Errorf("list krs: %w", err)
 		}
-		view := ObjectiveView{ID: objective.ID, Title: objective.Title, KRs: make([]KRView, 0, len(records))}
+		view := ObjectiveView{ID: objective.ID, Title: objective.Title, Version: objective.Version, KRs: make([]KRView, 0, len(records))}
 		for _, record := range records {
 			krView, err := s.loadKRDefinition(ctx, record, includeBiz)
 			if err != nil {
@@ -795,6 +811,10 @@ func (s *Service) GetBizCoreKR(ctx context.Context, id string) (KRView, error) {
 }
 
 func (s *Service) loadKRDefinition(ctx context.Context, record domain.KR, includeBiz bool) (KRView, error) {
+	return s.loadKRDefinitionWithGuard(ctx, record, includeBiz, true)
+}
+
+func (s *Service) loadKRDefinitionWithGuard(ctx context.Context, record domain.KR, includeBiz, includeDeleteGuard bool) (KRView, error) {
 	var metrics []domain.KRMetric
 	var points []domain.KRPoint
 	var tags []domain.KRTag
@@ -879,11 +899,24 @@ func (s *Service) loadKRDefinition(ctx context.Context, record domain.KR, includ
 	if err := validateTags(view.Tags); err != nil {
 		return KRView{}, fmt.Errorf("invalid tags for KR %s: %w", record.ID, err)
 	}
+	if includeDeleteGuard && record.ObjectiveID != "" {
+		var objective domain.Objective
+		if err := s.db.WithContext(ctx).First(&objective, "id = ?", record.ObjectiveID).Error; err != nil {
+			return KRView{}, fmt.Errorf("get KR objective for deletion guard: %w", err)
+		}
+		if objective.PlanID == "" {
+			deleteToken, err := s.krDeletionToken(ctx, record.ID)
+			if err != nil {
+				return KRView{}, fmt.Errorf("build KR deletion guard: %w", err)
+			}
+			view.DeleteToken = deleteToken
+		}
+	}
 	return view, nil
 }
 
 func (s *Service) loadKR(ctx context.Context, record domain.KR, quarter, week, previousWeek string, includeBiz bool) (KRView, error) {
-	view, err := s.loadKRDefinition(ctx, record, includeBiz)
+	view, err := s.loadKRDefinitionWithGuard(ctx, record, includeBiz, false)
 	if err != nil {
 		return KRView{}, err
 	}
@@ -969,7 +1002,7 @@ func (s *Service) ReplaceKRCore(ctx context.Context, id string, input ReplaceKRI
 
 func (s *Service) ReplaceGenericKRCore(ctx context.Context, id string, input ReplaceGenericKRInput) (KRView, error) {
 	common := ReplaceKRInput{
-		ExpectedVersion: input.ExpectedVersion, UpdatedBy: input.UpdatedBy,
+		ExpectedVersion: input.ExpectedVersion, DeleteToken: input.DeleteToken, UpdatedBy: input.UpdatedBy,
 		Title: input.Title, MetricNote: input.MetricNote, Metrics: input.Metrics, Owners: input.Owners,
 		Points: make([]PointView, 0, len(input.Points)),
 	}
@@ -986,6 +1019,23 @@ func (s *Service) replaceKRCore(ctx context.Context, id string, input ReplaceKRI
 	owners := normalizeOwners(input.Owners)
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		weeklySchemaPresent := tx.Migrator().HasTable(&domain.KRProgress{})
+		removesChildren, err := krDefinitionRemovesChildren(tx, id, input)
+		if err != nil {
+			return err
+		}
+		if removesChildren {
+			guardService := Service{db: tx}
+			currentToken, err := guardService.krDeletionToken(ctx, id)
+			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return ErrNotFound
+				}
+				return fmt.Errorf("read KR structure guard: %w", err)
+			}
+			if strings.TrimSpace(input.DeleteToken) == "" || currentToken != strings.TrimSpace(input.DeleteToken) {
+				return ErrConflict
+			}
+		}
 		if err := updateKRVersion(tx, id, input.ExpectedVersion, map[string]any{
 			"title": input.Title, "metric_note": input.MetricNote, "updated_by": input.UpdatedBy,
 		}); err != nil {
@@ -1282,7 +1332,7 @@ func (s *Service) CreateObjective(ctx context.Context, input CreateObjectiveInpu
 	if err := s.db.WithContext(ctx).Create(&record).Error; err != nil {
 		return ObjectiveView{}, fmt.Errorf("create objective: %w", err)
 	}
-	return ObjectiveView{ID: record.ID, Title: record.Title, KRs: []KRView{}}, nil
+	return ObjectiveView{ID: record.ID, Title: record.Title, Version: record.Version, KRs: []KRView{}}, nil
 }
 
 func (s *Service) UpdateObjective(ctx context.Context, id string, input UpdateObjectiveInput) (ObjectiveView, error) {
@@ -1291,21 +1341,27 @@ func (s *Service) UpdateObjective(ctx context.Context, id string, input UpdateOb
 	if id == "" || input.Title == "" {
 		return ObjectiveView{}, fmt.Errorf("objective id and title are required")
 	}
-	result := s.db.WithContext(ctx).Model(&domain.Objective{}).Where("id = ? AND plan_id = ''", id).Updates(map[string]any{"title": input.Title, "version": gorm.Expr("version + 1")})
+	result := s.db.WithContext(ctx).Model(&domain.Objective{}).
+		Where("id = ? AND plan_id = '' AND version = ?", id, input.ExpectedVersion).
+		Updates(map[string]any{"title": input.Title, "version": gorm.Expr("version + 1")})
 	if result.Error != nil {
 		return ObjectiveView{}, fmt.Errorf("update objective: %w", result.Error)
 	}
-	if result.RowsAffected != 1 {
-		return ObjectiveView{}, ErrNotFound
-	}
 	var record domain.Objective
 	if err := s.db.WithContext(ctx).First(&record, "id = ? AND plan_id = ''", id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ObjectiveView{}, ErrNotFound
+		}
 		return ObjectiveView{}, fmt.Errorf("read updated objective: %w", err)
 	}
-	return ObjectiveView{ID: record.ID, Title: record.Title, KRs: []KRView{}}, nil
+	view := ObjectiveView{ID: record.ID, Title: record.Title, Version: record.Version, KRs: []KRView{}}
+	if result.RowsAffected != 1 {
+		return view, ErrConflict
+	}
+	return view, nil
 }
 
-func (s *Service) DeleteObjective(ctx context.Context, id string) error {
+func (s *Service) DeleteObjective(ctx context.Context, id string, input DeleteObjectiveInput) error {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return fmt.Errorf("objective id is required")
@@ -1324,12 +1380,12 @@ func (s *Service) DeleteObjective(ctx context.Context, id string) error {
 	if krCount > 0 {
 		return fmt.Errorf("objective %s still has %d KRs and cannot be deleted", id, krCount)
 	}
-	result := s.db.WithContext(ctx).Delete(&domain.Objective{}, "id = ?", id)
+	result := s.db.WithContext(ctx).Where("id = ? AND version = ?", id, input.ExpectedVersion).Delete(&domain.Objective{})
 	if result.Error != nil {
 		return fmt.Errorf("delete objective: %w", result.Error)
 	}
 	if result.RowsAffected != 1 {
-		return ErrNotFound
+		return ErrConflict
 	}
 	return nil
 }
@@ -1343,6 +1399,17 @@ func (s *Service) DeleteKR(ctx context.Context, id string, input DeleteKRInput) 
 		return fmt.Errorf("expected_version must be non-negative")
 	}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		guardService := Service{db: tx}
+		currentToken, err := guardService.krDeletionToken(ctx, id)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrNotFound
+			}
+			return fmt.Errorf("read KR deletion guard: %w", err)
+		}
+		if strings.TrimSpace(input.DeleteToken) == "" || currentToken != strings.TrimSpace(input.DeleteToken) {
+			return ErrConflict
+		}
 		weeklySchemaPresent := tx.Migrator().HasTable(&domain.KRProgress{})
 		var record domain.KR
 		if err := tx.Where("id = ? AND version = ?", id, input.ExpectedVersion).First(&record).Error; err != nil {
@@ -1585,6 +1652,9 @@ func (s *Service) ConfirmMeegoProgress(ctx context.Context, pointID string, inpu
 		var existing domain.KRProgress
 		err = tx.Where("point_id = ? AND week = ? AND source = ?", point.ID, input.Week, "meego").Order("sort_order, id").First(&existing).Error
 		if err == nil {
+			if input.ExpectedVersion == 0 {
+				return ErrConflict
+			}
 			result := tx.Model(&domain.KRProgress{}).Where("id = ? AND version = ?", existing.ID, input.ExpectedVersion).Updates(map[string]any{
 				"status": input.Status, "text": input.Text, "docs": docsJSON, "needs_review": false,
 				"updated_by": input.UpdatedBy, "version": gorm.Expr("version + 1"),
@@ -1611,9 +1681,13 @@ func (s *Service) ConfirmMeegoProgress(ctx context.Context, pointID string, inpu
 		progress := domain.KRProgress{
 			ID: fmt.Sprintf("meego-%x", digest[:8]), PointID: point.ID, Week: input.Week,
 			Status: input.Status, Text: input.Text, Docs: docs, Images: []domain.ImageRef{}, Source: "meego", NeedsReview: false,
-			SortOrder: maxSort + 1, CreatedBy: input.UpdatedBy, UpdatedBy: input.UpdatedBy,
+			Version: 1, SortOrder: maxSort + 1, CreatedBy: input.UpdatedBy, UpdatedBy: input.UpdatedBy,
 		}
 		if err := tx.Create(&progress).Error; err != nil {
+			var count int64
+			if countErr := tx.Model(&domain.KRProgress{}).Where("id = ?", progress.ID).Count(&count).Error; countErr == nil && count > 0 {
+				return ErrConflict
+			}
 			return fmt.Errorf("create confirmed Meego progress: %w", err)
 		}
 		return nil

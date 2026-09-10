@@ -7,6 +7,8 @@ import type { Objective, PageComment } from '../src/okr/emily/types.ts'
 
 const followUpComment: PageComment = {
   id: 'comment-1',
+  version: 1,
+  deleteToken: 'delete-comment-1',
   targetType: 'follow_up',
   targetId: 'followup-1',
   targetTitle: '确认上线节奏',
@@ -19,6 +21,8 @@ const followUpComment: PageComment = {
   updatedAt: '2026-09-04T00:00:00Z',
   replies: [{
     id: 'comment-2',
+    version: 1,
+    deleteToken: 'delete-comment-2',
     parentId: 'comment-1',
     targetType: 'follow_up',
     targetId: 'followup-1',

@@ -43,7 +43,7 @@ func TestPlanLifecycleKeepsOfficialOKRRowsUntouched(t *testing.T) {
 		t.Fatalf("plan owner namespaces = kr:%+v point:%+v", kr.Owners, kr.Points[0].Owners)
 	}
 
-	if err := service.DeletePlan(t.Context(), created.ID); err != nil {
+	if err := service.DeletePlan(t.Context(), created.ID, created.DeleteToken); err != nil {
 		t.Fatal(err)
 	}
 	var objectiveCount, krCount int64
@@ -238,7 +238,7 @@ func TestPlanObjectiveReorderReturnsPersistedCanonicalPlan(t *testing.T) {
 		}
 	}
 
-	reordered, err := service.ReorderPlanObjectives(t.Context(), plan.ID, []string{"o-c", "o-a", "o-b"}, "reorderer")
+	reordered, err := service.ReorderPlanObjectives(t.Context(), plan.ID, []string{"o-c", "o-a", "o-b"}, plan.Version, "reorderer")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -248,8 +248,11 @@ func TestPlanObjectiveReorderReturnsPersistedCanonicalPlan(t *testing.T) {
 	if got := []string{reordered.Objectives[0].ID, reordered.Objectives[1].ID, reordered.Objectives[2].ID}; got[0] != "o-c" || got[1] != "o-a" || got[2] != "o-b" {
 		t.Fatalf("reordered objectives = %v", got)
 	}
+	if _, err := service.ReorderPlanObjectives(t.Context(), plan.ID, []string{"o-a", "o-b", "o-c"}, plan.Version, "stale"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale plan order error = %v, want ErrConflict", err)
+	}
 
-	if _, err := service.ReorderPlanObjectives(t.Context(), plan.ID, []string{"o-a", "o-b"}, "stale"); err == nil {
+	if _, err := service.ReorderPlanObjectives(t.Context(), plan.ID, []string{"o-a", "o-b"}, reordered.Version, "stale"); err == nil {
 		t.Fatal("partial Plan order was accepted")
 	}
 	loaded, err := service.GetPlan(t.Context(), plan.ID)

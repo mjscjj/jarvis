@@ -15,19 +15,22 @@ import (
 // drag gesture would need no new contract. It deliberately leaves KR.version
 // alone: position is not content, and bumping it would turn every page open
 // elsewhere into a stale baseline.
-func (s *Service) ReorderObjectives(ctx context.Context, quarter string, ids []string) ([]string, error) {
+func (s *Service) ReorderObjectives(ctx context.Context, quarter string, ids, expectedOrder []string) ([]string, error) {
 	quarter = strings.TrimSpace(quarter)
 	if quarter == "" {
 		return nil, fmt.Errorf("quarter is required")
 	}
 	db := s.db.WithContext(ctx)
 	var records []domain.Objective
-	if err := db.Where("quarter = ? AND plan_id = ''", quarter).Find(&records).Error; err != nil {
+	if err := db.Where("quarter = ? AND plan_id = ''", quarter).Order("sort_order, id").Find(&records).Error; err != nil {
 		return nil, fmt.Errorf("list objectives for reorder: %w", err)
 	}
 	known := make(map[string]struct{}, len(records))
 	for _, record := range records {
 		known[record.ID] = struct{}{}
+	}
+	if !sameOrder(expectedOrder, objectiveIDs(records)) {
+		return nil, ErrConflict
 	}
 	ordered, err := completeOrder(ids, known, fmt.Sprintf("quarter %s", quarter))
 	if err != nil {
@@ -41,7 +44,7 @@ func (s *Service) ReorderObjectives(ctx context.Context, quarter string, ids []s
 	return ordered, nil
 }
 
-func (s *Service) ReorderKRs(ctx context.Context, objectiveID string, ids []string) ([]string, error) {
+func (s *Service) ReorderKRs(ctx context.Context, objectiveID string, ids, expectedOrder []string) ([]string, error) {
 	objectiveID = strings.TrimSpace(objectiveID)
 	if objectiveID == "" {
 		return nil, fmt.Errorf("objective_id is required")
@@ -58,12 +61,19 @@ func (s *Service) ReorderKRs(ctx context.Context, objectiveID string, ids []stri
 		return nil, ErrNotFound
 	}
 	var records []domain.KR
-	if err := db.Where("objective_id = ?", objectiveID).Find(&records).Error; err != nil {
+	if err := db.Where("objective_id = ?", objectiveID).Order("sort_order, id").Find(&records).Error; err != nil {
 		return nil, fmt.Errorf("list krs for reorder: %w", err)
 	}
 	known := make(map[string]struct{}, len(records))
 	for _, record := range records {
 		known[record.ID] = struct{}{}
+	}
+	current := make([]string, 0, len(records))
+	for _, record := range records {
+		current = append(current, record.ID)
+	}
+	if !sameOrder(expectedOrder, current) {
+		return nil, ErrConflict
 	}
 	ordered, err := completeOrder(ids, known, fmt.Sprintf("objective %s", objectiveID))
 	if err != nil {
@@ -75,6 +85,26 @@ func (s *Service) ReorderKRs(ctx context.Context, objectiveID string, ids []stri
 		}
 	}
 	return ordered, nil
+}
+
+func objectiveIDs(records []domain.Objective) []string {
+	ids := make([]string, 0, len(records))
+	for _, record := range records {
+		ids = append(ids, record.ID)
+	}
+	return ids
+}
+
+func sameOrder(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if strings.TrimSpace(left[index]) != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 // A partial list would leave the rows it omits at an arbitrary position, so the

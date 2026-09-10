@@ -3,6 +3,7 @@ import { APIError, createOKRPlan, createOKRPlanObjective, deleteOKRPlan, deleteO
 import { BoardContext, uid, type BoardApi, type SyncState } from './board'
 import { BUSINESS_CATEGORY_TAG, PRIORITY_TAG, replaceSingleTag } from './hierarchy'
 import { swappedOrder, swappedPointsWithinKind } from './ordering'
+import { rebasePendingChanges } from './concurrency'
 import type { EnumValues, Kr, KrOwner, KrPriority, MetricLine, Objective, OKRPlan, OKRPlanSummary, Point, WeekTemplateKey } from './types'
 import { LIGHTS, STATUSES } from './template'
 
@@ -90,6 +91,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
   const pointSavesInFlight = useRef(new Set<string>())
   const schedulePointSaveRef = useRef<(pointId: string) => void>(() => undefined)
   const remoteReady = useRef(false)
+  const persistedObjectiveIDs = useRef(new Set<string>())
 
   const publishPlan = useCallback((next?: OKRPlan) => {
     planRef.current = next
@@ -116,6 +118,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
       setPlans(list.plans)
       setEnums(remoteEnums)
       publishPlan(loadedPlan)
+      persistedObjectiveIDs.current = new Set(loadedPlan?.objectives.map((objective) => objective.id) ?? [])
       dirtyObjectives.current.clear()
       deletedObjectives.current.clear()
       objectiveRevisions.current.clear()
@@ -170,31 +173,16 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
     void loadRemote(nextQuarter)
   }, [initialQuarter, loadRemote, syncState.kind])
 
-  const mergeSavedPlan = useCallback((saved: OKRPlan, objectiveId?: string) => {
+  const mergeSavedPlan = useCallback((saved: OKRPlan, objectiveId?: string, submitted?: Objective) => {
     const current = planRef.current
     if (!current) return
     const nextObjective = objectiveId ? saved.objectives.find((item) => item.id === objectiveId) : undefined
     const nextObjectives = objectiveId && nextObjective
-			? objectivesRef.current.map((item) => {
-				if (item.id !== objectiveId) return item
-				const remoteKRs = new Map(nextObjective.krs.map((kr) => [kr.id, kr]))
-				return {
-					...item,
-					version: nextObjective.version,
-					krs: item.krs.map((kr) => {
-						const remoteKR = remoteKRs.get(kr.id)
-						if (!remoteKR) return kr
-						const remotePoints = new Map(remoteKR.points.map((point) => [point.id, point]))
-						return {
-							...kr,
-							version: remoteKR.version,
-							points: kr.points.map((point) => ({ ...point, version: remotePoints.get(point.id)?.version ?? point.version })),
-						}
-					}),
-				}
-			})
+			? objectivesRef.current.map((item) => item.id === objectiveId
+        ? submitted ? rebasePendingChanges(submitted, item, nextObjective) : nextObjective
+        : item)
       : objectivesRef.current
-    const nextPlan = { ...current, version: saved.version, updatedBy: saved.updatedBy, updatedAt: saved.updatedAt, objectives: nextObjectives }
+    const nextPlan = { ...current, version: saved.version, deleteToken: saved.deleteToken, updatedBy: saved.updatedBy, updatedAt: saved.updatedAt, objectives: nextObjectives }
     planRef.current = nextPlan
     setPlan(nextPlan)
     objectivesRef.current = nextObjectives
@@ -212,7 +200,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
     const currentByID = new Map(objectivesRef.current.map((objective) => [objective.id, objective]))
     const nextObjectives = saved.objectives.map((remoteObjective) => {
       const current = currentByID.get(remoteObjective.id)
-      return current ? { ...current, version: remoteObjective.version } : remoteObjective
+      return current ?? remoteObjective
     })
     publishPlan({ ...saved, objectives: nextObjectives })
     setPlans((items) => items.map((item) => item.id === saved.id ? {
@@ -242,6 +230,9 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
 			const saved = await patchPointDefinition({ pointId, planId: currentPlan.id, expectedVersion: currentPoint.version ?? 0, ...patch })
       const nextObjectives = objectivesRef.current.map((objective) => ({
         ...objective,
+		structureToken: objective.krs.some((kr) => kr.points.some((point) => point.id === pointId))
+			? saved.structureToken ?? objective.structureToken
+			: objective.structureToken,
         krs: objective.krs.map((kr) => ({
           ...kr,
           points: kr.points.map((point) => point.id === pointId ? { ...point, version: saved.version } : point),
@@ -250,7 +241,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
       objectivesRef.current = nextObjectives
       setObjectives(nextObjectives)
 			if (planRef.current) {
-				const nextPlan = { ...planRef.current, objectives: nextObjectives }
+				const nextPlan = { ...planRef.current, deleteToken: saved.planDeleteToken ?? planRef.current.deleteToken, objectives: nextObjectives }
 				planRef.current = nextPlan
 				setPlan(nextPlan)
 			}
@@ -322,10 +313,11 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
           const revision = objectiveRevisions.current.get(objectiveId) ?? 0
           try {
             if (objective) {
-              const saved = (objective.version ?? 0) === 0 && !planRef.current.objectives.some((item) => item.id === objectiveId)
+              const saved = !persistedObjectiveIDs.current.has(objectiveId)
                 ? await createOKRPlanObjective(planRef.current.id, objective)
                 : await updateOKRPlanObjective(planRef.current.id, objective)
-              mergeSavedPlan(saved, objectiveId)
+              persistedObjectiveIDs.current.add(objectiveId)
+              mergeSavedPlan(saved, objectiveId, objective)
               if ((objectiveRevisions.current.get(objectiveId) ?? 0) === revision) {
                 dirtyObjectives.current.delete(objectiveId)
                 objectiveRevisions.current.delete(objectiveId)
@@ -337,6 +329,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
               dirtyObjectives.current.delete(objectiveId)
               deletedObjectives.current.delete(objectiveId)
               objectiveRevisions.current.delete(objectiveId)
+              persistedObjectiveIDs.current.delete(objectiveId)
               mergeSavedPlan({ ...planRef.current, version: planRef.current.version + 1, updatedAt: new Date().toISOString() })
             } else {
               dirtyObjectives.current.delete(objectiveId)
@@ -354,7 +347,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
           const revision = objectiveOrderRevision.current
           let saved: OKRPlan
           try {
-            saved = await reorderOKRPlanObjectives(planRef.current.id, objectivesRef.current.map((objective) => objective.id))
+            saved = await reorderOKRPlanObjectives(planRef.current.id, objectivesRef.current.map((objective) => objective.id), planRef.current.version)
           } catch (reorderError) {
             try {
               const remote = await getOKRPlan(planRef.current.id)
@@ -533,11 +526,13 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
       const removed = planRef.current
       setSyncState({ kind: 'saving', message: '正在删除 Biz OKR Plan…' })
       try {
-        await deleteOKRPlan(removed.id)
+		await deleteOKRPlan(removed.id, removed.deleteToken)
         const loaded = await loadRemote(removed.quarter)
         if (!loaded?.plan) setSyncState({ kind: 'saved', message: 'Biz OKR Plan 已删除，当前季度暂无 Biz OKR Plan' })
       } catch (error) {
-        setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '删除 Biz OKR Plan 失败。' })
+		setSyncState({ kind: 'error', message: error instanceof APIError && error.status === 409
+			? '这个 Plan 已被其他人更新，请重新载入后再删除。'
+			: error instanceof Error ? error.message : '删除 Biz OKR Plan 失败。' })
         throw error
       }
     },

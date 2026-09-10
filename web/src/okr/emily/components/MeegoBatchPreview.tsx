@@ -88,13 +88,13 @@ export function MeegoBatchPreview({ quarter, week, onClose, onOpenPoint, readOnl
         status: draft.status,
         text: draft.text.trim(),
       })
-      applySavedKr(saved)
+      applySavedKr(saved, item.pointId)
       setDraft(undefined)
       setConfirmedPoint(item.pointId)
       setReloadKey((value) => value + 1)
     } catch (error) {
       if (error instanceof APIError && error.status === 409 && error.data) {
-        applySavedKr(error.data as Kr)
+        applySavedKr(error.data as Kr, item.pointId)
         setConfirmError('这条 KR 已被其他人更新，已载入最新版本。请重新核对后确认。')
       } else {
         setConfirmError(error instanceof Error ? error.message : '确认失败，请稍后重试。')

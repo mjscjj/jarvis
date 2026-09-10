@@ -315,9 +315,20 @@ func OpenWeeklyReportWeek(service *okrworkspace.Service) app.HandlerFunc {
 
 func DeleteBizOKRWeek(service *okrworkspace.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
-		result, err := service.DeleteWeek(ctx, strings.TrimSpace(c.Query("quarter")), strings.TrimSpace(c.Param("week")))
+		var input struct {
+			DeleteToken string `json:"delete_token"`
+		}
+		if err := decodeStrictJSON(c.Request.Body(), &input); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40016, err)
+			return
+		}
+		result, err := service.DeleteWeek(ctx, strings.TrimSpace(c.Query("quarter")), strings.TrimSpace(c.Param("week")), input.DeleteToken)
 		if errors.Is(err, okrworkspace.ErrWeekNotFound) {
 			writeAPIError(c, consts.StatusNotFound, 40416, err)
+			return
+		}
+		if errors.Is(err, okrworkspace.ErrConflict) {
+			writeAPIConflict(c, 40916, err, nil)
 			return
 		}
 		if err != nil {
@@ -394,6 +405,10 @@ func UpdateComment(service *okrworkspace.Service) app.HandlerFunc {
 			return
 		}
 		result, err := service.UpdateComment(ctx, strings.TrimSpace(c.Param("comment_id")), input)
+		if errors.Is(err, okrworkspace.ErrConflict) {
+			writeAPIConflict(c, 40964, err, nil)
+			return
+		}
 		if errors.Is(err, okrworkspace.ErrNotFound) {
 			writeAPIError(c, consts.StatusNotFound, 40463, err)
 			return
@@ -409,7 +424,15 @@ func UpdateComment(service *okrworkspace.Service) app.HandlerFunc {
 func DeleteComment(service *okrworkspace.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		id := strings.TrimSpace(c.Param("comment_id"))
-		if err := service.DeleteComment(ctx, id); errors.Is(err, okrworkspace.ErrNotFound) {
+		var input okrworkspace.DeleteCommentInput
+		if err := decodeStrictJSON(c.Request.Body(), &input); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40065, err)
+			return
+		}
+		if err := service.DeleteComment(ctx, id, input); errors.Is(err, okrworkspace.ErrConflict) {
+			writeAPIConflict(c, 40965, err, nil)
+			return
+		} else if errors.Is(err, okrworkspace.ErrNotFound) {
 			writeAPIError(c, consts.StatusNotFound, 40465, err)
 			return
 		} else if err != nil {
@@ -806,6 +829,10 @@ func UpdateObjective(service *okrworkspace.Service) app.HandlerFunc {
 			return
 		}
 		result, err := service.UpdateObjective(ctx, id, input)
+		if errors.Is(err, okrworkspace.ErrConflict) {
+			writeAPIConflict(c, 40930, err, result)
+			return
+		}
 		if errors.Is(err, okrworkspace.ErrNotFound) {
 			writeAPIError(c, consts.StatusNotFound, 40429, err)
 			return
@@ -825,7 +852,15 @@ func DeleteObjective(service *okrworkspace.Service) app.HandlerFunc {
 			writeAPIError(c, consts.StatusBadRequest, 40032, fmt.Errorf("objective_id is required"))
 			return
 		}
-		if err := service.DeleteObjective(ctx, id); errors.Is(err, okrworkspace.ErrNotFound) {
+		var input okrworkspace.DeleteObjectiveInput
+		if err := decodeStrictJSON(c.Request.Body(), &input); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40032, err)
+			return
+		}
+		if err := service.DeleteObjective(ctx, id, input); errors.Is(err, okrworkspace.ErrConflict) {
+			writeAPIConflict(c, 40932, err, nil)
+			return
+		} else if errors.Is(err, okrworkspace.ErrNotFound) {
 			writeAPIError(c, consts.StatusNotFound, 40432, err)
 			return
 		} else if err != nil {

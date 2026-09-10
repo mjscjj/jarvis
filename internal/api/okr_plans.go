@@ -199,14 +199,24 @@ func DeleteOKRPlanObjective(service *okrworkspace.Service) app.HandlerFunc {
 func ReorderOKRPlanObjectives(service *okrworkspace.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		var input struct {
-			IDs []string `json:"ids"`
+			IDs             []string `json:"ids"`
+			ExpectedVersion int32    `json:"expected_version"`
 		}
 		if err := decodeStrictJSON(c.Request.Body(), &input); err != nil {
 			writeAPIError(c, consts.StatusBadRequest, 40080, err)
 			return
 		}
 		planID := strings.TrimSpace(c.Param("plan_id"))
-		result, err := service.ReorderPlanObjectives(ctx, planID, input.IDs, currentOKRIdentity(c).OpenID)
+		result, err := service.ReorderPlanObjectives(ctx, planID, input.IDs, input.ExpectedVersion, currentOKRIdentity(c).OpenID)
+		if errors.Is(err, okrworkspace.ErrConflict) {
+			current, currentErr := service.GetPlan(ctx, planID)
+			if currentErr != nil {
+				writeAPIError(c, consts.StatusInternalServerError, 50080, currentErr)
+				return
+			}
+			writeAPIConflict(c, 40980, err, current)
+			return
+		}
 		if errors.Is(err, okrworkspace.ErrNotFound) {
 			writeAPIError(c, consts.StatusNotFound, 40480, err)
 			return
@@ -220,9 +230,24 @@ func ReorderOKRPlanObjectives(service *okrworkspace.Service) app.HandlerFunc {
 
 func DeleteOKRPlan(service *okrworkspace.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
+		var input struct {
+			DeleteToken string `json:"delete_token"`
+		}
+		if err := decodeStrictJSON(c.Request.Body(), &input); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40076, err)
+			return
+		}
 		id := strings.TrimSpace(c.Param("plan_id"))
-		if err := service.DeletePlan(ctx, id); errors.Is(err, okrworkspace.ErrNotFound) {
+		if err := service.DeletePlan(ctx, id, input.DeleteToken); errors.Is(err, okrworkspace.ErrNotFound) {
 			writeAPIError(c, consts.StatusNotFound, 40476, err)
+			return
+		} else if errors.Is(err, okrworkspace.ErrConflict) {
+			current, currentErr := service.GetPlan(ctx, id)
+			if currentErr != nil {
+				writeAPIError(c, consts.StatusBadRequest, 40076, err)
+				return
+			}
+			writeAPIConflict(c, 40976, err, current)
 			return
 		} else if err != nil {
 			writeAPIError(c, consts.StatusBadRequest, 40076, err)
