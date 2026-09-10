@@ -557,6 +557,41 @@ body {
   transform: translateX(0);
 }
 
+.chat-resize-handle {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 8px;
+  cursor: ew-resize;
+  touch-action: none;
+  outline: none;
+}
+
+.chat-resize-handle::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 2px;
+  background: var(--color-primary);
+  content: '';
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.chat-resize-handle:hover::after,
+.chat-resize-handle:focus-visible::after,
+.is-resizing-chat .chat-resize-handle::after {
+  opacity: 1;
+}
+
+body.is-resizing-chat {
+  cursor: ew-resize;
+  user-select: none;
+}
+
 .chat-modal-backdrop {
   position: fixed;
   z-index: 179;
@@ -580,6 +615,10 @@ body {
     border-radius: var(--radius-xl);
     box-shadow: 0 24px 72px rgba(16, 20, 24, 0.2);
     transform: none;
+  }
+
+  .chat-overlay.is-expanded .chat-resize-handle {
+    display: none;
   }
 
   .app-shell.chat-is-expanded .chat-toggle,
@@ -773,7 +812,8 @@ body {
   }
 
   .chat-modal-backdrop,
-  .chat-expand {
+  .chat-expand,
+  .chat-resize-handle {
     display: none !important;
   }
 

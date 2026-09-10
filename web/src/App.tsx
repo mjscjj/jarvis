@@ -35,6 +35,14 @@ import { getAuthStatus as getOKRAuthStatus } from './okr/emily/api'
 import type { Plugin } from './types'
 import jarvisIcon from './assets/jarvis-icon.png'
 import { DeveloperHelpButton } from './components/DeveloperDocuments'
+import {
+  CHAT_PANEL_WIDTH_STORAGE_KEY,
+  DEFAULT_CHAT_PANEL_WIDTH,
+  MIN_CHAT_PANEL_WIDTH,
+  chatPanelWidthFromPointer,
+  clampChatPanelWidth,
+  maxChatPanelWidth,
+} from './chatPanelSizing'
 
 const { Sider, Content } = Layout
 const { Title } = Typography
@@ -93,9 +101,11 @@ function AppShell() {
   const weeklyShare = context.active_key === 'biz-okr' && isWeeklyShareViewState(context.view_state)
   const runtimeFailures = useRuntimeFailureCount()
   const [chatOpen, setChatOpen] = useLocalStorage('jarvis.chatOverlayOpen', false)
+  const [storedChatWidth, setStoredChatWidth] = useLocalStorage(CHAT_PANEL_WIDTH_STORAGE_KEY, DEFAULT_CHAT_PANEL_WIDTH)
   const [chatLoaded, setChatLoaded] = useState(chatOpen)
   const [chatExpanded, setChatExpanded] = useState(false)
   const [siderCollapsed, setSiderCollapsed] = useLocalStorage('jarvis.siderCollapsed', false)
+  const siderWidth = siderCollapsed ? SIDER_COLLAPSED_WIDTH : SIDER_WIDTH
   const [openMenuKeys, setOpenMenuKeys] = useState<string[]>(['management', 'plugin-group'])
   const [pluginsLoaded, setPluginsLoaded] = useState(false)
   const [mobileSystemOpen, setMobileSystemOpen] = useState(false)
@@ -113,6 +123,8 @@ function AppShell() {
   const chatRef = useRef<HTMLElement>(null)
   const chatToggleRef = useRef<HTMLButtonElement>(null)
   const chatWasOpen = useRef(chatOpen)
+  const chatResizeCleanupRef = useRef<(() => void) | null>(null)
+  const chatWidth = Number.isFinite(storedChatWidth) ? storedChatWidth : DEFAULT_CHAT_PANEL_WIDTH
 
   let managementIcon: React.ReactNode = <SettingOutlined />
   if (runtimeFailures.count && runtimeFailures.count > 0) {
@@ -284,6 +296,8 @@ function AppShell() {
     if (chatOpen) setChatLoaded(true)
   }, [chatOpen])
 
+  useEffect(() => () => chatResizeCleanupRef.current?.(), [])
+
   useEffect(() => {
     const onEscape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
@@ -325,6 +339,49 @@ function AppShell() {
       first.focus()
     }
   }
+
+  const resizeChatTo = useCallback((width: number) => {
+    setStoredChatWidth(clampChatPanelWidth(width, window.innerWidth, siderWidth))
+  }, [setStoredChatWidth, siderWidth])
+
+  const startChatResize = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (chatExpanded || window.innerWidth < 768) return
+    event.preventDefault()
+    chatResizeCleanupRef.current?.()
+    document.body.classList.add('is-resizing-chat')
+
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      setStoredChatWidth(chatPanelWidthFromPointer(moveEvent.clientX, window.innerWidth, siderWidth))
+    }
+    const finish = () => {
+      window.removeEventListener('pointermove', onPointerMove)
+      window.removeEventListener('pointerup', finish)
+      window.removeEventListener('pointercancel', finish)
+      document.body.classList.remove('is-resizing-chat')
+      chatResizeCleanupRef.current = null
+    }
+    chatResizeCleanupRef.current = finish
+    window.addEventListener('pointermove', onPointerMove)
+    window.addEventListener('pointerup', finish)
+    window.addEventListener('pointercancel', finish)
+  }, [chatExpanded, setStoredChatWidth, siderWidth])
+
+  const handleChatResizeKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (chatExpanded) return
+    if (event.key === 'ArrowLeft') {
+      event.preventDefault()
+      resizeChatTo(chatWidth + 24)
+    } else if (event.key === 'ArrowRight') {
+      event.preventDefault()
+      resizeChatTo(chatWidth - 24)
+    } else if (event.key === 'Home') {
+      event.preventDefault()
+      resizeChatTo(MIN_CHAT_PANEL_WIDTH)
+    } else if (event.key === 'End') {
+      event.preventDefault()
+      resizeChatTo(maxChatPanelWidth(window.innerWidth, siderWidth))
+    }
+  }, [chatExpanded, chatWidth, resizeChatTo, siderWidth])
 
   const goTo = (key: string) => {
     setMobileSystemOpen(false)
@@ -406,7 +463,6 @@ function AppShell() {
     )
   }
 
-  const siderWidth = siderCollapsed ? SIDER_COLLAPSED_WIDTH : SIDER_WIDTH
   const mobileModule = enabledModules.find((module) => module.key === mobileModuleKey)
   const mobileModuleChildren = mobileModule ? enabledModuleChildren(mobileModule, resolvedModuleEnablement, okrManagementAccess) : []
   const mobileNavItems: Array<{
@@ -439,7 +495,10 @@ function AppShell() {
   return (
     <Layout
       className={`app-shell ${chatOpen ? 'chat-is-open' : ''} ${chatOpen && chatExpanded ? 'chat-is-expanded' : ''}`}
-      style={{ '--sider-width': weeklyShare ? '0px' : `${siderWidth}px` } as React.CSSProperties}
+      style={{
+        '--sider-width': weeklyShare ? '0px' : `${siderWidth}px`,
+        '--chat-width': `${chatWidth}px`,
+      } as React.CSSProperties}
     >
       {modalContext}
       {messageContext}
@@ -569,6 +628,17 @@ function AppShell() {
             inert={chatOpen ? undefined : true}
             onKeyDown={handleChatKeyDown}
           >
+            <div
+              className="chat-resize-handle"
+              role="separator"
+              aria-label="调整对话框宽度"
+              aria-orientation="vertical"
+              aria-valuemin={MIN_CHAT_PANEL_WIDTH}
+              aria-valuenow={Math.round(chatWidth)}
+              tabIndex={chatOpen && !chatExpanded ? 0 : -1}
+              onPointerDown={startChatResize}
+              onKeyDown={handleChatResizeKeyDown}
+            />
             {chatLoaded && (
               <Suspense fallback={<div className="page-loading"><Spin size="small" /><span>正在打开对话…</span></div>}>
                 <Chat
