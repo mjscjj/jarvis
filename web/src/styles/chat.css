@@ -12,8 +12,8 @@
   align-items: center;
   flex: none;
   min-width: 0;
-  height: 42px;
-  padding: 6px 8px;
+  height: 34px;
+  padding: 3px 8px;
   border-bottom: 1px solid var(--color-border);
   background: var(--color-bg-soft);
 }
@@ -38,7 +38,7 @@
   flex: 0 0 auto;
   min-width: 78px;
   max-width: 174px;
-  height: 30px;
+  height: 26px;
   border: 1px solid transparent;
   border-radius: 7px;
   color: var(--color-text-secondary);
@@ -168,8 +168,9 @@
 }
 
 .jarvis-chat .chat-header {
+  flex: none;
   gap: 0;
-  padding: 18px 20px 16px;
+  padding: 6px 12px;
 }
 
 .chat-title-row {
@@ -177,7 +178,7 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  margin-bottom: var(--space-2);
+  margin-bottom: 2px;
 }
 
 .chat-heading {
@@ -375,14 +376,16 @@
   min-width: 0;
   gap: 6px;
   color: var(--color-text-secondary);
-  font-size: 13px;
-  line-height: 20px;
+  overflow: hidden;
+  font-size: 11.5px;
+  line-height: 16px;
+  white-space: nowrap;
 }
 
 .chat-context-page {
   flex: none;
-  color: var(--color-text);
-  font-weight: 500;
+  color: var(--color-text-secondary);
+  font-weight: 400;
 }
 
 .chat-context-separator {
@@ -396,26 +399,9 @@
   white-space: nowrap;
 }
 
-.chat-active-thread {
-  overflow: hidden;
-  min-width: 0;
-  width: fit-content;
-  max-width: 100%;
-  margin-top: var(--space-2);
-  padding: 4px 8px;
-  border-left: 2px solid var(--color-primary);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg-soft);
-  color: var(--color-text-secondary);
-  font-size: 12px;
-  line-height: 18px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .jarvis-chat .chat-messages {
   min-height: 0;
-  padding: 20px;
+  padding: 12px;
   overscroll-behavior: contain;
 }
 
@@ -629,21 +615,20 @@
   display: flex;
   align-items: center;
   flex: none;
-  gap: 9px;
-  min-height: 48px;
-  padding: 8px 20px;
+  gap: 6px;
+  min-height: 28px;
+  padding: 2px 12px;
   border-top: 1px solid var(--color-border);
   background: var(--color-bg-soft);
   color: var(--color-primary);
   font-size: 12px;
 }
 
-.chat-activity > span:not(.anticon) { flex: 1; min-width: 0; }
-.chat-activity small {
-  display: block;
-  color: var(--color-text-tertiary);
-  font-size: 11px;
-  line-height: 18px;
+.chat-activity > span:not(.anticon) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .chat-activity time { color: var(--color-text-tertiary); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .chat-activity .ant-btn { flex: none; margin-left: auto; }
@@ -715,7 +700,7 @@
 
 .chat-composer {
   flex: none;
-  padding: 14px 20px 16px;
+  padding: 8px 12px;
   border-top: 1px solid var(--color-border);
   background: var(--color-bg-elevated);
 }
@@ -754,8 +739,8 @@
 }
 
 .jarvis-chat .chat-textarea.ant-input {
-  min-height: 44px;
-  padding: 10px 12px;
+  min-height: 38px;
+  padding: 7px 10px;
   border-color: var(--color-border-strong);
   border-radius: 10px;
   background: var(--color-bg-elevated);
@@ -779,18 +764,19 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: var(--space-3);
-  min-height: 32px;
-  margin-top: var(--space-2);
+  flex-wrap: nowrap;
+  gap: 6px;
+  min-height: 24px;
+  margin-top: 4px;
 }
 
 .chat-composer-tools {
   display: flex;
   align-items: center;
   flex: 1 1 auto;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   min-width: 0;
-  gap: var(--space-2);
+  gap: 4px;
 }
 
 .chat-composer-tools > .ant-btn {
@@ -799,7 +785,7 @@
 
 .jarvis-chat .chat-composer-hint.ant-typography {
   overflow: hidden;
-  min-width: 160px;
+  min-width: 0;
   color: var(--color-text-tertiary);
   font-size: 11.5px;
   line-height: 18px;
@@ -811,7 +797,7 @@
   display: flex;
   align-items: center;
   flex: none;
-  gap: var(--space-2);
+  gap: 4px;
 }
 
 .chat-composer-actions > .ant-btn {
@@ -829,42 +815,8 @@
 }
 
 @media (max-width: 520px) {
-  .jarvis-chat .chat-header,
-  .jarvis-chat .chat-messages,
-  .chat-composer {
-    padding-right: 16px;
-    padding-left: 16px;
-  }
-
-  .jarvis-chat .chat-context {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: 1px;
-  }
-
-  .chat-context-separator {
-    display: none;
-  }
-
-  .chat-context-selection {
-    max-width: 100%;
-  }
-
-  .chat-composer-footer {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .chat-composer-actions {
-    justify-content: flex-end;
-  }
-
   .jarvis-chat .chat-bubble {
     max-width: 94%;
-  }
-
-  .jarvis-chat .chat-composer-hint.ant-typography {
-    white-space: normal;
   }
 }
 

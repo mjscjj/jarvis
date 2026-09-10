@@ -840,7 +840,6 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
 
   const hasPendingQueue = queue.length > 0
   const canSwitchThread = !sending && !hasPendingQueue && !historyLoading
-  const activeThread = threadId ? threads.find((item) => item.thread_id === threadId) : undefined
 
   return <section className="chat-panel jarvis-chat" aria-label={`${workspace.title} · ${agentName} 对话`}>
     <header className="chat-header">
@@ -898,7 +897,6 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
           <span className="chat-context-selection">{currentWeek}</span>
         </>}
       </div>
-      {activeThread && <div className="chat-active-thread" title={activeThread.title}>{activeThread.title}</div>}
     </header>
     {workspaceBar}
     <div
@@ -959,8 +957,8 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
     </div>
     {(sending || !followingOutput || connectionState !== 'ready') && <div className={`chat-activity ${connectionState !== 'ready' ? 'is-disconnected' : ''}`} role="status" aria-live="polite">
       {connectionState !== 'ready'
-        ? <><LoadingOutlined spin={connectionState === 'connecting'} aria-hidden="true" /><span>{connectionState === 'offline' ? '网络已断开，联网后自动重连' : connectionState === 'disconnected' ? '连接不可用，请点击重新连接' : '正在连接对话服务…'}<small>已收到的内容会保留</small></span><Button size="small" type="text" onClick={reconnect}>重新连接</Button></>
-        : <>{sending && <><LoadingOutlined spin aria-hidden="true" /><span>{agentName} {queueStatusText}<small>{stopping ? '正在保存本轮回复' : '可以继续补充，消息会排队发送'}</small></span><time aria-live="off">{Math.max(0, Math.floor((clock - startedAtRef.current) / 1000))} 秒</time></>}
+        ? <><LoadingOutlined spin={connectionState === 'connecting'} aria-hidden="true" /><span>{connectionState === 'offline' ? '网络已断开，联网后自动重连' : connectionState === 'disconnected' ? '连接不可用' : '正在连接…'}</span><Button size="small" type="text" onClick={reconnect}>重新连接</Button></>
+        : <>{sending && <><LoadingOutlined spin aria-hidden="true" /><span>{queueStatusText}</span><time aria-live="off">{Math.max(0, Math.floor((clock - startedAtRef.current) / 1000))} 秒</time></>}
           {!followingOutput && <Button size="small" type="text" icon={<ArrowDownOutlined />} onClick={scrollToLatest}>最新回复</Button>}</>}
     </div>}
     {notice && <Alert className="chat-error" type="info" showIcon message="提示" description={notice} closable onClose={() => setNotice(undefined)} />}
@@ -1028,16 +1026,16 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
             title="附加 PNG/JPEG 截图（也可直接粘贴）"
             onClick={() => imageInputRef.current?.click()}
           >截图</Button>
-          <Text id="chat-composer-hint" type="secondary" className="chat-composer-hint" aria-live="polite">
-            {stopping ? '正在暂停回复…' : sending ? `正在回复，继续发送会进入队列${queue.length > 0 ? `（${queue.length} 条）` : ''}` : paused ? '已暂停；发送新消息或继续队列即可恢复' : hasPendingQueue ? `${queue.length} 条消息等待发送` : 'Enter 发送 · Shift + Enter 换行 · 可粘贴截图'}
+          <Text id="chat-composer-hint" type="secondary" className="chat-composer-hint" aria-live="polite" title="Enter 发送 · Shift + Enter 换行 · 可直接粘贴截图">
+            {stopping ? '正在暂停…' : sending ? `可继续补充${queue.length > 0 ? ` · ${queue.length} 条排队` : ''}` : paused ? '已暂停，可继续发送' : hasPendingQueue ? `${queue.length} 条待发送` : 'Enter 发送 · Shift+Enter 换行'}
           </Text>
         </div>
         <div className="chat-composer-actions">
-          {sending && <Button danger icon={<StopOutlined />} disabled={stopping} aria-label={`暂停 ${agentName} 回复`} onClick={stop}>
-            {stopping ? '正在暂停' : '暂停生成'}
+          {sending && <Button size="small" danger icon={<StopOutlined />} disabled={stopping} aria-label={`暂停 ${agentName} 回复`} onClick={stop}>
+            暂停
           </Button>}
-          {!sending && queuePaused && queue.length > 0 && <Button icon={<ReloadOutlined />} onClick={resumeQueue}>继续队列</Button>}
-          <Button type="primary" icon={<SendOutlined />} disabled={historyLoading || connectionState !== 'ready' || !input.trim()} aria-label="发送消息" onClick={send}>{sending || queue.length > 0 ? '加入队列' : '发送'}</Button>
+          {!sending && queuePaused && queue.length > 0 && <Button size="small" icon={<ReloadOutlined />} onClick={resumeQueue}>继续队列</Button>}
+          <Button size="small" type="primary" icon={<SendOutlined />} disabled={historyLoading || connectionState !== 'ready' || !input.trim()} aria-label="发送消息" onClick={send}>{sending || queue.length > 0 ? '加入队列' : '发送'}</Button>
         </div>
       </div>
     </div>
