@@ -48,7 +48,7 @@ type IdentityConfig struct {
 
 // ServerConfig Hertz 监听配置。
 type ServerConfig struct {
-	PublicURL string   `yaml:"public_url"` // 浏览器访问入口；空值按实际监听地址生成卡片链接
+	PublicURL string   `yaml:"public_url"` // Linux 的卡片访问入口覆盖；空值用局域网 IP，Mac 始终本地
 	Addr      string   `yaml:"addr"`       // 形如 0.0.0.0:18800
 	WebRoot   string   `yaml:"web_root"`   // React production build directory
 	LogFiles  []string `yaml:"log_files"`  // 运行日志文件（供调试面板尾读并归并）；默认 server 的 stdout+stderr 两个文件。cron 日志走 stderr，必须都读。

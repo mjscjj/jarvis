@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -18,13 +19,18 @@ type Resolver struct {
 	publicURL   *url.URL
 	host        string
 	port        string
+	localOnly   bool
 	resolveIPv4 func() (net.IP, error)
 }
 
-// New uses an explicit browser-facing URL when configured (for example behind
-// a reverse proxy or port forward). Otherwise it uses the effective listen
-// address, including the desktop -addr override.
+// New fixes macOS links to loopback. Linux defaults to the LAN address and
+// allows public_url to override it for a reverse proxy or domain. The actual
+// listen port (including the desktop -addr override) is never hardcoded.
 func New(address, publicURL string) (*Resolver, error) {
+	return newForPlatform(address, publicURL, runtime.GOOS)
+}
+
+func newForPlatform(address, publicURL, platform string) (*Resolver, error) {
 	host, port, err := net.SplitHostPort(strings.TrimSpace(address))
 	if err != nil {
 		return nil, fmt.Errorf("UI link listen address: %w", err)
@@ -33,7 +39,7 @@ func New(address, publicURL string) (*Resolver, error) {
 	if err != nil || number < 1 || number > 65535 {
 		return nil, fmt.Errorf("UI link requires a fixed valid port: %q", port)
 	}
-	r := &Resolver{host: host, port: port, resolveIPv4: currentIPv4}
+	r := &Resolver{host: host, port: port, localOnly: platform == "darwin", resolveIPv4: currentIPv4}
 	if raw := strings.TrimSpace(publicURL); raw != "" {
 		u, err := url.Parse(raw)
 		if err != nil {
@@ -60,6 +66,13 @@ func (r *Resolver) Task(id uint64) (Link, error) {
 	if id == 0 {
 		return Link{}, fmt.Errorf("UI task link requires a positive task ID")
 	}
+	if r.localOnly {
+		host := "127.0.0.1"
+		if r.host == "::1" || r.host == "::" {
+			host = "::1"
+		}
+		return Link{URL: fmt.Sprintf("http://%s/#/work/task/%d", net.JoinHostPort(host, r.port), id), Label: detailLabel(host)}, nil
+	}
 	if r.publicURL != nil {
 		u := *r.publicURL
 		if u.Path == "" {
@@ -70,7 +83,7 @@ func (r *Resolver) Task(id uint64) (Link, error) {
 	}
 	host := r.host
 	ip := net.ParseIP(host)
-	if host == "" || (ip != nil && ip.IsUnspecified()) {
+	if host == "" || strings.EqualFold(strings.TrimSuffix(host, "."), "localhost") || (ip != nil && (ip.IsUnspecified() || ip.IsLoopback())) {
 		address, err := r.resolveIPv4()
 		if err != nil {
 			return Link{}, fmt.Errorf("resolve UI link address: %w", err)

@@ -11,15 +11,12 @@ func TestSpecificBindAddressDoesNotNeedNetwork(t *testing.T) {
 		address, url string
 		local        bool
 	}{
-		{"127.0.0.1:18800", "http://127.0.0.1:18800/#/work/task/7", true},
-		{"localhost:19900", "http://localhost:19900/#/work/task/7", true},
-		{"[::1]:19900", "http://[::1]:19900/#/work/task/7", true},
 		{"192.168.1.20:18800", "http://192.168.1.20:18800/#/work/task/7", false},
 		{"203.0.113.20:18800", "http://203.0.113.20:18800/#/work/task/7", false},
 		{"jarvis.local:18800", "http://jarvis.local:18800/#/work/task/7", false},
 	} {
 		t.Run(tc.address, func(t *testing.T) {
-			r, err := New(tc.address, "")
+			r, err := newForPlatform(tc.address, "", "linux")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -35,9 +32,9 @@ func TestSpecificBindAddressDoesNotNeedNetwork(t *testing.T) {
 	}
 }
 
-func TestWildcardResolvesCurrentAddress(t *testing.T) {
-	for _, address := range []string{"0.0.0.0:18800", ":18800", "[::]:18800"} {
-		r, err := New(address, "")
+func TestLinuxDefaultResolvesCurrentAddress(t *testing.T) {
+	for _, address := range []string{"0.0.0.0:18800", ":18800", "[::]:18800", "127.0.0.1:18800", "localhost:18800", "[::1]:18800"} {
+		r, err := newForPlatform(address, "", "linux")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -83,7 +80,7 @@ func TestPublicURLOverridesListenAddress(t *testing.T) {
 	} {
 		for _, bind := range []string{"127.0.0.1:19900", "0.0.0.0:18800"} {
 			t.Run(bind+"/"+tc.base, func(t *testing.T) {
-				r, err := New(bind, tc.base)
+				r, err := newForPlatform(bind, tc.base, "linux")
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -93,6 +90,27 @@ func TestPublicURLOverridesListenAddress(t *testing.T) {
 					t.Fatalf("link=%+v err=%v", got, err)
 				}
 			})
+		}
+	}
+}
+
+func TestMacAlwaysUsesLocalAddress(t *testing.T) {
+	for _, tc := range []struct{ bind, want string }{
+		{"127.0.0.1:19900", "http://127.0.0.1:19900/#/work/task/7"},
+		{"0.0.0.0:18800", "http://127.0.0.1:18800/#/work/task/7"},
+		{"192.168.1.20:18800", "http://127.0.0.1:18800/#/work/task/7"},
+		{"[::1]:19900", "http://[::1]:19900/#/work/task/7"},
+	} {
+		for _, override := range []string{"", "https://jarvis.example.com:8443/proxy/"} {
+			r, err := newForPlatform(tc.bind, override, "darwin")
+			if err != nil {
+				t.Fatal(err)
+			}
+			r.resolveIPv4 = func() (net.IP, error) { t.Fatal("Mac links must work offline"); return nil, nil }
+			got, err := r.Task(7)
+			if err != nil || got.URL != tc.want || got.Label != "查看详情（本机访问）" {
+				t.Fatalf("bind=%s override=%s link=%+v err=%v", tc.bind, override, got, err)
+			}
 		}
 	}
 }
