@@ -1,11 +1,13 @@
 ---
 name: install-jarvis
-description: 在新的 macOS 机器或 Jarvis checkout 中完成整个项目安装：建立可打勾的安装运行，检查仓库与旧实例，先安装并验收全部依赖，登录 lark-cli 当前默认身份，把该 App/Bot 绑定到 CC Connect，启动服务，转交世界模型初始化，并完成真实端到端验收。适用于“安装 Jarvis”“给其他人部署”“新机器首次启动”或“检查整体安装还缺什么”。
+description: 从完整 Jarvis checkout 完成源码安装：建立安装清单，检查旧实例、依赖、飞书默认身份与 CC Connect 绑定，启动服务并转交世界模型和端到端验收。适用于源码部署和检查源码安装缺项；DMG 使用应用内安装流程，不在桌面后台初始化时执行源码安装。
 ---
 
 # 安装 Jarvis 整体项目
 
-本 Skill 是从完整仓库 checkout 到最终可用的安装流程所有者，也是用户唯一需要触发的安装入口和 `INSTALL_CHECKLIST.md` 的唯一所有者。世界模型阶段内部调用 `$bootstrap-jarvis-world-model`，保留它作为独立重建世界模型时的复用模块；用户不需要再触发第二个安装 Skill。安装 Agent 负责把同一个 `run_dir` 传入、继续维护清单并完成最终验收。可执行实现都在仓库的 `scripts/` 和 `integrations/cc-connect/`，本 Skill 只根据机器事实编排，不进入 Jarvis M3/M5。
+本 Skill 是从完整仓库 checkout 到最终可用的源码安装流程所有者，也是源码安装的唯一用户入口和 `INSTALL_CHECKLIST.md` 的唯一所有者。世界模型阶段内部调用 `$bootstrap-jarvis-world-model`，保留它作为独立重建世界模型时的复用模块；用户不需要再触发第二个安装 Skill。安装 Agent 负责把同一个 `run_dir` 传入、继续维护清单并完成最终验收。可执行实现都在仓库的 `scripts/` 和 `integrations/cc-connect/`，本 Skill 只根据机器事实编排，不进入 Jarvis M3/M5。
+
+DMG / `JARVIS_DESKTOP=1` 的登录、绑定和服务生命周期由应用内 onboarding 与桌面 supervisor 管理，不执行下列源码安装步骤。登录和服务就绪即可进入应用，世界模型按原后台 Task 继续；失败保留任务与已有结果，不转为 clone 仓库、安装工具链或注册 launchd 服务。桌面世界模型的预检与交付见 `$bootstrap-jarvis-world-model`。
 
 执行顺序：**仓库与安装运行 → 机器事实 → 全部依赖 → `validate-dependencies` → lark-cli 当前默认 App → 飞书能力只读审计 → 本机 identity 与 CC 绑定 → 启动 CC Connect/Jarvis → `validate` → `$bootstrap-jarvis-world-model` → 两个真实端到端验收 → `status`**。依赖门通过前不得启动 CC Connect 或 Jarvis；世界模型不是服务启动前置条件，但没有完成或明确标注未做原因时，整个项目安装不能宣称完整。
 

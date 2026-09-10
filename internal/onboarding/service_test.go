@@ -2,11 +2,13 @@ package onboarding
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"jarvis/internal/contextpack"
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
 	"jarvis/internal/taskcreate"
@@ -212,7 +214,7 @@ func TestBootstrapWorldModelCreatesPrincipalBeforeManualTask(t *testing.T) {
 	}
 	service := &Service{
 		options: Options{
-			DB: db, StateRoot: t.TempDir(), LarkCLIBin: "lark-cli",
+			DB: db, StateRoot: t.TempDir(), RuntimeRoot: filepath.Join(t.TempDir(), "Jarvis runtime"), LarkCLIBin: "lark-cli",
 			TaskSubmitter: submitter,
 		},
 		runner: onboardingRunnerStub{},
@@ -226,6 +228,32 @@ func TestBootstrapWorldModelCreatesPrincipalBeforeManualTask(t *testing.T) {
 	if task.ActionType != worldModelActionType || task.Status != "pending" {
 		t.Fatalf("task = %+v", task)
 	}
+	// Use the same projection as the execution prompt, not the full packet:
+	// the Skill and recovery instruction must be visible without another read.
+	overview, err := contextpack.Read(task.SourcePayload, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var projected struct {
+		Source struct {
+			RuntimeRoot    string `json:"runtime_root"`
+			SkillPath      string `json:"skill_path"`
+			Instruction    string `json:"instruction"`
+			PreviousTaskID uint64 `json:"previous_task_id"`
+		} `json:"source"`
+	}
+	if err := json.Unmarshal(overview, &projected); err != nil {
+		t.Fatal(err)
+	}
+	if projected.Source.RuntimeRoot != service.options.RuntimeRoot ||
+		projected.Source.SkillPath != filepath.Join(service.options.RuntimeRoot, ".agents", "skills", "bootstrap-jarvis-world-model", "SKILL.md") ||
+		projected.Source.Instruction == "" || projected.Source.PreviousTaskID != 0 {
+		t.Fatalf("initial request missing from prompt overview: %s", overview)
+	}
+	background, err := contextpack.Read(task.SourcePayload, "request_context", "")
+	if err != nil || strings.Contains(string(background), "instruction") {
+		t.Fatalf("instruction still owned by deferred background: %s, %v", background, err)
+	}
 	var profile domain.PrincipalProfile
 	if err := db.Where("open_id = ?", "ou_principal").Take(&profile).Error; err != nil {
 		t.Fatal(err)
@@ -233,28 +261,19 @@ func TestBootstrapWorldModelCreatesPrincipalBeforeManualTask(t *testing.T) {
 	if profile.Name != "Principal" {
 		t.Fatalf("profile name = %q", profile.Name)
 	}
-	// A parked/running task is reused; an observing task is terminal and must
-	// not leave the setup wizard polling forever when the user clicks retry.
-	for _, state := range []string{"pending", "executing", "waiting", "needs_human"} {
+	// Reloading only discovers the existing task, including a failed attempt.
+	// Retrying is an explicit action on that same Task through /rerun.
+	for _, state := range []string{"pending", "executing", "waiting", "needs_human", "failed", "observing", "done"} {
 		if err := db.Model(task).Update("status", state).Error; err != nil {
 			t.Fatal(err)
 		}
 		again, err := service.BootstrapWorldModel(t.Context())
-		if err != nil || again.ID != task.ID {
+		if err != nil || again.ID != task.ID || again.Status != state || string(again.SourcePayload) != string(task.SourcePayload) {
 			t.Fatalf("reuse %s: %v, %v", state, again, err)
 		}
 	}
-	for _, state := range []string{"observing", "failed"} {
-		if err := db.Model(task).Update("status", state).Error; err != nil {
-			t.Fatal(err)
-		}
-		again, err := service.BootstrapWorldModel(t.Context())
-		if err != nil {
-			t.Fatal(err)
-		}
-		if again.ID == task.ID || again.Status != "pending" {
-			t.Fatalf("retry %s did not create runnable task", state)
-		}
-		task = again
+	var count int64
+	if err := db.Model(&domain.Task{}).Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("created another initialization task: count=%d, error=%v", count, err)
 	}
 }

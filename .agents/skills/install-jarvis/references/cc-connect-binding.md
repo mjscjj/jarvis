@@ -6,7 +6,9 @@
 
 同一飞书 App 的长连接事件不会广播给所有客户端。CC Connect 是该 Bot WebSocket 的唯一所有者；Jarvis 不打开第二条相同 App 的长连接，消息背景通过正常 M2 读取，审批回调由 CC Connect 转发到 Jarvis localhost。
 
-## 安装流程
+## 源码安装流程
+
+以下 `jarvis-install` 与 daemon 命令仅供完整 checkout 安装使用。DMG 由应用内 onboarding 写入桌面 CC 配置、supervisor 管理进程；后台建模只读取现有绑定，不执行此处的重新绑定或服务安装。
 
 1. 加载 `lark-shared`，用不带 `--profile` 的 `auth status --json --verify` 确认 lark-cli 当前默认身份的 user 与 bot。未配置时才初始化；未登录时使用 split-flow 完成 user OAuth。Bot/App 的权限、事件订阅和应用发布属于开放平台配置，不能用 user OAuth 成功代替。
 2. 用登录 user 的 app-scoped open_id 和已确认 Git author 写机器 identity：

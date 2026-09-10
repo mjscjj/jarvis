@@ -165,6 +165,7 @@ export interface SetupIdentityStatus {
 }
 
 export interface SetupStatus {
+  app_ready: boolean
   runtime_id: string
   agent_name?: string
   configuration: {

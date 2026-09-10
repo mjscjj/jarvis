@@ -1,5 +1,7 @@
 # 安装边界与决策表
 
+下表和命令针对完整 checkout 的源码安装。DMG 的安装与服务生命周期归应用内 onboarding / supervisor；不把源码安装的工具链、daemon 注册或清单验收当作桌面后台建模的前置条件。
+
 ## 语义所有权
 
 | 事项 | 唯一所有者 | 安装 Agent 的动作 |
@@ -59,4 +61,4 @@
 
 ## 分发边界
 
-仓库远端当前是私有 Code 仓库，不应宣称可被 GitHub-only 的 Skill installer 直接安装。正确入口是让有权限的使用者 clone 完整仓库，在根目录启动能读取 repo-local `.agents/skills/` 的 Agent，然后触发 `$install-jarvis`。若未来要开放 GitHub 分发，应另行补齐公开远端、访问策略和发布验收，而不是在本 Skill 中伪造 fallback。
+源码安装的仓库远端当前是私有 Code 仓库，不应宣称可被 GitHub-only 的 Skill installer 直接安装。有权限的使用者 clone 完整仓库后，在根目录触发 `$install-jarvis`。DMG 分发则使用已有应用内安装入口，不要求用户取得源码；打包与签名要求以 `packaging/macos/README.md` 为准。若未来要开放 GitHub 源码分发，再补齐公开远端、访问策略和发布验收。

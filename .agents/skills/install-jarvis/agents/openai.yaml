@@ -1,4 +1,4 @@
 interface:
   display_name: "安装 Jarvis"
   short_description: "从仓库 checkout 到世界模型和端到端验收"
-  default_prompt: "使用 $install-jarvis 完成整个 Jarvis 项目安装，维护统一安装清单：先验收依赖，再把 lark-cli 当前默认 App 绑定到 CC Connect，启动服务，完成世界模型初始化与真实端到端验收。"
+  default_prompt: "使用 $install-jarvis 从完整 checkout 完成 Jarvis 源码安装，维护统一清单并完成世界模型与端到端验收；若使用 DMG，则通过应用内安装入口继续，不执行源码安装步骤。"

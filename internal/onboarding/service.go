@@ -153,6 +153,7 @@ type Status struct {
 	Configuration   *config.InitializationStatus `json:"configuration"`
 	Lark            LarkStatus                   `json:"lark"`
 	Agent           AgentStatus                  `json:"agent"`
+	AppReady        bool                         `json:"app_ready"`
 	WorldModelReady bool                         `json:"world_model_ready"`
 	Completed       bool                         `json:"completed"`
 	AgentName       string                       `json:"agent_name"`
@@ -243,9 +244,10 @@ func (s *Service) Status(ctx context.Context) (*Status, error) {
 		AgentName:       agentName,
 		RuntimeID:       s.runtimeID,
 	}
-	result.Completed = configuration.MachineConfigurationReady &&
+	result.AppReady = configuration.MachineConfigurationReady &&
 		lark.Bot.Status == "ready" && lark.Bot.Verified && lark.User.Status == "ready" && lark.User.Verified &&
-		agent.Authenticated && result.WorldModelReady
+		agent.Authenticated
+	result.Completed = result.AppReady && result.WorldModelReady
 	return result, nil
 }
 
@@ -431,15 +433,29 @@ func (s *Service) BootstrapWorldModel(ctx context.Context) (*domain.Task, error)
 	if result.Error != nil {
 		return nil, fmt.Errorf("find world model initialization task: %w", result.Error)
 	}
-	if result.RowsAffected == 1 && existing.Status != "failed" && existing.Status != "observing" {
+	// Opening/reloading the app must never restart a failed task. The user
+	// continues this same Task through the existing rerun/resume endpoints.
+	if result.RowsAffected == 1 {
 		return &existing, nil
 	}
-	payload := json.RawMessage(`{"source":"desktop_onboarding","requested_action":"bootstrap_world_model"}`)
+	// The original request is visible in M5's first context view. Background
+	// is progressively disclosed, so it must not own the execution instruction.
+	request := map[string]any{
+		"source":           "desktop_onboarding",
+		"requested_action": "bootstrap_world_model",
+		"runtime_root":     s.options.RuntimeRoot,
+		"skill_path":       filepath.Join(s.options.RuntimeRoot, ".agents", "skills", "bootstrap-jarvis-world-model", "SKILL.md"),
+		"instruction":      "在 runtime_root 中工作，先完整读取并执行 skill_path 指定的初始化 Skill 及其引用。基于当前飞书用户建立本人职责、项目、关键人物、资料、重点事项、群背景与关系，按 Skill 做建立和查漏补缺两轮，并通过现有工具写入、读回。中断或重试先读取已有工作稿和任务运行记录；有 previous_task_id 时接续该任务的成果，不重复创建或清空存量。最后给出已理解的工作全景、写入位置与尚缺的信息，未完成的取证如实说明，不能冒充完成。",
+	}
+	payload, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("encode world model initialization request: %w", err)
+	}
 	return s.options.TaskSubmitter.Submit(ctx, taskcreate.Input{
 		Title:         "建立初始世界模型",
 		ActionType:    worldModelActionType,
 		Target:        "基于当前飞书身份建立 Principal、项目、人物、资料、重点事项与群监听",
-		Background:    json.RawMessage(`{"onboarding":"desktop","instruction":"这是全新桌面实例。读取并执行 $JARVIS_RUNTIME_ROOT/.agents/skills/bootstrap-jarvis-world-model/SKILL.md，使用 $JARVIS_RUNTIME_ROOT/scripts 下的工具完成初始化并逐项读回验证。"}`),
+		Background:    json.RawMessage(`{"onboarding":"desktop"}`),
 		SourcePayload: payload,
 		SourceType:    taskcreate.SourceManual,
 		ActorType:     "user",

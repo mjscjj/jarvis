@@ -14,7 +14,7 @@
 ### 稳定锚点
 
 1. `auth status --verify`：确认 user openId、userName、tokenStatus、scope；保存前删除 token 类字段。
-2. 本机 Git 身份：读取 `git config user.name`、`git config user.email`，并在当前仓库及已确认项目仓库抽样近期提交，确定可供 `git log --author` 使用的唯一模式。配置与提交不一致或有多个候选时列为未知项，请用户确认，不得猜测。
+2. 本机 Git 身份：本机已有 Git 时读取 `git config user.name`、`git config user.email`，只在已存在且确认的项目仓库抽样近期提交，核对 author 模式。DMG 运行目录不是仓库；新机器没有 Git 或项目 checkout 时记为证据缺口，不安装工具链、不 clone 仓库来满足初始化。配置与提交不一致或有多个候选时列为未知项，请用户确认，不得猜测。
 3. 通讯录当前用户：读取姓名和当前身份可见的基础资料、部门展示信息；字段为空与调用失败分开记录。
 4. 用户详情：尝试读取 `leader_user_id`、职务和部门路径等组织字段。它们属于可选增强；API 未返回时记录字段缺口，不申请高级权限。
 5. 直属上级详情：只在得到明确 leader id 后查询；跨 app 的 open_id 不能混用。没有明确 leader id 时可从 OKR 文档、近期文档和多条消息定向调查，证据仍不足就保留未知，不用单条称呼猜测。
@@ -48,7 +48,7 @@
 ## 权限和失败
 
 - 本初始化阶段覆盖 `lark-shared` 的通用缺失 scope 恢复动作：只做只读审计，不运行 `auth login`、不发起增量授权、不修改开发者后台。错误中的 `missing_scopes` 和后台链接只作为证据与下一步记录。
-- 核心读取能力缺失时保留原始错误，整体安装场景返回 `$install-jarvis` 保持对应项未勾选；独立重建场景在工作稿中标阻塞。不要用其它来源假装该能力已经通过。
+- 核心读取能力缺失时保留原始错误，按本 Skill 主文的运行环境分支记录阻塞：源码安装更新传入清单，桌面 Task / 独立重建记录在工作稿与任务结果。不要用其它来源假装该能力已经通过。
 - 文档搜索依赖 `search:docs:read`；它属于核心只读能力，缺失时只记录审计结果，不在本阶段发起授权。
 - `contact:user.department:readonly`、`contact:user.employee:readonly`、`contact:user.department_path:readonly` 是可选组织信息增强。缺失时继续初始化，把直属上级、职务或部门路径写成有来源的未知项；多源业务证据足够时可以写推断和置信度，但不得冒充通讯录事实。
 - 企业策略不支持 OKR 权限；初始化不得加载 `lark-okr`、调用 OKR API 或申请 OKR scope。OKR 证据的唯一来源是本人撰写且当前身份可读的文档；文档搜不到时保留未知，不得改走 OKR API。

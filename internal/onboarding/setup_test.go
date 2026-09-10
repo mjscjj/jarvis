@@ -111,6 +111,9 @@ func TestFreshDesktopIdentityAndOneAppFinalize(t *testing.T) {
 	if result.AgentName != "Jarvis" || !result.Configuration.MachineConfigurationReady || result.RuntimeID != "before-restart" {
 		t.Fatalf("unexpected final state: %#v", result)
 	}
+	if !result.AppReady || result.WorldModelReady || result.Completed {
+		t.Fatalf("application readiness must not imply world model completion: %#v", result)
+	}
 	saved, err := service.savedSecret("cli_test")
 	if err != nil || saved != "test-secret" {
 		t.Fatal("same-app channel credential missing")

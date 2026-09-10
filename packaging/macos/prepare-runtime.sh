@@ -40,6 +40,7 @@ fi
 [[ -x "$traex_bin" ]] || fail "missing Trae CLI binary; set JARVIS_TRAEX_BIN"
 [[ -x "$node_bin" ]] || fail "missing Node binary; set JARVIS_NODE_BIN"
 [[ -x "$jq_bin" ]] || fail "missing jq binary; set JARVIS_JQ_BIN"
+JARVIS_JQ_BIN="$jq_bin" bash "$script_dir/check-lark-skills.sh" "$lark_cli_bin"
 
 rm -rf "$staging_dir"
 mkdir -p "$staging_dir/bin"

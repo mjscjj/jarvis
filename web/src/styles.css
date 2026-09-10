@@ -2304,6 +2304,27 @@ pre {
   background: #f7f8f9;
 }
 
+.world-model-setup {
+  position: fixed;
+  right: 20px;
+  bottom: 80px;
+  z-index: 90;
+  width: min(400px, calc(100vw - 32px));
+  max-height: calc(100dvh - 112px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid #dce5df;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 6px 24px #18281b1a;
+}
+
+.world-model-setup-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.world-model-setup-detail { max-height: 220px; overflow: auto; overflow-wrap: anywhere; }
+
 .setup-loading {
   display: flex;
   align-items: center;

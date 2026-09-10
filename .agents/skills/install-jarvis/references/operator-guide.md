@@ -1,4 +1,6 @@
-# Jarvis 安装统一操作说明
+# Jarvis 源码安装操作说明
+
+本文的命令、安装清单和端到端验收用于完整 checkout 的源码安装。DMG 已有应用内安装入口：打开 Jarvis 后补齐登录与连接，服务就绪即可使用，世界模型继续在后台运行并展示真实状态。DMG 用户不需要 clone 仓库或执行本页的依赖、绑定、launchd 安装命令；后台初始化中断时接续原 Task，不从源码安装重来。
 
 用户只需在完整 checkout 根目录告诉 Agent：
 
@@ -6,7 +8,7 @@
 使用 $install-jarvis 检查这台机器并完成 Jarvis 首次安装和验收。
 ```
 
-`$install-jarvis` 是唯一用户入口。它内部调用 `$bootstrap-jarvis-world-model`，后者只在独立重建世界模型时单独使用。
+`$install-jarvis` 是源码安装的唯一用户入口。它内部调用 `$bootstrap-jarvis-world-model`，后者也供桌面后台任务和独立重建复用。
 
 ## 会要求用户处理的操作
 
@@ -60,5 +62,3 @@
 ```
 
 `jarvis-install status` 的 `complete=true` 表示全部完成；`deliverable=true` 表示所有未完成项都有结构化说明，可交给用户决定是否接受当前边界。
-
-当前 macOS `.app` 代码只提供应用内 supervisor 与打包底座，还没有替代上述授权、App/Bot 配置和世界模型初始化的 onboarding。MVP 首次安装仍走本 Skill 与 launchd 流程；不要把“可以构建 App”描述成“已经有第二条完整安装路径”。
