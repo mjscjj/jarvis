@@ -806,7 +806,10 @@ func TestJarvisToolsCreateTaskAllowsEveryAgentStageAndRecordsCaller(t *testing.T
 	if _, err := runJarvisTools(t, server.URL, []string{"JARVIS_AGENT_STAGE=execute"}, "create-task", "--payload", payload); err != nil {
 		t.Fatalf("create-task failed for execute stage: %v", err)
 	}
-	if !reflect.DeepEqual(actors, []string{"proactive", "m5"}) {
+	if _, err := runJarvisTools(t, server.URL, nil, "create-task", "--payload", payload); err != nil {
+		t.Fatalf("create-task failed outside an Agent stage: %v", err)
+	}
+	if !reflect.DeepEqual(actors, []string{"proactive", "m5", "user"}) {
 		t.Fatalf("actors = %#v", actors)
 	}
 }

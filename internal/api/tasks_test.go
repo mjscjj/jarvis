@@ -112,7 +112,7 @@ func TestListTasksScopeFilters(t *testing.T) {
 	h := server.New()
 	h.GET("/api/tasks", ListTasks(service))
 
-	response := ut.PerformRequest(h.Engine, "GET", "/api/tasks?group_id=7&project_id=44", nil).Result()
+	response := ut.PerformRequest(h.Engine, "GET", "/api/tasks?group_id=7&project_id=44&plugin=product-management", nil).Result()
 	if response.StatusCode() != consts.StatusOK {
 		t.Fatalf("status = %d body=%s", response.StatusCode(), response.Body())
 	}
@@ -121,6 +121,9 @@ func TestListTasksScopeFilters(t *testing.T) {
 	}
 	if service.filter.ProjectID == nil || *service.filter.ProjectID != 44 {
 		t.Fatalf("project filter = %#v", service.filter.ProjectID)
+	}
+	if service.filter.Plugin != "product-management" {
+		t.Fatalf("plugin filter = %q", service.filter.Plugin)
 	}
 
 	bad := ut.PerformRequest(h.Engine, "GET", "/api/tasks?project_id=abc", nil).Result()

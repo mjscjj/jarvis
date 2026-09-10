@@ -24,7 +24,7 @@ test('task detail and paged run index use separate reads from run bodies', async
   assert.equal(calls.at(-1), '/api/task-runs/5')
 })
 
-test('task list forwards open action type filters', async (t) => {
+test('task list forwards action type and plugin ownership filters', async (t) => {
   const calls: string[] = []
   t.mock.method(globalThis, 'fetch', async (path: string) => {
     calls.push(path)
@@ -36,7 +36,9 @@ test('task list forwards open action type filters', async (t) => {
 
   await listTasks(['waiting'], 1, 20, undefined, { actionType: 'delegated_followup' })
   await listTasks(['pending'], 2, 20, undefined, { excludeActionType: 'delegated_followup' })
+  await listTasks(['done'], 1, 100, undefined, { plugin: 'product-management' })
 
   assert.equal(calls[0], '/api/tasks?status=waiting&page=1&page_size=20&action_type=delegated_followup')
   assert.equal(calls[1], '/api/tasks?status=pending&page=2&page_size=20&exclude_action_type=delegated_followup')
+  assert.equal(calls[2], '/api/tasks?status=done&page=1&page_size=100&plugin=product-management')
 })

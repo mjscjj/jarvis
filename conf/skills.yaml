@@ -5,6 +5,9 @@ skills:
     - name: product-doc-review
       enabled: true
       stages: [execute]
+    - name: product-prd-review
+      enabled: true
+      stages: [execute]
     - name: product-skill-maintain
       enabled: true
       stages: [execute]

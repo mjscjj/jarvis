@@ -111,7 +111,7 @@ func BuiltinRegistry() (*Registry, error) {
 		{
 			ID: "product-management", Name: "产品管理", Kind: KindCapability,
 			Description: "阅读和 Review 产品文档，汇总产品 Skills、定时任务与执行结果。",
-			Skills:      []string{"product-doc-read", "product-doc-review", "product-skill-maintain"},
+			Skills:      []string{"product-doc-read", "product-doc-review", "product-prd-review", "product-skill-maintain"},
 			Permissions: []string{"文档阅读与任务执行；Skills 由 Agent 维护"},
 		},
 		{

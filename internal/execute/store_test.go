@@ -181,6 +181,39 @@ func TestListTasksFiltersOpenActionType(t *testing.T) {
 	}
 }
 
+func TestListTasksFiltersScheduledPluginFromFrozenContext(t *testing.T) {
+	db, err := gorm.Open(
+		sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())),
+		&gorm.Config{DisableForeignKeyConstraintWhenMigrating: true},
+	)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&domain.Task{}, &domain.TaskEvent{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	rows := []domain.Task{
+		{ID: 1, Title: "产品 PRD Review", ActionType: "agent_task", Target: "PRD", SourcePayload: []byte(`{"source":{"instruction":"review"},"capture":{"request_context":{"plugin":"product-management","skill":"product-prd-review"}},"annotation":{}}`), SourceType: "scheduled_task", Status: "done"},
+		{ID: 2, Title: "其它自动化", ActionType: "agent_task", Target: "other", SourcePayload: []byte(`{"source":{"instruction":"other"},"capture":{"request_context":{"plugin":"codebase"}},"annotation":{}}`), SourceType: "scheduled_task", Status: "done"},
+	}
+	if err := db.Create(&rows).Error; err != nil {
+		t.Fatalf("create tasks: %v", err)
+	}
+	store, err := NewStore(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := store.ListTasks(t.Context(), TaskFilter{
+		Statuses: []string{"done"}, Plugin: "product-management", Page: 1, PageSize: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 1 || len(page.Items) != 1 || page.Items[0].ID != 1 {
+		t.Fatalf("plugin tasks = %#v", page)
+	}
+}
+
 func TestRunViewIncludesFullPrompt(t *testing.T) {
 	prompt := strings.Repeat("完整原始提示词\n", 10_000)
 	view := runView(&domain.ExecutionRun{ID: 1, Prompt: prompt})

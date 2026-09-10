@@ -55,6 +55,7 @@ func validateTaskSummary(summary string) error {
 type TaskFilter struct {
 	Query             string
 	SourceMessageID   string
+	Plugin            string
 	Statuses          []string
 	ActionType        string
 	ExcludeActionType string
@@ -291,6 +292,9 @@ func (s *Store) ListTasks(ctx context.Context, filter TaskFilter) (*TaskList, er
 	}
 	if filter.SourceMessageID != "" {
 		query = query.Where("EXISTS (SELECT 1 FROM json_each(task.source_payload, '$.source.source_message_ids') WHERE value = ?)", filter.SourceMessageID)
+	}
+	if filter.Plugin != "" {
+		query = query.Where("json_extract(source_payload, '$.capture.request_context.plugin') = ?", filter.Plugin)
 	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {

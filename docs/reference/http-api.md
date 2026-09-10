@@ -35,7 +35,7 @@
 - Task 控制：`finish`、`supplement`、`execute`、`interrupt`、`rerun`、`resume`
 - 外部效果：`POST /api/tasks/:task_id/effects/recall-message`
 
-`GET /api/tasks` 支持开放字符串 `action_type` 和 `exclude_action_type` 过滤。
+`GET /api/tasks` 支持开放字符串 `action_type`、`exclude_action_type`，以及冻结任务上下文中的 `plugin` 归属过滤。
 普通任务页展示检查 Task；“我的交办”独立读取 `/api/delegations`。
 
 交办 API：

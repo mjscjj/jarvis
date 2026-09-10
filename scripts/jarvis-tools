@@ -709,11 +709,11 @@ resolve_api_base() {
 }
 
 # task_actor reports the actual calling Agent stage for Task audit events.
-# Execution uses the established m5 actor label; ad-hoc local calls use agent.
+# Execution uses the established m5 actor label; ad-hoc local calls use user.
 task_actor() {
   case "${JARVIS_AGENT_STAGE:-}" in
     execute) printf 'm5' ;;
-    '') printf 'agent' ;;
+    '') printf 'user' ;;
     *) printf '%s' "$JARVIS_AGENT_STAGE" ;;
   esac
 }

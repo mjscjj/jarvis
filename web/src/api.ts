@@ -221,6 +221,7 @@ export interface TaskListQuery {
   query?: string
   actionType?: string
   excludeActionType?: string
+  plugin?: string
 }
 
 export function listTasks(
@@ -235,6 +236,7 @@ export function listTasks(
   if (normalized.query?.trim()) params.set('query', normalized.query.trim())
   if (normalized.actionType) params.set('action_type', normalized.actionType)
   if (normalized.excludeActionType) params.set('exclude_action_type', normalized.excludeActionType)
+  if (normalized.plugin) params.set('plugin', normalized.plugin)
   return request<TaskList>(`/api/tasks?${params.toString()}`, { signal })
 }
 

@@ -62,6 +62,7 @@ func ListTasks(service execute.TaskService) app.HandlerFunc {
 		filter := execute.TaskFilter{
 			Statuses: statuses, Page: page, PageSize: pageSize,
 			Query: c.Query("query"), SourceMessageID: c.Query("source_message_id"),
+			Plugin:            strings.TrimSpace(c.Query("plugin")),
 			ActionType:        strings.TrimSpace(c.Query("action_type")),
 			ExcludeActionType: strings.TrimSpace(c.Query("exclude_action_type")),
 		}

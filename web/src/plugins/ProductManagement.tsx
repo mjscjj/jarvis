@@ -1,16 +1,26 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Alert, Button, Drawer, Space, Table, Tabs, Tag, Typography, message } from 'antd'
-import { getSkillContent, getTask, listScheduledTasks, listSkills, updateSkill } from '../api'
+import { getSkillContent, listSkills, listTasks, updateSkill } from '../api'
 import MarkdownReport from '../components/MarkdownReport'
 import ScheduledTasks from '../ScheduledTasks'
 import { usePageContext } from '../pageContext'
-import type { AgentSkill, AgentSkillContent, Plugin, Task } from '../types'
+import type { AgentSkill, AgentSkillContent, Plugin, Task, TaskStatus } from '../types'
 import { taskStatusMeta } from '../status'
+
+const allTaskStatuses = Object.keys(taskStatusMeta) as TaskStatus[]
+
+function formatTime(value: string): string {
+  return new Intl.DateTimeFormat('zh-CN', {
+    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(new Date(value))
+}
 
 export default function ProductManagement({ plugin }: { plugin: Plugin }) {
   const { context, navigate, setViewState, setSelection } = usePageContext()
   const [skills, setSkills] = useState<AgentSkill[]>([])
   const [tasks, setTasks] = useState<Task[]>([])
+  const [taskPage, setTaskPage] = useState(1)
+  const [taskTotal, setTaskTotal] = useState(0)
   const [content, setContent] = useState<AgentSkillContent>()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>()
@@ -20,21 +30,21 @@ export default function ProductManagement({ plugin }: { plugin: Plugin }) {
   const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true)
     try {
-      const [catalog, schedules] = await Promise.all([
-        listSkills(signal), listScheduledTasks('', signal, plugin.id),
+      const [catalog, history] = await Promise.all([
+        listSkills(signal),
+        listTasks(allTaskStatuses, taskPage, 10, signal, { plugin: plugin.id }),
       ])
-      const ids = [...new Set(schedules.items.flatMap((item) => item.last_task_id ? [item.last_task_id] : []))]
-      const results = await Promise.allSettled(ids.map((id) => getTask(id, signal)))
       if (signal?.aborted) return
       setSkills(catalog.items.filter((item) => plugin.skills.includes(item.name)))
-      setTasks(results.flatMap((result) => result.status === 'fulfilled' ? [result.value] : []))
-      setError(results.some((result) => result.status === 'rejected') ? '部分执行记录读取失败，请刷新重试。' : undefined)
+      setTasks(history.items)
+      setTaskTotal(history.total)
+      setError(undefined)
     } catch (cause) {
       if (!signal?.aborted) setError(String(cause))
     } finally {
       if (!signal?.aborted) setLoading(false)
     }
-  }, [plugin.id, plugin.skills])
+  }, [plugin.id, plugin.skills, taskPage])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -91,9 +101,13 @@ export default function ProductManagement({ plugin }: { plugin: Plugin }) {
       </> },
       { key: 'schedules', label: '定时任务', children: <ScheduledTasks delegationsEnabled={false} scope={scope} /> },
       { key: 'results', label: '最近执行', children: <>
-        <Typography.Paragraph type="secondary">每条定时任务最近一次关联 Task 的真实状态。完整执行过程与历史继续在任务中心查看。</Typography.Paragraph>
+        <Typography.Paragraph type="secondary">产品管理计划创建的历史 Task 与真实状态。完整过程、报告链接和通知回执在任务详情中查看。</Typography.Paragraph>
         <Button style={{ marginBottom: 12 }} onClick={() => navigate('tasks')}>打开任务中心</Button>
-        <Table<Task> rowKey="id" dataSource={tasks} loading={loading} pagination={{ pageSize: 10 }} columns={[
+        <Table<Task> rowKey="id" dataSource={tasks} loading={loading} pagination={{
+          current: taskPage, pageSize: 10, total: taskTotal, showSizeChanger: false,
+          onChange: (page) => setTaskPage(page),
+        }} columns={[
+          { title: '运行时间', dataIndex: 'created_at', width: 120, render: (value: string) => formatTime(value) },
           { title: '任务', dataIndex: 'title' },
           { title: '状态', render: (_, item) => taskStatusMeta[item.status]?.label || item.status },
           { title: '结果', dataIndex: 'summary' },
