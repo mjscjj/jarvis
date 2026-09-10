@@ -691,6 +691,10 @@ export function listPlugins(signal?: AbortSignal): Promise<{ items: Plugin[] }> 
   return request<{ items: Plugin[] }>('/api/plugins', { signal })
 }
 
+export function getPlugin(id: string, signal?: AbortSignal): Promise<Plugin> {
+  return request<Plugin>(`/api/plugins/${encodeURIComponent(id)}`, { signal })
+}
+
 export function updatePlugin(id: string, enabled: boolean, expectedRevision: number, config?: Record<string, unknown>): Promise<Plugin> {
   return request<Plugin>(`/api/plugins/${encodeURIComponent(id)}`, {
     method: 'PATCH',
