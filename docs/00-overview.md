@@ -217,7 +217,7 @@ pending -> executing -> done | observing | failed
 - 运行部署：[reference/operations.md](reference/operations.md)
 - 页面真源：`web/src/App.tsx`
 - 当前主导航：Overview、任务、定时任务、待办、背景、设置、进度、运行状态
-- 飞书提问、审批及关联任务的 Notice 卡片统一通过 `internal/uilink` 按实际监听地址生成“查看详情”链接（包含安装包的 `-addr` 覆盖）。具体绑定地址直接使用；通配监听才实时解析局域网 IPv4。安装包默认 `127.0.0.1:18800`，链接标注“Jarvis 所在电脑”，需在该电脑且 App 运行时打开。
+- 飞书提问、审批及关联任务的 Notice 卡片统一通过 `internal/uilink` 优先按 `server.public_url` 生成“查看详情”链接，支持远端域名、反向代理和端口转发的浏览器访问入口。未配置时使用实际监听地址（包含安装包的 `-addr` 覆盖）；具体绑定地址直接使用，通配监听实时解析局域网 IPv4。回环链接标注“本机访问”，需在打开链接的设备上有本地服务或端口转发。
 
 ## 9. 当前已知实现缺口
 

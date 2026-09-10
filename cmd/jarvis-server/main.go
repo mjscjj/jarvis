@@ -213,7 +213,7 @@ func main() {
 	if err != nil {
 		fatalf("initialize lark-cli failed: %v", err)
 	}
-	principalNotices, err := notice.NewService(db, larkClient, cfg.Extract.PrincipalOpenID, filepath.Join(runtimeRoot, "var", "log", "principal-notices.jsonl"), cfg.Server.Addr)
+	principalNotices, err := notice.NewService(db, larkClient, cfg.Extract.PrincipalOpenID, filepath.Join(runtimeRoot, "var", "log", "principal-notices.jsonl"), cfg.Server.Addr, cfg.Server.PublicURL)
 	if err != nil {
 		fatalf("initialize principal notices failed: %v", err)
 	}
@@ -386,7 +386,7 @@ func main() {
 		if err != nil {
 			fatalf("initialize question card lark-cli failed: %v", err)
 		}
-		questionCards, err = cardask.NewNotifier(questionClient, cfg.Identity.DisplayName, cfg.CardApproval.PrincipalOpenID, cfg.Server.Addr)
+		questionCards, err = cardask.NewNotifier(questionClient, cfg.Identity.DisplayName, cfg.CardApproval.PrincipalOpenID, cfg.Server.Addr, cfg.Server.PublicURL)
 		if err != nil {
 			fatalf("initialize question notifier failed: %v", err)
 		}

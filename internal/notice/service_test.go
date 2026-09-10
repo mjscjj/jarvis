@@ -58,7 +58,7 @@ func testService(t *testing.T, f *fakeRunner) *Service {
 	if err := store.Migrate(db); err != nil {
 		t.Fatal(err)
 	}
-	s, err := NewService(db, f, "ou_principal", filepath.Join(dir, "notices.jsonl"), "127.0.0.1:18800")
+	s, err := NewService(db, f, "ou_principal", filepath.Join(dir, "notices.jsonl"), "127.0.0.1:18800", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,6 +76,32 @@ func payload(t *testing.T, fields map[string]any) []byte {
 		t.Fatal(err)
 	}
 	return raw
+}
+
+func TestRemoteNoticeDetails(t *testing.T) {
+	f := workingRunner()
+	local := testService(t, f)
+	s, err := NewService(local.db, f, "ou_principal", local.auditPath, "127.0.0.1:18800", "https://jarvis.example.com:8443/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	task := domain.Task{Title: "review", ActionType: "agent_task", Status: "executing", Version: 1}
+	if err := s.db.Create(&task).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Send(t.Context(), payload(t, map[string]any{"task_id": task.ID})); err != nil {
+		t.Fatal(err)
+	}
+	for i, arg := range f.calls[0] {
+		if arg == "--content" {
+			card := f.calls[0][i+1]
+			if !strings.Contains(card, "[查看详情](https://jarvis.example.com:8443/#/work/task/") || strings.Contains(card, "127.0.0.1") || strings.Contains(card, "本机访问") {
+				t.Fatal(card)
+			}
+			return
+		}
+	}
+	t.Fatal("missing card content")
 }
 
 func TestCardOpenTypeAndOptionalSections(t *testing.T) {
@@ -256,7 +282,7 @@ func TestTaskNoticeUsesRuntimeDetailsLink(t *testing.T) {
 		if !strings.Contains(card, "https://example.com/mr/139") {
 			t.Fatal(card)
 		}
-		hasDetails := strings.Contains(card, "[查看详情（Jarvis 所在电脑）](http://127.0.0.1:18800/#/work/task/")
+		hasDetails := strings.Contains(card, "[查看详情（本机访问）](http://127.0.0.1:18800/#/work/task/")
 		if hasDetails != withTask {
 			t.Fatalf("withTask=%v card=%s", withTask, card)
 		}

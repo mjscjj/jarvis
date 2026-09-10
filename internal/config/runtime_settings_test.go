@@ -140,6 +140,7 @@ func TestRuntimeSettingsUpdateWritesOverlayAndRequiresRestart(t *testing.T) {
 	if err := os.WriteFile(RuntimeOverridePath(configPath), []byte(`
 server:
   addr: 127.0.0.1:18801
+  public_url: https://jarvis.example.com
 card_approval:
   enabled: true
   principal_open_id: ou_principal
@@ -230,6 +231,9 @@ dailydigest:
 		reloaded.LarkCLI.RateLimit != 7.5 || reloaded.DailyDigest.GroupConcurrency != 4 {
 		t.Fatalf("reloaded config = %#v", reloaded)
 	}
+	if reloaded.Server.PublicURL != "https://jarvis.example.com" {
+		t.Fatalf("public URL was not preserved: %q", reloaded.Server.PublicURL)
+	}
 	if reloaded.Server.Addr != "127.0.0.1:18801" {
 		t.Fatalf("server address was not preserved: %q", reloaded.Server.Addr)
 	}
@@ -310,6 +314,7 @@ func TestSecuritySettingsUpdateOwnsOnlyP2PScan(t *testing.T) {
 	if err := os.WriteFile(RuntimeOverridePath(configPath), []byte(`
 server:
   addr: 127.0.0.1:18801
+  public_url: https://jarvis.example.com
 `), 0o600); err != nil {
 		t.Fatalf("write runtime override: %v", err)
 	}
@@ -340,7 +345,8 @@ server:
 	if reloaded.Capture.ScanSchedule != active.Capture.ScanSchedule ||
 		reloaded.Execute.Model != active.Execute.Model ||
 		reloaded.Proactive.Schedule != active.Proactive.Schedule ||
-		reloaded.Server.Addr != active.Server.Addr {
+		reloaded.Server.Addr != active.Server.Addr ||
+		reloaded.Server.PublicURL != active.Server.PublicURL {
 		t.Fatalf("security update changed unrelated runtime settings: %#v", reloaded)
 	}
 }

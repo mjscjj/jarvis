@@ -86,13 +86,17 @@ After Qdrant and Jarvis are healthy, stdout contains exactly one discovery line:
 JARVIS_RUNTIME_CONNECTION {"httpUrl":"http://127.0.0.1:18800","dataRoot":"..."}
 ```
 
-Question, approval, and task-associated Notice cards derive their task detail
-URLs from the same effective server listen address, including the `-addr`
-override. A loopback bind stays loopback; it must not be replaced with a LAN IP.
-These links open the browser on the computer running Jarvis, while the app is
-running. They do not provide mobile/remote access or launch a closed app. The
-card labels this restriction as “查看详情（Jarvis 所在电脑）”. Inline folded
-details and external source links remain usable independently of the local UI.
+Question, approval, and task-associated Notice cards use `server.public_url`
+when configured, preserving the browser-facing scheme, host, port and path.
+This allows a remote instance behind a reverse proxy or port forward to link
+to its actual access URL independently of its listen address. Without that
+setting, links use the effective listen address including the `-addr` override;
+a loopback bind stays loopback and is never replaced with a LAN IP.
+Loopback URLs are labelled “查看详情（本机访问）”: the device opening the link
+must have the local service or port forward running. For a default desktop
+installation, this means opening the link on the Mac while the app is running;
+the link does not launch a closed app. Inline folded details and external
+source links remain usable independently of the UI.
 
 The shell loads `httpUrl`. On `RunEvent::ExitRequested` or `RunEvent::Exit`, it
 sends `SIGTERM` to the app service and waits up to 20 seconds before killing it.

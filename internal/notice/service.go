@@ -62,11 +62,11 @@ type Delivery struct {
 	SendResponse json.RawMessage `json:"send_response,omitempty"`
 }
 
-func NewService(db *gorm.DB, lark runner, principal, auditPath, serverAddr string) (*Service, error) {
+func NewService(db *gorm.DB, lark runner, principal, auditPath, serverAddr, publicURL string) (*Service, error) {
 	if db == nil || lark == nil || strings.TrimSpace(principal) == "" || strings.TrimSpace(auditPath) == "" {
 		return nil, fmt.Errorf("notice requires database, lark client, principal and audit path")
 	}
-	links, err := uilink.New(serverAddr)
+	links, err := uilink.New(serverAddr, publicURL)
 	if err != nil {
 		return nil, err
 	}

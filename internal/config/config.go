@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"jarvis/internal/agentidentity"
+	"jarvis/internal/uilink"
 
 	"github.com/robfig/cron/v3"
 	"gopkg.in/yaml.v3"
@@ -47,9 +48,10 @@ type IdentityConfig struct {
 
 // ServerConfig Hertz 监听配置。
 type ServerConfig struct {
-	Addr     string   `yaml:"addr"`      // 形如 0.0.0.0:18800
-	WebRoot  string   `yaml:"web_root"`  // React production build directory
-	LogFiles []string `yaml:"log_files"` // 运行日志文件（供调试面板尾读并归并）；默认 server 的 stdout+stderr 两个文件。cron 日志走 stderr，必须都读。
+	PublicURL string   `yaml:"public_url"` // 浏览器访问入口；空值按实际监听地址生成卡片链接
+	Addr      string   `yaml:"addr"`       // 形如 0.0.0.0:18800
+	WebRoot   string   `yaml:"web_root"`   // React production build directory
+	LogFiles  []string `yaml:"log_files"`  // 运行日志文件（供调试面板尾读并归并）；默认 server 的 stdout+stderr 两个文件。cron 日志走 stderr，必须都读。
 }
 
 // SQLiteConfig is the single local business source of truth.
@@ -370,6 +372,9 @@ func (c *Config) validate() error {
 	}
 	if c.Server.Addr == "" {
 		return fmt.Errorf("server.addr 不能为空")
+	}
+	if _, err := uilink.New(c.Server.Addr, c.Server.PublicURL); err != nil {
+		return err
 	}
 	if c.Server.WebRoot == "" {
 		return fmt.Errorf("server.web_root 不能为空")

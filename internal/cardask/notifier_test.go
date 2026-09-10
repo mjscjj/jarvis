@@ -32,7 +32,7 @@ func (f *fakeLark) Run(_ context.Context, out any, args ...string) error {
 
 func testNotifier(t *testing.T, lark larkRunner) *Notifier {
 	t.Helper()
-	notifier, err := NewNotifier(lark, "Jarvis", "ou_principal", "192.168.1.20:18800")
+	notifier, err := NewNotifier(lark, "Jarvis", "ou_principal", "192.168.1.20:18800", "")
 	if err != nil {
 		t.Fatalf("newNotifier() error = %v", err)
 	}
@@ -356,37 +356,42 @@ func mustJSON(t *testing.T, value any) string {
 }
 
 func TestPackagedQuestionAndApprovalDetails(t *testing.T) {
-	for _, decision := range []bool{false, true} {
-		lark := &fakeLark{response: map[string]any{"data": map[string]any{"message_id": "om_card"}}}
-		notifier, err := NewNotifier(lark, "Jarvis", "ou_principal", "127.0.0.1:19900")
-		if err != nil {
-			t.Fatal(err)
-		}
-		notice := testNotice()
-		if decision {
-			notice.Question.Fields = notice.Question.Fields[:2]
-		}
-		delivery, err := notifier.SendQuestion(t.Context(), notice)
-		if err != nil {
-			t.Fatal(err)
-		}
-		want := "http://127.0.0.1:19900/#/work/task/7"
-		if delivery.URL != want {
-			t.Fatalf("delivery=%+v", delivery)
-		}
-		pending := ""
-		for i, arg := range lark.args {
-			if arg == "--content" {
-				pending = lark.args[i+1]
+	for _, tc := range []struct{ base, want, label string }{
+		{"", "http://127.0.0.1:19900/#/work/task/7", "查看详情（本机访问）"},
+		{"https://jarvis.example.com:8443/", "https://jarvis.example.com:8443/#/work/task/7", "查看详情"},
+	} {
+		for _, decision := range []bool{false, true} {
+			lark := &fakeLark{response: map[string]any{"data": map[string]any{"message_id": "om_card"}}}
+			notifier, err := NewNotifier(lark, "Jarvis", "ou_principal", "127.0.0.1:19900", tc.base)
+			if err != nil {
+				t.Fatal(err)
 			}
-		}
-		answered, err := notifier.AnsweredCard(notice, "已回答")
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, card := range []string{pending, string(answered)} {
-			if !strings.Contains(card, "[查看详情（Jarvis 所在电脑）]("+want+")") {
-				t.Fatalf("card=%s", card)
+			notice := testNotice()
+			if decision {
+				notice.Question.Fields = notice.Question.Fields[:2]
+			}
+			delivery, err := notifier.SendQuestion(t.Context(), notice)
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := tc.want
+			if delivery.URL != want {
+				t.Fatalf("delivery=%+v", delivery)
+			}
+			pending := ""
+			for i, arg := range lark.args {
+				if arg == "--content" {
+					pending = lark.args[i+1]
+				}
+			}
+			answered, err := notifier.AnsweredCard(notice, "已回答")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, card := range []string{pending, string(answered)} {
+				if !strings.Contains(card, "["+tc.label+"]("+want+")") {
+					t.Fatalf("card=%s", card)
+				}
 			}
 		}
 	}

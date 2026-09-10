@@ -18,7 +18,7 @@ func TestSpecificBindAddressDoesNotNeedNetwork(t *testing.T) {
 		{"jarvis.local:18800", "http://jarvis.local:18800/#/work/task/7", false},
 	} {
 		t.Run(tc.address, func(t *testing.T) {
-			r, err := New(tc.address)
+			r, err := New(tc.address, "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -27,7 +27,7 @@ func TestSpecificBindAddressDoesNotNeedNetwork(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got.URL != tc.url || (got.Label == "查看详情（Jarvis 所在电脑）") != tc.local {
+			if got.URL != tc.url || (got.Label == "查看详情（本机访问）") != tc.local {
 				t.Fatalf("link = %+v", got)
 			}
 		})
@@ -36,7 +36,7 @@ func TestSpecificBindAddressDoesNotNeedNetwork(t *testing.T) {
 
 func TestWildcardResolvesCurrentLAN(t *testing.T) {
 	for _, address := range []string{"0.0.0.0:18800", ":18800", "[::]:18800"} {
-		r, err := New(address)
+		r, err := New(address, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -62,12 +62,44 @@ func TestWildcardResolvesCurrentLAN(t *testing.T) {
 
 func TestInvalidAddressAndTask(t *testing.T) {
 	for _, address := range []string{"", "localhost", "127.0.0.1:0", "127.0.0.1:65536", "127.0.0.1:http"} {
-		if _, err := New(address); err == nil {
+		if _, err := New(address, ""); err == nil {
 			t.Fatalf("accepted %q", address)
 		}
 	}
-	r, _ := New("127.0.0.1:18800")
+	r, _ := New("127.0.0.1:18800", "")
 	if _, err := r.Task(0); err == nil {
 		t.Fatal("accepted zero task")
+	}
+}
+
+func TestPublicURLOverridesListenAddress(t *testing.T) {
+	for _, tc := range []struct{ base, want, label string }{
+		{"https://jarvis.example.com", "https://jarvis.example.com/#/work/task/7", "查看详情"},
+		{"https://jarvis.example.com:8443/proxy/", "https://jarvis.example.com:8443/proxy/#/work/task/7", "查看详情"},
+		{"http://10.0.0.2:28800", "http://10.0.0.2:28800/#/work/task/7", "查看详情"},
+		{"https://[2001:db8::1]:8443/", "https://[2001:db8::1]:8443/#/work/task/7", "查看详情"},
+		{"http://localhost:28800", "http://localhost:28800/#/work/task/7", "查看详情（本机访问）"},
+	} {
+		for _, bind := range []string{"127.0.0.1:19900", "0.0.0.0:18800"} {
+			t.Run(bind+"/"+tc.base, func(t *testing.T) {
+				r, err := New(bind, tc.base)
+				if err != nil {
+					t.Fatal(err)
+				}
+				r.resolveLANIPv4 = func() (net.IP, error) { t.Fatal("explicit URL must not resolve LAN"); return nil, nil }
+				got, err := r.Task(7)
+				if err != nil || got.URL != tc.want || got.Label != tc.label {
+					t.Fatalf("link=%+v err=%v", got, err)
+				}
+			})
+		}
+	}
+}
+
+func TestInvalidPublicURL(t *testing.T) {
+	for _, raw := range []string{"jarvis.example.com", "/relative", "ftp://jarvis.example.com", "https://", "http://0.0.0.0:18800", "http://[::]:18800", "https://user:pass@example.com", "https://example.com?x=1", "https://example.com?", "https://example.com/#/work/task/1", "https://example.com/#", "http://example.com:0", "http://example.com:65536", "http://example.com:bad"} {
+		if _, err := New("127.0.0.1:18800", raw); err == nil {
+			t.Errorf("accepted %q", raw)
+		}
 	}
 }

@@ -4,6 +4,7 @@ package uilink
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"strconv"
 	"strings"
 )
@@ -14,14 +15,16 @@ type Link struct {
 }
 
 type Resolver struct {
+	publicURL      *url.URL
 	host           string
 	port           string
 	resolveLANIPv4 func() (net.IP, error)
 }
 
-// New consumes the effective listen address, including the desktop -addr
-// override. A specific bind address must never be replaced with another host.
-func New(address string) (*Resolver, error) {
+// New uses an explicit browser-facing URL when configured (for example behind
+// a reverse proxy or port forward). Otherwise it uses the effective listen
+// address, including the desktop -addr override.
+func New(address, publicURL string) (*Resolver, error) {
 	host, port, err := net.SplitHostPort(strings.TrimSpace(address))
 	if err != nil {
 		return nil, fmt.Errorf("UI link listen address: %w", err)
@@ -30,12 +33,40 @@ func New(address string) (*Resolver, error) {
 	if err != nil || number < 1 || number > 65535 {
 		return nil, fmt.Errorf("UI link requires a fixed valid port: %q", port)
 	}
-	return &Resolver{host: host, port: port, resolveLANIPv4: currentLANIPv4}, nil
+	r := &Resolver{host: host, port: port, resolveLANIPv4: currentLANIPv4}
+	if raw := strings.TrimSpace(publicURL); raw != "" {
+		u, err := url.Parse(raw)
+		if err != nil {
+			return nil, fmt.Errorf("server.public_url: %w", err)
+		}
+		if (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || strings.Contains(raw, "#") {
+			return nil, fmt.Errorf("server.public_url must be an absolute http(s) base URL without credentials, query or fragment")
+		}
+		if ip := net.ParseIP(u.Hostname()); ip != nil && ip.IsUnspecified() {
+			return nil, fmt.Errorf("server.public_url must use a browser-reachable host, not a wildcard address")
+		}
+		if port := u.Port(); port != "" {
+			n, err := strconv.Atoi(port)
+			if err != nil || n < 1 || n > 65535 {
+				return nil, fmt.Errorf("server.public_url requires a valid port: %q", port)
+			}
+		}
+		r.publicURL = u
+	}
+	return r, nil
 }
 
 func (r *Resolver) Task(id uint64) (Link, error) {
 	if id == 0 {
 		return Link{}, fmt.Errorf("UI task link requires a positive task ID")
+	}
+	if r.publicURL != nil {
+		u := *r.publicURL
+		if u.Path == "" {
+			u.Path = "/"
+		}
+		u.Fragment = fmt.Sprintf("/work/task/%d", id)
+		return Link{URL: u.String(), Label: detailLabel(u.Hostname())}, nil
 	}
 	host := r.host
 	ip := net.ParseIP(host)
@@ -49,11 +80,14 @@ func (r *Resolver) Task(id uint64) (Link, error) {
 		}
 		host = lan.String()
 	}
-	label := "查看详情"
-	if strings.EqualFold(host, "localhost") || (net.ParseIP(host) != nil && net.ParseIP(host).IsLoopback()) {
-		label = "查看详情（Jarvis 所在电脑）"
+	return Link{URL: fmt.Sprintf("http://%s/#/work/task/%d", net.JoinHostPort(host, r.port), id), Label: detailLabel(host)}, nil
+}
+
+func detailLabel(host string) string {
+	if strings.EqualFold(strings.TrimSuffix(host, "."), "localhost") || (net.ParseIP(host) != nil && net.ParseIP(host).IsLoopback()) {
+		return "查看详情（本机访问）"
 	}
-	return Link{URL: fmt.Sprintf("http://%s/#/work/task/%d", net.JoinHostPort(host, r.port), id), Label: label}, nil
+	return "查看详情"
 }
 
 func currentLANIPv4() (net.IP, error) {

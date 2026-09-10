@@ -32,7 +32,7 @@ type Notifier struct {
 	links     *uilink.Resolver
 }
 
-func NewNotifier(lark larkRunner, agentName, principalOpenID, serverAddr string) (*Notifier, error) {
+func NewNotifier(lark larkRunner, agentName, principalOpenID, serverAddr, publicURL string) (*Notifier, error) {
 	if lark == nil {
 		return nil, fmt.Errorf("question card lark client is nil")
 	}
@@ -44,7 +44,7 @@ func NewNotifier(lark larkRunner, agentName, principalOpenID, serverAddr string)
 	if principalOpenID == "" {
 		return nil, fmt.Errorf("question card principal open_id is empty")
 	}
-	links, err := uilink.New(serverAddr)
+	links, err := uilink.New(serverAddr, publicURL)
 	if err != nil {
 		return nil, err
 	}
