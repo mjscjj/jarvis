@@ -22,6 +22,7 @@ import {
 import {
   authorizePlugin,
   completePluginAuthorization,
+  getPlugin,
   listPlugins,
   triggerPlugin,
   updatePlugin,
@@ -234,23 +235,32 @@ export default function Plugins() {
   const [error, setError] = useState<string>()
   const [flows, setFlows] = useState<Record<string, PluginAuthorization>>({})
   const [messageApi, messageContext] = message.useMessage()
+  const requestedPlugin = context.view_state.plugin
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (signal?: AbortSignal) => {
     setLoading(true)
     try {
-      const [pluginResult, moduleResult] = await Promise.all([listPlugins(), listAppModules()])
+      // A plugin detail only needs its own live status. Avoid making it wait for
+      // every unrelated collector's external authorization probe.
+      const pluginRequest = requestedPlugin && requestedPlugin !== 'okr'
+        ? getPlugin(requestedPlugin, signal).then((plugin) => ({ items: [plugin] }))
+        : listPlugins(signal)
+      const [pluginResult, moduleResult] = await Promise.all([pluginRequest, listAppModules(signal)])
+      if (signal?.aborted) return
       setItems(pluginResult.items)
       setModules(moduleResult.items)
       setError(undefined)
     } catch (cause) {
-      setError(errorText(cause))
+      if (!signal?.aborted) setError(errorText(cause))
     } finally {
-      setLoading(false)
+      if (!signal?.aborted) setLoading(false)
     }
-  }, [])
+  }, [requestedPlugin])
 
   useEffect(() => {
-    void load()
+    const controller = new AbortController()
+    void load(controller.signal)
+    return () => controller.abort()
   }, [load])
 
   const okrModule = modules.find((item) => item.key === 'okr')
@@ -431,6 +441,12 @@ export default function Plugins() {
         </Space>
       ) : (
         <Space>
+          <Button
+            disabled={!item.plugin.enabled}
+            onClick={() => setViewState({ plugin: item.plugin.id, ...(item.plugin.id === 'product-management' ? { product_tab: 'skills' } : {}) })}
+          >
+            打开
+          </Button>
           {item.plugin.kind === 'collector' && item.plugin.enabled && item.plugin.authorization.status !== 'authorized' && (
             <Button
               icon={<SafetyCertificateOutlined />}

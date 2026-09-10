@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Drawer, Input, Modal, Space, Table, Tabs, Tag, Typography, message } from 'antd'
+import { Alert, Button, Card, Drawer, Flex, Input, Modal, Space, Table, Tabs, Tag, Typography, message } from 'antd'
 import { APIRequestError, getSkillSource, listSkills, listTasks, updateSkill, updateSkillSource } from '../api'
 import MarkdownReport from '../components/MarkdownReport'
 import ScheduledTasks from '../ScheduledTasks'
@@ -62,14 +62,19 @@ export default function ProductManagement({ plugin }: { plugin: Plugin }) {
       available: item.is_enabled && item.is_available && item.stages.includes('execute'),
     })),
   }), [plugin.id, skills])
+  const skillsByName = useMemo(
+    () => new Map(skills.map((item) => [item.name, item])),
+    [skills],
+  )
+  const missingSkills = plugin.skills.filter((name) => !skillsByName.has(name))
 
-  const showSkill = async (name: string) => {
+  const showSkill = async (name: string, startEditing = false) => {
     setBusy(name)
     try {
       const value = await getSkillSource(name)
       setContent(value)
       setDraft(value.content)
-      setEditing(false)
+      setEditing(startEditing)
     }
     catch (cause) { messageApi.error(String(cause)) }
     finally { setBusy(undefined) }
@@ -141,16 +146,45 @@ export default function ProductManagement({ plugin }: { plugin: Plugin }) {
     {error && <Alert type="error" showIcon title={error} />}
     <Tabs activeKey={tab} onChange={(product_tab) => setViewState({ ...context.view_state, product_tab })} items={[
       { key: 'skills', label: 'Skills', children: <>
-        <Typography.Paragraph type="secondary">Skills 由 Agent 根据任务反馈持续维护，人也可以直接阅读和编辑同一份仓库 Markdown；保存后，Agent 下次读取使用最新正文。</Typography.Paragraph>
-        <Table<AgentSkill> rowKey="name" dataSource={skills} loading={loading} pagination={false} columns={[
-          { title: 'Skill', dataIndex: 'name' },
-          { title: '用途', dataIndex: 'description' },
-          { title: '状态', render: (_, item) => <Tag color={item.is_enabled && item.is_available ? 'green' : 'default'}>{item.is_enabled && item.is_available ? '可用' : '未启用'}</Tag> },
-          { title: '操作', render: (_, item) => <Space>
-            <Button loading={busy === item.name} onClick={() => void showSkill(item.name)}>查看 / 编辑</Button>
-            <Button disabled={Boolean(busy)} onClick={() => void toggle(item)}>{item.is_enabled ? '停用' : '启用'}</Button>
-          </Space> },
-        ]} />
+        <Alert
+          type="info"
+          showIcon
+          message={`${plugin.skills.length} 个产品 Skills 均可人工编辑`}
+          description="编辑的是仓库中的 SKILL.md 唯一真源；保存后，Agent 从下一次读取开始使用新内容。"
+          style={{ marginBottom: 16 }}
+        />
+        {missingSkills.length > 0 && (
+          <Alert
+            type="error"
+            showIcon
+            message="部分插件 Skills 未加载"
+            description={`插件声明了 ${missingSkills.join('、')}，但通用 Skill 目录没有返回这些项目。`}
+            style={{ marginBottom: 16 }}
+          />
+        )}
+        <Flex vertical gap={12}>
+          {plugin.skills.map((name) => {
+            const item = skillsByName.get(name)
+            return (
+              <Card key={name} size="small" loading={loading}>
+                <Flex justify="space-between" align="center" gap={16} wrap>
+                  <div style={{ flex: 1, minWidth: 260 }}>
+                    <Space wrap>
+                      <Typography.Text code>{name}</Typography.Text>
+                      {item && <Tag color={item.is_enabled && item.is_available ? 'green' : 'default'}>{item.is_enabled && item.is_available ? '可用' : '未启用'}</Tag>}
+                    </Space>
+                    <div><Typography.Text type="secondary">{item?.description ?? 'Skill 文件未找到或当前不可用'}</Typography.Text></div>
+                  </div>
+                  <Space>
+                    <Button disabled={!item} loading={busy === name} onClick={() => void showSkill(name)}>查看</Button>
+                    <Button type="primary" disabled={!item} loading={busy === name} onClick={() => void showSkill(name, true)}>编辑 Skill</Button>
+                    {item && <Button disabled={Boolean(busy)} onClick={() => void toggle(item)}>{item.is_enabled ? '停用' : '启用'}</Button>}
+                  </Space>
+                </Flex>
+              </Card>
+            )
+          })}
+        </Flex>
       </> },
       { key: 'schedules', label: '定时任务', children: <ScheduledTasks delegationsEnabled={false} scope={scope} /> },
       { key: 'results', label: '最近执行', children: <>
