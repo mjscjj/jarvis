@@ -21,12 +21,18 @@ const appPath = join(bundleRoot, "macos", `${config.productName}.app`);
 const dmgDirectory = join(bundleRoot, "dmg");
 const dmgPath = join(dmgDirectory, `${config.productName}_${config.version}_${architecture}.dmg`);
 const staging = await mkdtemp(join(tmpdir(), "jarvis-dmg-"));
+const validateRuntime = join(root, "packaging", "macos", "validate-runtime.sh");
 
 function run(command, args) {
   execFileSync(command, args, { stdio: "inherit" });
 }
 
 try {
+  run("zsh", [
+    validateRuntime,
+    join(appPath, "Contents", "Resources", "runtime"),
+    appPath,
+  ]);
   run("codesign", ["--force", "--deep", "--sign", "-", appPath]);
   run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", appPath]);
   await mkdir(dmgDirectory, { recursive: true });

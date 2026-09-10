@@ -1,13 +1,13 @@
 # Jarvis macOS 打包
 
-当前脚本生成 Apple Silicon (`arm64`) 的自包含 `Jarvis.app` 和 DMG。运行数据写入
+当前脚本生成 macOS 14 及以上、Apple Silicon (`arm64`) 的自包含 `Jarvis.app` 和 DMG。运行数据写入
 `~/Library/Application Support/Jarvis`，不会写回应用包。
 
 ## 环境要求
 
-- macOS Apple Silicon
+- macOS 14+ Apple Silicon
 - Go、Node.js/npm、Rust/Cargo
-- `lark-cli`、`traex`、`jq`
+- `lark-cli`、`traex`
 - Qdrant 和 CC Connect 二进制
 
 默认从仓库读取：
@@ -27,6 +27,8 @@ export JARVIS_TRAEX_BIN=/absolute/path/to/traex
 ```
 
 BytedCLI 会按脚本中固定的版本安装到 runtime，无需全局安装。
+runtime 使用的 jq 会从 jqlang 官方 Release 下载固定的 arm64 版本并校验 SHA256，
+不复制打包机的 Homebrew jq。
 
 lark-cli 必须支持 `skills read`，并内嵌 `lark-shared`、`lark-contact`、`lark-drive`、`lark-doc`、`lark-im` 及其参考文件。`command -v lark-cli` 通常返回官方 npm 包的启动脚本，打包脚本会将其解析为同一包内的 arm64 原生 binary，再对复制到 runtime 的实际文件做离线读取检查；这些说明随 CLI 一起进入 DMG，不复制打包机的个人 Skills，也不要求用户另装。可单独检查：
 
@@ -48,8 +50,10 @@ bash packaging/macos/check-lark-skills.sh "$lark_cli_bin"
 1. 安装 Web 和 Tauri 构建依赖。
 2. 构建 Web、`jarvis-server`、`jarvis-app-service` 和 `jarvis-config`。
 3. 组装并签名 Qdrant、CC Connect、lark-cli、Trae CLI、BytedCLI 等 runtime。
-4. 构建 `Jarvis.app`。
-5. 创建并校验 DMG。
+4. 校验每个 Mach-O 的 arm64 架构、最低系统版本和动态依赖闭包，并在最小环境中
+   对实际 runtime 命令做冒烟测试。
+5. 构建 `Jarvis.app`，再次校验包内 runtime 和应用声明的最低系统版本。
+6. 创建并校验 DMG。
 
 产物路径：
 
