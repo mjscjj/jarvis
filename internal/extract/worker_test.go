@@ -496,7 +496,7 @@ func retryBatch() ChatBatch {
 func retryCandidate(quote string) Candidate {
 	return Candidate{
 		ActionType: "investigate", Status: "extracted", Title: "梳理架构", Target: "当前服务和架构梳理",
-		Payload: "产出一份当前服务与架构的梳理结论。", SourceMessageIDs: []string{"om_1"}, SourceQuote: quote,
+		Payload: "产出一份当前服务与架构的梳理结论。", SourceMessageIDs: []string{"om_1"}, TriggerMessageID: "om_1", SourceQuote: quote,
 	}
 }
 
@@ -635,6 +635,7 @@ func TestWorkerRetriesOnInventedMessageIDThenSucceeds(t *testing.T) {
 	store := &fakePipelineStore{batches: []ChatBatch{retryBatch()}}
 	invented := retryCandidate("当前服务和架构梳理")
 	invented.SourceMessageIDs = []string{"om_does_not_exist"}
+	invented.TriggerMessageID = "om_does_not_exist"
 	model := &fakeModelExtractor{results: []*ExtractionResult{
 		{Candidates: []Candidate{invented}},
 		{Candidates: []Candidate{retryCandidate("当前服务和架构梳理")}},
@@ -685,7 +686,7 @@ func TestValidateCandidateEvidenceIgnoresOpaquePayload(t *testing.T) {
 	candidate := Candidate{
 		ActionType: "investigate", Status: "extracted", Title: "补齐测试", Target: "测试",
 		Payload:          "张三（ou_zhangsan）负责补齐测试并确保通过。",
-		SourceMessageIDs: []string{"clue:feishu_meeting:m1"}, SourceQuote: "张三负责补齐测试",
+		SourceMessageIDs: []string{"clue:feishu_meeting:m1"}, TriggerMessageID: "clue:feishu_meeting:m1", SourceQuote: "张三负责补齐测试",
 	}
 	if err := validateCandidateEvidence(unit, &candidate); err != nil {
 		t.Fatalf("validateCandidateEvidence() error = %v, want nil", err)
@@ -702,7 +703,7 @@ func TestValidateCandidateEvidenceFoldsCurlyQuotes(t *testing.T) {
 	candidate := func(quote string) Candidate {
 		return Candidate{
 			ActionType: "reply_message", Status: "extracted", Title: "回复", Target: "回复一句话",
-			SourceMessageIDs: []string{"om_1"}, SourceQuote: quote, Payload: "principal 直接要求 Jarvis 回复。",
+			SourceMessageIDs: []string{"om_1"}, TriggerMessageID: "om_1", SourceQuote: quote, Payload: "principal 直接要求 Jarvis 回复。",
 		}
 	}
 	folded := candidate(`jarvis，给我说 "今年赚一个亿"`)

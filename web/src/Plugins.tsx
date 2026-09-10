@@ -55,39 +55,67 @@ function formatTime(value: string | null): string {
   return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '尚未运行'
 }
 
+function pluginStateLabel(item: Plugin): string {
+  if (item.kind === 'capability') return item.enabled ? '已启用' : '已关闭'
+  return stateLabels[item.state]
+}
+
+function pluginStateColor(item: Plugin): string {
+  if (item.kind === 'capability') return item.enabled ? 'success' : 'default'
+  return stateColors[item.state]
+}
+
 function errorText(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause)
 }
 
 const defaultOncallSearchTerms = ['oncall', '值班']
-const defaultMeegoLookbackDays = 30
 
 type CatalogItem =
   | { kind: 'okr'; id: 'okr'; module: AppModule }
-  | { kind: 'collector'; id: string; plugin: Plugin }
+  | { kind: 'plugin'; id: string; plugin: Plugin }
 
-function meegoLookbackDays(item: Plugin): number {
+const lookbackPlugins: Record<string, { fallbackDays: number; title: string; hint: string }> = {
+  meego: {
+    fallbackDays: 30,
+    title: '创建时间范围',
+    hint: '只采集最近这些天内创建、且仍未完成的 Meego 工作项。',
+  },
+  codebase: {
+    fallbackDays: 3,
+    title: '更新时间范围',
+    hint: '只采集最近这些天内有更新的开放 MR；更早的历史 MR 不再重复投递。',
+  },
+}
+
+function lookbackDays(item: Plugin, fallbackDays: number): number {
   const configured = item.config.lookback_days
   return typeof configured === 'number' && Number.isInteger(configured) && configured > 0
     ? configured
-    : defaultMeegoLookbackDays
+    : fallbackDays
 }
 
-function MeegoLookbackConfig({
+function LookbackConfig({
   item,
+  fallbackDays,
+  title,
+  hint,
   onUpdated,
   onError,
 }: {
   item: Plugin
+  fallbackDays: number
+  title: string
+  hint: string
   onUpdated: (plugin: Plugin) => void
   onError: (error: string) => void
 }) {
-  const [days, setDays] = useState(() => meegoLookbackDays(item))
+  const [days, setDays] = useState(() => lookbackDays(item, fallbackDays))
   const [saving, setSaving] = useState(false)
-  const savedDays = meegoLookbackDays(item)
+  const savedDays = lookbackDays(item, fallbackDays)
 
   useEffect(() => {
-    setDays(meegoLookbackDays(item))
+    setDays(lookbackDays(item, fallbackDays))
   }, [item.revision])
 
   const save = async () => {
@@ -109,8 +137,8 @@ function MeegoLookbackConfig({
     <section className="plugin-config-section">
       <div className="plugin-config-heading">
         <div>
-          <Title level={4}>创建时间范围</Title>
-          <Text type="secondary">只采集最近这些天内创建、且仍未完成的 Meego 工作项。</Text>
+          <Title level={4}>{title}</Title>
+          <Text type="secondary">{hint}</Text>
         </div>
         <Button type="primary" icon={<SaveOutlined />} loading={saving} disabled={days === savedDays} onClick={() => void save()}>
           保存规则
@@ -122,7 +150,7 @@ function MeegoLookbackConfig({
         precision={0}
         value={days}
         addonAfter="天"
-        onChange={(value) => setDays(value ?? defaultMeegoLookbackDays)}
+        onChange={(value) => setDays(value ?? fallbackDays)}
       />
     </section>
   )
@@ -338,7 +366,7 @@ export default function Plugins() {
 
   const catalogItems = useMemo<CatalogItem[]>(() => [
     ...(okrModule ? [{ kind: 'okr' as const, id: 'okr' as const, module: okrModule }] : []),
-    ...items.map((plugin): CatalogItem => ({ kind: 'collector', id: plugin.id, plugin })),
+    ...items.map((plugin): CatalogItem => ({ kind: 'plugin', id: plugin.id, plugin })),
   ], [items, okrModule])
 
   const columns = useMemo(() => [
@@ -356,7 +384,7 @@ export default function Plugins() {
       title: '类型',
       key: 'kind',
       width: 120,
-      render: (_: unknown, item: CatalogItem) => <Tag>{item.kind === 'okr' ? '业务能力' : '数据来源'}</Tag>,
+      render: (_: unknown, item: CatalogItem) => <Tag>{item.kind === 'okr' ? '业务能力' : item.plugin.kind === 'capability' ? '工作能力' : '数据来源'}</Tag>,
     },
     {
       title: '状态',
@@ -367,19 +395,23 @@ export default function Plugins() {
           <Tag color={item.module.is_enabled ? 'success' : 'default'}>{item.module.is_enabled ? '运行正常' : '已关闭'}</Tag>
           {item.module.restart_required && <Tag color="gold">等待重启</Tag>}
         </Space>
-      ) : <Tag color={stateColors[item.plugin.state]}>{stateLabels[item.plugin.state]}</Tag>,
+      ) : <Tag color={pluginStateColor(item.plugin)}>{pluginStateLabel(item.plugin)}</Tag>,
     },
     {
       title: '数据',
       key: 'data',
       width: 100,
-      render: (_: unknown, item: CatalogItem) => item.kind === 'okr' ? 'O / KR / 进展' : `${item.plugin.clue_count} 条线索`,
+      render: (_: unknown, item: CatalogItem) => item.kind === 'okr'
+        ? 'O / KR / 进展'
+        : item.plugin.kind === 'collector' ? `${item.plugin.clue_count} 条线索` : '—',
     },
     {
       title: '最近活动',
       key: 'activity',
       width: 180,
-      render: (_: unknown, item: CatalogItem) => item.kind === 'okr' ? '业务数据实时读取' : formatTime(item.plugin.last_finished_at),
+      render: (_: unknown, item: CatalogItem) => item.kind === 'okr'
+        ? '业务数据实时读取'
+        : item.plugin.kind === 'collector' ? formatTime(item.plugin.last_finished_at) : '—',
     },
     {
       title: '操作',
@@ -398,7 +430,7 @@ export default function Plugins() {
         </Space>
       ) : (
         <Space>
-          {item.plugin.enabled && item.plugin.authorization.status !== 'authorized' && (
+          {item.plugin.kind === 'collector' && item.plugin.enabled && item.plugin.authorization.status !== 'authorized' && (
             <Button
               icon={<SafetyCertificateOutlined />}
               loading={busy === item.plugin.id}
@@ -407,14 +439,16 @@ export default function Plugins() {
               授权
             </Button>
           )}
-          <Button
-            icon={<SyncOutlined />}
-            disabled={!item.plugin.enabled || item.plugin.authorization.status !== 'authorized'}
-            loading={busy === item.plugin.id}
-            onClick={() => void trigger(item.plugin)}
-          >
-            立即同步
-          </Button>
+          {item.plugin.kind === 'collector' && (
+            <Button
+              icon={<SyncOutlined />}
+              disabled={!item.plugin.enabled || item.plugin.authorization.status !== 'authorized'}
+              loading={busy === item.plugin.id}
+              onClick={() => void trigger(item.plugin)}
+            >
+              立即同步
+            </Button>
+          )}
           <Switch
             checked={item.plugin.enabled}
             loading={busy === item.plugin.id}
@@ -447,26 +481,31 @@ export default function Plugins() {
           <Text type="secondary">{item.description}</Text>
         </div>
         <Space>
-          <Tag color={stateColors[item.state]}>{stateLabels[item.state]}</Tag>
-          {item.authorization.status !== 'authorized' && (
+          <Tag color={pluginStateColor(item)}>{pluginStateLabel(item)}</Tag>
+          {item.kind === 'collector' && item.authorization.status !== 'authorized' && (
             <Button icon={<SafetyCertificateOutlined />} loading={busy === item.id} onClick={() => void authorize(item)}>
               授权
             </Button>
           )}
-          <Button
-            icon={<SyncOutlined />}
-            disabled={item.authorization.status !== 'authorized'}
-            loading={busy === item.id}
-            onClick={() => void trigger(item)}
-          >
-            立即同步
-          </Button>
+          {item.kind === 'collector' && (
+            <Button
+              icon={<SyncOutlined />}
+              disabled={item.authorization.status !== 'authorized'}
+              loading={busy === item.id}
+              onClick={() => void trigger(item)}
+            >
+              立即同步
+            </Button>
+          )}
         </Space>
       </div>
       {item.last_error && <Alert type="error" showIcon message={item.last_error} />}
-      {item.id === 'meego' && (
-        <MeegoLookbackConfig
+      {lookbackPlugins[item.id] && (
+        <LookbackConfig
           item={item}
+          fallbackDays={lookbackPlugins[item.id].fallbackDays}
+          title={lookbackPlugins[item.id].title}
+          hint={lookbackPlugins[item.id].hint}
           onUpdated={applyUpdate}
           onError={(message) => {
             setError(message)
@@ -484,20 +523,28 @@ export default function Plugins() {
           }}
         />
       )}
-      <Descriptions size="small" column={2}>
-        <Descriptions.Item label="数据来源">{item.source}</Descriptions.Item>
-        <Descriptions.Item label="采集周期">每 {item.interval_minutes} 分钟</Descriptions.Item>
-        <Descriptions.Item label="Skill">{item.collector_skill}</Descriptions.Item>
-        <Descriptions.Item label="下次同步">{formatTime(item.next_run_at)}</Descriptions.Item>
-        <Descriptions.Item label="权限" span={2}>{item.permissions.join('、')}</Descriptions.Item>
-      </Descriptions>
+      {item.kind === 'collector' ? (
+        <Descriptions size="small" column={2}>
+          <Descriptions.Item label="数据来源">{item.source}</Descriptions.Item>
+          <Descriptions.Item label="采集周期">每 {item.interval_minutes} 分钟</Descriptions.Item>
+          <Descriptions.Item label="Skill">{item.collector_skill}</Descriptions.Item>
+          <Descriptions.Item label="下次同步">{formatTime(item.next_run_at)}</Descriptions.Item>
+          <Descriptions.Item label="权限" span={2}>{item.permissions.join('、')}</Descriptions.Item>
+        </Descriptions>
+      ) : (
+        <Descriptions size="small" column={1}>
+          <Descriptions.Item label="工作方式">复用现有消息、Todo、Task 与 M3/M5，不建立独立采集链路</Descriptions.Item>
+          <Descriptions.Item label="阶段规则">{item.skills.join('、')}</Descriptions.Item>
+          <Descriptions.Item label="数据位置">现有 Task 的冻结 source_payload 与执行历史</Descriptions.Item>
+        </Descriptions>
+      )}
     </div>
   )
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       {messageContext}
-      <PageHeader title="插件" subtitle="管理 OKR 通用能力插件与外部数据源插件">
+      <PageHeader title="插件" subtitle="按需启用 OKR 通用能力、外部数据来源与工作能力；关闭后保留已有历史">
         <Button icon={<ReloadOutlined />} loading={loading} onClick={() => void load()}>刷新</Button>
       </PageHeader>
       {error && <Alert type="error" showIcon closable message={error} onClose={() => setError(undefined)} />}

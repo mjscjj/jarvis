@@ -32,6 +32,7 @@ func TestTodoRevisionUsesOneSourceIdentityAndSearchesOriginal(t *testing.T) {
 		t.Fatal(err)
 	}
 	candidate.SourceMessageIDs = []string{"om_new"}
+	candidate.TriggerMessageID = "om_new"
 	candidate.SourceQuote = "新请求"
 	source, _ := json.Marshal(candidate)
 	flat, err := contextpack.Freeze(source, []byte(`{"messages":[{"message_id":"om_new","content":"新请求 only-in-original-789"}]}`), "brief", nil)

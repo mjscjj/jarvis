@@ -169,6 +169,50 @@ func TestEnableAuthorizedPluginCreatesAndTriggersSchedule(t *testing.T) {
 	}
 }
 
+func TestEnableCapabilityPluginNeedsNoAuthorizationOrSchedule(t *testing.T) {
+	db := openPluginDB(t)
+	registry, err := NewRegistry([]Manifest{{
+		ID: "my-delegations", Name: "我的交办", Description: "follow delegated work",
+		Kind: KindCapability, Skills: []string{"my-delegations-extract", "my-delegations-execute"},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorizer := newAuthorizer(fakeRunner{run: func(_ string, _ []string) ([]byte, error) {
+		t.Fatal("capability plugin unexpectedly probed authorization")
+		return nil, nil
+	}})
+	scheduler := newFakeScheduler()
+	service, err := NewService(db, registry, authorizer, scheduler)
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := service.Update(t.Context(), "my-delegations", UpdateInput{
+		Enabled: true, ExpectedRevision: 0,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !view.Enabled || view.State != "ready" || view.Kind != KindCapability {
+		t.Fatalf("view = %#v", view)
+	}
+	if view.ScheduledTaskID != nil || len(scheduler.items) != 0 || scheduler.triggers != 0 {
+		t.Fatalf("capability plugin created schedule: view=%#v scheduler=%#v", view, scheduler)
+	}
+	if view.Authorization.Status != AuthAuthorized {
+		t.Fatalf("authorization = %#v", view.Authorization)
+	}
+	for _, name := range view.Skills {
+		enabled, err := service.SkillEnabled(t.Context(), name)
+		if err != nil || !enabled {
+			t.Fatalf("SkillEnabled(%s) = %t, %v", name, enabled, err)
+		}
+	}
+	if _, err := service.Trigger(t.Context(), "my-delegations"); !errors.Is(err, ErrInvalidOperation) {
+		t.Fatalf("Trigger(capability) error = %v, want ErrInvalidOperation", err)
+	}
+}
+
 func TestUpdateConfigPersistsAndRefreshesScheduleInstruction(t *testing.T) {
 	db := openPluginDB(t)
 	registry, err := NewRegistry([]Manifest{{
@@ -226,6 +270,44 @@ func TestBuiltinMeegoDefaultsToThirtyDayLookback(t *testing.T) {
 	instruction := scheduleInput(manifest, manifest.DefaultConfig, true).Instruction
 	if !strings.Contains(instruction, `"lookback_days":30`) {
 		t.Fatalf("Meego schedule instruction = %q", instruction)
+	}
+}
+
+func TestBuiltinCodebaseDefaultsToThreeDayLookback(t *testing.T) {
+	registry, err := BuiltinRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, ok := registry.Get("codebase")
+	if !ok {
+		t.Fatal("Codebase manifest is missing")
+	}
+	if string(manifest.DefaultConfig) != `{"lookback_days":3}` {
+		t.Fatalf("Codebase default config = %s", manifest.DefaultConfig)
+	}
+	instruction := scheduleInput(manifest, manifest.DefaultConfig, true).Instruction
+	if !strings.Contains(instruction, `"lookback_days":3`) {
+		t.Fatalf("Codebase schedule instruction = %q", instruction)
+	}
+}
+
+// A stored empty config must fall back to the manifest bound, so an existing
+// installation that predates the bound is still collected within the window.
+func TestEffectiveConfigBoundsStoredEmptyCodebaseConfig(t *testing.T) {
+	registry, err := BuiltinRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, ok := registry.Get("codebase")
+	if !ok {
+		t.Fatal("Codebase manifest is missing")
+	}
+	config, err := effectiveConfig(manifest, json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(config) != `{"lookback_days":3}` {
+		t.Fatalf("effective config = %s", config)
 	}
 }
 
@@ -418,5 +500,27 @@ func TestCommandErrorPrefersErrorOverNoticeMessage(t *testing.T) {
 	raw := []byte(`{"ok":false,"error":{"message":"missing scope"},"_notice":{"update":{"message":"new version available"}}}`)
 	if got := commandError(raw, errors.New("exit 1")); got != "missing scope" {
 		t.Fatalf("commandError() = %q", got)
+	}
+}
+
+func TestInstallationsNeverProbeExternalAuthorization(t *testing.T) {
+	registry, err := BuiltinRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	authorizer := newAuthorizer(fakeRunner{run: func(string, []string) ([]byte, error) {
+		t.Fatal("local state unexpectedly probes external CLI")
+		return nil, nil
+	}})
+	service, err := NewService(openPluginDB(t), registry, authorizer, newFakeScheduler())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := service.Installations(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != len(registry.List()) {
+		t.Fatalf("installations=%+v", rows)
 	}
 }

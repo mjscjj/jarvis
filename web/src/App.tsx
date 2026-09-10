@@ -23,21 +23,23 @@ import {
 } from '@ant-design/icons'
 import { AgentIdentityProvider, useAgentIdentity } from './agentIdentity'
 import { AuthGate, AuthProvider, useAuth } from './auth'
+import { OnboardingGate } from './Onboarding'
 import { PageContextProvider, usePageContext } from './pageContext'
 import { useLocalStorage } from './hooks/useLocalStorage'
 import { useRuntimeFailureCount } from './hooks/useRuntimeFailureCount'
-import { listAppModules } from './api'
+import { listAppModules, listPluginInstallations, shutdownJarvis } from './api'
 import { appModuleRegistry } from './modules/registry'
 import type { AppModuleChildDefinition, AppModuleDefinition } from './modules/registry'
 import { isWeeklyShareViewState } from './okr/emily/share'
 import { getAuthStatus as getOKRAuthStatus } from './okr/emily/api'
-import { listPlugins, shutdownJarvis } from './api'
 import type { Plugin } from './types'
 import jarvisIcon from './assets/jarvis-icon.png'
+import { DeveloperHelpButton } from './components/DeveloperDocuments'
 
 const { Sider, Content } = Layout
 const { Title } = Typography
 
+const Delegations = lazy(() => import('./Delegations'))
 const Tasks = lazy(() => import('./Tasks'))
 const Progress = lazy(() => import('./Progress'))
 const Background = lazy(() => import('./Background'))
@@ -95,12 +97,13 @@ function AppShell() {
   const [chatExpanded, setChatExpanded] = useState(false)
   const [siderCollapsed, setSiderCollapsed] = useLocalStorage('jarvis.siderCollapsed', false)
   const [openMenuKeys, setOpenMenuKeys] = useState<string[]>(['management', 'plugin-group'])
+  const [pluginsLoaded, setPluginsLoaded] = useState(false)
   const [mobileSystemOpen, setMobileSystemOpen] = useState(false)
   const [mobileModuleKey, setMobileModuleKey] = useState<string>()
   const [moduleEnablement, setModuleEnablement] = useState<Record<string, boolean>>()
   const [okrManagementAccess, setOKRManagementAccess] = useState(false)
   const [moduleLoadError, setModuleLoadError] = useState<string>()
-  const [enabledPlugins, setEnabledPlugins] = useState<Plugin[]>([])
+  const [enabledPlugins, setEnabledPlugins] = useState<Array<Pick<Plugin, 'id' | 'name' | 'kind' | 'enabled'>>>([])
   const [shuttingDown, setShuttingDown] = useState(false)
   const [editingName, setEditingName] = useState(false)
   const [nameDraft, setNameDraft] = useState(agentName)
@@ -141,10 +144,12 @@ function AppShell() {
 
   const refreshPlugins = useCallback(async () => {
     try {
-      const result = await listPlugins()
+      const result = await listPluginInstallations()
       setEnabledPlugins(result.items.filter((item) => item.enabled))
     } catch {
       // The plugin page owns visible API errors; navigation keeps its last good state.
+    } finally {
+      setPluginsLoaded(true)
     }
   }, [])
 
@@ -173,6 +178,9 @@ function AppShell() {
         ],
       }
     : { key: 'plugins', label: '插件', icon: <ApiOutlined /> }
+  const delegationsEnabled = pluginsLoaded
+    ? enabledPlugins.some((plugin) => plugin.id === 'my-delegations')
+    : null
 
   const menuProps: MenuProps['items'] = [
     { key: 'overview', label: '工作台', icon: <HomeOutlined /> },
@@ -210,8 +218,10 @@ function AppShell() {
   const pages: Record<string, React.ReactNode> = {
     overview: <Progress />,
     todos: <Todos refreshKey={0} />,
-    tasks: <Tasks />,
-    'scheduled-tasks': <ScheduledTasks />,
+    tasks: context.view_state.mode === 'delegated' && context.selection?.kind !== 'task' && delegationsEnabled !== false
+      ? delegationsEnabled === null ? <Spin /> : <Delegations />
+      : <Tasks delegationsEnabled={delegationsEnabled === true} />,
+    'scheduled-tasks': <ScheduledTasks delegationsEnabled={delegationsEnabled === true} />,
     plugins: <Plugins />,
     background: <Background />,
     security: <SecuritySettings />,
@@ -498,6 +508,9 @@ function AppShell() {
           onClick={({ key }) => goTo(key)}
           className="app-menu"
         />
+        <div className={`sider-help ${siderCollapsed ? 'is-collapsed' : ''}`}>
+          <DeveloperHelpButton />
+        </div>
         <div className={`sider-footer ${siderCollapsed ? 'is-collapsed' : ''}`}>
           {authEnabled && <div className="sider-account">
             {!siderCollapsed && (
@@ -645,6 +658,7 @@ function AppShell() {
             </Button>
           ))}
           {authEnabled && <Button icon={<LogoutOutlined />} onClick={() => void handleLogout()}>退出登录</Button>}
+          <DeveloperHelpButton showLabel />
           <Button danger icon={<PoweroffOutlined />} onClick={confirmShutdown}>退出并停止服务</Button>
         </div>
       </Drawer>}
@@ -666,9 +680,11 @@ function AuthenticatedApp() {
   const { name } = useAgentIdentity()
   return (
     <AuthGate agentName={name}>
-      <PageContextProvider initialKey={DEFAULT_KEY}>
-        <AppShell />
-      </PageContextProvider>
+      <OnboardingGate>
+        <PageContextProvider initialKey={DEFAULT_KEY}>
+          <AppShell />
+        </PageContextProvider>
+      </OnboardingGate>
     </AuthGate>
   )
 }

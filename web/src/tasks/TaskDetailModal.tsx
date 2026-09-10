@@ -1293,6 +1293,7 @@ export default function TaskDetailModal({
             </Text>
           </div>
           <div className="task-detail-header-actions">
+            {task.source_url && <Button size="small" href={task.source_url} target="_blank" rel="noopener noreferrer">消息原文</Button>}
             <Button size="small" icon={<FileTextOutlined />} onClick={() => setContextOpen(true)}>上下文依据</Button>
             <Button type="text" icon={<CloseOutlined />} aria-label="关闭" onClick={onClose} />
           </div>

@@ -19,6 +19,7 @@ var (
 	ErrConflict              = errors.New("plugin installation changed")
 	ErrDisabled              = errors.New("plugin is disabled")
 	ErrAuthorizationRequired = errors.New("plugin authorization required")
+	ErrInvalidOperation      = errors.New("plugin operation is unavailable")
 )
 
 type UpdateInput struct {
@@ -31,8 +32,10 @@ type View struct {
 	ID              string          `json:"id"`
 	Name            string          `json:"name"`
 	Description     string          `json:"description"`
+	Kind            string          `json:"kind"`
 	Source          string          `json:"source"`
 	CollectorSkill  string          `json:"collector_skill"`
+	Skills          []string        `json:"skills"`
 	Permissions     []string        `json:"permissions"`
 	IntervalMinutes int             `json:"interval_minutes"`
 	Enabled         bool            `json:"enabled"`
@@ -98,6 +101,28 @@ func (s *Service) List(ctx context.Context) ([]View, error) {
 	return items, nil
 }
 
+// Installations is local navigation state. Reading it never probes external CLIs.
+func (s *Service) Installations(ctx context.Context) ([]InstallationView, error) {
+	var rows []domain.PluginInstallation
+	if err := s.db.WithContext(ctx).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	items := []InstallationView{}
+	for _, row := range rows {
+		if m, ok := s.registry.Get(row.PluginID); ok {
+			items = append(items, InstallationView{ID: m.ID, Name: m.Name, Kind: m.Kind, Enabled: row.Enabled})
+		}
+	}
+	return items, nil
+}
+
+type InstallationView struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Kind    string `json:"kind"`
+	Enabled bool   `json:"enabled"`
+}
+
 func (s *Service) Get(ctx context.Context, id string) (*View, error) {
 	manifest, ok := s.registry.Get(id)
 	if !ok {
@@ -128,7 +153,7 @@ func (s *Service) Update(ctx context.Context, id string, input UpdateInput) (*Vi
 	if result.RowsAffected != 1 {
 		return nil, fmt.Errorf("%w: id=%s", ErrConflict, manifest.ID)
 	}
-	authorization := s.authorizer.Probe(ctx, manifest.Provider)
+	authorization := s.authorization(ctx, manifest)
 	trigger := input.Enabled && authorization.Status == AuthAuthorized
 	if err := s.reconcile(ctx, manifest, authorization, trigger); err != nil {
 		return nil, err
@@ -141,6 +166,10 @@ func (s *Service) BeginAuthorization(ctx context.Context, id string) (*AuthStatu
 	if !ok {
 		return nil, fmt.Errorf("%w: id=%s", ErrNotFound, id)
 	}
+	if manifest.Kind == KindCapability {
+		status := AuthStatus{Status: AuthAuthorized}
+		return &status, nil
+	}
 	status := s.authorizer.Begin(ctx, manifest.Provider)
 	return &status, nil
 }
@@ -149,6 +178,11 @@ func (s *Service) CompleteAuthorization(ctx context.Context, id, flowID string) 
 	manifest, ok := s.registry.Get(id)
 	if !ok {
 		return nil, nil, fmt.Errorf("%w: id=%s", ErrNotFound, id)
+	}
+	if manifest.Kind == KindCapability {
+		status := AuthStatus{Status: AuthAuthorized}
+		view, err := s.view(ctx, manifest)
+		return view, &status, err
 	}
 	status := s.authorizer.Complete(ctx, manifest.Provider, flowID)
 	if status.Status != AuthAuthorized {
@@ -178,6 +212,9 @@ func (s *Service) Trigger(ctx context.Context, id string) (*View, error) {
 	}
 	if !installation.Enabled {
 		return nil, fmt.Errorf("%w: id=%s", ErrDisabled, manifest.ID)
+	}
+	if manifest.Kind != KindCollector {
+		return nil, fmt.Errorf("%w: plugin %s has no collector", ErrInvalidOperation, manifest.ID)
 	}
 	authorization := s.authorizer.Probe(ctx, manifest.Provider)
 	if authorization.Status != AuthAuthorized {
@@ -217,14 +254,15 @@ func (s *Service) view(ctx context.Context, manifest Manifest) (*View, error) {
 	if err := s.db.WithContext(ctx).First(&installation, "plugin_id = ?", manifest.ID).Error; err != nil {
 		return nil, fmt.Errorf("load plugin %s: %w", manifest.ID, err)
 	}
-	authorization := s.authorizer.Probe(ctx, manifest.Provider)
+	authorization := s.authorization(ctx, manifest)
 	config, err := effectiveConfig(manifest, json.RawMessage(installation.Config))
 	if err != nil {
 		return nil, fmt.Errorf("load plugin %s config: %w", manifest.ID, err)
 	}
 	view := &View{
 		ID: manifest.ID, Name: manifest.Name, Description: manifest.Description,
-		Source: manifest.Source, CollectorSkill: manifest.CollectorSkill,
+		Kind: manifest.Kind, Source: manifest.Source, CollectorSkill: manifest.CollectorSkill,
+		Skills:          append([]string(nil), manifest.Skills...),
 		Permissions:     append([]string(nil), manifest.Permissions...),
 		IntervalMinutes: manifest.IntervalMinutes, Enabled: installation.Enabled,
 		Revision: installation.Revision, ScheduledTaskID: installation.ScheduledTaskID,
@@ -237,7 +275,7 @@ func (s *Service) view(ctx context.Context, manifest Manifest) (*View, error) {
 			view.State = "ready"
 		}
 	}
-	if installation.ScheduledTaskID != nil {
+	if manifest.Kind == KindCollector && installation.ScheduledTaskID != nil {
 		schedule, err := s.schedules.Get(ctx, *installation.ScheduledTaskID)
 		if err == nil {
 			view.LastRunStatus = schedule.LastRunStatus
@@ -277,11 +315,20 @@ func (s *Service) view(ctx context.Context, manifest Manifest) (*View, error) {
 			}
 		}
 	}
-	if err := s.db.WithContext(ctx).Model(&domain.Message{}).
-		Where("chat_id = ?", "clue:"+manifest.Source).Count(&view.ClueCount).Error; err != nil {
-		return nil, fmt.Errorf("count plugin %s clues: %w", manifest.ID, err)
+	if manifest.Source != "" {
+		if err := s.db.WithContext(ctx).Model(&domain.Message{}).
+			Where("chat_id = ?", "clue:"+manifest.Source).Count(&view.ClueCount).Error; err != nil {
+			return nil, fmt.Errorf("count plugin %s clues: %w", manifest.ID, err)
+		}
 	}
 	return view, nil
+}
+
+func (s *Service) authorization(ctx context.Context, manifest Manifest) AuthStatus {
+	if manifest.Kind == KindCapability {
+		return AuthStatus{Status: AuthAuthorized}
+	}
+	return s.authorizer.Probe(ctx, manifest.Provider)
 }
 
 func taskExecutionError(result []byte) string {
@@ -298,6 +345,12 @@ func (s *Service) reconcile(ctx context.Context, manifest Manifest, authorizatio
 	var installation domain.PluginInstallation
 	if err := s.db.WithContext(ctx).First(&installation, "plugin_id = ?", manifest.ID).Error; err != nil {
 		return fmt.Errorf("load plugin %s for reconcile: %w", manifest.ID, err)
+	}
+	if manifest.Kind == KindCapability {
+		if installation.ScheduledTaskID != nil {
+			return fmt.Errorf("capability plugin %s unexpectedly owns scheduled_task_id=%d", manifest.ID, *installation.ScheduledTaskID)
+		}
+		return nil
 	}
 	operational := installation.Enabled && authorization.Status == AuthAuthorized
 	config, err := effectiveConfig(manifest, json.RawMessage(installation.Config))

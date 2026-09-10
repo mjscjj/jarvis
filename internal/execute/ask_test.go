@@ -314,20 +314,20 @@ var errTest = errors.New("group not found")
 // asked to judge approval without the policy to judge against. Both resume
 // paths must refuse to build rather than run blind.
 func TestResumePromptsRequireApprovalPolicy(t *testing.T) {
-	if _, err := buildHumanResumePrompt(testM5SystemPrompt, "  ", "回应", "", testToolCatalog); err == nil {
+	if _, err := buildHumanResumePrompt(testM5SystemPrompt, "  ", "回应", "", testToolCatalog, ""); err == nil {
 		t.Fatal("buildHumanResumePrompt() with blank approval policy = nil error, want error")
 	}
-	if _, err := buildScheduledResumePrompt(testM5SystemPrompt, "", "等 CI", "", testToolCatalog); err == nil {
+	if _, err := buildScheduledResumePrompt(testM5SystemPrompt, "", "等 CI", "", testToolCatalog, ""); err == nil {
 		t.Fatal("buildScheduledResumePrompt() with blank approval policy = nil error, want error")
 	}
 }
 
 func TestBuildScheduledResumePromptCarriesApprovalPolicy(t *testing.T) {
-	prompt, err := buildScheduledResumePrompt(testM5SystemPrompt, "test approval policy", "等 CI 跑完", "", testToolCatalog)
+	prompt, err := buildScheduledResumePrompt(testM5SystemPrompt, "test approval policy", "等 CI 跑完", "", testToolCatalog, "CURRENT_SKILL_CHECK_ONCE")
 	if err != nil {
 		t.Fatalf("buildScheduledResumePrompt() error = %v", err)
 	}
-	for _, want := range []string{"phase=resume_waiting", "等 CI 跑完", "BEGIN_APPROVAL_POLICY", "test approval policy"} {
+	for _, want := range []string{"phase=resume_waiting", "CURRENT_SKILL_CHECK_ONCE", "等 CI 跑完", "BEGIN_APPROVAL_POLICY", "test approval policy"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("scheduled resume prompt missing %q:\n%s", want, prompt)
 		}
@@ -335,13 +335,14 @@ func TestBuildScheduledResumePromptCarriesApprovalPolicy(t *testing.T) {
 }
 
 func TestBuildHumanResumePrompt(t *testing.T) {
-	prompt, err := buildHumanResumePrompt(testM5SystemPrompt, "test approval policy", "我已确认授权，请继续", "", testToolCatalog)
+	prompt, err := buildHumanResumePrompt(testM5SystemPrompt, "test approval policy", "我已确认授权，请继续", "", testToolCatalog, "CURRENT_HUMAN_SKILL")
 	if err != nil {
 		t.Fatalf("buildHumanResumePrompt() error = %v", err)
 	}
 	for _, want := range []string{
 		"我已确认授权，请继续",
 		"phase=resume_human",
+		"CURRENT_HUMAN_SKILL",
 		"BEGIN_APPROVAL_POLICY",
 		"test approval policy",
 	} {

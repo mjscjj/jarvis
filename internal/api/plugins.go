@@ -21,6 +21,17 @@ type PluginService interface {
 	Trigger(context.Context, string) (*plugin.View, error)
 }
 
+func ListPluginInstallations(service *plugin.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		items, err := service.Installations(ctx)
+		if err != nil {
+			writePluginError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"items": items}})
+	}
+}
+
 func ListPlugins(service PluginService) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		items, err := service.List(ctx)
@@ -115,7 +126,8 @@ func writePluginError(c *app.RequestContext, err error) {
 		writeAPIError(c, consts.StatusNotFound, 40480, err)
 	case errors.Is(err, plugin.ErrConflict), errors.Is(err, scheduledtask.ErrRunning):
 		writeAPIError(c, consts.StatusConflict, 40980, err)
-	case errors.Is(err, plugin.ErrDisabled), errors.Is(err, plugin.ErrAuthorizationRequired):
+	case errors.Is(err, plugin.ErrDisabled), errors.Is(err, plugin.ErrAuthorizationRequired),
+		errors.Is(err, plugin.ErrInvalidOperation):
 		writeAPIError(c, consts.StatusBadRequest, 40082, err)
 	default:
 		writeAPIError(c, consts.StatusInternalServerError, 50080, err)

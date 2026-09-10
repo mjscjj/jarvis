@@ -51,12 +51,14 @@ const outputContract = `
 - 不要输出多个 JSON；
 - 没有任何值得留下的线索时，输出 {"candidates": []}，不要用文字说明"本轮无线索"。
 
-candidates 中每个元素都必须包含全部九个字段：action_type、status、title、target、
+candidates 中每个元素的必填内容为九个字段：action_type、status、title、target、
 project_hint、source_message_ids、source_quote、payload、annotation。project_hint 判断不出来时写
 空字符串 ""，不要省略这个字段。
+结构化输出还包含可选来源锚点 trigger_message_id：无法确定时填 null，不需要为补齐它扩大调查。
 
 annotation 是宽松 JSON 对象编码成的字符串（注意转义双引号），无补充时写 "{}"。
 可用 brief 简述线索和不确定性，scene 用几句话解释当时现场，background 说明进一步理解所需背景；均可用自然语言，也可增加字段。不必填满，不为写说明扩大调查。
+trigger_message_id 仅用于“消息原文”的单一跳转入口。已有证据足以确定时，从 source_message_ids 中选一条触发事项、方便回到现场的消息；不确定可留空，不影响准入。来源入口与证据摘录各自表达，不要求 source_quote 来自这个入口；其它证据继续保留。
 source_message_ids 是唯一的直接证据列表，要包含交办原文以及“这个/上述”指代的链接或事件所在消息。消息正文与背景由程序冻结，你只写说明和已有消息 ID。
 
 完整示例（照着这个形状写）：
@@ -70,6 +72,7 @@ source_message_ids 是唯一的直接证据列表，要包含交办原文以及�
       "target": "agent-runtime 网关 502",
       "project_hint": "agent-runtime",
       "source_message_ids": ["om_x1"],
+      "trigger_message_id": "om_x1",
       "source_quote": "今天线上又出现 502 了，麻烦帮忙看一下",
       "payload": "张伟在群里直接点名让我排查，目前只知道偶发、未定位到具体服务，也没有人认领。属于需要我介入的未闭环问题。已核验：近期没有相同 Todo。不确定：是否与昨天的发布相关。",
       "annotation": "{\"brief\":\"排查线上偶发 502，尚未定位服务。\",\"scene\":\"张伟在当前讨论中请求协助，还没有认领者。\"}"
@@ -81,6 +84,7 @@ source_message_ids 是唯一的直接证据列表，要包含交办原文以及�
       "target": "Bax 评测数据集冻结时间",
       "project_hint": "",
       "source_message_ids": ["om_x2"],
+      "trigger_message_id": null,
       "source_quote": "数据集这周五冻结，之后不再接收新样本",
       "payload": "李娜宣布的时间约束，由她本人负责推进，当前不需要我做什么，但会影响我后续提交样本的节奏，值得记住。",
       "annotation": "{\"brief\":\"本周五冻结数据集，目前无需行动。\"}"
@@ -280,8 +284,8 @@ func renderRecentTasks(tasks []RecentTaskContext) string {
 		if progressAt == "" {
 			progressAt = "(unknown)"
 		}
-		lines[i] = fmt.Sprintf("task_id=%d title=%q status=%s summary=%q last_progress_at=%s",
-			task.ID, task.Title, task.Status, summary, progressAt)
+		lines[i] = fmt.Sprintf("task_id=%d action_type=%s title=%q status=%s summary=%q last_progress_at=%s",
+			task.ID, task.ActionType, task.Title, task.Status, summary, progressAt)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -306,10 +310,14 @@ func renderConversation(messages []MessageContext, location *time.Location) stri
 		}
 		content := strings.ReplaceAll(strings.TrimSpace(message.Content), "\r\n", "\n")
 		content = strings.ReplaceAll(content, "\n", "\n    ")
-		lines[i] = fmt.Sprintf("[%s] msg_id=%s source=%s message_type=%s time=%s sender_open_id=%s is_leader=%t sender_name=%q: %s",
+		mentions := strings.TrimSpace(string(message.Mentions))
+		if mentions == "" {
+			mentions = "[]"
+		}
+		lines[i] = fmt.Sprintf("[%s] msg_id=%s source=%s message_type=%s time=%s sender_open_id=%s is_leader=%t sender_name=%q mentions=%s: %s",
 			kind, message.MessageID, message.Source, message.MessageType,
 			time.UnixMilli(message.CreateTime).In(location).Format(time.RFC3339),
-			message.SenderOpenID, message.IsLeader, message.SenderName, content)
+			message.SenderOpenID, message.IsLeader, message.SenderName, mentions, content)
 	}
 	return strings.Join(lines, "\n")
 }

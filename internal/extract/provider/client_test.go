@@ -186,7 +186,7 @@ func providerCandidate() extract.Candidate {
 	return extract.Candidate{
 		ActionType: "code_change", Status: "extracted", Title: "修改鉴权", Target: "jarvis 鉴权逻辑",
 		Payload:          "修改鉴权逻辑，完成并合入；repo jarvis。",
-		SourceMessageIDs: []string{"om_1"}, SourceQuote: "修改鉴权",
+		SourceMessageIDs: []string{"om_1"}, TriggerMessageID: "om_1", SourceQuote: "修改鉴权",
 	}
 }
 

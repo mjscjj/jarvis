@@ -14,6 +14,7 @@ auth:
 server:
   addr: "127.0.0.1:18800"
   public_base_url: ""                     # 对外可打开的根地址（形如 https://emily.example/）；分享链接用它替换浏览器地址栏里的 IP，留空表示沿用当前地址
+  public_url: ""                         # 卡片详情入口；有域名填域名 URL，无域名填 IP URL，留空按实际监听地址生成
   web_root: "web/dist"
   log_files:                              # 调试面板尾读并归并的运行日志；stderr 里有各 cron 运行结果，必须一起读
     - "var/log/jarvis-server.log"
@@ -97,7 +98,7 @@ capture:
   discover_schedule: "@every 6h"
   scan_schedule: "@every 2m"
   # 是否允许 Jarvis 主动扫描单聊消息；不影响 CC Connect 已接管消息的路由落库。
-  p2p_scan_enabled: false
+  p2p_scan_enabled: true
   # 私聊首次进入监听时只回看最近 15 分钟；与 M3 的通用上下文窗口独立。
   p2p_activation_window_minutes: 15
   # discover 时按 active_time 轮换自动监听的内部真人私聊：保留当前最活跃的前 N 个。

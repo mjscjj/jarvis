@@ -109,6 +109,8 @@ func TestCaptureSQLite(t *testing.T) {
 	if err := service.ReplaceRelatedGroups([]string{"oc_fixture"}); err != nil {
 		t.Fatalf("ReplaceRelatedGroups() error = %v", err)
 	}
+	assertMonitoringFlags(t, db, "oc_fixture", true, true)
+	assertMonitoringFlags(t, db, "oc_p2p_pinned", false, false)
 
 	if err := service.ScanChat(context.Background(), "oc_fixture"); err != nil {
 		t.Fatalf("ScanChat() error = %v", err)
@@ -186,6 +188,24 @@ func assertRelated(t *testing.T, db *gorm.DB, chatID string, want bool) {
 	}
 	if group.RelatedGroup != want {
 		t.Fatalf("group %s related_group = %t, want %t", chatID, group.RelatedGroup, want)
+	}
+}
+
+func assertMonitoringFlags(t *testing.T, db *gorm.DB, chatID string, related, pinned bool) {
+	t.Helper()
+	var group domain.Group
+	if err := db.Select("related_group", "pinned").Where("chat_id = ?", chatID).First(&group).Error; err != nil {
+		t.Fatalf("load group %s: %v", chatID, err)
+	}
+	if group.RelatedGroup != related || group.Pinned != pinned {
+		t.Fatalf(
+			"group %s monitoring flags = related:%t pinned:%t, want related:%t pinned:%t",
+			chatID,
+			group.RelatedGroup,
+			group.Pinned,
+			related,
+			pinned,
+		)
 	}
 }
 

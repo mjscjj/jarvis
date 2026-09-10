@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"jarvis/internal/sharedmem"
+	"jarvis/internal/skill"
 	"jarvis/internal/textstore"
 	"jarvis/internal/toolcatalog"
 )
@@ -24,6 +25,7 @@ type Options struct {
 	Recorder      Recorder
 	Prompts       textstore.Reader
 	SharedMemory  sharedmem.SharedMemoryReader
+	Skills        skill.Reader
 	Sandbox       string
 	WorkspaceRoot string
 	Location      *time.Location
@@ -36,6 +38,7 @@ type Worker struct {
 	recorder      Recorder
 	prompts       textstore.Reader
 	sharedMemory  sharedmem.SharedMemoryReader
+	skills        skill.Reader
 	sandbox       string
 	workspaceRoot string
 	location      *time.Location
@@ -57,6 +60,9 @@ func NewWorker(opts Options) (*Worker, error) {
 	if opts.SharedMemory == nil {
 		return nil, fmt.Errorf("proactive shared memory reader is nil")
 	}
+	if opts.Skills == nil {
+		return nil, fmt.Errorf("proactive skill reader is nil")
+	}
 	if strings.TrimSpace(opts.Sandbox) == "" {
 		return nil, fmt.Errorf("proactive sandbox is required")
 	}
@@ -70,7 +76,7 @@ func NewWorker(opts Options) (*Worker, error) {
 		return nil, fmt.Errorf("proactive engine and model are required")
 	}
 	return &Worker{
-		runner: opts.Runner, recorder: opts.Recorder, prompts: opts.Prompts, sharedMemory: opts.SharedMemory,
+		runner: opts.Runner, recorder: opts.Recorder, prompts: opts.Prompts, sharedMemory: opts.SharedMemory, skills: opts.Skills,
 		sandbox:       strings.TrimSpace(opts.Sandbox),
 		workspaceRoot: strings.TrimSpace(opts.WorkspaceRoot), location: opts.Location,
 		engine: strings.TrimSpace(opts.Engine), model: strings.TrimSpace(opts.Model),
@@ -99,6 +105,13 @@ func (w *Worker) Run(ctx context.Context, trigger string) (string, error) {
 		return "", fmt.Errorf("build proactive tool catalog: %w", err)
 	}
 	startedAt := w.now().UTC()
+	skills, err := w.skills.Catalog(ctx, skill.StageProactive)
+	if err != nil {
+		return "", fmt.Errorf("read proactive skills: %w", err)
+	}
+	if strings.TrimSpace(skills) != "" {
+		systemPrompt += "\n\n" + skills
+	}
 	prompt := buildPrompt(systemPrompt, sharedMemory, tools, startedAt.In(w.location))
 	runID, err := w.recorder.Start(ctx, trigger, w.engine, w.model, prompt, startedAt)
 	if err != nil {

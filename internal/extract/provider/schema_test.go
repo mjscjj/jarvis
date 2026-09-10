@@ -2,6 +2,7 @@ package provider
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -17,8 +18,8 @@ func TestTodoExtractionJSONSchemaIsStrict(t *testing.T) {
 	if candidate["additionalProperties"] != false {
 		t.Fatal("candidate schema allows additional properties")
 	}
-	// Every property must be required so the model boundary rejects omissions
-	// instead of Go guessing them.
+	// The strict wire schema includes every key. Optional values are nullable;
+	// this does not make them admission requirements.
 	if len(candidate["required"].([]string)) != len(candidate["properties"].(map[string]any)) {
 		t.Fatal("not every candidate property is required")
 	}
@@ -66,5 +67,14 @@ func TestTodoExtractionJSONSchemaIsMachineEnvelopeOnly(t *testing.T) {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("machine schema contains admission semantic %q: %s", forbidden, text)
 		}
+	}
+}
+
+func TestTriggerSchemaAllowsNoAnchor(t *testing.T) {
+	candidate := TodoExtractionJSONSchema()["properties"].(map[string]any)["candidates"].(map[string]any)["items"].(map[string]any)
+	field := candidate["properties"].(map[string]any)["trigger_message_id"].(map[string]any)
+	types, ok := field["type"].([]string)
+	if !ok || !slices.Contains(types, "null") || !slices.Contains(types, "string") {
+		t.Fatalf("optional trigger must allow null or a message ID: %#v", field)
 	}
 }

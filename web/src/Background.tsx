@@ -1425,7 +1425,7 @@ function GroupsPanel() {
           <Flex gap={20} wrap>
             <Form.Item name="related_group" label="纳入监控" valuePropName="checked"><Switch /></Form.Item>
             <Form.Item name="is_key_group" label="关键群" valuePropName="checked"><Switch /></Form.Item>
-            <Form.Item name="pinned" label="始终热扫" valuePropName="checked"><Switch /></Form.Item>
+            <Form.Item name="pinned" label="固定监听" tooltip="开启后不会因长期无消息或自动轮换退出监听" valuePropName="checked"><Switch /></Form.Item>
             <Form.Item name="include_in_memory" label="纳入记忆" valuePropName="checked"><Switch /></Form.Item>
           </Flex>
         </Form>
@@ -2004,7 +2004,7 @@ function SkillsPanel() {
     { title: '说明', dataIndex: 'description', ellipsis: true },
     {
       title: '生效阶段', width: 270,
-      render: (_, item) => <Flex gap={4} wrap>{item.stages.map((stage) => <Tag key={stage}>{workRuleStageLabels[stage]}</Tag>)}</Flex>,
+      render: (_, item) => <Flex gap={4} wrap>{item.stages.map((stage) => <Tag key={stage}>{stage === 'proactive' ? '主动巡视' : workRuleStageLabels[stage]}</Tag>)}</Flex>,
     },
     {
       title: '启用', dataIndex: 'is_enabled', width: 70, align: 'center',
@@ -2030,7 +2030,7 @@ function SkillsPanel() {
     <Modal title={`设置 Skill 范围 · ${editing?.name || ''}`} open={Boolean(editing)} confirmLoading={submitting} onOk={submit} onCancel={() => setEditing(null)} okText="保存" destroyOnHidden>
       <Form form={form} layout="vertical">
         <Form.Item name="stages" label="生效阶段" rules={[{ required: true, type: 'array', min: 1, message: '至少选择一个阶段' }]}>
-          <Select mode="multiple" options={Object.entries(workRuleStageLabels).map(([value, label]) => ({ value: value as SkillStage, label }))} />
+          <Select mode="multiple" options={Object.entries({ ...workRuleStageLabels, proactive: '主动巡视' }).map(([value, label]) => ({ value: value as SkillStage, label }))} />
         </Form.Item>
         <Form.Item name="is_enabled" label="启用" valuePropName="checked"><Switch /></Form.Item>
       </Form>

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -17,6 +18,10 @@ import (
 const meetingClueChatID = "clue:feishu_meeting"
 
 var ErrInvalidReviewDate = errors.New("invalid review date")
+
+// A base clue uses the VC meeting ID as its entire external ID. Derived clues
+// can mention a meeting but must not become additional meeting tabs.
+var baseMeetingMessageID = regexp.MustCompile(`^clue:feishu_meeting:[1-9][0-9]{9,}$`)
 
 // MeetingReviewService projects the existing meeting clue -> Todo -> Task ->
 // ExecutionRun chain for the Review page. It owns no meeting state and never
@@ -42,6 +47,8 @@ type MeetingReviewItem struct {
 	MeetingURL         string           `json:"meeting_url"`
 	TaskID             *uint64          `json:"task_id"`
 	TaskStatus         string           `json:"task_status"`
+	TodoStatus         string           `json:"todo_status"`
+	ProcessingSummary  string           `json:"processing_summary"`
 	Summary            string           `json:"summary"`
 	SummaryGeneratedAt *time.Time       `json:"summary_generated_at"`
 	Effects            []map[string]any `json:"effects"`
@@ -75,18 +82,19 @@ func (s *MeetingReviewService) Load(ctx context.Context, date string) (*MeetingR
 	}
 
 	var messages []domain.Message
-	like := "%线索发生时间：" + date + "%"
 	if err := s.db.WithContext(ctx).
-		Where("chat_id = ? AND content LIKE ?", meetingClueChatID, like).
+		Where("chat_id = ? AND content LIKE ?", meetingClueChatID, "会议结束：%").
 		Order("create_time ASC, id ASC").
 		Find(&messages).Error; err != nil {
 		return nil, fmt.Errorf("load meeting clues for %s: %w", date, err)
 	}
 
 	items := make([]MeetingReviewItem, 0, len(messages))
-	messageIDs := make(map[string]struct{}, len(messages))
 	groupIDs := make(map[uint64]struct{})
 	for i := range messages {
+		if !baseMeetingMessageID.MatchString(messages[i].MessageID) {
+			continue
+		}
 		item, occurred, err := parseMeetingClue(&messages[i])
 		if err != nil {
 			return nil, err
@@ -94,8 +102,19 @@ func (s *MeetingReviewService) Load(ctx context.Context, date string) (*MeetingR
 		if occurred.In(s.location).Format("2006-01-02") != date {
 			continue
 		}
+		item.OccurredAt = occurred.In(s.location).Format(time.RFC3339)
+		for _, value := range []*string{&item.StartAt, &item.EndAt} {
+			if *value == "" || *value == "未返回" {
+				*value = ""
+				continue
+			}
+			parsed, err := time.Parse(time.RFC3339, *value)
+			if err != nil {
+				return nil, fmt.Errorf("parse meeting clue %s time: %w", item.messageID, err)
+			}
+			*value = parsed.In(s.location).Format(time.RFC3339)
+		}
 		items = append(items, item)
-		messageIDs[item.messageID] = struct{}{}
 		if messages[i].GroupID != nil {
 			groupIDs[*messages[i].GroupID] = struct{}{}
 		}
@@ -104,16 +123,22 @@ func (s *MeetingReviewService) Load(ctx context.Context, date string) (*MeetingR
 		return &MeetingReviewList{Date: date, Items: items}, nil
 	}
 
-	tasksByMessage, err := s.loadMeetingTasks(ctx, groupIDs, messageIDs)
+	itemsByMessage := make(map[string]*MeetingReviewItem, len(items))
+	for i := range items {
+		itemsByMessage[items[i].messageID] = &items[i]
+	}
+	tasksByMessage, err := s.loadMeetingTasks(ctx, groupIDs, itemsByMessage)
 	if err != nil {
 		return nil, err
 	}
 	taskIDs := make([]uint64, 0, len(tasksByMessage))
 	seenTaskIDs := make(map[uint64]struct{}, len(tasksByMessage))
-	for _, task := range tasksByMessage {
-		if _, ok := seenTaskIDs[task.ID]; !ok {
-			seenTaskIDs[task.ID] = struct{}{}
-			taskIDs = append(taskIDs, task.ID)
+	for _, tasks := range tasksByMessage {
+		for _, task := range tasks {
+			if _, ok := seenTaskIDs[task.ID]; !ok {
+				seenTaskIDs[task.ID] = struct{}{}
+				taskIDs = append(taskIDs, task.ID)
+			}
 		}
 	}
 	summariesByTask, err := s.loadMeetingSummaries(ctx, taskIDs)
@@ -121,16 +146,25 @@ func (s *MeetingReviewService) Load(ctx context.Context, date string) (*MeetingR
 		return nil, err
 	}
 	for i := range items {
-		task, ok := tasksByMessage[items[i].messageID]
-		if !ok {
-			continue
-		}
-		items[i].TaskID = &task.ID
-		items[i].TaskStatus = task.Status
-		if summary, ok := summariesByTask[task.ID]; ok {
-			items[i].Summary = summary.Content
-			items[i].SummaryGeneratedAt = summary.GeneratedAt
-			items[i].Effects = summary.Effects
+		for _, task := range tasksByMessage[items[i].messageID] {
+			summary, hasSummary := summariesByTask[task.ID]
+			// Prefer the latest explicit recap across related Tasks. A later
+			// action item without a recap must not hide the existing artifact.
+			if items[i].SummaryGeneratedAt != nil && (!hasSummary || !summary.GeneratedAt.After(*items[i].SummaryGeneratedAt)) {
+				continue
+			}
+			items[i].TaskID = &task.ID
+			items[i].TaskStatus = task.Status
+			items[i].ProcessingSummary = ""
+			if task.Summary != nil {
+				items[i].ProcessingSummary = *task.Summary
+			}
+			if hasSummary {
+				items[i].Summary = summary.Content
+				generatedAt := summary.GeneratedAt.In(s.location)
+				items[i].SummaryGeneratedAt = &generatedAt
+				items[i].Effects = summary.Effects
+			}
 		}
 	}
 	sort.SliceStable(items, func(i, j int) bool {
@@ -160,11 +194,8 @@ func parseMeetingClue(message *domain.Message) (MeetingReviewItem, time.Time, er
 		}
 	}
 	meetingID := strings.TrimSpace(fields["会议 ID"])
-	if meetingID == "" {
-		meetingID = strings.TrimPrefix(message.MessageID, meetingClueChatID+":")
-	}
-	if meetingID == "" || meetingID == message.MessageID {
-		return MeetingReviewItem{}, time.Time{}, fmt.Errorf("parse meeting clue %s: meeting id is missing", message.MessageID)
+	if meetingID == "" || message.MessageID != meetingClueChatID+":"+meetingID {
+		return MeetingReviewItem{}, time.Time{}, fmt.Errorf("parse meeting clue %s: meeting id does not match external id", message.MessageID)
 	}
 	title := strings.TrimSpace(fields["会议主题"])
 	if title == "" {
@@ -188,9 +219,9 @@ func parseMeetingClue(message *domain.Message) (MeetingReviewItem, time.Time, er
 func (s *MeetingReviewService) loadMeetingTasks(
 	ctx context.Context,
 	groupIDs map[uint64]struct{},
-	messageIDs map[string]struct{},
-) (map[string]domain.Task, error) {
-	result := make(map[string]domain.Task)
+	itemsByMessage map[string]*MeetingReviewItem,
+) (map[string][]domain.Task, error) {
+	result := make(map[string][]domain.Task)
 	if len(groupIDs) == 0 {
 		return result, nil
 	}
@@ -199,7 +230,7 @@ func (s *MeetingReviewService) loadMeetingTasks(
 		ids = append(ids, id)
 	}
 	var todos []domain.Todo
-	if err := s.db.WithContext(ctx).Where("group_id IN ?", ids).Find(&todos).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("group_id IN ?", ids).Order("id ASC").Find(&todos).Error; err != nil {
 		return nil, fmt.Errorf("load meeting Todos: %w", err)
 	}
 	todoMessageIDs := make(map[uint64][]string)
@@ -210,8 +241,10 @@ func (s *MeetingReviewService) loadMeetingTasks(
 			return nil, fmt.Errorf("decode meeting Todo %d source_message_ids: %w", todos[i].ID, err)
 		}
 		for _, sourceID := range sourceIDs {
-			if _, ok := messageIDs[sourceID]; ok {
+			if item, ok := itemsByMessage[sourceID]; ok {
 				todoMessageIDs[todos[i].ID] = append(todoMessageIDs[todos[i].ID], sourceID)
+				item.TodoStatus = todos[i].Status
+				item.ProcessingSummary = todos[i].Description
 			}
 		}
 		if len(todoMessageIDs[todos[i].ID]) > 0 {
@@ -230,7 +263,7 @@ func (s *MeetingReviewService) loadMeetingTasks(
 			continue
 		}
 		for _, messageID := range todoMessageIDs[*tasks[i].TodoID] {
-			result[messageID] = tasks[i]
+			result[messageID] = append(result[messageID], tasks[i])
 		}
 	}
 	return result, nil

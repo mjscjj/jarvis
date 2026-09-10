@@ -11,13 +11,20 @@ type Manifest struct {
 	ID              string
 	Name            string
 	Description     string
+	Kind            string
 	Source          string
 	CollectorSkill  string
+	Skills          []string
 	Provider        string
 	Permissions     []string
 	IntervalMinutes int
 	DefaultConfig   json.RawMessage
 }
+
+const (
+	KindCollector  = "collector"
+	KindCapability = "capability"
+)
 
 type Registry struct {
 	entries map[string]Manifest
@@ -31,13 +38,29 @@ func NewRegistry(manifests []Manifest) (*Registry, error) {
 		manifest.ID = strings.TrimSpace(manifest.ID)
 		manifest.Name = strings.TrimSpace(manifest.Name)
 		manifest.Description = strings.TrimSpace(manifest.Description)
+		manifest.Kind = strings.TrimSpace(manifest.Kind)
 		manifest.Source = strings.TrimSpace(manifest.Source)
 		manifest.CollectorSkill = strings.TrimSpace(manifest.CollectorSkill)
 		manifest.Provider = strings.TrimSpace(manifest.Provider)
-		if manifest.ID == "" || manifest.Name == "" || manifest.Description == "" ||
-			manifest.Source == "" || manifest.CollectorSkill == "" || manifest.Provider == "" ||
-			manifest.IntervalMinutes <= 0 {
+		if manifest.Kind == "" {
+			manifest.Kind = KindCollector
+		}
+		if manifest.ID == "" || manifest.Name == "" || manifest.Description == "" {
 			return nil, fmt.Errorf("plugin manifest %q is incomplete", manifest.ID)
+		}
+		switch manifest.Kind {
+		case KindCollector:
+			if manifest.Source == "" || manifest.CollectorSkill == "" || manifest.Provider == "" ||
+				manifest.IntervalMinutes <= 0 {
+				return nil, fmt.Errorf("collector plugin manifest %q is incomplete", manifest.ID)
+			}
+		case KindCapability:
+			if manifest.Source != "" || manifest.CollectorSkill != "" || manifest.Provider != "" ||
+				manifest.IntervalMinutes != 0 || len(manifest.Skills) == 0 {
+				return nil, fmt.Errorf("capability plugin manifest %q is invalid", manifest.ID)
+			}
+		default:
+			return nil, fmt.Errorf("plugin manifest %q has unknown kind %q", manifest.ID, manifest.Kind)
 		}
 		if len(manifest.DefaultConfig) == 0 {
 			manifest.DefaultConfig = json.RawMessage(`{}`)
@@ -50,17 +73,35 @@ func NewRegistry(manifests []Manifest) (*Registry, error) {
 		if _, exists := entries[manifest.ID]; exists {
 			return nil, fmt.Errorf("duplicate plugin id %q", manifest.ID)
 		}
-		if owner, exists := sources[manifest.Source]; exists {
-			return nil, fmt.Errorf("plugin source %q is owned by both %s and %s", manifest.Source, owner, manifest.ID)
+		if manifest.Source != "" {
+			if owner, exists := sources[manifest.Source]; exists {
+				return nil, fmt.Errorf("plugin source %q is owned by both %s and %s", manifest.Source, owner, manifest.ID)
+			}
+			sources[manifest.Source] = manifest.ID
 		}
-		if owner, exists := skills[manifest.CollectorSkill]; exists {
-			return nil, fmt.Errorf("plugin skill %q is owned by both %s and %s", manifest.CollectorSkill, owner, manifest.ID)
+		ownedSkills := append([]string(nil), manifest.Skills...)
+		if manifest.CollectorSkill != "" {
+			ownedSkills = append(ownedSkills, manifest.CollectorSkill)
+		}
+		seenSkills := make(map[string]struct{}, len(ownedSkills))
+		for _, name := range ownedSkills {
+			name = strings.TrimSpace(name)
+			if name == "" {
+				return nil, fmt.Errorf("plugin manifest %q contains an empty skill", manifest.ID)
+			}
+			if _, duplicate := seenSkills[name]; duplicate {
+				return nil, fmt.Errorf("plugin manifest %q repeats skill %q", manifest.ID, name)
+			}
+			seenSkills[name] = struct{}{}
+			if owner, exists := skills[name]; exists {
+				return nil, fmt.Errorf("plugin skill %q is owned by both %s and %s", name, owner, manifest.ID)
+			}
+			skills[name] = manifest.ID
 		}
 		manifest.Permissions = append([]string(nil), manifest.Permissions...)
+		manifest.Skills = append([]string(nil), manifest.Skills...)
 		manifest.DefaultConfig = append(json.RawMessage(nil), manifest.DefaultConfig...)
 		entries[manifest.ID] = manifest
-		sources[manifest.Source] = manifest.ID
-		skills[manifest.CollectorSkill] = manifest.ID
 	}
 	return &Registry{entries: entries}, nil
 }
@@ -69,10 +110,10 @@ func BuiltinRegistry() (*Registry, error) {
 	return NewRegistry([]Manifest{
 		{
 			ID: "codebase", Name: "Codebase",
-			Description: "采集与你相关的开放 MR、评审请求和代码变更。",
+			Description: "采集与你相关、在配置时间范围内有更新的开放 MR 和评审请求。",
 			Source:      "codebase", CollectorSkill: "codebase-clue-collector",
 			Provider: "bytedcli-session", Permissions: []string{"bytedcli:codebase.read"},
-			IntervalMinutes: 30,
+			IntervalMinutes: 30, DefaultConfig: json.RawMessage(`{"lookback_days":3}`),
 		},
 		{
 			ID: "meego", Name: "Meego",
@@ -87,6 +128,12 @@ func BuiltinRegistry() (*Registry, error) {
 			Source:      "oncall", CollectorSkill: "oncall-clue-collector",
 			Provider: "lark-cli-im", Permissions: []string{"lark:im.read"},
 			IntervalMinutes: 15, DefaultConfig: json.RawMessage(`{"search_terms":["oncall","值班"]}`),
+		},
+		{
+			ID: "my-delegations", Name: "我的交办", Kind: KindCapability,
+			Description: "从消息和会议中识别交办待办，独立记录交付进展，由 Task 按需核验。",
+			Skills:      []string{"my-delegations-extract", "my-delegations-execute", "my-delegations-review"},
+			Permissions: []string{"jarvis:tasks.read", "lark:im.read"},
 		},
 	})
 }
@@ -106,6 +153,7 @@ func (r *Registry) List() []Manifest {
 	items := make([]Manifest, 0, len(r.entries))
 	for _, manifest := range r.entries {
 		manifest.Permissions = append([]string(nil), manifest.Permissions...)
+		manifest.Skills = append([]string(nil), manifest.Skills...)
 		manifest.DefaultConfig = append(json.RawMessage(nil), manifest.DefaultConfig...)
 		items = append(items, manifest)
 	}
@@ -114,9 +162,15 @@ func (r *Registry) List() []Manifest {
 }
 
 func (r *Registry) OwnerOfSkill(name string) (string, bool) {
+	name = strings.TrimSpace(name)
 	for _, manifest := range r.entries {
 		if manifest.CollectorSkill == name {
 			return manifest.ID, true
+		}
+		for _, owned := range manifest.Skills {
+			if owned == name {
+				return manifest.ID, true
+			}
 		}
 	}
 	return "", false

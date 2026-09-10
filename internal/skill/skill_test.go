@@ -251,8 +251,9 @@ func TestRepositoryFeishuMessageSkillDefinesM5SendClosure(t *testing.T) {
 	}
 	skill := string(content)
 	for _, want := range []string{
-		"所有非广播的 M5 普通业务消息都使用本 Skill",
+		"本 Skill 负责原会话中的业务回复",
 		"面向多个独立收件人的系统通知或批量提醒读取 `feishu-broadcast`",
+		"给 principal 本人的主动通知和动作回执使用 `jarvis-tools notice-principal`",
 		"不执行本 Skill 的任何写命令",
 		"jarvis-config show-principal",
 		"不能改读 Task 仓库里的同名文件",
@@ -264,7 +265,7 @@ func TestRepositoryFeishuMessageSkillDefinesM5SendClosure(t *testing.T) {
 		"+chat-members-list",
 		"--page-all --page-limit 0",
 		"多个候选、成员不完整或用途不确定时停止",
-		"不要自动创建群、改用 user 身份或更换目标",
+		"发送失败原样报错，不换身份或会话",
 		"JARVIS_TASK_ID",
 		"飞书幂等窗口只有一小时",
 		"+messages-mget",
@@ -338,7 +339,6 @@ func TestRepositoryFeishuBroadcastSkillIsExecuteOnlyAndOwnsDirectDelivery(t *tes
 			t.Fatalf("Feishu broadcast skill missing delivery contract %q:\n%s", want, skill)
 		}
 	}
-
 	service, err := NewService(
 		filepath.Join("..", "..", ".agents", "skills"),
 		filepath.Join("..", "..", "conf", "skills.yaml"),
@@ -359,6 +359,128 @@ func TestRepositoryFeishuBroadcastSkillIsExecuteOnlyAndOwnsDirectDelivery(t *tes
 	}
 	if !strings.Contains(executeCatalog, "feishu-broadcast") {
 		t.Fatalf("execute catalog is missing feishu-broadcast:\n%s", executeCatalog)
+	}
+}
+
+func TestInlineSkillCatalogCarriesBodyInsteadOfReadInstruction(t *testing.T) {
+	root := t.TempDir()
+	skillDirectory := filepath.Join(root, "inline-policy")
+	if err := os.MkdirAll(skillDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	skillText := "---\nname: inline-policy\ndescription: trusted stage policy\n---\n\n# Inline contract\n\nBODY_MARKER\n"
+	if err := os.WriteFile(filepath.Join(skillDirectory, "SKILL.md"), []byte(skillText), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(t.TempDir(), "skills.yaml")
+	if err := os.WriteFile(configPath, []byte(
+		"skills:\n  - name: inline-policy\n    enabled: true\n    inline: true\n    stages: [extract]\n",
+	), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(root, configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := service.Catalog(t.Context(), StageExtract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"BEGIN_INLINE_SKILL name=inline-policy", "# Inline contract", "BODY_MARKER"} {
+		if !strings.Contains(catalog, want) {
+			t.Fatalf("inline catalog missing %q:\n%s", want, catalog)
+		}
+	}
+	if strings.Contains(catalog, "jarvis-tools get-skill") || strings.Contains(catalog, "description: trusted stage policy") {
+		t.Fatalf("inline catalog contains metadata or deferred read instruction:\n%s", catalog)
+	}
+}
+
+func TestRepositoryDelegationSkillsAreInlineAndPluginGated(t *testing.T) {
+	service, err := NewService(
+		filepath.Join("..", "..", ".agents", "skills"),
+		filepath.Join("..", "..", "conf", "skills.yaml"),
+	)
+	if err != nil {
+		t.Fatalf("load repository skills: %v", err)
+	}
+	items, err := service.List(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := map[string]View{}
+	for _, item := range items {
+		if strings.HasPrefix(item.Name, "my-delegations-") {
+			found[item.Name] = item
+		}
+	}
+	for _, name := range []string{"my-delegations-extract", "my-delegations-execute", "my-delegations-review"} {
+		item, ok := found[name]
+		if !ok || !item.Inline || !item.IsEnabled {
+			t.Fatalf("%s = %#v", name, item)
+		}
+	}
+	extractCatalog, err := service.Catalog(t.Context(), StageExtract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	executeCatalog, err := service.Catalog(t.Context(), StageExecute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(extractCatalog, "action_type=delegated_followup") {
+		t.Fatalf("extract catalog missing delegation policy:\n%s", extractCatalog)
+	}
+	if !strings.Contains(executeCatalog, "update-delegation") {
+		t.Fatalf("execute catalog missing delegation policy:\n%s", executeCatalog)
+	}
+	availability := testAvailability{"my-delegations-extract": false, "my-delegations-execute": false, "my-delegations-review": false}
+	service.SetAvailability(availability)
+	for _, stage := range []string{StageExtract, StageExecute, StageProactive} {
+		catalog, err := service.Catalog(t.Context(), stage)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(catalog, "BEGIN_INLINE_SKILL name=my-delegations-") {
+			t.Fatalf("disabled plugin leaked into %s", stage)
+		}
+	}
+	availability["my-delegations-review"] = true
+	catalog, err := service.Catalog(t.Context(), StageProactive)
+	if err != nil || !strings.Contains(catalog, "BEGIN_INLINE_SKILL name=my-delegations-review") {
+		t.Fatalf("review plugin missing: %v %s", err, catalog)
+	}
+
+}
+
+func TestInlineSkillRespectsAvailabilityGate(t *testing.T) {
+	root := t.TempDir()
+	skillDirectory := filepath.Join(root, "inline-policy")
+	if err := os.MkdirAll(skillDirectory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(skillDirectory, "SKILL.md"), []byte(
+		"---\nname: inline-policy\ndescription: optional policy\n---\n\nINLINE_MARKER\n",
+	), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(t.TempDir(), "skills.yaml")
+	if err := os.WriteFile(configPath, []byte(
+		"skills:\n  - name: inline-policy\n    enabled: true\n    inline: true\n    stages: [extract]\n",
+	), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(root, configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.SetAvailability(testAvailability{"inline-policy": false})
+	catalog, err := service.Catalog(t.Context(), StageExtract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(catalog, "INLINE_MARKER") || strings.Contains(catalog, "inline-policy") {
+		t.Fatalf("disabled inline skill leaked into catalog:\n%s", catalog)
 	}
 }
 
@@ -448,6 +570,47 @@ func TestRepositoryWeeklyReportProgressSyncSkillKeepsReadOnlyTaskBoundary(t *tes
 		if !strings.Contains(content.Content, want) {
 			t.Fatalf("OKR progress sync skill missing boundary %q:\n%s", want, content.Content)
 		}
+	}
+}
+
+func TestRepositoryBaxWeeklyUsageAnalysisSkillIsExecutable(t *testing.T) {
+	service, err := NewService(
+		filepath.Join("..", "..", ".agents", "skills"),
+		filepath.Join("..", "..", "conf", "skills.yaml"),
+	)
+	if err != nil {
+		t.Fatalf("load repository skills: %v", err)
+	}
+	content, err := service.Content(t.Context(), "bax-weekly-usage-analysis")
+	if err != nil {
+		t.Fatalf("Content(bax-weekly-usage-analysis) error = %v", err)
+	}
+	skill := content.Content
+	for _, want := range []string{
+		"按周分析 BAX AM 用户对话使用数据",
+		"bytedcli --site i18n-tt --json aeolus dataset-fields -r sg 3574811",
+		"dry-run.sh",
+		"周期任务只需把 instruction 写成",
+		"不要为 BAX 周报新建 Go 专用链路",
+		"未获批准",
+	} {
+		if !strings.Contains(skill, want) {
+			t.Fatalf("BAX weekly usage skill missing contract %q:\n%s", want, skill)
+		}
+	}
+	catalog, err := service.Catalog(t.Context(), StageExecute)
+	if err != nil {
+		t.Fatalf("execute Catalog() error = %v", err)
+	}
+	if !strings.Contains(catalog, "bax-weekly-usage-analysis") {
+		t.Fatalf("execute catalog is missing bax-weekly-usage-analysis:\n%s", catalog)
+	}
+	extractCatalog, err := service.Catalog(t.Context(), StageExtract)
+	if err != nil {
+		t.Fatalf("extract Catalog() error = %v", err)
+	}
+	if strings.Contains(extractCatalog, "bax-weekly-usage-analysis") {
+		t.Fatalf("extract catalog exposes bax-weekly-usage-analysis:\n%s", extractCatalog)
 	}
 }
 
@@ -567,7 +730,7 @@ func TestJarvisInstallationCompletesDependenciesBeforeStartingMainService(t *tes
 	}
 	combined := string(installSkill) + "\n" + string(boundaries) + "\n" + string(binding) + "\n" + string(worldModelSkill)
 	for _, want := range []string{
-		"本 Skill 是从完整仓库 checkout 到最终可用的安装流程所有者",
+		"本 Skill 是从完整仓库 checkout 到最终可用的源码安装流程所有者",
 		"仓库与安装运行 → 机器事实 → 全部依赖 → `validate-dependencies`",
 		"./scripts/jarvis-install start",
 		"run_dir/INSTALL_CHECKLIST.md",
@@ -583,8 +746,8 @@ func TestJarvisInstallationCompletesDependenciesBeforeStartingMainService(t *tes
 		"validate-binding",
 		"已有 daemon 指向另一 binary/checkout",
 		"初始化只负责“Jarvis 如何理解这个用户的世界”",
-		"不安装或重启 daemon，也不配置 CC",
-		"只更新清单 E 区",
+		"不安装或重启服务，也不配置 CC",
+		"更新 `INSTALL_CHECKLIST.md` 的 E 区",
 		"./scripts/jarvis-install status --run-dir <run_dir>",
 		"第二次运行同一命令",
 	} {
@@ -712,10 +875,10 @@ func TestReportCapabilitiesAvoidOKRAPIAndMorningBriefClosesSend(t *testing.T) {
 	}
 	morning := string(raw)
 	for _, want := range []string{
-		"--idempotency-key",
+		"idempotency_key",
 		"morning-brief-YYYYMMDD-HHMMSS",
-		"lark-cli im +messages-mget",
-		"读回成功",
+		"jarvis-tools notice-principal --payload-file",
+		"verified=true",
 		"list-backlinks",
 	} {
 		if !strings.Contains(morning, want) {

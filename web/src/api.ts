@@ -1,4 +1,6 @@
 import type {
+  Delegation,
+  DelegationCheck,
   AgentSkill,
   AgentSkillContent,
   AgentSkillInput,
@@ -92,6 +94,8 @@ import type {
   ChatThreadList,
   WebConfig,
   AuthView,
+  SetupFlow,
+  SetupStatus,
 } from './types'
 
 interface APIResponse<T> {
@@ -155,6 +159,41 @@ export function logoutFromJarvis(): Promise<AuthView> {
   return request<AuthView>('/api/auth/logout', { method: 'POST' })
 }
 
+export function getSetupStatus(signal?: AbortSignal): Promise<SetupStatus> {
+  return request<SetupStatus>('/api/setup/status', { signal })
+}
+
+export function beginSetupLarkConnection(): Promise<SetupFlow> {
+  return request<SetupFlow>('/api/setup/lark/connect', { method: 'POST' })
+}
+
+export function beginSetupLarkLogin(): Promise<SetupFlow> {
+  return request<SetupFlow>('/api/setup/lark/login', { method: 'POST' })
+}
+
+export function beginSetupAgentLogin(): Promise<SetupFlow> {
+  return request<SetupFlow>('/api/setup/agent/login', { method: 'POST' })
+}
+
+export function getSetupFlow(flowId: string, signal?: AbortSignal): Promise<SetupFlow> {
+  return request<SetupFlow>(`/api/setup/flows/${encodeURIComponent(flowId)}`, { signal })
+}
+
+export function cancelSetupFlow(flowId: string): Promise<SetupFlow> {
+  return request<SetupFlow>(`/api/setup/flows/${encodeURIComponent(flowId)}/cancel`, { method: 'POST' })
+}
+
+export function finalizeSetup(appSecret: string): Promise<SetupStatus> {
+  return request<SetupStatus>('/api/setup/finalize', {
+    method: 'POST',
+    body: { app_secret: appSecret },
+  })
+}
+
+export function bootstrapSetupWorldModel(): Promise<{ task_id: number; status: string }> {
+  return request<{ task_id: number; status: string }>('/api/setup/world-model', { method: 'POST' })
+}
+
 export function listTodos(query: TodoQuery, signal?: AbortSignal): Promise<TodoList> {
   const params = new URLSearchParams({
     page: String(query.page),
@@ -178,9 +217,24 @@ export function setTodoStatus(id: number, status: TodoStatus, reason: string): P
   })
 }
 
-export function listTasks(statuses: TaskStatus[], page = 1, pageSize = 20, signal?: AbortSignal, query = ''): Promise<TaskList> {
+export interface TaskListQuery {
+  query?: string
+  actionType?: string
+  excludeActionType?: string
+}
+
+export function listTasks(
+  statuses: TaskStatus[],
+  page = 1,
+  pageSize = 20,
+  signal?: AbortSignal,
+  filters: TaskListQuery | string = {},
+): Promise<TaskList> {
   const params = new URLSearchParams({ status: statuses.join(','), page: String(page), page_size: String(pageSize) })
-  if (query.trim()) params.set('query', query.trim())
+  const normalized = typeof filters === 'string' ? { query: filters } : filters
+  if (normalized.query?.trim()) params.set('query', normalized.query.trim())
+  if (normalized.actionType) params.set('action_type', normalized.actionType)
+  if (normalized.excludeActionType) params.set('exclude_action_type', normalized.excludeActionType)
   return request<TaskList>(`/api/tasks?${params.toString()}`, { signal })
 }
 
@@ -895,4 +949,21 @@ export function listSecurityAuditEvents(
   if (query.route?.trim()) params.set('route', query.route.trim())
   if (query.resource?.trim()) params.set('resource', query.resource.trim())
   return request<AccessAuditEventList>(`/api/security-audit-events?${params.toString()}`, { signal })
+}
+
+export function listPluginInstallations(signal?: AbortSignal): Promise<{ items: Array<Pick<Plugin, 'id' | 'name' | 'kind' | 'enabled'>> }> {
+  return request('/api/plugin-installations', { signal })
+}
+export function listDelegations(state: string, query: string, page = 1, signal?: AbortSignal): Promise<{ items: Delegation[]; total: number }> {
+  const params = new URLSearchParams({ state, query, page: String(page), page_size: '20' })
+  return request(`/api/delegations?${params}`, { signal })
+}
+export function getDelegation(id: number, signal?: AbortSignal): Promise<Delegation> {
+  return request(`/api/delegations/${id}`, { signal })
+}
+export function updateDelegation(id: number, expectedVersion: number, content: unknown, closed: boolean): Promise<Delegation> {
+  return request(`/api/delegations/${id}`, { method: 'PATCH', body: { expected_version: expectedVersion, content, closed, actor: 'user' } })
+}
+export function listDelegationTasks(id: number, page = 1, signal?: AbortSignal): Promise<{ items: DelegationCheck[] }> {
+  return request(`/api/delegations/${id}/tasks?page=${page}&page_size=20`, { signal })
 }

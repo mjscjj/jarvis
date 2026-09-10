@@ -41,11 +41,13 @@ import (
 	"jarvis/internal/larkcli"
 	"jarvis/internal/meetingsweep"
 	"jarvis/internal/morningbrief"
+	"jarvis/internal/notice"
 	"jarvis/internal/observability"
 	"jarvis/internal/okrreview"
 	"jarvis/internal/okrworkspace"
 	okrAuth "jarvis/internal/okrworkspace/auth"
 	"jarvis/internal/okrworkspace/moduleconfig"
+	"jarvis/internal/onboarding"
 	"jarvis/internal/pipeline"
 	"jarvis/internal/plugin"
 	"jarvis/internal/proactive"
@@ -315,6 +317,10 @@ func main() {
 	} else {
 		infof("feishu user identity refreshed at startup: user=%s token=%s", user.UserName, user.TokenStatus)
 	}
+	principalNotices, err := notice.NewService(db, larkClient, cfg.Extract.PrincipalOpenID, filepath.Join(runtimeRoot, "var", "log", "principal-notices.jsonl"), cfg.Server.Addr, cfg.Server.PublicURL)
+	if err != nil {
+		fatalf("initialize principal notices failed: %v", err)
+	}
 	captureService, err := capture.NewService(db, larkClient, capture.Options{
 		PageSize:            cfg.Capture.PageSize,
 		ScanWorkers:         cfg.Capture.ScanWorkers,
@@ -416,6 +422,7 @@ func main() {
 	proactiveWorker, err := proactive.NewWorker(proactive.Options{
 		Runner:        proactiveRunner,
 		Recorder:      proactiveStore,
+		Skills:        runtimeSkills,
 		Prompts:       runtimePrompts,
 		SharedMemory:  sharedMemoryService,
 		Sandbox:       cfg.Proactive.Sandbox,
@@ -483,7 +490,7 @@ func main() {
 		if err != nil {
 			fatalf("initialize question card lark-cli failed: %v", err)
 		}
-		questionCards, err = cardask.NewNotifier(questionClient, cfg.Identity.DisplayName, cfg.CardApproval.PrincipalOpenID, cfg.Server.Addr)
+		questionCards, err = cardask.NewNotifier(questionClient, cfg.Identity.DisplayName, cfg.CardApproval.PrincipalOpenID, cfg.Server.Addr, cfg.Server.PublicURL)
 		if err != nil {
 			fatalf("initialize question notifier failed: %v", err)
 		}
@@ -1110,6 +1117,28 @@ func main() {
 	if err != nil {
 		fatalf("initialize runtime settings service failed: %v", err)
 	}
+	desktopStateRoot := strings.TrimSpace(os.Getenv("JARVIS_DESKTOP_STATE_ROOT"))
+	if desktopStateRoot == "" {
+		desktopStateRoot = runtimeRoot
+	}
+	resourceRoot := strings.TrimSpace(os.Getenv("JARVIS_RESOURCE_ROOT"))
+	if resourceRoot == "" {
+		resourceRoot = runtimeRoot
+	}
+	onboardingService, err := onboarding.NewService(onboarding.Options{
+		Desktop:       os.Getenv("JARVIS_DESKTOP") == "1",
+		ConfigPath:    configPathAbsolute,
+		RuntimeRoot:   runtimeRoot,
+		StateRoot:     desktopStateRoot,
+		LarkCLIBin:    cfg.LarkCLI.Bin,
+		AgentCLIBin:   cfg.Execute.Bin,
+		CCConnectBin:  filepath.Join(resourceRoot, "bin", "cc-connect-jarvis"),
+		DB:            db,
+		TaskSubmitter: taskSubmitter,
+	})
+	if err != nil {
+		fatalf("initialize desktop onboarding service failed: %v", err)
+	}
 	systemControlService, err := systemcontrol.NewService(filepath.Join(runtimeRoot, "scripts", "stop-jarvis.sh"), os.Getpid())
 	if err != nil {
 		fatalf("initialize system control service failed: %v", err)
@@ -1158,8 +1187,9 @@ func main() {
 		Auth:             authService,
 		DB:               db, Todos: todoStore, TodoStatus: todoStore,
 		Tasks: taskService, TaskSubmitter: taskSubmitter, Executor: agentExecutor,
-		MessageRecaller: messageRecaller,
-		Projects:        projectService, ProjectPortability: projectPortabilityService,
+		MessageRecaller:  messageRecaller,
+		PrincipalNotices: principalNotices,
+		Projects:         projectService, ProjectPortability: projectPortabilityService,
 		KeyMatters: keyMatterService,
 		Persons:    personService, Groups: groupService,
 		Resolve: resolveService, Profile: profileService, Resources: resourceService,
@@ -1200,6 +1230,7 @@ func main() {
 		MeetingSweep:       meetingSweepWaker,
 		Readiness:          readinessTargets,
 		SystemControl:      systemControlService,
+		Onboarding:         onboardingService,
 	}); err != nil {
 		fatalf("register API routes failed: %v", err)
 	}

@@ -108,6 +108,8 @@ M3 可以查询责任归属、当前状态、已有 Todo/Task 和明确项目归
 
 `Todo.content` 保存创建时证据。消息只保存在 `capture.messages` 一次，不依照提示词长度截断。M5 默认只读经过校验的 `source_message_ids` 对应原文与简短说明，其余按会话、背景或原始消息 ID 读取；实体当前状态仍通过事实页和 fact 查询，不能替代冻结证据。
 
+已结束会议的准入口径由 M3 工作规则维护：Principal 实际参加且尚缺回顾时，整理回顾本身就是可交给 M5 的目标，不以存在行动项为前提。采集 Skill 先按原始线索 ID 查重，只为未知会议补取详情；会议结束事件和既有周期巡扫的调度方式不变。
+
 ### 3.3 Todo 固化
 
 `extracted` Todo 一律通过无模型的固化步骤创建一个 `pending` Task，并把 Todo 置为 `materialized`。固化继续使用 Todo ID/version 乐观锁、`task.todo_id` 唯一键和同一事务；重复通知返回同一个 Task，陈旧版本 fail-fast。Task 只记录自己的来源与创建时间，不把这一机械步骤包装成判断或确认闸门。
@@ -131,6 +133,10 @@ Task 可以来自 Todo、手工 API、ScheduledTask 或主动巡视 Agent。初�
 要不要问 principal 由模型根据具体副作用判断，不按 `action_type` 分流。请示副作用和补充信息共用 `needs_human` 这一个出口：代码提供可停下的状态、渲染问题卡的通道、一个回答入口和审计载体，不解释答案，也没有单独的批准/驳回接口。`effects` 的 `kind` 是开放字符串，外部后果按 Agent 声明留痕；当前不是独立 receipt verifier。
 
 Task 的 `summary` 表示事项总进展，ExecutionRun 的 `summary` 只表示本次运行。当前 Store 能更新 supplements、状态、结果和 summary。
+
+M5 每轮开始时给可达的来源飞书消息添加 `OnIt`，只表示该轮正在执行；本轮离开
+`executing` 后统一 best-effort 删除。`message_id` 与 `reaction_id` 复用当前
+ExecutionRun 的开放 effects 留痕，不新增状态字段；删除失败只告警，不反向改变 Task 结果。
 
 ## 4. 实时推进与恢复
 
@@ -178,6 +184,13 @@ KeyMatter 承载需要长期记住和定期回看、但不构成项目也不是�
 
 工具说明由 `internal/toolcatalog` 和 Skills 维护，不复制到每个 prompt。
 
+Skills 默认只把目录摘要注入对应阶段，由 Agent 按需读取正文；标记 `inline: true` 的
+阶段规则型 Skill 会把正文直接拼入最终 prompt。插件仍通过同一个 availability gate
+控制两种形态。“我的交办”使用 M3/M5/proactive 内联 Skill：M3 Todo 是交办主体，
+`delegation_progress` 只保存独立的宽松核验进展，Task 是一次 check。首次 M5 和恢复路径
+均读取当前 Skills；Task 完成不等于对方交付，关闭插件也不自动关闭既有交办。
+交办原文和背景继续冻结在 Todo.content，每次复查携带原始包，不重建替代。
+
 Shared memory 是 Principal 在运行中明确教给 Jarvis 的个性化行为覆盖层，不保存业务事实或机器控制状态。M3、M5、后台对话、主动巡视和 CC Connect 读取同一份内容，并只在各自阶段职责内执行；主动巡视结合原本就在检查的证据合并明确的新要求、撤回和冲突，不为维护记忆扩大调查。
 
 `identity.display_name` 是本机助手名称的唯一真源。初始化必须把用户选择显式写入 runtime overlay；设置页改名同样写该字段并在重启后生效。系统 Prompt、rules 和运行时 Skills 只保留 `{{AGENT_NAME}}`，由 `internal/agentidentity` 的只读装饰器在可信指令进入各 Agent 前统一渲染。事件、Task、Fact 和历史产物不保存或回写名称。`jarvis-tools`、API header、进程 label、路径和数据库键仍是稳定技术标识，不参与改名。
@@ -210,6 +223,7 @@ pending -> executing -> done | observing | failed
 - 页面真源：`web/src/App.tsx`
 - 当前主导航：今日、任务、回顾、已启用内置模块、世界、自动化、插件、Agent 设置和系统管理
 - 服务名和 main/chat 端口按所选配置解析；脚本和 CC Connect 回调统一通过 `jarvis-instance` / `jarvis-api-base` 获取当前实例，不依赖固定 18800。
+- 飞书提问、审批及关联任务的 Notice 卡片统一通过 `internal/uilink` 优先按 `server.public_url` 生成“查看详情”链接，支持远端域名、反向代理和端口转发的浏览器访问入口。未配置时使用实际监听地址（包含安装包的 `-addr` 覆盖）；具体绑定地址直接使用，通配监听实时解析默认路由对应的本机 IPv4（内网或公网）。回环链接标注“本机访问”，需在打开链接的设备上有本地服务或端口转发。
 
 ## 9. 当前已知实现缺口
 

@@ -134,7 +134,7 @@ function lastRunText(task: ScheduledTask): string {
   return '尚未触发'
 }
 
-export default function ScheduledTasks() {
+export default function ScheduledTasks({ delegationsEnabled }: { delegationsEnabled: boolean }) {
   const { name: agentName } = useAgentIdentity()
   const { context, navigate, setViewState } = usePageContext()
   const routeView: ScheduleView = context.view_state.view === 'wakeups' ? 'wakeups' : 'automations'
@@ -373,8 +373,16 @@ export default function ScheduledTasks() {
         title="任务"
         subtitle={`管理你与 ${agentName} 正在推进的工作`}
         activeKey="automations"
-        tabs={[{ key: 'tasks', label: '任务' }, { key: 'automations', label: '自动化' }]}
-        onChange={(key) => navigate(key === 'automations' ? 'scheduled-tasks' : 'tasks')}
+        tabs={[
+          { key: 'tasks', label: '任务' },
+          { key: 'automations', label: '自动化' },
+          ...(delegationsEnabled ? [{ key: 'delegated', label: '我的交办' }] : []),
+        ]}
+        onChange={(key) => {
+          if (key === 'automations') navigate('scheduled-tasks')
+          else if (key === 'delegated') navigate('tasks', { mode: 'delegated', view: 'tracking', page: '1' })
+          else navigate('tasks', { view: 'needs_me', page: '1' })
+        }}
       >
         {view === 'automations' && <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建自动化</Button>}
       </MergedPageHeader>

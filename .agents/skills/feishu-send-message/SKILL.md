@@ -5,7 +5,7 @@ description: 使用 lark-cli 通过 {{AGENT_NAME}} Bot 发送普通一对一或�
 
 # 飞书发消息
 
-所有非广播的 M5 普通业务消息都使用本 Skill，不区分消息是否回到 Task 的来源会话。消息发送和回复始终使用 {{AGENT_NAME}} Bot；联系人查询、群搜索和助手群创建使用 principal 的 user 身份。面向多个独立收件人的系统通知或批量提醒读取 `feishu-broadcast`，不要用本 Skill 逐个建助手群。禁止把发送失败 fallback 成 user 身份、另一个目标或另一种会话。
+本 Skill 负责原会话中的业务回复、给其他人的普通一对一或群聊消息，以及图片和文件发送。给 principal 本人的主动通知和动作回执使用 `jarvis-tools notice-principal`；面向多个独立收件人的系统通知或批量提醒读取 `feishu-broadcast`，不要用本 Skill 逐个建助手群。消息发送和回复始终使用 {{AGENT_NAME}} Bot；联系人查询、群搜索和助手群创建使用 principal 的 user 身份。禁止把发送失败 fallback 成 user 身份、另一个目标或另一种会话。
 
 ## 0. 先判断审批，未获授权不要写
 
@@ -63,23 +63,9 @@ lark-cli contact +search-user \
 
 ## 3. 选择准确会话
 
-### 给我（principal）发消息 / 主动 ping
+### 给我（principal）的通知与原消息回复
 
-当任务是 `notify_principal`，或需要把有用信息主动告知我本人时，直接给我发一条清晰、有结论的飞书消息。
-
-给我本人发单聊最简单：{{AGENT_NAME}} Bot 与我已有私聊关系，直接用我的 open_id 发，不用建群：
-
-```bash
-lark-cli im +messages-send \
-  --user-id "<principal open_id>" \
-  --markdown "<消息内容>" \
-  --idempotency-key "<稳定幂等键>" \
-  --as bot
-```
-
-如果 `--user-id` 直发失败，把原始错误交回 M5；不要自动创建群、改用 user 身份或更换目标。
-
-写给我的消息要点：说清是什么、为什么值得我知道、我可能要做什么；只发真正有用的，不制造噪音。
+主动告知和动作回执使用 `jarvis-tools notice-principal`；它固定给 principal 发 Bot 卡片并返回凭据，M5 将返回的 effect 原样写入运行结果。原会话业务回复按准确消息锚点使用 `+messages-reply`。发给我本人的图片或文件仍按我的 open_id 用 Bot 发送，不建群。发送失败原样报错，不换身份或会话。
 
 ### 给个人发消息
 

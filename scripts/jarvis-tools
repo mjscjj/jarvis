@@ -50,6 +50,7 @@ subcommands:
   get-context            Assemble current principal/project/chat work context
   update-group           Replace one group's complete control state
   get-principal          Get the assistant owner's profile
+  notice-principal       Send an agent-authored Feishu card to the principal
   update-principal       Replace the principal's control fields
   list-persons           List important people, optionally by role
   get-person             Get one person by Feishu open_id
@@ -92,6 +93,10 @@ subcommands:
   update-world-progress  Update one assessment with optimistic locking
   list-todos             List action clues, optionally for one day
   get-todo               Get one clue with the details omitted from summaries
+  list-delegations       List identified commitments (independent of check Tasks)
+  get-delegation         Read original context and current check result
+  update-delegation      Update check result with an expected version
+  list-delegation-tasks  List checks linked to one commitment
   list-tasks             List tasks, optionally for one day
   get-task               Read task overview or a frozen context section
   list-task-runs         Page through a task’s execution history
@@ -219,10 +224,13 @@ EOF
     query-messages) cat <<'EOF'
 usage: jarvis-tools query-messages [--chat-id CHAT_ID] [--sender-open-id OPEN_ID]
                                    [--keyword TEXT] [--date YYYY-MM-DD]
+                                   [--message-ids ID,ID,...]
                                    [--limit N] [--config PATH]
 Query locally captured messages, newest first. At least one narrowing filter is
 recommended. Content is returned because it is the evidence being queried;
 --date uses capture.timezone; --limit defaults to 20 and must not exceed 100.
+--message-ids exactly matches original message IDs and returns only id/message_id.
+Use --limit 100 for batches; the number of requested IDs must not exceed limit.
 EOF
       ;;
     get-message) cat <<'EOF'
@@ -436,10 +444,27 @@ example:
   jarvis-tools list-todos --group-id 7 --status observing
 EOF
       ;;
+    list-delegations) cat <<'EOF'
+usage: jarvis-tools list-delegations [--state open|closed|all] [--query TEXT] [--page N] [--limit N] [--config PATH]
+IDs are M3 Todo IDs; materialized/Task done does not mean delivered.
+EOF
+      ;;
+    get-delegation) cat <<'EOF'
+usage: jarvis-tools get-delegation --id TODO_ID [--config PATH]
+Returns source_payload unchanged, current content, closed_at and version.
+EOF
+      ;;
+    update-delegation) payload_id_help "update-delegation" "Payload: expected_version, content (any valid JSON), actor, optional closed (boolean). Never changes source or Task state. Version 0 means not checked yet." ;;
+    list-delegation-tasks) cat <<'EOF'
+usage: jarvis-tools list-delegation-tasks --id TODO_ID [--page N] [--limit N] [--config PATH]
+All states, newest first. Includes the initial materialized check and later Tasks with source.delegation_id or annotation.delegation_id.
+EOF
+      ;;
     list-tasks) cat <<'EOF'
 usage: jarvis-tools list-tasks [--date YYYY-MM-DD] [--status S] [--limit N]
                               [--project-id N] [--group-id N] [--page N] [--query TEXT]
-                              [--source-message-id MESSAGE_ID] [--config PATH]
+                              [--source-message-id MESSAGE_ID] [--action-type TYPE]
+                              [--config PATH]
 
 List compact task summaries. --date narrows by COALESCE(last_progress_at,
 created_at) to one natural day in capture.timezone. --limit defaults to 20.
@@ -515,6 +540,36 @@ result.evidence; the server records the actual calling stage as the actor.
 
 example:
   jarvis-tools close-task --id 42 --payload '{"expected_version":2,"result":{"summary":"关闭结果","evidence":"支持材料"}}'
+EOF
+      ;;
+    notice-principal) cat <<'EOF'
+usage: jarvis-tools notice-principal [--payload JSON|- | --payload-file PATH] [--config PATH]
+
+Send one Bot card to the configured principal. No recipient or card JSON needed.
+Required: content (Markdown), idempotency_key (stable, <=50 bytes).
+Optional: type (defaults to Notice), links [{label,url}], details (folded
+Markdown), extra (free text or open JSON, displayed in a supplemental panel),
+task_id (defaults to JARVIS_TASK_ID; validates/audits the task and adds its details link).
+The task link uses the runtime listen address; packaged local links require the
+computer running Jarvis. Use links for business materials, not hand-built task URLs.
+
+Type suggestions: Notice, Update, Reminder, Alert, Brief. These are examples,
+not an enum; custom words work unchanged. Type never selects a workflow.
+Write 1–3 natural sentences of content, opening with a brief description of
+what happened. There is no separate title field or headline. Do not add a
+heading, bold headline or "Title:" label. Put long explanation in details and
+original sources in links. Optional sections can be omitted.
+
+Reuse the same idempotency_key on retry. An error can contain a partial delivery
+receipt: inspect message_id/send_response, prior run effects and
+var/log/principal-notices.jsonl before retry.
+The Feishu deduplication window is limited; this is not exactly-once delivery.
+Success returns verified, message_id, chat_id, url and effect. M5 records the
+returned effect verbatim in its run effects. Sending does not change Task state.
+
+example:
+  jarvis-tools notice-principal --payload-file notice.json
+  jarvis-tools notice-principal --payload - < notice.json
 EOF
       ;;
     append-clue) cat <<'EOF'
@@ -722,10 +777,11 @@ api_write() {
   local method="$1"
   local path="$2"
   local json_body="$3"
+  local timeout="${4:-30}"
   local url="${API_BASE}${path}"
   local body http_code
-  body="$(curl -sS -w '\n%{http_code}' --max-time 30 -X "$method" \
-    -H 'Content-Type: application/json' --data "$json_body" "$url")" || fail "curl failed for ${url}"
+  body="$(printf '%s' "$json_body" | curl -sS -w '\n%{http_code}' --max-time "$timeout" -X "$method" \
+    -H 'Content-Type: application/json' --data-binary @- "$url")" || fail "curl failed for ${url}"
   http_code="$(printf '%s\n' "$body" | tail -n1)"
   body="$(printf '%s\n' "$body" | sed '$d')"
   local code=""
@@ -855,6 +911,7 @@ NAME=""
 STATUS=""
 LIMIT="200"
 PAYLOAD="-"
+PAYLOAD_FILE=""
 AT=""
 REASON="-"
 SOURCE=""
@@ -878,6 +935,7 @@ EVENT_LIMIT="20"
 INCLUDE_RUN_OUTPUT="false"
 INCLUDE_PROMPT="false"
 MESSAGE_ID=""
+MESSAGE_IDS=""
 RESOURCE_TYPE=""
 SENDER_OPEN_ID=""
 TYPE=""
@@ -905,6 +963,7 @@ reset_flags() {
   STATUS=""
   LIMIT="200"
   PAYLOAD="-"
+  PAYLOAD_FILE=""
   AT=""
   REASON="-"
   SOURCE=""
@@ -939,11 +998,13 @@ reset_flags() {
   INCLUDE_RUN_OUTPUT="false"
   INCLUDE_PROMPT="false"
   MESSAGE_ID=""
+  MESSAGE_IDS=""
   RESOURCE_TYPE=""
   SENDER_OPEN_ID=""
   PAGE="1"
   QUERY=""
   SOURCE_MESSAGE_ID=""
+  ACTION_TYPE=""
   CONTEXT_SECTION=""
   REVISION=""
 }
@@ -955,9 +1016,14 @@ require_command_flag() {
   local allowed="--config"
   case "$cmd" in
     list-projects | list-key-matters) allowed+=" --keyword --limit" ;;
+    list-delegations) allowed+=" --state --query --page --limit" ;;
+    get-delegation) allowed+=" --id" ;;
+    update-delegation) allowed+=" --id --payload" ;;
+    list-delegation-tasks) allowed+=" --id --page --limit" ;;
     get-project) allowed+=" --id --code" ;;
     get-key-matter | touch-key-matter | touch-resource) allowed+=" --id" ;;
     create-project | create-key-matter | update-principal | create-person | create-resource | create-task | create-relation | create-world-progress | purge-world-entities) allowed+=" --payload" ;;
+    notice-principal) allowed+=" --payload --payload-file" ;;
     update-project | update-key-matter | update-group | update-person | update-resource) allowed+=" --id --payload" ;;
     archive-project | close-key-matter | delete-person | delete-resource) allowed+=" --id" ;;
     list-groups) allowed+=" --keyword --limit" ;;
@@ -968,7 +1034,7 @@ require_command_flag() {
     get-person) allowed+=" --open-id" ;;
     query-resources) allowed+=" --project-id --person-open-id --principal-only --keyword --limit" ;;
     get-resource) allowed+=" --id" ;;
-    query-messages) allowed+=" --chat-id --sender-open-id --keyword --date --limit" ;;
+    query-messages) allowed+=" --chat-id --sender-open-id --keyword --date --limit --message-ids" ;;
     get-message | get-todo-event | get-task-event) allowed+=" --id" ;;
     query-captured-resources) allowed+=" --chat-id --message-id --resource-type --keyword --limit" ;;
     get-captured-resource) allowed+=" --id" ;;
@@ -990,7 +1056,7 @@ require_command_flag() {
     delete-relation) allowed+=" --id" ;;
     list-todos) allowed+=" --date --status --limit --project-id --group-id --page --query --source-message-id" ;;
     get-todo) allowed+=" --id --context --message-id --revision" ;;
-    list-tasks) allowed+=" --date --status --limit --project-id --group-id --page --query --source-message-id" ;;
+    list-tasks) allowed+=" --date --status --limit --project-id --group-id --page --query --source-message-id --action-type" ;;
     get-task) allowed+=" --id --context --message-id" ;;
     list-task-runs) allowed+=" --id --page --limit" ;;
     get-task-run) allowed+=" --id --include-prompt" ;;
@@ -1147,6 +1213,15 @@ consume_flags() {
         SOURCE_MESSAGE_ID="${1#--source-message-id=}"
         shift
         ;;
+      --action-type)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        ACTION_TYPE="$2"
+        shift 2
+        ;;
+      --action-type=*)
+        ACTION_TYPE="${1#--action-type=}"
+        shift
+        ;;
       --context)
         [[ $# -ge 2 ]] || fail "$1 requires a value"
         CONTEXT_SECTION="$2"
@@ -1201,6 +1276,10 @@ consume_flags() {
         NAME="${1#--name=}"
         shift
         ;;
+      --state)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        STATUS="$2"; shift 2 ;;
+      --state=*) STATUS="${1#*=}"; shift ;;
       --status)
         [[ $# -ge 2 ]] || fail "$1 requires a value"
         STATUS="$2"
@@ -1226,6 +1305,15 @@ consume_flags() {
         ;;
       --payload=*)
         PAYLOAD="${1#--payload=}"
+        shift
+        ;;
+      --payload-file)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        PAYLOAD_FILE="$2"
+        shift 2
+        ;;
+      --payload-file=*)
+        PAYLOAD_FILE="${1#--payload-file=}"
         shift
         ;;
       --at)
@@ -1461,6 +1549,16 @@ consume_flags() {
         INCLUDE_PROMPT="true"
         shift
         ;;
+      --message-ids)
+        [[ $# -ge 2 && -n "$2" ]] || fail "$1 requires a nonempty value"
+        MESSAGE_IDS="$2"
+        shift 2
+        ;;
+      --message-ids=*)
+        MESSAGE_IDS="${1#--message-ids=}"
+        [[ -n "$MESSAGE_IDS" ]] || fail "--message-ids requires a nonempty value"
+        shift
+        ;;
       --message-id)
         [[ $# -ge 2 ]] || fail "$1 requires a value"
         MESSAGE_ID="$2"
@@ -1624,6 +1722,25 @@ cmd_get_key_matter() {
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
   local body
   body="$(api_get "/api/key-matters/${ID}")"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
+cmd_notice_principal() {
+  reset_flags
+  consume_flags "$@"
+  [[ -z "$PAYLOAD_FILE" || "$PAYLOAD" == "-" ]] || fail "choose --payload or --payload-file"
+  if [[ -n "$PAYLOAD_FILE" ]]; then
+    [[ -f "$PAYLOAD_FILE" ]] || fail "notice payload file not found: $PAYLOAD_FILE"
+    PAYLOAD="$(cat -- "$PAYLOAD_FILE")"
+  fi
+  local payload body
+  payload="$(read_payload_object notice-principal)"
+  if [[ -n "${JARVIS_TASK_ID:-}" ]] && ! jq -e 'has("task_id")' <<<"$payload" >/dev/null; then
+    [[ "$JARVIS_TASK_ID" =~ ^[1-9][0-9]*$ ]] || fail "JARVIS_TASK_ID must be positive"
+    payload="$(jq -c --argjson task_id "$JARVIS_TASK_ID" '. + {task_id:$task_id}' <<<"$payload")"
+  fi
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  body="$(api_write POST /api/notices/principal "$payload" 300)"
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
 
@@ -1877,6 +1994,10 @@ cmd_query_messages() {
   require_limit query-messages "$LIMIT" 100
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
   local query="limit=${LIMIT}" value
+  if [[ -n "$MESSAGE_IDS" ]]; then
+    value="$(jq -rn --arg s "$MESSAGE_IDS" '$s|@uri')"
+    query="${query}&message_ids=${value}"
+  fi
   if [[ -n "$CHAT_ID" ]]; then
     value="$(jq -rn --arg s "$CHAT_ID" '$s|@uri')"
     query="${query}&chat_id=${value}"
@@ -1895,7 +2016,11 @@ cmd_query_messages() {
     read -r from until <<<"$bounds"
     query="${query}&from=$(jq -rn --arg s "$from" '$s|@uri')&until=$(jq -rn --arg s "$until" '$s|@uri')"
   fi
-  emit "$(api_get "/api/messages?${query}" | jq -c '.data')"
+  if [[ -n "$MESSAGE_IDS" ]]; then
+    emit "$(api_get "/api/messages?${query}" | jq -c '{items:[.data.items[] | {id,message_id}]}')"
+  else
+    emit "$(api_get "/api/messages?${query}" | jq -c '.data')"
+  fi
 }
 
 cmd_get_message() {
@@ -2041,9 +2166,9 @@ cmd_append_clue() {
   fi
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
   local payload body
-  payload="$(jq -cn --arg source "$SOURCE" --arg external_id "$EXTERNAL_ID" \
-    --arg title "$TITLE" --arg content "$content" --arg occurred_at "$occurred_at" \
-    '{source:$source,external_id:$external_id,title:$title,content:$content,occurred_at:$occurred_at}')"
+  payload="$(printf '%s' "$content" | jq -Rsc --arg source "$SOURCE" --arg external_id "$EXTERNAL_ID" \
+    --arg title "$TITLE" --arg occurred_at "$occurred_at" \
+    '{source:$source,external_id:$external_id,title:$title,content:.,occurred_at:$occurred_at}')"
   body="$(api_write POST /api/clues "$payload")"
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
@@ -2480,6 +2605,36 @@ cmd_get_todo() {
  emit_api_data "/api/todos/${ID}${query}"
 }
 
+cmd_list_delegations() {
+  reset_flags
+  LIMIT="20"
+  consume_flags "$@"
+  require_limit list-delegations "$LIMIT" 100
+  [[ "$PAGE" =~ ^[1-9][0-9]*$ ]] || fail "--page must be positive"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local query
+  query="$(jq -rn --arg state "${STATUS:-open}" --arg query "$QUERY" --arg page "$PAGE" --arg limit "$LIMIT" '"?state="+($state|@uri)+"&query="+($query|@uri)+"&page="+$page+"&page_size="+$limit')"
+  emit_api_data "/api/delegations${query}"
+}
+
+cmd_get_delegation() {
+  reset_flags
+  consume_flags "$@"
+  [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "get-delegation requires positive --id"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  emit_api_data "/api/delegations/${ID}"
+}
+
+cmd_list_delegation_tasks() {
+  reset_flags
+  LIMIT="20"
+  consume_flags "$@"
+  require_limit list-delegation-tasks "$LIMIT" 100
+  [[ "$ID" =~ ^[1-9][0-9]*$ && "$PAGE" =~ ^[1-9][0-9]*$ ]] || fail "positive --id and --page required"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  emit_api_data "/api/delegations/${ID}/tasks?page=${PAGE}&page_size=${LIMIT}"
+}
+
 cmd_list_tasks() {
   reset_flags
   LIMIT="20"
@@ -2495,6 +2650,9 @@ cmd_list_tasks() {
   [[ "$PAGE" =~ ^[1-9][0-9]*$ ]] || fail "--page must be positive"
   local query="?page=${PAGE}&page_size=${LIMIT}"
   query="${query}&query=$(jq -rn --arg s "$QUERY" '$s|@uri')&source_message_id=$(jq -rn --arg s "$SOURCE_MESSAGE_ID" '$s|@uri')"
+  if [[ -n "$ACTION_TYPE" ]]; then
+    query="${query}&action_type=$(jq -rn --arg s "$ACTION_TYPE" '$s|@uri')"
+  fi
   if [[ -z "$STATUS" ]]; then
     STATUS="pending,executing,waiting,needs_human,done,failed,observing"
   fi
@@ -2808,6 +2966,7 @@ case "$SUBCOMMAND" in
   list-skills)          cmd_list_skills "$@" ;;
   get-skill)            cmd_get_skill "$@" ;;
   append-shared-memory) cmd_append_shared_memory "$@" ;;
+  notice-principal)     cmd_notice_principal "$@" ;;
   append-clue)          cmd_append_clue "$@" ;;
   append-fact)          cmd_append_fact "$@" ;;
   append-facts-batch)   cmd_append_facts_batch "$@" ;;
@@ -2827,6 +2986,10 @@ case "$SUBCOMMAND" in
   purge-world-entities) cmd_payload_create purge-world-entities POST /api/world/purge "$@" ;;
   list-todos)           cmd_list_todos "$@" ;;
   get-todo)             cmd_get_todo "$@" ;;
+  list-delegations)     cmd_list_delegations "$@" ;;
+  get-delegation)       cmd_get_delegation "$@" ;;
+  update-delegation)    cmd_payload_by_id update-delegation PATCH /api/delegations "$@" ;;
+  list-delegation-tasks) cmd_list_delegation_tasks "$@" ;;
   list-tasks)           cmd_list_tasks "$@" ;;
   get-task)             cmd_get_task "$@" ;;
   list-task-runs) cmd_list_task_runs "$@" ;;

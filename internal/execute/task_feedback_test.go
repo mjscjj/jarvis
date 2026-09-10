@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,21 +19,35 @@ import (
 )
 
 type successfulTaskFeedback struct {
-	reactionCalls int
+	reactionCalls       int
+	removeReactionCalls int
+	removed             TaskFeedbackReaction
 }
 
-func (f *successfulTaskFeedback) AddProcessingReaction(context.Context, TaskFeedbackTarget) (*TaskFeedbackReaction, error) {
+func (f *successfulTaskFeedback) AddProcessingReaction(_ context.Context, target TaskFeedbackTarget) (*TaskFeedbackReaction, error) {
 	f.reactionCalls++
-	return &TaskFeedbackReaction{ReactionID: "reaction_on_it"}, nil
+	return &TaskFeedbackReaction{SourceMessageID: target.SourceMessageID, ReactionID: "reaction_on_it"}, nil
+}
+
+func (f *successfulTaskFeedback) RemoveProcessingReaction(_ context.Context, reaction TaskFeedbackReaction) error {
+	f.removeReactionCalls++
+	f.removed = reaction
+	return nil
 }
 
 type unavailableTaskFeedback struct {
-	reactionCalls int
+	reactionCalls       int
+	removeReactionCalls int
 }
 
 func (f *unavailableTaskFeedback) AddProcessingReaction(context.Context, TaskFeedbackTarget) (*TaskFeedbackReaction, error) {
 	f.reactionCalls++
 	return nil, errors.New("230002 Bot/User can NOT be out of the chat")
+}
+
+func (f *unavailableTaskFeedback) RemoveProcessingReaction(context.Context, TaskFeedbackReaction) error {
+	f.removeReactionCalls++
+	return errors.New("230002 Bot/User can NOT be out of the chat")
 }
 
 func newTaskFeedbackTestStore(t *testing.T) *Store {
@@ -185,6 +200,70 @@ func TestStartTaskFeedbackRecordsOnItEffect(t *testing.T) {
 	}
 	if len(effects) != 1 || effects[0]["purpose"] != "task_processing" || effects[0]["operation"] != "add" {
 		t.Fatalf("effects = %#v", effects)
+	}
+}
+
+func TestPersistTerminalRunRemovesOnItReaction(t *testing.T) {
+	store := newTaskFeedbackTestStore(t)
+	run := &domain.ExecutionRun{
+		TaskID: 453, ActionType: "investigate", Stage: "execute", Sandbox: "danger-full-access",
+		Status: "succeeded", Prompt: "test", StartedAt: time.Now().UTC(),
+		Effects: datatypes.JSON(`[
+			{"kind":"feishu_reaction","purpose":"task_processing","source_message_id":"om_source","reaction_id":"reaction_on_it","operation":"add"},
+			{"kind":"file","title":"产物"}
+		]`),
+	}
+	feedback := &successfulTaskFeedback{}
+	now := time.Date(2026, 9, 10, 10, 0, 0, 0, time.UTC)
+	executor := &AgentExecutor{store: store, feedback: feedback, now: func() time.Time { return now }}
+
+	if err := executor.persistRun(t.Context(), run); err != nil {
+		t.Fatalf("persist initial run: %v", err)
+	}
+	executor.finishTaskFeedback(t.Context(), run)
+	if feedback.removeReactionCalls != 1 ||
+		feedback.removed.SourceMessageID != "om_source" ||
+		feedback.removed.ReactionID != "reaction_on_it" {
+		t.Fatalf("removed reaction = %#v calls=%d", feedback.removed, feedback.removeReactionCalls)
+	}
+	stored, err := store.LoadRun(t.Context(), run.ID)
+	if err != nil {
+		t.Fatalf("LoadRun() error = %v", err)
+	}
+	var effects []map[string]any
+	if err := json.Unmarshal(stored.Effects, &effects); err != nil {
+		t.Fatalf("decode effects: %v", err)
+	}
+	if effects[0]["removed_at"] != now.Format(time.RFC3339) {
+		t.Fatalf("removed effect = %#v", effects[0])
+	}
+	if _, exists := effects[1]["removed_at"]; exists {
+		t.Fatalf("unrelated effect marked removed: %#v", effects[1])
+	}
+}
+
+func TestPersistTerminalRunKeepsUnremovedOnItWhenCleanupFails(t *testing.T) {
+	store := newTaskFeedbackTestStore(t)
+	run := &domain.ExecutionRun{
+		TaskID: 453, ActionType: "investigate", Stage: "execute", Sandbox: "danger-full-access",
+		Status: "failed", Prompt: "test", StartedAt: time.Now().UTC(),
+		Effects: datatypes.JSON(`[{
+			"kind":"feishu_reaction","purpose":"task_processing",
+			"source_message_id":"om_source","reaction_id":"reaction_on_it"
+		}]`),
+	}
+	feedback := &unavailableTaskFeedback{}
+	executor := &AgentExecutor{store: store, feedback: feedback, now: time.Now}
+
+	if err := executor.persistRun(t.Context(), run); err != nil {
+		t.Fatalf("persist initial run: %v", err)
+	}
+	executor.finishTaskFeedback(t.Context(), run)
+	if feedback.removeReactionCalls != 1 {
+		t.Fatalf("remove calls = %d, want 1", feedback.removeReactionCalls)
+	}
+	if strings.Contains(string(run.Effects), "removed_at") {
+		t.Fatalf("failed cleanup was marked successful: %s", run.Effects)
 	}
 }
 

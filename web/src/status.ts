@@ -46,6 +46,7 @@ export const actionLabels: Record<ActionType, string> = {
   reply_message: '回复消息',
   doc_write: '撰写文档',
   manual_followup: '人工跟进',
+  delegated_followup: '交办核验',
 }
 
 export const leaderColor = C.leader

@@ -129,6 +129,25 @@ func TestListTasksScopeFilters(t *testing.T) {
 	}
 }
 
+func TestListTasksActionTypeFilters(t *testing.T) {
+	service := &fakeTaskService{}
+	h := server.New()
+	h.GET("/api/tasks", ListTasks(service))
+
+	response := ut.PerformRequest(
+		h.Engine,
+		"GET",
+		"/api/tasks?action_type=delegated_followup&exclude_action_type=other",
+		nil,
+	).Result()
+	if response.StatusCode() != consts.StatusOK {
+		t.Fatalf("status = %d body=%s", response.StatusCode(), response.Body())
+	}
+	if service.filter.ActionType != "delegated_followup" || service.filter.ExcludeActionType != "other" {
+		t.Fatalf("action filters = %#v", service.filter)
+	}
+}
+
 func TestListTaskRuns(t *testing.T) {
 	service := &fakeTaskService{}
 	h := server.New()

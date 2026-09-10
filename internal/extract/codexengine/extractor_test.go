@@ -62,7 +62,7 @@ func TestCodexContentHelper(t *testing.T) {
 	if candidate["properties"].(map[string]any)["annotation"].(map[string]any)["type"] != "string" {
 		t.Fatal("CLI schema excludes content")
 	}
-	output := `{"candidates":[{"action_type":"investigate","status":"extracted","title":"排查","target":"网关","project_hint":"","source_message_ids":["om_1"],"source_quote":"请排查","payload":"明确交办","annotation":"{\"brief\":\"摘要\",\"scene\":{\"summary\":\"现场\"}}"}]}`
+	output := `{"candidates":[{"action_type":"investigate","status":"extracted","title":"排查","target":"网关","project_hint":"","source_message_ids":["om_1"],"trigger_message_id":"om_1","source_quote":"请排查","payload":"明确交办","annotation":"{\"brief\":\"摘要\",\"scene\":{\"summary\":\"现场\"}}"}]}`
 	if err := os.WriteFile(outputPath, []byte(output), 0600); err != nil {
 		t.Fatal(err)
 	}

@@ -2,6 +2,8 @@
 // message capture.
 package capture
 
+import "encoding/json"
+
 // ChatListResponse mirrors lark-cli im +chat-list.
 type ChatListResponse struct {
 	OK   bool `json:"ok"`
@@ -76,18 +78,20 @@ type SearchedMessage struct {
 
 // CLIMessage is the rendered message shape returned by lark-cli 1.0.93.
 type CLIMessage struct {
-	ChatID        string       `json:"chat_id"`
-	Content       string       `json:"content"`
-	CreateTime    string       `json:"create_time"`
-	MessageID     string       `json:"message_id"`
-	MessageType   string       `json:"msg_type"`
-	ParentID      string       `json:"parent_id"`
-	RootID        string       `json:"root_id"`
-	ThreadID      string       `json:"thread_id"`
-	UpdateTime    string       `json:"update_time"`
-	Updated       bool         `json:"updated"`
-	Sender        CLISender    `json:"sender"`
-	ThreadReplies []CLIMessage `json:"thread_replies"`
+	ChatID         string          `json:"chat_id"`
+	Content        string          `json:"content"`
+	CreateTime     string          `json:"create_time"`
+	MessageID      string          `json:"message_id"`
+	MessageAppLink string          `json:"message_app_link"`
+	MessageType    string          `json:"msg_type"`
+	ParentID       string          `json:"parent_id"`
+	RootID         string          `json:"root_id"`
+	ThreadID       string          `json:"thread_id"`
+	UpdateTime     string          `json:"update_time"`
+	Updated        bool            `json:"updated"`
+	Sender         CLISender       `json:"sender"`
+	Mentions       json.RawMessage `json:"mentions"`
+	ThreadReplies  []CLIMessage    `json:"thread_replies"`
 }
 
 // CLISender covers both human senders and app/bot senders.

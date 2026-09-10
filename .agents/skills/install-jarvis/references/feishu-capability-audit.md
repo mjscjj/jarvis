@@ -2,7 +2,7 @@
 
 ## 所有权与边界
 
-`$install-jarvis` 在 lark-cli 当前默认身份完成 user OAuth 后执行一次能力审计，并把结果写入当前安装运行的 `evidence/feishu-capabilities.md`。`$bootstrap-jarvis-world-model` 复用这份结果，不重复建立另一套权限清单。
+源码安装由 `$install-jarvis` 在 user OAuth 后执行一次能力审计；桌面后台初始化或独立重建由 `$bootstrap-jarvis-world-model` 复用已有证据，缺失时在自己的 `run_dir` 只读补做。结果统一写入 `run_dir/evidence/feishu-capabilities.md`，不因缺少源码安装清单而转入安装流程。
 
 这一步只回答“lark-cli 当前默认身份实际能做什么”，不是权限申请流程：
 
@@ -15,7 +15,7 @@
 
 ### 核心读取能力
 
-完整世界模型初始化需要这些能力。缺失时不申请权限，保留原始错误，并将 `install.feishu-capabilities` 及相应世界模型项保持未勾选；服务底座仍可继续安装，但整体安装不能把相关阶段描述为完成。
+完整世界模型初始化需要这些能力。缺失时不申请权限，保留原始错误并如实记录未完成项。源码安装有清单时将 `install.feishu-capabilities` 及相应世界模型项保持未勾选；桌面任务记录在工作稿与任务结果，不阻止进入已经就绪的应用，也不把建模描述为完成。
 
 | 能力 | 推荐只读探针 | 通过标准 |
 |---|---|---|
@@ -48,10 +48,10 @@
 
 当 CC Connect 的 `document_comments=true` 时，只读审计还要检查：
 
-- `validate-binding` 确认文档评论开关、默认 App 和本机绑定；跨机器 WebSocket 唯一性由清单 `install.cc-exclusive-owner` 的人工确认负责。
+- 源码安装用 `jarvis-install validate-binding` 确认文档评论开关、默认 App 和本机绑定；桌面任务只读 `$JARVIS_DESKTOP_STATE_ROOT/cc-connect/config.toml` 核对，输出证据不得包含密钥。跨机器 WebSocket 唯一性必须来自人工确认，有源码安装清单时记录在 `install.cc-exclusive-owner`，本机探针不能证明。
 - Bot 身份的 `drive.notice.comment_add_v1` 订阅状态为 `is_subscribe=true`。
 
-`is_subscribe=false` 是功能配置缺口，不是权限申请结果；保持条件能力未完成，并由安装 Agent 把订阅配置作为 CC Connect 绑定的一部分处理。执行前先用 `lark-cli schema drive.user.subscription` 读回当前命令协议。订阅成功不代表 Bot 自动拥有全部文档。目标文档仍需逐篇“添加文档应用”；没有目标文档时不要为了测试制造评论写入。评论回复的真实写入能力留给用户明确参与的端到端验收，不能用 scope 勾选代替。
+`is_subscribe=false` 是功能配置缺口，不是权限申请结果；只读审计记录缺口与影响，不在审计中修改订阅或重新绑定。源码安装可交回安装 Agent 处理；桌面任务保留具体原因和下一步，不转入源码安装。订阅成功不代表 Bot 自动拥有全部文档。目标文档仍需逐篇“添加文档应用”；没有目标文档时不要为了测试制造评论写入。评论回复的真实写入能力留给用户明确参与的端到端验收，不能用 scope 勾选代替。
 
 ### 明确不使用
 
@@ -61,7 +61,7 @@
 
 `evidence/feishu-capabilities.md` 至少写清：默认 App/身份、审计时间、每项探针的身份、命令目的、成功/失败、实际可见范围、缺失字段、原始证据文件定位，以及 `permission_requests_started: false`。
 
-满足以下条件后才勾选 `install.feishu-capabilities`：
+满足以下条件后才将审计记为通过；有源码安装清单时勾选 `install.feishu-capabilities`，否则仅记录到上述证据文件：
 
 1. 核心读取 API 探针全部成功；没有可读候选的分支已经明确记录为覆盖不足而不是权限错误；
 2. 可选组织信息已经检查，存在缺口时已明确记录为非阻塞未知项；

@@ -105,6 +105,54 @@ body {
   border-top: 1px solid var(--color-border);
 }
 
+.sider-help {
+  display: flex;
+  padding: 4px 16px 8px;
+}
+
+.sider-help.is-collapsed {
+  justify-content: center;
+  padding-inline: 8px;
+}
+
+.developer-document-links {
+  display: grid;
+  gap: 8px;
+  max-width: 300px;
+}
+
+.developer-document-links a {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 0;
+}
+
+.developer-document-links strong,
+.developer-document-links small {
+  display: block;
+}
+
+.developer-document-links strong {
+  font-weight: 500;
+}
+
+.developer-document-links small {
+  margin-top: 3px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.setup-documents {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+.setup-documents .developer-document-links {
+  margin-top: 8px;
+}
+
 .sider-footer > .ant-btn {
   min-width: 0;
 }
@@ -2418,6 +2466,186 @@ pre {
   .runtime-settings-actions .ant-space,
   .runtime-settings-actions .ant-btn {
     width: 100%;
+  }
+}
+
+.setup-loading,
+.setup-page {
+  min-height: 100dvh;
+  background: #f7f8f9;
+}
+
+.world-model-setup {
+  position: fixed;
+  right: 20px;
+  bottom: 80px;
+  z-index: 90;
+  width: min(400px, calc(100vw - 32px));
+  max-height: calc(100dvh - 112px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid #dce5df;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 6px 24px #18281b1a;
+}
+
+.world-model-setup-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.world-model-setup-detail { max-height: 220px; overflow: auto; overflow-wrap: anywhere; }
+
+.setup-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #5b6470;
+}
+
+.setup-page {
+  padding: 28px;
+}
+
+.setup-shell {
+  width: min(860px, 100%);
+  margin: 0 auto;
+}
+
+.setup-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 26px;
+}
+
+.setup-header img {
+  width: 44px;
+  height: 44px;
+}
+
+.setup-header h2 {
+  margin: 0 0 2px !important;
+  font-size: 22px !important;
+}
+
+.setup-body {
+  margin: 24px 0 16px;
+  border-top: 1px solid #e8eaed;
+}
+
+.setup-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 12px;
+  padding: 18px 0;
+  border-bottom: 1px solid #e8eaed;
+}
+
+.setup-row-icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  color: #5b6470;
+  font-size: 17px;
+}
+
+.setup-row.is-done .setup-row-icon {
+  color: #287a4b;
+}
+
+.setup-row-content,
+.setup-row-heading {
+  min-width: 0;
+}
+
+.setup-row-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 30px;
+}
+
+.setup-row-heading > span {
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.setup-fields,
+.setup-auth-flow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.setup-fields .ant-input,
+.setup-fields .ant-input-affix-wrapper {
+  max-width: 260px;
+}
+
+.setup-auth-output {
+  flex-basis: 100%;
+  max-height: 160px;
+  margin: 4px 0 0;
+  padding: 10px 12px;
+  overflow: auto;
+  border: 1px solid #d9dde3;
+  border-radius: 6px;
+  background: #f7f8fa;
+  color: #30343b;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.setup-running {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: #287a4b;
+}
+
+.setup-shell > .ant-alert {
+  margin-top: 12px;
+}
+
+.setup-simple { width: min(600px, 100%); line-height: 1.7; }
+.setup-connected { color: #5b6470; margin: 0 0 18px; }
+.setup-form, .setup-field { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
+.setup-form { margin: 20px 0; max-width: 600px; gap: 18px; }
+.setup-field label { font-weight: 600; }
+.setup-field > .ant-typography { font-size: 13px; }
+.setup-help { margin: 16px 0; padding: 14px 18px; border: 1px solid #e8eaed; border-radius: 8px; background: white; }
+.setup-help summary { cursor: pointer; font-weight: 600; }
+.setup-help li { margin: 8px 0; }
+
+@media (max-width: 680px) {
+  .setup-page {
+    padding: 20px 16px;
+  }
+
+  .setup-row-heading,
+  .setup-fields,
+  .setup-auth-flow {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .setup-row-heading > span {
+    text-align: left;
+    white-space: normal;
+  }
+
+  .setup-fields .ant-input,
+  .setup-fields .ant-input-affix-wrapper {
+    max-width: none;
   }
 }
 

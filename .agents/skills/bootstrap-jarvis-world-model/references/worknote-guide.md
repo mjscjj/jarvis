@@ -10,6 +10,7 @@
 4. 实体间重要关系和有真实时间的基线事实。
 5. 证据冲突、权限缺口、低置信候选和明确未建模的内容。
 6. 已写入并读回的真实对象 ID，以及尚未执行的下一步。
+7. 桌面初始化两轮的进度：第一轮已建立的内容、第二轮发现和补上的缺口；恢复时记录当前轮次和复用的前次 Task/工作目录。
 
 每个候选尽量写自然语言理由、证据文件定位和 high/medium/low 置信度。置信度只帮助 Agent 决定调查与询问深度，不是机器状态枚举。
 
@@ -24,6 +25,6 @@
 
 ## 应用与恢复
 
-按 `Principal → Project → Person → KeyMatter/ManagedResource → Group → 实体长期事实页 → baseline Fact` 的依赖顺序逐项处理。每次写入后立即使用对应 get/list/query 命令读回，并把真实 ID 和结果写到工作稿；属于整体安装时同步更新 `INSTALL_CHECKLIST.md` 的世界模型 E 区。
+按 `Principal → Project → Person → KeyMatter/ManagedResource → Group → 实体长期事实页 → baseline Fact` 的依赖顺序逐项处理。每次写入后立即使用对应 get/list/query 命令读回，并把真实 ID 和结果写到工作稿；源码安装传入现有清单时同步更新 `INSTALL_CHECKLIST.md` 的世界模型 E 区。
 
 中断恢复时先按业务键查询当前世界模型：Person 用同 App 的 open_id，Group 用 chat_id，资料用规范化 URL/token，Project 用明确 repo/code/稳定名称，Fact 用主体、发生时间、完整事件和 `source_kind=initialization`。确认不存在才创建；有歧义就停止，不靠事务、回滚或重复追加解决。

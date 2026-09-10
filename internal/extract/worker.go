@@ -554,10 +554,7 @@ func buildEvidenceFeedback(evidenceErrs []string) string {
 }
 
 func validateCandidateEvidence(unit ConversationUnit, candidate *Candidate) error {
-	if err := validateEvidence(unit, candidate.SourceMessageIDs, candidate.SourceQuote); err != nil {
-		return err
-	}
-	return nil
+	return validateEvidence(unit, candidate.SourceMessageIDs, candidate.SourceQuote)
 }
 
 // validateEvidence is the citation discipline for todo candidates: every cited

@@ -13,10 +13,13 @@ import (
 	"jarvis/internal/capture"
 	"jarvis/internal/config"
 	"jarvis/internal/contextsnap"
+	"jarvis/internal/delegation"
 	"jarvis/internal/effectops"
 	"jarvis/internal/execute"
 	"jarvis/internal/extract"
 	"jarvis/internal/insight"
+	"jarvis/internal/notice"
+	"jarvis/internal/onboarding"
 	"jarvis/internal/plugin"
 	"jarvis/internal/progress"
 	"jarvis/internal/scheduledtask"
@@ -43,6 +46,7 @@ type Dependencies struct {
 	TaskSubmitter      *taskcreate.Submitter
 	Executor           *execute.AgentExecutor
 	MessageRecaller    *effectops.MessageRecaller // 撤回任务已发出的飞书消息
+	PrincipalNotices   *notice.Service
 	Projects           *background.ProjectService
 	ProjectPortability *background.ProjectPortabilityService
 	KeyMatters         *background.KeyMatterService
@@ -88,6 +92,7 @@ type Dependencies struct {
 	MeetingSweep       MeetingSweepWaker // 会议事件转发唤醒巡扫；巡扫未启用时为 nil，此时不注册 /internal/meeting-sweep/wake 路由
 	Readiness          ReadinessTargets  // /readyz 探测的外部依赖；缺失只降级，不影响 /healthz
 	SystemControl      SystemShutdowner
+	Onboarding         *onboarding.Service
 }
 
 // Register 把所有路由挂到 Hertz 实例上。
@@ -222,6 +227,16 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.POST("/api/auth/login", LoginWithByteDance(deps.Auth))
 	h.POST("/api/auth/login/complete", CompleteByteDanceLogin(deps.Auth))
 	h.POST("/api/auth/logout", LogoutFromJarvis(deps.Auth))
+	if deps.Onboarding != nil {
+		h.GET("/api/setup/status", GetOnboardingStatus(deps.Onboarding))
+		h.POST("/api/setup/lark/connect", BeginOnboardingLarkSetup(deps.Onboarding))
+		h.POST("/api/setup/lark/login", BeginOnboardingLarkLogin(deps.Onboarding))
+		h.POST("/api/setup/agent/login", BeginOnboardingAgentLogin(deps.Onboarding))
+		h.GET("/api/setup/flows/:flow_id", GetOnboardingFlow(deps.Onboarding))
+		h.POST("/api/setup/flows/:flow_id/cancel", CancelOnboardingFlow(deps.Onboarding))
+		h.POST("/api/setup/finalize", FinalizeOnboarding(deps.Onboarding, deps.Auth))
+		h.POST("/api/setup/world-model", BootstrapOnboardingWorldModel(deps.Onboarding))
+	}
 	h.POST("/api/system/shutdown", ShutdownSystem(deps.SystemControl))
 	h.GET("/api/agent-identity", GetAgentIdentity(deps.AgentDisplayName))
 	h.GET("/api/messages", ListToolMessages(toolQueries))
@@ -246,6 +261,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.POST("/api/tasks/:task_id/supplement", SupplementTask(deps.Tasks))
 	// 撤回任务「对外产出」里的某条飞书消息（走 lark-cli，按钮点击即高危确认）。
 	h.POST("/api/tasks/:task_id/effects/recall-message", RecallEffectMessage(deps.MessageRecaller, deps.Tasks))
+	h.POST("/api/notices/principal", NoticePrincipal(deps.PrincipalNotices))
 	if deps.Executor != nil {
 		h.GET("/api/tasks/:task_id/output", GetTaskRunOutput(deps.Executor))
 		h.POST("/api/tasks/:task_id/execute", ExecuteTask(deps.Executor))
@@ -357,6 +373,15 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.DELETE("/api/scheduled-tasks/:scheduled_task_id", DeleteScheduledTask(deps.ScheduledTasks))
 	h.POST("/api/scheduled-tasks/:scheduled_task_id/trigger", TriggerScheduledTask(deps.ScheduledTasks))
 	// 插件只管理外部能力的启停、授权和采集调度；采集结果仍走统一 clue 流水线。
+	delegations, err := delegation.NewService(deps.DB)
+	if err != nil {
+		return err
+	}
+	h.GET("/api/delegations", ListDelegations(delegations))
+	h.GET("/api/delegations/:todo_id", GetDelegation(delegations))
+	h.PATCH("/api/delegations/:todo_id", UpdateDelegation(delegations))
+	h.GET("/api/delegations/:todo_id/tasks", ListDelegationTasks(delegations))
+	h.GET("/api/plugin-installations", ListPluginInstallations(deps.Plugins))
 	h.GET("/api/plugins", ListPlugins(deps.Plugins))
 	h.GET("/api/plugins/:plugin_id", GetPlugin(deps.Plugins))
 	h.PATCH("/api/plugins/:plugin_id", UpdatePlugin(deps.Plugins))

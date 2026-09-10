@@ -36,7 +36,7 @@ func TestClientLiveStructuredOutput(t *testing.T) {
 	defer cancel()
 	candidate := extract.Candidate{
 		ActionType: "code_change", Status: "extracted", Title: "Refactor synthetic auth", Target: "synthetic/repo auth flow",
-		Payload: "Refactor the synthetic auth flow in repo synthetic/repo and merge it.", SourceMessageIDs: []string{"om_synthetic"},
+		Payload: "Refactor the synthetic auth flow in repo synthetic/repo and merge it.", SourceMessageIDs: []string{"om_synthetic"}, TriggerMessageID: "om_synthetic",
 		SourceQuote: "Refactor synthetic auth",
 	}
 	same, err := client.SameAction(ctx, candidate, extract.SemanticTodo{

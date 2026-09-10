@@ -45,6 +45,7 @@
 | [每日进度总结](design-daily-digest.md) | current | 个人/群日报及 Skill 取证 |
 | [主动巡视 Agent](design-proactive-heartbeat-agent.md) | implemented-history | 实现动机与验收设计；当前边界见总纲 |
 | [文件化文本配置](design-file-backed-text-config.md) | current | prompts、rules 与后台编辑边界 |
+| [插件系统](plugin-system.md) | current | 内置插件生命周期、采集与阶段 Skill 接入 |
 | [Todo / Task 渐进式上下文](design-context-pipeline.md) | current | `source + capture + annotation`、默认概览和按需读取 |
 | [实体长期事实页](design-entity-summary.md) | current | `summary`、页内实体引用、backlinks 与 Fact 分工 |
 | [实体关系与进度历史](design-temporal-relations-and-progress.md) | current | EntityRelation、TaskEvent、Fact、Page |
@@ -64,6 +65,8 @@
 | 文档 | 状态 | 已实现 / 未实现边界 |
 |---|---|---|
 | [长任务 Goal Control](design-long-horizon-agent-goal-control.md) | proposal / partial | 目标线索保真已改善；Goal Store、Supervisor、独立 Verifier 未实现 |
+| [插件扩展与解耦规范](summery/plugin-extension-spec.md) | proposal | 当前接入步骤、耦合点与职责约定；声明文件加载、通用插件表单、授权适配器拆分和任务展示解耦未实现 |
+| [代码提交与评审方案](summery/code-submission-plan.md) | proposal | 待对齐的分支、commit、MR 与验证约定；以插件解耦分批交付为例，未执行提交 |
 | [晨间作战简报](design-morning-brief.md) | implementation-in-progress | Skill + `internal/morningbrief` 定时器已接线；无表无接口；用 `-morning-brief-once` 手动跑（只写文件）、`-morning-brief-deliver` 连投递一起验；产物在 `data/morning-brief/` |
 | [第一阶段产品方案](design-product-stage-1.md) | proposal | 单人本地协作主干的产品主线：飞书触达与就地处置、收件箱对称、项目工作台、阻塞恢复、世界模型卫生；全部未实现，S0 复用晨报投递路径 |
 | [CC Connect 支持飞书文档评论](design-cc-connect-feishu-document-comments.md) | proposal | cc-connect 复用现有 Feishu 长连接接收 `@Bot` 评论，并把 Agent 最终答案写回原评论卡片；尚未实现 |

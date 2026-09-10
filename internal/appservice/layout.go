@@ -24,20 +24,25 @@ type Options struct {
 }
 
 type Layout struct {
-	ResourceRoot    string
-	StateRoot       string
-	RuntimeRoot     string
-	ConfigPath      string
-	ServerBinary    string
-	QdrantBinary    string
-	QdrantConfig    string
-	QdrantWorking   string
-	LogDirectory    string
-	ServerStdoutLog string
-	ServerStderrLog string
-	QdrantStdoutLog string
-	QdrantStderrLog string
-	LockPath        string
+	ResourceRoot       string
+	StateRoot          string
+	RuntimeRoot        string
+	ConfigPath         string
+	ServerBinary       string
+	QdrantBinary       string
+	CCConnectBinary    string
+	CCConnectConfig    string
+	QdrantConfig       string
+	QdrantWorking      string
+	LogDirectory       string
+	ServerStdoutLog    string
+	ServerStderrLog    string
+	QdrantStdoutLog    string
+	QdrantStderrLog    string
+	CCConnectStdoutLog string
+	CCConnectStderrLog string
+	LockPath           string
+	RestartRequestPath string
 }
 
 type RuntimeConnection struct {
@@ -94,20 +99,25 @@ func NewLayout(options Options) Layout {
 	runtimeRoot := filepath.Join(options.StateRoot, "runtime")
 	logDirectory := filepath.Join(options.StateRoot, "logs")
 	return Layout{
-		ResourceRoot:    options.ResourceRoot,
-		StateRoot:       options.StateRoot,
-		RuntimeRoot:     runtimeRoot,
-		ConfigPath:      filepath.Join(runtimeRoot, "conf", "config.yaml"),
-		ServerBinary:    filepath.Join(options.ResourceRoot, "bin", "jarvis-server"),
-		QdrantBinary:    filepath.Join(options.ResourceRoot, "bin", "qdrant"),
-		QdrantConfig:    filepath.Join(runtimeRoot, "conf", "qdrant.yaml"),
-		QdrantWorking:   filepath.Join(runtimeRoot, "var", "qdrant"),
-		LogDirectory:    logDirectory,
-		ServerStdoutLog: filepath.Join(logDirectory, "jarvis-server.log"),
-		ServerStderrLog: filepath.Join(logDirectory, "jarvis-server.error.log"),
-		QdrantStdoutLog: filepath.Join(logDirectory, "qdrant.log"),
-		QdrantStderrLog: filepath.Join(logDirectory, "qdrant.error.log"),
-		LockPath:        filepath.Join(options.StateRoot, "app-service.pid"),
+		ResourceRoot:       options.ResourceRoot,
+		StateRoot:          options.StateRoot,
+		RuntimeRoot:        runtimeRoot,
+		ConfigPath:         filepath.Join(runtimeRoot, "conf", "config.yaml"),
+		ServerBinary:       filepath.Join(options.ResourceRoot, "bin", "jarvis-server"),
+		QdrantBinary:       filepath.Join(options.ResourceRoot, "bin", "qdrant"),
+		CCConnectBinary:    filepath.Join(options.ResourceRoot, "bin", "cc-connect-jarvis"),
+		CCConnectConfig:    filepath.Join(options.StateRoot, "cc-connect", "config.toml"),
+		QdrantConfig:       filepath.Join(runtimeRoot, "conf", "qdrant.yaml"),
+		QdrantWorking:      filepath.Join(runtimeRoot, "var", "qdrant"),
+		LogDirectory:       logDirectory,
+		ServerStdoutLog:    filepath.Join(logDirectory, "jarvis-server.log"),
+		ServerStderrLog:    filepath.Join(logDirectory, "jarvis-server.error.log"),
+		QdrantStdoutLog:    filepath.Join(logDirectory, "qdrant.log"),
+		QdrantStderrLog:    filepath.Join(logDirectory, "qdrant.error.log"),
+		CCConnectStdoutLog: filepath.Join(logDirectory, "cc-connect.log"),
+		CCConnectStderrLog: filepath.Join(logDirectory, "cc-connect.error.log"),
+		LockPath:           filepath.Join(options.StateRoot, "app-service.pid"),
+		RestartRequestPath: filepath.Join(options.StateRoot, "restart.requested"),
 	}
 }
 

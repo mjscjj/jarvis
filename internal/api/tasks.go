@@ -59,7 +59,12 @@ func ListTasks(service execute.TaskService) app.HandlerFunc {
 		if len(statuses) == 0 {
 			statuses = []string{"pending"}
 		}
-		filter := execute.TaskFilter{Statuses: statuses, Page: page, PageSize: pageSize, Query: c.Query("query"), SourceMessageID: c.Query("source_message_id")}
+		filter := execute.TaskFilter{
+			Statuses: statuses, Page: page, PageSize: pageSize,
+			Query: c.Query("query"), SourceMessageID: c.Query("source_message_id"),
+			ActionType:        strings.TrimSpace(c.Query("action_type")),
+			ExcludeActionType: strings.TrimSpace(c.Query("exclude_action_type")),
+		}
 		if raw := strings.TrimSpace(c.Query("project_id")); raw != "" {
 			value, err := strconv.ParseUint(raw, 10, 64)
 			if err != nil || value == 0 {

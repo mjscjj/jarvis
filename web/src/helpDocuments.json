@@ -1,0 +1,14 @@
+[
+  {
+    "id": "plugin-extension",
+    "title": "插件扩展与解耦规范",
+    "description": "插件职责、接入步骤与解耦方案",
+    "url": "https://bytedance.my.larkoffice.com/docx/Xo3wdIXGKo3xw6xvJUIm4Nlgyuh"
+  },
+  {
+    "id": "code-submission",
+    "title": "代码提交与评审方案",
+    "description": "分支、提交、MR 拆分与验证约定",
+    "url": "https://bytedance.my.larkoffice.com/docx/G3qVd66DuoIDmHxGCY9mCXrXy2c"
+  }
+]
