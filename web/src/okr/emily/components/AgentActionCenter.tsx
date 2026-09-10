@@ -14,6 +14,7 @@ import {
   type OKRActionFormValue,
   type OKRActionKey,
 } from '../actionConfig'
+import { AgentPromptCenter } from './AgentPromptCenter'
 
 const taskStatusMeta: Record<Task['status'], { label: string; tone: string }> = {
   pending: { label: '等待执行', tone: 'bg-slate-100 text-slate-600' },
@@ -32,9 +33,12 @@ const actionTones: Record<OKRActionDefinition['tone'], string> = {
   emerald: 'bg-emerald-50 text-emerald-700 ring-emerald-100',
 }
 
-const categoryTabs: Array<{ key: OKRActionCategory; label: string; description: string }> = [
+type AgentTab = OKRActionCategory | 'prompt'
+
+const categoryTabs: Array<{ key: AgentTab; label: string; description: string }> = [
   { key: 'notification', label: '通知与跟进', description: '催填、巡检和进展跟进' },
   { key: 'material', label: '材料生成', description: '会议材料与对外周报' },
+  { key: 'prompt', label: 'Prompt', description: '评审、规划与对齐提示词' },
 ]
 
 function errorText(cause: unknown) {
@@ -56,15 +60,19 @@ function taskSummary(task?: Task): string {
   return summary || task.summary || followup || taskStatusMeta[task.status].label
 }
 
-export function AgentActionCenter({ prompts, promptsLoading, onReloadPrompts, onSavePrompt, onOpenAction, onOpenGeneral }: {
+export function AgentActionCenter({ prompts, promptsLoading, actionsEnabled, initialPromptKey, onReloadPrompts, onSavePrompt, onOpenAction, onOpenPrompt }: {
   prompts: TextFile[]
   promptsLoading: boolean
+  actionsEnabled: boolean
+  initialPromptKey?: string
   onReloadPrompts: () => void
   onSavePrompt: (key: string, content: string) => Promise<TextFile>
   onOpenAction: (action: OKRActionDefinition) => void
-  onOpenGeneral: () => void
+  onOpenPrompt: (prompt: TextFile) => void
 }) {
-  const [activeCategory, setActiveCategory] = useState<OKRActionCategory>('notification')
+  const scheduledPromptKeys = useMemo(() => new Set(OKR_ACTIONS.map((item) => item.promptKey)), [])
+  const standalonePrompts = useMemo(() => prompts.filter((item) => !scheduledPromptKeys.has(item.key)), [prompts, scheduledPromptKeys])
+  const [activeCategory, setActiveCategory] = useState<AgentTab>(() => initialPromptKey && !scheduledPromptKeys.has(initialPromptKey) ? 'prompt' : 'notification')
   const [schedules, setSchedules] = useState<ScheduledTask[]>([])
   const [lastTasks, setLastTasks] = useState<Record<number, Task>>({})
   const [manualTaskIds, setManualTaskIds] = useState<Partial<Record<OKRActionKey, number>>>({})
@@ -244,48 +252,42 @@ export function AgentActionCenter({ prompts, promptsLoading, onReloadPrompts, on
     .map((definition) => ({ definition, schedule: scheduleByKey.get(definition.key) }))
     .filter((item): item is { definition: OKRActionDefinition; schedule: ScheduledTask } => Boolean(item.schedule?.enabled && item.schedule.status !== 'completed'))
     .sort((left, right) => left.schedule.next_run_at.localeCompare(right.schedule.next_run_at))[0]
-  const visibleActions = OKR_ACTIONS.filter((item) => item.category === activeCategory)
+  const visibleActions = activeCategory === 'prompt' ? [] : OKR_ACTIONS.filter((item) => item.category === activeCategory)
   const editingSchedule = editing ? scheduleByKey.get(editing.key) : undefined
   const editingTask = editing ? manualTasks[editing.key] ?? (editingSchedule ? lastTasks[editingSchedule.id] : undefined) : undefined
   const editingPrompt = editing ? promptByKey.get(editing.promptKey) : undefined
   const promptDirty = Boolean(editingPrompt && promptDraft.trim() !== editingPrompt.content)
 
+  useEffect(() => {
+    if (initialPromptKey && standalonePrompts.some((item) => item.key === initialPromptKey)) setActiveCategory('prompt')
+  }, [initialPromptKey, standalonePrompts])
+
   return (
     <div className="space-y-3">
-      <section aria-label="自动化概览" className="grid overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm sm:grid-cols-3 lg:grid-cols-5">
+      <section aria-label="OKR Agent 概览" className="grid overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm sm:grid-cols-3 lg:grid-cols-5">
         {[
-          { label: '定时任务', value: String(OKR_ACTIONS.length), note: `${configured} 已配置` },
+          { label: 'Agent 行动', value: String(OKR_ACTIONS.length), note: String(configured) + ' 已配置' },
           { label: '运行中', value: String(enabled), note: '已启用' },
           { label: '下次执行', value: nextAction ? formatDateTime(nextAction.schedule.next_run_at) : '暂无', note: nextAction?.definition.title },
           { label: '需要处理', value: String(attention), note: attention ? '请检查最近执行' : '运行正常' },
-          { label: '任务内容', value: String(prompts.length), note: 'Prompt' },
+          { label: '功能 Prompt', value: String(standalonePrompts.length), note: 'Markdown' },
         ].map((item) => <article key={item.label} className="min-w-0 border-b border-r border-slate-100 px-4 py-3 last:border-r-0 sm:border-b-0"><span className="block text-[9px] text-slate-400">{item.label}</span><div className="mt-1 flex min-w-0 items-baseline gap-2"><b className="truncate text-[15px] font-semibold text-slate-800">{item.value}</b>{item.note && <span className="truncate text-[9px] text-slate-400">{item.note}</span>}</div></article>)}
       </section>
 
       <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-4 py-3">
-          <div>
-            <h2 className="text-[13px] font-semibold text-slate-900">定时任务</h2>
-            <p className="mt-0.5 text-[10px] text-slate-400">设置执行时间，在任务详情里管理对应的 Prompt。</p>
-          </div>
-          <div className="ml-auto flex items-center gap-2">
-            <button type="button" onClick={onOpenGeneral} className="rounded-md border border-slate-200 px-2.5 py-1.5 text-[10px] text-slate-500 hover:border-cyan-200 hover:text-cyan-700">通用自动化</button>
-            <button type="button" disabled={loading || promptsLoading} onClick={() => { void load(); onReloadPrompts() }} className="rounded-md border border-slate-200 px-2.5 py-1.5 text-[10px] text-slate-500 disabled:opacity-40">刷新</button>
-          </div>
-        </div>
-
-        <div className="border-b border-slate-100 px-4 pt-3" role="tablist" aria-label="定时任务分类">
+        <div className="flex flex-wrap items-end gap-2 border-b border-slate-100 px-4 pt-3" role="tablist" aria-label="OKR Agent 分类">
           <div className="flex gap-1 rounded-lg bg-slate-100 p-1 sm:w-fit">
             {categoryTabs.map((tab) => {
-              const count = OKR_ACTIONS.filter((item) => item.category === tab.key).length
+              const count = tab.key === 'prompt' ? standalonePrompts.length : OKR_ACTIONS.filter((item) => item.category === tab.key).length
               return <button key={tab.key} type="button" role="tab" aria-selected={activeCategory === tab.key} onClick={() => setActiveCategory(tab.key)} className={`min-w-36 rounded-md px-3 py-2 text-left transition-colors ${activeCategory === tab.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}><span className="flex items-center gap-2 text-[11px] font-semibold"><span>{tab.label}</span><span className="rounded-full bg-slate-100 px-1.5 text-[9px] font-medium text-slate-500">{count}</span></span><span className="mt-0.5 block text-[9px] font-normal text-slate-400">{tab.description}</span></button>
             })}
           </div>
+          <button type="button" disabled={loading || promptsLoading} onClick={() => { void load(); onReloadPrompts() }} className="mb-3 ml-auto rounded-md border border-slate-200 px-2.5 py-1.5 text-[10px] text-slate-500 disabled:opacity-40">刷新</button>
         </div>
 
         {notice && <div role="status" className={`border-b px-4 py-2 text-[10px] ${notice.kind === 'success' ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-red-100 bg-red-50 text-red-700'}`}>{notice.text}</div>}
 
-        {loading ? <div className="py-14 text-center text-xs text-slate-400">正在读取定时任务…</div> : <div className="divide-y divide-slate-100">{visibleActions.map((definition) => {
+        {activeCategory === 'prompt' ? <AgentPromptCenter prompts={standalonePrompts} loading={promptsLoading} initialPromptKey={initialPromptKey} onSave={onSavePrompt} onOpen={onOpenPrompt} /> : !actionsEnabled ? <div className="py-14 text-center text-xs text-slate-400">当前 OKR 周报模块未启用，Agent 行动暂不可用。</div> : loading ? <div className="py-14 text-center text-xs text-slate-400">正在读取 Agent 行动…</div> : <div className="divide-y divide-slate-100">{visibleActions.map((definition) => {
           const schedule = scheduleByKey.get(definition.key)
           const lastTask = manualTasks[definition.key] ?? (schedule ? lastTasks[schedule.id] : undefined)
           const taskMeta = lastTask ? taskStatusMeta[lastTask.status] : undefined

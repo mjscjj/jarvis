@@ -21,7 +21,7 @@ Biz OKR（module: biz-okr，requires: okr）
 ```
 
 - `okr` 是可复用的通用 OKR 插件：拥有 O、KR、Metric、Point、周次、正式 Progress 和周期指标。
-- `biz-okr` 是当前业务包装：拥有标签、Biz OKR Plan、Preview/Review、评论、评分、Follow-up、催填、Meego 关联、飞书业务身份和业务 Prompt。
+- `biz-okr` 是当前业务包装：拥有标签、Biz OKR Plan、Plan/进度评审、评论、评分、Follow-up、催填、Meego 关联、飞书业务身份和业务 Prompt。
 - Jarvis 世界模型不复制 OKR 数据，也不导入 OKR 领域 DTO；模块启用后，由原子工具和 Skill 把有证据的语义投影到通用关系、事实页和世界进展中。
 - 当前 `data/okr/okr.db`、既有表名、主键和历史数据全部原地复用。本次拆分不是数据库搬家。
 - 当前 Biz OKR 中的 OKR、每周进展、历史记录和页面能力一个都不能丢。
@@ -96,7 +96,7 @@ Week
 
 - KR / Point 的 Biz 标签与打标流程
 - Biz OKR Plan
-- OKR Preview AI Review
+- OKR Plan / 进度 AI Review
 - 周报业务布局和组织口径
 - 评论、评分、Follow-up
 - 催填批次、缺失人员快照和提醒策略
@@ -265,7 +265,7 @@ biz-okr requires okr
 Biz OKR 应包含：
 
 - 标签、Plan、Review、评论、评分、Follow-up
-- 催填、Meego、Preview Review、业务配置与授权
+- 催填、Meego、Plan/进度 Review、业务配置与授权
 
 第一阶段应在同一个变更中更新前端、脚本和测试，不长期维持 `/api/weekly-report` 与新路径两套真源。为了降低迁移风险，底层可以暂时复用同一个 `okrworkspace.Service`；API 依赖必须先收窄成两个接口面，后续再拆 package。
 

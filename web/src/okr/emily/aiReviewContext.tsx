@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import MarkdownReport from '../../components/MarkdownReport'
 import { runPreviewReview } from './api'
 import { useBoard } from './board'
-import { previewReviewKey, previewReviewRequest, type PreviewReviewTarget } from './aiReview'
+import { previewReviewKey, previewReviewRequest, type OKRReviewSource, type PreviewReviewTarget } from './aiReview'
 
 interface PreviewReviewState {
   running: boolean
@@ -18,20 +18,26 @@ interface PreviewReviewApi {
 
 const PreviewReviewContext = createContext<PreviewReviewApi | null>(null)
 
-export function PreviewReviewProvider({ children }: { children: ReactNode }) {
-  const { quarter, week, templateKey, syncState } = useBoard()
+export function PreviewReviewProvider({ children, reviewType, planId = '' }: { children: ReactNode; reviewType: OKRReviewSource['reviewType']; planId?: string }) {
+  const { quarter, week, templateKey, syncState, hasPendingChanges } = useBoard()
   const [reviews, setReviews] = useState<Record<string, PreviewReviewState>>({})
-  const ready = templateKey === 'okr_weekly_preview_v1' && (syncState.kind === 'ready' || syncState.kind === 'saved')
+  const source: OKRReviewSource = reviewType === 'plan'
+    ? { reviewType, quarter, planId }
+    : { reviewType, quarter, week }
+  const ready = (reviewType === 'plan' ? Boolean(planId) : templateKey === 'okr_weekly_preview_v1')
+    && !hasPendingChanges
+    && (syncState.kind === 'ready' || syncState.kind === 'saved')
 
-  useEffect(() => setReviews({}), [quarter, week])
+  useEffect(() => setReviews({}), [planId, quarter, reviewType, week])
 
   const run = useCallback(async (target: PreviewReviewTarget) => {
-    if (templateKey !== 'okr_weekly_preview_v1') throw new Error('AI 评分只适用于 OKR Preview 周次。')
-    if (syncState.kind !== 'ready' && syncState.kind !== 'saved') throw new Error('请等待当前内容保存完成后再评审。')
+    if (reviewType === 'plan' && !planId) throw new Error('请先选择一个 OKR Plan。')
+    if (reviewType === 'progress' && templateKey !== 'okr_weekly_preview_v1') throw new Error('AI 评审只适用于 OKR Review 周次。')
+    if (hasPendingChanges || (syncState.kind !== 'ready' && syncState.kind !== 'saved')) throw new Error('请等待当前内容保存完成后再评审。')
     const key = previewReviewKey(target)
     setReviews((current) => ({ ...current, [key]: { running: true } }))
     try {
-      const content = await runPreviewReview(previewReviewRequest(quarter, week, target))
+      const content = await runPreviewReview(previewReviewRequest(source, target))
       setReviews((current) => ({ ...current, [key]: { running: false, content } }))
     } catch (cause) {
       setReviews((current) => ({
@@ -40,7 +46,7 @@ export function PreviewReviewProvider({ children }: { children: ReactNode }) {
       }))
       throw cause
     }
-  }, [quarter, syncState.kind, templateKey, week])
+  }, [hasPendingChanges, planId, quarter, reviewType, syncState.kind, templateKey, week])
 
   const value = useMemo(() => ({ reviews, ready, run }), [ready, reviews, run])
   return <PreviewReviewContext.Provider value={value}>{children}</PreviewReviewContext.Provider>
@@ -90,11 +96,11 @@ export function PreviewReviewPanel({ target, className = '' }: { target: Preview
     <summary className="flex cursor-pointer flex-wrap items-center gap-1.5 text-[10px] leading-4">
       <span aria-hidden className="text-xs leading-none text-sky-400 transition-transform group-open:rotate-90">›</span>
       <strong className={review.error ? 'text-red-700' : review.running ? 'text-sky-700' : 'text-slate-700'}>{reviewStatusText(review)}</strong>
-      <span className="ml-auto text-[10px] text-slate-400">只读建议 · 不修改人工评分</span>
+      <span className="ml-auto text-[10px] text-slate-400">只读建议 · 不修改当前内容</span>
     </summary>
     <div className="mt-1 border-t border-sky-100 pt-1.5">
       {review.error && <div className="text-[11px] leading-4 text-red-700">{review.error}</div>}
-      {!review.error && review.running && <div className="text-[11px] leading-4 text-sky-600">正在读取当前周的最新 OKR 和进展，完成后会自动显示结果。</div>}
+      {!review.error && review.running && <div className="text-[11px] leading-4 text-sky-600">正在读取当前内容并评审，完成后会自动显示结果。</div>}
       {!review.error && !review.running && review.content && <MarkdownReport className="daily-digest-markdown okr-preview-review-markdown" content={review.content} />}
     </div>
   </details>

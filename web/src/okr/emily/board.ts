@@ -24,6 +24,7 @@ export interface BoardApi {
   deleteWeeklyScope: () => Promise<DeleteWeekResult>
   enums: EnumValues
   syncState: SyncState
+  hasPendingChanges: boolean
 	setKrTitle: (objId: string, krId: string, title: string) => void
 	setKrOwner: (krId: string, ownerName: string, ownerOpenId?: string, owners?: KrOwner[]) => void
 	setKrBusinessCategory: (krId: string, category: string) => void

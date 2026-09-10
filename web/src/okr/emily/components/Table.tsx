@@ -390,13 +390,13 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, onMoveUp
   )
 }
 
-function PointBlock({ objectiveId, krId, point, index, open, onToggle, onMoveUp, onMoveDown, definitionReadOnly, structureReadOnly, progressReadOnly, showProgress, tagSuggestions, deleteWarning }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; onMoveUp?: () => void; onMoveDown?: () => void; definitionReadOnly: boolean; structureReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; tagSuggestions?: KrTag[]; deleteWarning: string }) {
+function PointBlock({ objectiveId, krId, point, index, open, onToggle, onMoveUp, onMoveDown, definitionReadOnly, structureReadOnly, progressReadOnly, showProgress, reviewEnabled = false, tagSuggestions, deleteWarning }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; onMoveUp?: () => void; onMoveDown?: () => void; definitionReadOnly: boolean; structureReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; reviewEnabled?: boolean; tagSuggestions?: KrTag[]; deleteWarning: string }) {
   const { templateKey } = useBoard()
   // Review reports one combined lane; the classic weekly report splits 进展 and
   // 已完成. Both formats read the loaded week's template, never the tab.
   const review = isReviewTemplate(templateKey)
   // AI 评审跟着评分走：属于某一周的 review 内容，只在那一周的进展可见时出现。
-  const showReview = showProgress && review
+  const showReview = reviewEnabled || (showProgress && review)
   const reviewTarget = { kind: 'point' as const, objectiveId, krId, pointId: point.id, title: point.title }
   return (
     <article id={`point-${point.id}`} data-okr-target-kind="point" data-okr-objective-id={objectiveId} data-okr-kr-id={krId} data-okr-point-id={point.id} className="scroll-mt-5 border-l-2 border-slate-200 pl-3 sm:pl-4">
@@ -427,7 +427,7 @@ function PointBlock({ objectiveId, krId, point, index, open, onToggle, onMoveUp,
   )
 }
 
-function PointGroup({ objectiveId, kr, kind, closed, toggle, definitionReadOnly, structureReadOnly, progressReadOnly, showProgress, tagSuggestions, deleteWarning }: { objectiveId: string; kr: Kr; kind: PointKind; closed: Set<string>; toggle: (id: string) => void; definitionReadOnly: boolean; structureReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; tagSuggestions?: KrTag[]; deleteWarning: string }) {
+function PointGroup({ objectiveId, kr, kind, closed, toggle, definitionReadOnly, structureReadOnly, progressReadOnly, showProgress, reviewEnabled = false, tagSuggestions, deleteWarning }: { objectiveId: string; kr: Kr; kind: PointKind; closed: Set<string>; toggle: (id: string) => void; definitionReadOnly: boolean; structureReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; reviewEnabled?: boolean; tagSuggestions?: KrTag[]; deleteWarning: string }) {
   const { addPoint, swapPoints } = useBoard()
   const points = kr.points.filter((point) => point.kind === kind)
   if (points.length === 0 && structureReadOnly) return null
@@ -441,14 +441,14 @@ function PointGroup({ objectiveId, kr, kind, closed, toggle, definitionReadOnly,
         {!structureReadOnly && <button type="button" onClick={() => addPoint(objectiveId, kr.id, kind)} className="text-xs text-slate-400 hover:text-blue-600">+ 一项</button>}
       </div>
       <div className="space-y-4">
-        {points.map((point, index) => <PointBlock key={point.id} objectiveId={objectiveId} krId={kr.id} point={point} index={index} open={!closed.has(point.id)} onToggle={() => toggle(point.id)} onMoveUp={index > 0 ? () => swapPoints(kr.id, point.id, points[index - 1].id) : undefined} onMoveDown={index < points.length - 1 ? () => swapPoints(kr.id, point.id, points[index + 1].id) : undefined} definitionReadOnly={definitionReadOnly} structureReadOnly={structureReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} tagSuggestions={tagSuggestions} deleteWarning={deleteWarning} />)}
+        {points.map((point, index) => <PointBlock key={point.id} objectiveId={objectiveId} krId={kr.id} point={point} index={index} open={!closed.has(point.id)} onToggle={() => toggle(point.id)} onMoveUp={index > 0 ? () => swapPoints(kr.id, point.id, points[index - 1].id) : undefined} onMoveDown={index < points.length - 1 ? () => swapPoints(kr.id, point.id, points[index + 1].id) : undefined} definitionReadOnly={definitionReadOnly} structureReadOnly={structureReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} reviewEnabled={reviewEnabled} tagSuggestions={tagSuggestions} deleteWarning={deleteWarning} />)}
         {points.length === 0 && <Empty>暂无{KIND_LABEL[kind]}</Empty>}
       </div>
     </section>
   )
 }
 
-export function KrDefinitionDetails({ objectiveId, kr, tagSuggestions, deletePointWarning = '连同各周进展一起删除', compactEmptyPointGroups = false, cardBody = false, readOnly = false }: { objectiveId: string; kr: Kr; tagSuggestions?: KrTag[]; deletePointWarning?: string; compactEmptyPointGroups?: boolean; cardBody?: boolean; readOnly?: boolean }) {
+export function KrDefinitionDetails({ objectiveId, kr, tagSuggestions, deletePointWarning = '连同各周进展一起删除', compactEmptyPointGroups = false, cardBody = false, readOnly = false, reviewEnabled = false }: { objectiveId: string; kr: Kr; tagSuggestions?: KrTag[]; deletePointWarning?: string; compactEmptyPointGroups?: boolean; cardBody?: boolean; readOnly?: boolean; reviewEnabled?: boolean }) {
   const { addPoint } = useBoard()
   const [closed, setClosed] = useState<Set<string>>(new Set())
   const toggle = (id: string) => setClosed((previous) => {
@@ -473,6 +473,7 @@ export function KrDefinitionDetails({ objectiveId, kr, tagSuggestions, deletePoi
 		  structureReadOnly={readOnly}
           progressReadOnly
           showProgress={false}
+          reviewEnabled={reviewEnabled}
           tagSuggestions={tagSuggestions}
           deleteWarning={deletePointWarning}
         />
@@ -510,7 +511,7 @@ function KrCard({ objectiveId, kr, closed, toggle, onMoveUp, onMoveDown, readOnl
   )
 }
 
-function ObjectiveSection({ objective, closed, toggle, readOnly, definitionsReadOnly, progressReadOnly, showProgress, showTitle = true }: { objective: Objective; closed: Set<string>; toggle: (id: string) => void; readOnly: boolean; definitionsReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; showTitle?: boolean }) {
+function ObjectiveSection({ objective, closed, toggle, readOnly, definitionsReadOnly, progressReadOnly, showProgress, showTitle = true, showReview = false }: { objective: Objective; closed: Set<string>; toggle: (id: string) => void; readOnly: boolean; definitionsReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; showTitle?: boolean; showReview?: boolean }) {
   const { swapKrs } = useBoard()
   const open = showTitle ? !closed.has(objective.id) : true
   return (
@@ -519,7 +520,9 @@ function ObjectiveSection({ objective, closed, toggle, readOnly, definitionsRead
         <Caret open={open} onToggle={() => toggle(objective.id)} label="目标" />
         <h2 className="text-[17px] font-semibold text-slate-800">{objective.title}</h2>
         <span className="rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs text-slate-400">{objective.krs.length} 个 KR</span>
+        {showReview && <PreviewReviewButton target={{ kind: 'objective', objectiveId: objective.id, title: objective.title }} label="AI评审" />}
       </div>}
+      {showReview && <PreviewReviewPanel target={{ kind: 'objective', objectiveId: objective.id, title: objective.title }} className="mb-3" />}
       {open && <div className="space-y-3">{objective.krs.map((kr, index) => <KrCard key={kr.id} objectiveId={objective.id} kr={kr} closed={closed} toggle={toggle} onMoveUp={index > 0 ? () => void swapKrs(objective.id, kr.id, objective.krs[index - 1].id) : undefined} onMoveDown={index < objective.krs.length - 1 ? () => void swapKrs(objective.id, kr.id, objective.krs[index + 1].id) : undefined} readOnly={readOnly} definitionsReadOnly={definitionsReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} />)}</div>}
     </section>
   )
@@ -684,7 +687,7 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
       />
 		{manageObjectives && activeObjective && <ObjectiveControls key={activeObjective.id} objective={activeObjective} />}
       <div>
-        {activeObjective && <ObjectiveSection key={activeObjective.id} objective={activeObjective} closed={closed} toggle={toggle} readOnly={readOnly} definitionsReadOnly={definitionsReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} showTitle={showObjectiveHeader} />}
+        {activeObjective && <ObjectiveSection key={activeObjective.id} objective={activeObjective} closed={closed} toggle={toggle} readOnly={readOnly} definitionsReadOnly={definitionsReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} showTitle={showObjectiveHeader} showReview={showReview} />}
         {!activeObjective && <Empty>没有符合筛选条件的 KR</Empty>}
       </div>
     </div>

@@ -800,18 +800,24 @@ function fromAPIComment(value: APIPageComment): PageComment {
 // is synchronous on purpose: the review creates no Task, so there is nothing to
 // poll — the request stays open until the agent answers.
 export async function runPreviewReview(input: {
+  reviewType: 'plan' | 'progress'
   quarter: string
-  week: string
-  kind: 'all' | 'kr' | 'point'
+  week?: string
+  planId?: string
+  kind: 'all' | 'objective' | 'kr' | 'point'
+  objectiveId?: string
   krId?: string
   pointId?: string
 }, signal?: AbortSignal): Promise<string> {
   const value = await request<{ content: string }>('/api/biz-okr/preview-review', {
     method: 'POST',
     body: JSON.stringify({
+      review_type: input.reviewType,
       quarter: input.quarter,
-      week: input.week,
+      week: input.week ?? '',
+      plan_id: input.planId ?? '',
       kind: input.kind,
+      objective_id: input.objectiveId ?? '',
       kr_id: input.krId ?? '',
       point_id: input.pointId ?? '',
     }),

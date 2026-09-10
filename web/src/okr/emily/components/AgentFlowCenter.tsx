@@ -10,7 +10,7 @@ function errorText(cause: unknown) {
 }
 
 export function AgentFlowCenter({ weeklyEnabled, quarter }: { weeklyEnabled: boolean; quarter: string }) {
-  const { context, navigate, setViewState } = usePageContext()
+  const { context, setViewState } = usePageContext()
   const [items, setItems] = useState<TextFile[]>([])
   const [loading, setLoading] = useState(true)
   const [notice, setNotice] = useState<{ kind: 'error'; text: string }>()
@@ -49,30 +49,36 @@ export function AgentFlowCenter({ weeklyEnabled, quarter }: { weeklyEnabled: boo
     }, true)
   }
 
+  const openPrompt = (prompt: TextFile) => {
+    setViewState({
+      ...context.view_state,
+      tab: 'agent-flows',
+      prompt_key: prompt.key,
+      action_key: undefined,
+      action_label: prompt.name,
+    }, true)
+  }
+
   const savePrompt = async (key: string, content: string) => {
     const updated = await updateTextFile(key, { content })
     setItems((current) => current.map((item) => item.key === updated.key ? updated : item))
     return updated
   }
 
-  const prompts = items.filter((item) => item.kind === 'agent_prompt')
-
   return (
     <div className="space-y-3">
       {notice && <div className="rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-xs text-red-700">{notice.text}</div>}
 
-      {weeklyEnabled ? (
-        <AgentActionCenter
-          prompts={prompts}
-          promptsLoading={loading}
-          onReloadPrompts={() => void load()}
-          onSavePrompt={savePrompt}
-          onOpenAction={openAction}
-          onOpenGeneral={() => navigate('scheduled-tasks')}
-        />
-      ) : (
-        <section className="rounded-xl border border-slate-200 bg-white px-4 py-5 text-xs text-slate-500">周报模块未启用，相关定时任务已隐藏。</section>
-      )}
+      <AgentActionCenter
+        prompts={items}
+        promptsLoading={loading}
+        actionsEnabled={weeklyEnabled}
+        initialPromptKey={context.view_state.prompt_key}
+        onReloadPrompts={() => void load()}
+        onSavePrompt={savePrompt}
+        onOpenAction={openAction}
+        onOpenPrompt={openPrompt}
+      />
     </div>
   )
 }

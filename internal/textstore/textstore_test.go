@@ -153,7 +153,8 @@ func TestOKRAgentDefinitionsAreEditableMarkdown(t *testing.T) {
 		OKRAgentReportCKey,
 		OKRAgentWeeklyReminderKey,
 		OKRAgentProgressSyncKey,
-		OKRAgentPreviewReviewKey,
+		OKRAgentPlanReviewKey,
+		OKRAgentProgressReviewKey,
 	}
 	for _, key := range want {
 		item, err := service.Get(t.Context(), key)
@@ -165,6 +166,31 @@ func TestOKRAgentDefinitionsAreEditableMarkdown(t *testing.T) {
 		}
 		if item.Kind != "agent_policy" && item.Kind != "agent_prompt" {
 			t.Errorf("Get(%q).Kind = %q", key, item.Kind)
+		}
+	}
+}
+
+func TestRepositoryOKRReviewPromptsKeepPlanAndProgressSemanticsSeparate(t *testing.T) {
+	service, err := NewService(filepath.Join("..", "..", "conf", "prompts"))
+	if err != nil {
+		t.Fatalf("NewService(repository prompts) error = %v", err)
+	}
+	cases := []struct {
+		key   string
+		wants []string
+	}{
+		{OKRAgentPlanReviewKey, []string{"OKR Plan 评审", "做到什么算成功", "优先级", "需要对齐的决策"}},
+		{OKRAgentProgressReviewKey, []string{"OKR 进度评审", "实际结果", "highlight", "需要推动的动作"}},
+	}
+	for _, testCase := range cases {
+		content, err := service.Content(t.Context(), testCase.key)
+		if err != nil {
+			t.Fatalf("Content(%q) error = %v", testCase.key, err)
+		}
+		for _, want := range testCase.wants {
+			if !strings.Contains(content, want) {
+				t.Errorf("Content(%q) missing %q", testCase.key, want)
+			}
 		}
 	}
 }

@@ -138,7 +138,7 @@ function Workspace({ moduleEnablement, managementAccess }: {
         ) : surface === 'okr' ? (
 			<CoreWorkspace />
 			) : (
-			<PreviewReviewProvider>
+			<PreviewReviewProvider reviewType="progress">
 				<WeeklyReportWorkspace
 						workspace={workspace!}
 						onWorkspaceChange={(next) => changeTab(okrTabForWeeklyWorkspace(next))}

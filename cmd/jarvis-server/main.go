@@ -1135,7 +1135,7 @@ func main() {
 	}
 	if bizOKRModuleEnabled {
 		previewReviewService, err := okrreview.NewService(okrreview.Options{
-			Board:           okrWorkspaceService,
+			Workspace:       okrWorkspaceService,
 			Prompts:         textFileService,
 			Bin:             okrModuleConfig.PreviewReview.Bin,
 			Model:           okrModuleConfig.PreviewReview.Model,

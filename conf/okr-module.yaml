@@ -5,7 +5,7 @@ database_path: "data/okr/okr.db"
 upload_dir: "data/okr/assets"
 max_image_bytes: 10485760
 
-# 一次性 OKR Preview 评审 Agent。只读建议，不建 Task、不进审批链路；沙箱需要
+# 一次性 OKR Plan / 进度评审 Agent。只读建议，不建 Task、不进审批链路；沙箱需要
 # 网络以便它用 okr-module-tools / biz-okr-tools 回查本机 API。
 preview_review:
   bin: "traex"

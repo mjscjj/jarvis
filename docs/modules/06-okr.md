@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: normative
-> Last verified: 2026-09-06, working tree based on d917713
+> Last verified: 2026-09-10, current working tree
 
 本文只维护 OKR 模块当前已经落地的边界和常用修改入口。长期拆分原则、双 Progress 的设计理由及后续阶段见 [通用 OKR 插件与 Biz OKR 拆分设计](../design-okr-plugin-and-biz-okr.md)。字段、路由和运行配置仍以代码与配置文件为最终真源。
 
@@ -19,7 +19,7 @@ Jarvis 世界模型
 ```
 
 - `okr` 拥有 Objective、KR、Metric、Point、结构化负责人、周次、Weekly KR Core 和正式 Progress。
-- `biz-okr` 拥有标签、Biz OKR Plan、Preview/Review、周报业务展示、评论、评分、Follow-up、催填、Meego、飞书页面身份和业务 Agent 编排。
+- `biz-okr` 拥有标签、Biz OKR Plan、Plan/进度评审、周报业务展示、评论、评分、Follow-up、催填、Meego、飞书页面身份和业务 Agent 编排。
 - 当前完整业务页面显示为 `Biz OKR`，内部模块 key 仍为 `biz-okr`。启用通用 `okr` 后，左侧“插件”下出现独立 `OKR 插件` 页面，展示通用结构、正式进展与 Jarvis 世界进展对照、跨世界关系；关系列表同时读取以 O/KR/Point 为 source 和 target 的边，并只展示当前季度节点。它不承载 Biz 标签、Plan、Review、评论或评分。
 - 两个模块继续复用 `internal/okrworkspace/`、`data/okr/okr.db` 和既有 `okr_workspace_*` 表。本次拆分没有搬库、改表名或复制历史数据。
 - `internal/plugin` 仍只负责 Codebase、Meego、Oncall 等外部线索采集插件；OKR 不进入这套采集器运行时。
@@ -49,7 +49,7 @@ Jarvis 世界模型
 - 已支持 Objective/KR 维护、Metric/Point/Owner 完整拆解、周次、Weekly KR Core、正式 Progress CRUD、图片上传和乐观版本控制。`插件 → OKR` 以只读方式展示结构和分层进展；人工填写仍在 OKR 业务页面。
 - 通用侧可以开周和逐条改进展，但没有删整周的入口。评论、评分、Follow-up 和催填批次按 `(quarter, week)` 存且不指向周记录，只删正式时间线会让它们在下次开同名周时复活，所以整周删除只归 Biz。
 - `PUT /api/okr/krs/:kr_id` 与 `okr-module-tools replace-kr` 只接受通用拆解数据，不能夹带 Biz 标签、Meego 或周进展。
-- 只启用 `okr` 时，不校验或初始化 Biz SSO、飞书 Secret 和 Preview Review。
+- 只启用 `okr` 时，不校验或初始化 Biz SSO、飞书 Secret 和 OKR AI Review。
 
 ### Biz OKR
 
@@ -59,6 +59,8 @@ Jarvis 世界模型
 - Biz 组合视图读取通用 OKR 和正式 Progress，再叠加标签、评分、评论与 Meego 信息；它不是第二份 OKR 真源。评论复用同一张讨论表，但生命周期明确分为 `(quarter, week)` 周页面和 `plan_id` Plan 页面两种作用域；Plan 评论不会借用或污染任一周次。评论中的 `@` 同时保存可见原文和经人员选择器解析的主应用 `open_id`。只有创建评论时的显式 `@` 会触发通知；页面和 Owner 不再隐式扩大收件人，编辑只更新评论与 mention 数据。通知边界先用 principal 的只读人员查询将该 `open_id` 精确归一为企业邮箱，再固定由“Jarvis通知机器人”发送紧凑 Card 2.0：主体只展示“原文”和“评论”，页面、周期/Plan、O、KR 与具体 KR 收进默认折叠的上下文，并提供 Emily“查看并回复”深链；发送后回读消息确认。不使用默认 Jarvis Bot，也不在身份解析失败时按姓名猜测。投递失败作为本次响应告警返回，不回滚评论。
 - Review 的结构化待跟进事项支持 `not_started`、`in_progress`、`done`、`abandoned` 四种状态；Review 会议页只开放状态编辑，其余字段保持只读。
 - 正式 Progress 的写入仍调用 `/api/okr/*`，写完再回读 Biz 组合视图，防止页面本地状态丢失 Biz 字段。
+- `OKR Agent` 页面按“通知与跟进 / 材料生成 / Prompt”组织：四个可调度行动在各自任务详情中维护执行时间和绑定 Prompt；第三个 Tab 集中编辑没有绑定定时行动的 Markdown Prompt。
+- OKR AI Review 是只读同步能力。Plan 页面使用 `okr-agent-plan-review.md` 评审执行前的目标、成功标准、取舍和路径；Review 周使用 `okr-agent-progress-review.md` 评审结果、数据、归因、风险和下一步。两份文件是各自唯一语义真源。
 
 旧 `/api/weekly-report/*` 和 `scripts/weekly-report-tools` 不再保留。`weekly-report` 仍可能出现在前端页面 surface、分享 URL、Skill 名，以及 ScheduledTask 旧绑定迁移中；这些不再表示模块键。
 
@@ -80,7 +82,7 @@ Objective→KR、KR→Metric/Point 和 Owner 等 OKR 内部关系由 OKR 原生�
 ## 配置与启动
 
 - 模块开关：`conf/modules.yaml`。
-- OKR 数据库、图片、Biz 身份和 Preview Review 配置：`conf/okr-module.yaml`。
+- OKR 数据库、图片、Biz 身份和 AI Review 运行配置：`conf/okr-module.yaml`。
 - 启动装配、迁移和旧 ScheduledTask 绑定迁移：`cmd/jarvis-server/main.go`。
 - 历史 `agency-okr` 配置键和 ScheduledTask 模块绑定会在启动时幂等迁移为 `biz-okr`。
 - 通用迁移集合：`internal/okrworkspace/domain/models.go` 的 `CoreModels()`。

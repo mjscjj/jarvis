@@ -539,6 +539,7 @@ export function BoardProvider({
 		},
 		enums,
     syncState,
+    hasPendingChanges: timers.current.size > 0 || pointPatches.current.size > 0 || pointSavesInFlight.current.size > 0 || syncState.kind === 'saving' || syncState.kind === 'conflict',
 
     createObjective: async (input) => {
       setSyncState({ kind: 'saving', message: '正在创建目标…' })

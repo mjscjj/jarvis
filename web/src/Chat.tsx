@@ -468,7 +468,7 @@ function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, 
 
   const suggestions = useMemo(() => {
     if (context.active_key === 'biz-okr' && context.view_state.tab === 'agent-flows') {
-      const action = currentActionLabel ? `“${currentActionLabel}”` : '当前自动化流程'
+      const action = currentActionLabel ? `“${currentActionLabel}”` : '当前 OKR Agent'
       return [
         `检查${action}的配置和最近执行情况`,
         `手动执行${action}`,

@@ -11,25 +11,38 @@ import (
 
 	"jarvis/internal/okrworkspace"
 	"jarvis/internal/okrworkspace/domain"
+	"jarvis/internal/textstore"
 )
 
-type stubBoard struct {
-	board okrworkspace.Board
-	err   error
-	calls int
+type stubWorkspace struct {
+	board      okrworkspace.Board
+	plan       okrworkspace.PlanView
+	boardErr   error
+	planErr    error
+	boardCalls int
+	planCalls  int
 }
 
-func (s *stubBoard) Board(context.Context, string, string) (okrworkspace.Board, error) {
-	s.calls++
-	return s.board, s.err
+func (s *stubWorkspace) Board(context.Context, string, string) (okrworkspace.Board, error) {
+	s.boardCalls++
+	return s.board, s.boardErr
+}
+
+func (s *stubWorkspace) GetPlan(context.Context, string) (okrworkspace.PlanView, error) {
+	s.planCalls++
+	return s.plan, s.planErr
 }
 
 type stubPrompts struct {
-	text string
-	err  error
+	text    string
+	err     error
+	lastKey string
 }
 
-func (s stubPrompts) Content(context.Context, string) (string, error) { return s.text, s.err }
+func (s *stubPrompts) Content(_ context.Context, key string) (string, error) {
+	s.lastKey = key
+	return s.text, s.err
+}
 
 func previewBoard() okrworkspace.Board {
 	return okrworkspace.Board{
@@ -63,14 +76,31 @@ func previewBoard() okrworkspace.Board {
 	}
 }
 
-func newTestService(t *testing.T, board BoardReader, script string) *Service {
+func previewPlan() okrworkspace.PlanView {
+	return okrworkspace.PlanView{
+		ID: "plan-1", Quarter: "2026-Q4", Title: "Q4 增长计划",
+		Objectives: []okrworkspace.PlanObjectiveView{{
+			ID: "plan-o-1", Title: "O1：建立增长飞轮",
+			KRs: []okrworkspace.PlanKRView{{
+				ID: "plan-kr-1", Title: "KR1：提升高质量线索", MetricNote: "以季度末数据为准",
+				Owners:  []okrworkspace.OwnerView{{OpenID: "ou_1", Name: "Anqi Feng"}},
+				Metrics: []okrworkspace.MetricView{{ID: "plan-m-1", Text: "HVR 从 12% 提升至 16%"}},
+				Points: []okrworkspace.PlanPointView{{
+					ID: "plan-p-1", Kind: domain.PointKindStrategy, Title: "完成线索分层策略",
+				}},
+			}},
+		}},
+	}
+}
+
+func newTestService(t *testing.T, workspace WorkspaceReader, script string) *Service {
 	t.Helper()
 	bin := filepath.Join(t.TempDir(), "review-cli")
 	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	service, err := NewService(Options{
-		Board: board, Prompts: stubPrompts{text: "评审提示词正文"},
+		Workspace: workspace, Prompts: &stubPrompts{text: "评审提示词正文"},
 		Bin: bin, Model: "DeepSeek-V4-Pro", Sandbox: "workspace-write", ReasoningEffort: "high",
 		Timeout: 10 * time.Second,
 	})
@@ -83,10 +113,10 @@ func newTestService(t *testing.T, board BoardReader, script string) *Service {
 // The whole point of pre-loading the board is that a KR review arrives with its
 // own content already in the prompt, so the agent does not have to fetch it.
 func TestPromptCarriesTheReviewedKRWithoutTheRestOfTheBoard(t *testing.T) {
-	board := &stubBoard{board: previewBoard()}
-	service := newTestService(t, board, "#!/bin/sh\nexit 0\n")
+	workspace := &stubWorkspace{board: previewBoard()}
+	service := newTestService(t, workspace, "#!/bin/sh\nexit 0\n")
 	prompt, err := service.buildPrompt(t.Context(), Request{
-		Quarter: "2026-Q3", Week: "2026-W37", Kind: KindKR, KRID: "kr-1",
+		ReviewType: ReviewTypeProgress, Quarter: "2026-Q3", Week: "2026-W37", Kind: KindKR, KRID: "kr-1",
 	})
 	if err != nil {
 		t.Fatalf("buildPrompt() error = %v", err)
@@ -106,13 +136,59 @@ func TestPromptCarriesTheReviewedKRWithoutTheRestOfTheBoard(t *testing.T) {
 			t.Fatalf("prompt is missing %q:\n%s", want, prompt)
 		}
 	}
+	if got := service.prompts.(*stubPrompts).lastKey; got != textstore.OKRAgentProgressReviewKey {
+		t.Fatalf("progress review prompt key = %q", got)
+	}
+}
+
+func TestPlanReviewReadsThePlanAndItsOwnPrompt(t *testing.T) {
+	workspace := &stubWorkspace{plan: previewPlan()}
+	service := newTestService(t, workspace, "#!/bin/sh\nexit 0\n")
+	prompt, err := service.buildPrompt(t.Context(), Request{
+		ReviewType: ReviewTypePlan, Quarter: "2026-Q4", PlanID: "plan-1", Kind: KindAll,
+	})
+	if err != nil {
+		t.Fatalf("buildPrompt() error = %v", err)
+	}
+	for _, want := range []string{"类型：OKR Plan 评审", "Q4 增长计划", "O1：建立增长飞轮", "KR1：提升高质量线索", "HVR 从 12% 提升至 16%", "完成线索分层策略"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("plan prompt is missing %q:\n%s", want, prompt)
+		}
+	}
+	if workspace.planCalls != 1 || workspace.boardCalls != 0 {
+		t.Fatalf("plan review calls: plan=%d board=%d", workspace.planCalls, workspace.boardCalls)
+	}
+	if got := service.prompts.(*stubPrompts).lastKey; got != textstore.OKRAgentPlanReviewKey {
+		t.Fatalf("plan review prompt key = %q", got)
+	}
+}
+
+func TestObjectiveReviewCarriesOnlyTheSelectedObjective(t *testing.T) {
+	board := previewBoard()
+	board.Objectives = append(board.Objectives, okrworkspace.ObjectiveView{
+		ID: "o-2", Title: "O2：不应进入本次评审",
+		KRs: []okrworkspace.KRView{{ID: "kr-2", Title: "KR2：范围外"}},
+	})
+	service := newTestService(t, &stubWorkspace{board: board}, "#!/bin/sh\nexit 0\n")
+	prompt, err := service.buildPrompt(t.Context(), Request{
+		ReviewType: ReviewTypeProgress, Quarter: "2026-Q3", Week: "2026-W37", Kind: KindObjective, ObjectiveID: "o-1",
+	})
+	if err != nil {
+		t.Fatalf("buildPrompt() error = %v", err)
+	}
+	if !strings.Contains(prompt, "范围：单个 O（id=o-1）") || !strings.Contains(prompt, "O1：B端市场") {
+		t.Fatalf("objective review lost its selected O:\n%s", prompt)
+	}
+	if strings.Contains(prompt, "O2：不应进入本次评审") {
+		t.Fatalf("objective review leaked another O:\n%s", prompt)
+	}
 }
 
 func TestPointReviewCarriesParentAsContextOnly(t *testing.T) {
-	board := &stubBoard{board: previewBoard()}
-	service := newTestService(t, board, "#!/bin/sh\nexit 0\n")
+	workspace := &stubWorkspace{board: previewBoard()}
+	service := newTestService(t, workspace, "#!/bin/sh\nexit 0\n")
 	prompt, err := service.buildPrompt(t.Context(), Request{
-		Quarter: "2026-Q3", Week: "2026-W37", Kind: KindPoint, PointID: "p-1",
+		ReviewType: ReviewTypeProgress, Quarter: "2026-Q3", Week: "2026-W37", Kind: KindPoint, PointID: "p-1",
 	})
 	if err != nil {
 		t.Fatalf("buildPrompt() error = %v", err)
@@ -127,9 +203,9 @@ func TestPointReviewCarriesParentAsContextOnly(t *testing.T) {
 }
 
 func TestAllScopeCarriesEveryObjective(t *testing.T) {
-	board := &stubBoard{board: previewBoard()}
-	service := newTestService(t, board, "#!/bin/sh\nexit 0\n")
-	prompt, err := service.buildPrompt(t.Context(), Request{Quarter: "2026-Q3", Week: "2026-W37", Kind: KindAll})
+	workspace := &stubWorkspace{board: previewBoard()}
+	service := newTestService(t, workspace, "#!/bin/sh\nexit 0\n")
+	prompt, err := service.buildPrompt(t.Context(), Request{ReviewType: ReviewTypeProgress, Quarter: "2026-Q3", Week: "2026-W37", Kind: KindAll})
 	if err != nil {
 		t.Fatalf("buildPrompt() error = %v", err)
 	}
@@ -145,20 +221,23 @@ func TestAllScopeCarriesEveryObjective(t *testing.T) {
 func TestReviewRejectsNonPreviewWeekAndUnknownTargets(t *testing.T) {
 	classic := previewBoard()
 	classic.TemplateKey = domain.WeekTemplateClassic
-	service := newTestService(t, &stubBoard{board: classic}, "#!/bin/sh\nexit 0\n")
-	_, err := service.buildPrompt(t.Context(), Request{Quarter: "2026-Q3", Week: "2026-W37", Kind: KindAll})
+	service := newTestService(t, &stubWorkspace{board: classic}, "#!/bin/sh\nexit 0\n")
+	_, err := service.buildPrompt(t.Context(), Request{ReviewType: ReviewTypeProgress, Quarter: "2026-Q3", Week: "2026-W37", Kind: KindAll})
 	if err == nil || !strings.Contains(err.Error(), "okr_weekly_preview_v1") {
 		t.Fatalf("buildPrompt() error = %v, want template mismatch", err)
 	}
 
-	ok := newTestService(t, &stubBoard{board: previewBoard()}, "#!/bin/sh\nexit 0\n")
+	ok := newTestService(t, &stubWorkspace{board: previewBoard()}, "#!/bin/sh\nexit 0\n")
 	for name, req := range map[string]Request{
-		"missing quarter": {Week: "2026-W37", Kind: KindAll},
-		"missing week":    {Quarter: "2026-Q3", Kind: KindAll},
-		"unknown kind":    {Quarter: "2026-Q3", Week: "2026-W37", Kind: "everything"},
-		"kr without id":   {Quarter: "2026-Q3", Week: "2026-W37", Kind: KindKR},
-		"unknown kr":      {Quarter: "2026-Q3", Week: "2026-W37", Kind: KindKR, KRID: "kr-404"},
-		"unknown point":   {Quarter: "2026-Q3", Week: "2026-W37", Kind: KindPoint, PointID: "p-404"},
+		"missing review type":  {},
+		"missing quarter":      {ReviewType: ReviewTypeProgress, Week: "2026-W37", Kind: KindAll},
+		"missing week":         {ReviewType: ReviewTypeProgress, Quarter: "2026-Q3", Kind: KindAll},
+		"unknown kind":         {ReviewType: ReviewTypeProgress, Quarter: "2026-Q3", Week: "2026-W37", Kind: "everything"},
+		"objective without id": {ReviewType: ReviewTypeProgress, Quarter: "2026-Q3", Week: "2026-W37", Kind: KindObjective},
+		"unknown objective":    {ReviewType: ReviewTypeProgress, Quarter: "2026-Q3", Week: "2026-W37", Kind: KindObjective, ObjectiveID: "o-404"},
+		"kr without id":        {ReviewType: ReviewTypeProgress, Quarter: "2026-Q3", Week: "2026-W37", Kind: KindKR},
+		"unknown kr":           {ReviewType: ReviewTypeProgress, Quarter: "2026-Q3", Week: "2026-W37", Kind: KindKR, KRID: "kr-404"},
+		"unknown point":        {ReviewType: ReviewTypeProgress, Quarter: "2026-Q3", Week: "2026-W37", Kind: KindPoint, PointID: "p-404"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := ok.buildPrompt(t.Context(), req); err == nil {
@@ -180,8 +259,8 @@ cat <<'JSONL'
 {"type":"turn.completed","usage":{}}
 JSONL
 `
-	service := newTestService(t, &stubBoard{board: previewBoard()}, script)
-	content, err := service.Review(t.Context(), Request{Quarter: "2026-Q3", Week: "2026-W37", Kind: KindAll})
+	service := newTestService(t, &stubWorkspace{board: previewBoard()}, script)
+	content, err := service.Review(t.Context(), Request{ReviewType: ReviewTypeProgress, Quarter: "2026-Q3", Week: "2026-W37", Kind: KindAll})
 	if err != nil {
 		t.Fatalf("Review() error = %v", err)
 	}
@@ -195,41 +274,41 @@ JSONL
 
 // fail-fast: a failed CLI must surface its own error, not an empty review.
 func TestReviewSurfacesAgentFailureAndSilence(t *testing.T) {
-	failing := newTestService(t, &stubBoard{board: previewBoard()},
+	failing := newTestService(t, &stubWorkspace{board: previewBoard()},
 		"#!/bin/sh\nprintf 'quota exceeded\\n' >&2\nexit 1\n")
-	_, err := failing.Review(t.Context(), Request{Quarter: "2026-Q3", Week: "2026-W37", Kind: KindAll})
+	_, err := failing.Review(t.Context(), Request{ReviewType: ReviewTypeProgress, Quarter: "2026-Q3", Week: "2026-W37", Kind: KindAll})
 	if err == nil || !strings.Contains(err.Error(), "quota exceeded") {
 		t.Fatalf("Review() error = %v, want the CLI failure", err)
 	}
 
-	silent := newTestService(t, &stubBoard{board: previewBoard()},
+	silent := newTestService(t, &stubWorkspace{board: previewBoard()},
 		"#!/bin/sh\nprintf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"t\"}'\n")
-	_, err = silent.Review(t.Context(), Request{Quarter: "2026-Q3", Week: "2026-W37", Kind: KindAll})
+	_, err = silent.Review(t.Context(), Request{ReviewType: ReviewTypeProgress, Quarter: "2026-Q3", Week: "2026-W37", Kind: KindAll})
 	if err == nil || !strings.Contains(err.Error(), "no review text") {
 		t.Fatalf("Review() error = %v, want an empty-answer failure", err)
 	}
 }
 
 func TestReviewSurfacesBoardFailure(t *testing.T) {
-	service := newTestService(t, &stubBoard{err: fmt.Errorf("database is locked")}, "#!/bin/sh\nexit 0\n")
-	_, err := service.Review(t.Context(), Request{Quarter: "2026-Q3", Week: "2026-W37", Kind: KindAll})
+	service := newTestService(t, &stubWorkspace{boardErr: fmt.Errorf("database is locked")}, "#!/bin/sh\nexit 0\n")
+	_, err := service.Review(t.Context(), Request{ReviewType: ReviewTypeProgress, Quarter: "2026-Q3", Week: "2026-W37", Kind: KindAll})
 	if err == nil || !strings.Contains(err.Error(), "database is locked") {
 		t.Fatalf("Review() error = %v, want the board failure", err)
 	}
 }
 
 func TestNewServiceRejectsUnusableAgentSettings(t *testing.T) {
-	board := &stubBoard{board: previewBoard()}
+	workspace := &stubWorkspace{board: previewBoard()}
 	base := Options{
-		Board: board, Prompts: stubPrompts{text: "x"},
+		Workspace: workspace, Prompts: &stubPrompts{text: "x"},
 		Bin: "sh", Model: "m", Sandbox: "read-only", ReasoningEffort: "high", Timeout: time.Second,
 	}
 	for name, mutate := range map[string]func(*Options){
-		"board reader is required":  func(o *Options) { o.Board = nil },
-		"prompt reader is required": func(o *Options) { o.Prompts = nil },
-		"model is required":         func(o *Options) { o.Model = "" },
-		"sandbox must be":           func(o *Options) { o.Sandbox = "none" },
-		"timeout must be positive":  func(o *Options) { o.Timeout = 0 },
+		"workspace reader is required": func(o *Options) { o.Workspace = nil },
+		"prompt reader is required":    func(o *Options) { o.Prompts = nil },
+		"model is required":            func(o *Options) { o.Model = "" },
+		"sandbox must be":              func(o *Options) { o.Sandbox = "none" },
+		"timeout must be positive":     func(o *Options) { o.Timeout = 0 },
 	} {
 		t.Run(name, func(t *testing.T) {
 			opts := base

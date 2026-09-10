@@ -9,7 +9,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
 )
 
-// RunPreviewReview produces one advisory OKR Preview review synchronously.
+// RunPreviewReview produces one advisory OKR Plan or progress review synchronously.
 //
 // The review writes nothing, so it creates no Task and leaves no run history:
 // the caller gets Markdown back and shows it, or gets the failure. A review can

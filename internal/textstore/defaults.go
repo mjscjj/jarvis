@@ -32,7 +32,8 @@ const (
 	OKRAgentReportCKey              = "okr_agent_report_c"
 	OKRAgentWeeklyReminderKey       = "okr_agent_weekly_reminder"
 	OKRAgentProgressSyncKey         = "okr_agent_progress_sync"
-	OKRAgentPreviewReviewKey        = "okr_agent_preview_review"
+	OKRAgentPlanReviewKey           = "okr_agent_plan_review"
+	OKRAgentProgressReviewKey       = "okr_agent_progress_review"
 )
 
 // definition also carries the editor-facing description. The admin UI renders
@@ -140,8 +141,13 @@ func definitions() []definition {
 			kind:        "agent_prompt", stage: "okr_agent",
 		},
 		{
-			key: OKRAgentPreviewReviewKey, name: "OKR评分", filename: "okr-agent-preview-review.md",
-			description: "在季度 Preview / Review 阶段评审一级 KR、具体 KR 或当前全部 OKR，并给出宽松、有依据的评分与修改建议。",
+			key: OKRAgentPlanReviewKey, name: "OKR Plan 评审", filename: "okr-agent-plan-review.md",
+			description: "评审季度 Plan 是否讲清业务结果、成功标准、优先级、执行路径和需要达成的共识。",
+			kind:        "agent_prompt", stage: "okr_agent",
+		},
+		{
+			key: OKRAgentProgressReviewKey, name: "OKR 进度评审", filename: "okr-agent-progress-review.md",
+			description: "评审 Review 周的实际结果、差距与归因、风险和下一步，给出有依据的修改建议。",
 			kind:        "agent_prompt", stage: "okr_agent",
 		},
 	}

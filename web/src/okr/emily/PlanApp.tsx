@@ -11,6 +11,7 @@ import { CommentInteractionProvider, commentTargetElementId, scrollToCommentSour
 import type { CommentTarget, PageComment } from './types'
 import { weeklyShareURLForTab, type WeeklyShareTab } from './share'
 import { planOptionLabel } from './planTitle'
+import { PreviewReviewButton, PreviewReviewPanel, PreviewReviewProvider } from './aiReviewContext'
 
 const PLAN_SCROLL_KEY_PREFIX = 'jarvis-okr-plan-scroll'
 
@@ -274,7 +275,12 @@ function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }:
         )}
         <SyncNotice />
         {plan ? (
-          <CommentInteractionProvider value={{ enabled: true, triggerMode: 'surface', selected: commentTarget, focused: focusedComment, comments, counts: commentCounts, pendingSelection: pendingCommentSelection, setPendingSelection: setPendingCommentSelection, select: openComments }}>
+	          <PreviewReviewProvider reviewType="plan" planId={plan.id}>
+	            <div className="mb-3">
+	              <div className="flex justify-end"><PreviewReviewButton target={{ kind: 'all', title: plan.title }} label="AI评审" className="px-3" /></div>
+	              <PreviewReviewPanel target={{ kind: 'all', title: plan.title }} className="mt-2" />
+	            </div>
+	            <CommentInteractionProvider value={{ enabled: true, triggerMode: 'surface', selected: commentTarget, focused: focusedComment, comments, counts: commentCounts, pendingSelection: pendingCommentSelection, setPendingSelection: setPendingCommentSelection, select: openComments }}>
             <div className={`transition-opacity ${saving ? 'pointer-events-none opacity-55' : ''}`}>
 			  <ManagementView
                 title=""
@@ -288,9 +294,11 @@ function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }:
 				  compactEmptyPointGroups
 				  objectiveDragReorder
 				  objectiveBusinessCategoryEditing
+				  reviewEnabled
               />
             </div>
-          </CommentInteractionProvider>
+	            </CommentInteractionProvider>
+	          </PreviewReviewProvider>
         ) : (
           <section className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
             <div className="text-sm font-semibold text-slate-700">当前季度暂无 Biz OKR Plan</div>

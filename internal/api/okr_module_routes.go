@@ -33,7 +33,7 @@ type BizOKRModuleDependencies struct {
 	Documents MarkdownDocumentCreator
 	People    *background.ResolveService
 	Enabled   func(context.Context) (bool, error)
-	// PreviewReview runs the advisory OKR Preview review agent.
+	// PreviewReview runs the advisory OKR Plan and progress review agent.
 	PreviewReview *okrreview.Service
 	// UserTokens, Tokens and FeishuAppID serve the signed-in user's own Feishu
 	// credentials to the chat sidecar.

@@ -44,7 +44,7 @@ func previewReviewServiceStub(t *testing.T, workspace *okrworkspace.Service) *ok
 		t.Fatal(err)
 	}
 	service, err := okrreview.NewService(okrreview.Options{
-		Board: workspace, Prompts: weeklyPreviewPromptStub{},
+		Workspace: workspace, Prompts: weeklyPreviewPromptStub{},
 		Bin: bin, Model: "stub-model", Sandbox: "read-only", ReasoningEffort: "high",
 		Timeout: 5 * time.Second,
 	})

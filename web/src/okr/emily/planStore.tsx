@@ -542,6 +542,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
       }
     },
     syncState,
+    hasPendingChanges: dirtyObjectives.current.size > 0 || objectiveOrderDirty.current || pointPatches.current.size > 0 || pointSavesInFlight.current.size > 0 || saveInFlight.current,
     enums,
     templateKey: 'classic',
     week: '',

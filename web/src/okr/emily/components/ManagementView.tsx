@@ -13,6 +13,7 @@ import { CommentSurfaceHint, CommentTargetButton, commentTargetElementId, scroll
 import { findCommentTargetLocation } from '../comments'
 import { mergeVisibleObjectiveOrder } from '../ordering'
 import { MoveButtons } from './ui'
+import { PreviewReviewButton, PreviewReviewPanel } from '../aiReviewContext'
 
 // 业务分类和优先级各自有专属控件（分类标签条、优先级下拉、每行的选择器），
 // 所以通用标签筛选和标签计数只涵盖其余标签，避免同一语义两个入口。
@@ -73,7 +74,7 @@ function KrTagEditor({ kr, suggestions, readOnly }: { kr: Kr; suggestions: KrTag
 	return <TagEditor idPrefix={`tag-options-${kr.id}`} tags={allTags} suggestions={suggestions.filter((item) => !isStructuralTag(item))} onAdd={(value, type) => addTag(kr.id, value, type)} onRemove={(type, value) => removeTag(kr.id, type, value)} readOnly={readOnly} />
 }
 
-function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories, detailsOpen, cardHierarchy, compactEmptyPointGroups, onToggleDetails, onMoveUp, onMoveDown, showTags, showStructuralFields, deleteWarning, readOnly }: { objectiveId: string; kr: Kr; tagSuggestions: KrTag[]; businessCategories: string[]; detailsOpen: boolean; cardHierarchy: boolean; compactEmptyPointGroups: boolean; onToggleDetails: () => void; onMoveUp?: () => void; onMoveDown?: () => void; showTags: boolean; showStructuralFields: boolean; deleteWarning: string; readOnly: boolean }) {
+function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories, detailsOpen, cardHierarchy, compactEmptyPointGroups, onToggleDetails, onMoveUp, onMoveDown, showTags, showStructuralFields, deleteWarning, readOnly, reviewEnabled }: { objectiveId: string; kr: Kr; tagSuggestions: KrTag[]; businessCategories: string[]; detailsOpen: boolean; cardHierarchy: boolean; compactEmptyPointGroups: boolean; onToggleDetails: () => void; onMoveUp?: () => void; onMoveDown?: () => void; showTags: boolean; showStructuralFields: boolean; deleteWarning: string; readOnly: boolean; reviewEnabled: boolean }) {
 	const { setKrTitle, setKrBusinessCategory, setKrPriority, deleteKr } = useBoard()
 	const [confirmDelete, setConfirmDelete] = useState(false)
 	const [deleting, setDeleting] = useState(false)
@@ -81,6 +82,7 @@ function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories, deta
 	const definitionCount = kr.metrics.length + kr.points.length
 	const commentTarget = { type: 'kr' as const, id: kr.id, title: kr.title }
 	const commentSurface = useCommentSurface(commentTarget)
+	const reviewTarget = { kind: 'kr' as const, objectiveId, krId: kr.id, title: kr.title }
 
   const remove = async () => {
     setDeleting(true)
@@ -126,6 +128,7 @@ function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories, deta
         </div>
       </div>
       <div className="flex min-w-12 items-center justify-end gap-1">
+		{reviewEnabled && <PreviewReviewButton target={reviewTarget} label="AI评审" />}
 		{readOnly ? <span className="flex flex-wrap justify-end gap-1">{krOwners(kr).map((owner) => <span key={`${owner.openId}:${owner.name}`} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-500">{owner.name}</span>)}</span> : <FeishuPeoplePicker kr={kr} compact={!cardHierarchy} />}
 		{!readOnly && <span className={`flex items-center gap-1 transition-opacity ${cardHierarchy && !confirmDelete ? 'sm:opacity-0 sm:group-hover/kr:opacity-100 sm:group-focus-within/kr:opacity-100' : ''}`}>
         <MoveButtons label="条 KR" onUp={onMoveUp} onDown={onMoveDown} />
@@ -139,7 +142,8 @@ function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories, deta
 		</span>}
         <CommentSurfaceHint target={commentTarget} />
       </div>
-		{detailsOpen && <div className={`col-span-2 ${cardHierarchy ? 'px-0.5 pb-1' : 'px-1.5 pb-1'}`}><KrDefinitionDetails objectiveId={objectiveId} kr={kr} tagSuggestions={showTags ? tagSuggestions : undefined} deletePointWarning={deleteWarning} compactEmptyPointGroups={compactEmptyPointGroups} cardBody={cardHierarchy} readOnly={readOnly} /></div>}
+		{reviewEnabled && <PreviewReviewPanel target={reviewTarget} className="col-span-2" />}
+		{detailsOpen && <div className={`col-span-2 ${cardHierarchy ? 'px-0.5 pb-1' : 'px-1.5 pb-1'}`}><KrDefinitionDetails objectiveId={objectiveId} kr={kr} tagSuggestions={showTags ? tagSuggestions : undefined} deletePointWarning={deleteWarning} compactEmptyPointGroups={compactEmptyPointGroups} cardBody={cardHierarchy} readOnly={readOnly} reviewEnabled={reviewEnabled} /></div>}
     </article>
   )
 }
@@ -193,6 +197,7 @@ function ObjectiveEditorHeader({
 	businessCategoryEditable,
 	businessCategoryObjective,
 	readOnly,
+	reviewEnabled,
 }: {
 	objective: Objective
 	visibleKrCount: number
@@ -208,6 +213,7 @@ function ObjectiveEditorHeader({
 	businessCategoryEditable: boolean
 	businessCategoryObjective?: Objective
 	readOnly: boolean
+	reviewEnabled: boolean
 }) {
 	const { updateObjective, deleteObjective, setKrBusinessCategory } = useBoard()
 	const [editing, setEditing] = useState(false)
@@ -216,6 +222,7 @@ function ObjectiveEditorHeader({
 	const [confirmDelete, setConfirmDelete] = useState(false)
 	const commentTarget = { type: 'objective' as const, id: objective.id, title: objective.title }
 	const commentSurface = useCommentSurface(commentTarget)
+	const reviewTarget = { kind: 'objective' as const, objectiveId: objective.id, title: objective.title }
 	const completeObjective = businessCategoryObjective ?? objective
 	const commonBusinessCategory = commonObjectiveBusinessCategory(completeObjective)
 	const hasMixedBusinessCategories = completeObjective.krs.length > 0 && commonBusinessCategory === undefined
@@ -274,6 +281,7 @@ function ObjectiveEditorHeader({
 				<h3 className={`min-w-0 flex-1 ${cardHierarchy ? 'text-[17px] font-semibold leading-6 text-slate-800' : 'truncate text-[12px] font-bold text-slate-800'}`}>{objective.title}</h3>
 				<CommentTargetButton target={{ type: 'objective', id: objective.id, title: objective.title }} />
 				<span className={cardHierarchy ? 'rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs tabular-nums text-slate-400' : 'text-[9px] tabular-nums text-slate-400'}>{visibleKrCount}{visibleKrCount !== totalKrCount ? ` / ${totalKrCount}` : ''}{cardHierarchy ? ' 个 KR' : ' 条'}</span>
+				{reviewEnabled && <PreviewReviewButton target={reviewTarget} label="AI评审" />}
 				{!readOnly && businessCategoryEditable && completeObjective.krs.length > 0 && <BusinessCategoryField
 					value={commonBusinessCategory ?? ''}
 					categories={businessCategories}
@@ -290,6 +298,7 @@ function ObjectiveEditorHeader({
 				</> : <button type="button" onClick={() => setConfirmDelete(true)} className="h-5 rounded-md px-1.5 text-[9px] text-red-400 hover:bg-red-50 hover:text-red-600">删除空 O</button>)}
 				{!readOnly && <button type="button" onClick={onToggleCreateKr} className={`h-5 rounded-md px-1.5 text-[9px] font-medium ${creatingKr ? 'bg-blue-50 text-blue-700' : 'text-blue-600 hover:bg-blue-50'}`}>{creatingKr ? '收起新建' : '+ 新建 KR'}</button>}
 				<CommentSurfaceHint target={commentTarget} />
+				{reviewEnabled && <PreviewReviewPanel target={reviewTarget} className="basis-full w-full" />}
 			</>}
 		</div>
 	)
@@ -309,6 +318,7 @@ export function ManagementView({
 	objectiveDragReorder = false,
 	objectiveBusinessCategoryEditing = false,
 	readOnly = false,
+		reviewEnabled = false,
 }: {
 	title?: string
 	subtitle?: string
@@ -323,6 +333,7 @@ export function ManagementView({
 	objectiveDragReorder?: boolean
 	objectiveBusinessCategoryEditing?: boolean
 	readOnly?: boolean
+		reviewEnabled?: boolean
 }) {
   const { objectives, quarter, syncState, createObjective, swapObjectives, reorderObjectives, swapKrs } = useBoard()
   const commentInteraction = useCommentInteraction()
@@ -577,6 +588,7 @@ export function ManagementView({
 					businessCategoryEditable={objectiveBusinessCategoryEditing}
 					businessCategoryObjective={objectives.find((item) => item.id === objective.id)}
 					readOnly={readOnly}
+						reviewEnabled={reviewEnabled}
               />
 			  {!collapsed.has(objective.id) && <div className={cardHierarchy ? 'space-y-3' : 'divide-y divide-slate-100'}>
 						{!readOnly && creatingObjectiveId === objective.id && <NewKrRow objective={objective} businessCategories={businessCategories} peopleOptions={peopleOptions} cardHierarchy={cardHierarchy} onClose={() => setCreatingObjectiveId('')} onCreated={() => setPlacementNotice(`已新建 KR，位于“O ${objective.title}”下的 KR 列表最底部。`)} />}
@@ -596,6 +608,7 @@ export function ManagementView({
 							showStructuralFields={!hideStructuralFields}
 							deleteWarning={deleteKrWarning}
 							readOnly={readOnly}
+								reviewEnabled={reviewEnabled}
 						/>)}
               </div>}
             </section>
