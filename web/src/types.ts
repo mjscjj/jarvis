@@ -95,6 +95,7 @@ export interface TaskQuestion {
 }
 
 export interface Task {
+  source_url?: string
   id: number
   todo_id: number | null
   title: string

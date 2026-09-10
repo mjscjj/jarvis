@@ -34,6 +34,8 @@ Candidate 只保留机器确实消费的小外壳：`action_type`、`status`、`
 
 `action_type` 是开放的 snake_case 字符串；代码不维护封闭业务枚举。完整协议以 `internal/extract/candidate.go` 和 `internal/extract/provider/schema.go` 为准。
 
+M3 可用 `trigger_message_id` 从已引用的消息中指定一个回到触发现场的入口。这是可选展示信息，不参与任务准入或证据摘录校验；缺失、null 或空字符串都不阻止抽取。严格输出协议用 null 表示未提供锚点，内部读取也接受省略字段。原有证据校验保持，`source_quote` 无需来自跳转入口。消息的 `source_url` 随 capture 冻结；任务页与问题卡片通过同一个只读投影取得入口链接，点击「消息原文」直接跳回现场。锚点不能对应已引用的冻结消息或缺少链接时不显示按钮，不按证据顺序猜测，也不在展示时重新查询飞书。
+
 至少一条 evidence 必须来自本轮 `[new]` message。模型可以用工具引用同一 chat 中批次外的消息，worker 会补载并校验；`source_quote` 必须逐字命中证据，否则按配置重抽，耗尽后 fail-fast。
 
 ## 3. 项目解析与冻结内容

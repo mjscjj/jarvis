@@ -69,7 +69,7 @@ func TestOutputContractExamplesDecode(t *testing.T) {
 // prose after the object — do not discard a whole unit of candidates.
 func TestDecodeExtractionResultToleratesPresentationNoise(t *testing.T) {
 	body := `{"candidates":[{"action_type":"Reply Message","status":"extracted","title":"回复张伟",` +
-		`"target":"张伟的排期问题","project_hint":"","source_message_ids":["om_1"],` +
+		`"target":"张伟的排期问题","project_hint":"","source_message_ids":["om_1"],"trigger_message_id":"om_1",` +
 		`"source_quote":"这个排期能确认下吗","payload":"张伟在等我确认排期。","description":"多余字段"}]}`
 	for name, payload := range map[string]string{
 		"unknown field": body,
@@ -183,7 +183,7 @@ func TestDecodeExtractionResultKeepsPayloadVerbatim(t *testing.T) {
 	// payload is declared as a string in the provider schema, so the model
 	// sends JSON as text; decoding must hand it back untouched.
 	payload := `{"candidates":[{"action_type":"manual_followup","status":"extracted","title":"会后处理","target":"公会基建Agent 日会",` +
-		`"project_hint":null,"source_message_ids":["vc_meeting_1"],"source_quote":"采集结果：permission_denied",` +
+		`"project_hint":null,"source_message_ids":["vc_meeting_1"],"trigger_message_id":"vc_meeting_1","source_quote":"采集结果：permission_denied",` +
 		`"payload":"{\"desired_outcome\":\"产出结论并生成我的待办\",\"blocker\":\"妙记无 view 权限\",\"next\":\"申请后重读\"}"}]}`
 	result, err := DecodeExtractionResult([]byte(payload))
 	if err != nil {
@@ -205,8 +205,8 @@ func validCandidate() Candidate {
 		Title:            "修改鉴权",
 		Target:           "jarvis 鉴权逻辑重构",
 		Payload:          "最终完成鉴权重构并合入主干；归属 jarvis 项目，仓库 jarvis。",
-		SourceMessageIDs: []string{"om_1"},
-		SourceQuote:      "请修改鉴权逻辑",
+		SourceMessageIDs: []string{"om_1"}, TriggerMessageID: "om_1",
+		SourceQuote: "请修改鉴权逻辑",
 	}
 }
 

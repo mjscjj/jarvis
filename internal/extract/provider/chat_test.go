@@ -33,7 +33,7 @@ func TestExtractWithToolsCarriesOpenContent(t *testing.T) {
 		if candidate["properties"].(map[string]any)["annotation"].(map[string]any)["type"] != "string" {
 			t.Fatal("wire schema excludes open content")
 		}
-		output := `{"candidates":[{"action_type":"investigate","status":"extracted","title":"排查","target":"网关","project_hint":"","source_message_ids":["om_1"],"source_quote":"请排查","payload":"明确交办","annotation":"{\"brief\":\"现场摘要\",\"new_field\":{\"id\":9007199254740993}}"}]}`
+		output := `{"candidates":[{"action_type":"investigate","status":"extracted","title":"排查","target":"网关","project_hint":"","source_message_ids":["om_1"],"trigger_message_id":"om_1","source_quote":"请排查","payload":"明确交办","annotation":"{\"brief\":\"现场摘要\",\"new_field\":{\"id\":9007199254740993}}"}]}`
 		response, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"finish_reason": "stop", "message": map[string]any{"content": output}}}})
 		return jsonResponse(http.StatusOK, string(response)), nil
 	})

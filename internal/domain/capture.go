@@ -18,6 +18,7 @@ type Message struct {
 	SenderType   string         `gorm:"column:sender_type;not null"`
 	MessageType  string         `gorm:"column:message_type;not null"`
 	Content      string         `gorm:"column:content;not null"`
+	SourceURL    *string        `gorm:"column:source_url"`
 	ContentRaw   *string        `gorm:"column:content_raw"`
 	MentionsJSON datatypes.JSON `gorm:"column:mentions_json"`
 	ReplyTo      *string        `gorm:"column:reply_to"`

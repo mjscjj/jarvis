@@ -90,6 +90,7 @@ type MessageContext struct {
 	Source       string
 	MessageType  string
 	Content      string
+	SourceURL    string
 	RootID       string
 	ThreadID     string
 	CreateTime   int64

@@ -156,6 +156,10 @@ func questionCard(notice execute.QuestionNotification, detailURL, outcome string
 		elements = append(elements, progressPanel(truncateRunes(summary, 1000)))
 	}
 
+	if notice.SourceURL != "" {
+		elements = append(elements, renderField(execute.QuestionField{Type: execute.FieldLink, Label: "消息原文", URL: notice.SourceURL}, notice)...)
+	}
+
 	if outcome = strings.TrimSpace(outcome); outcome != "" {
 		return card(append(elements, markdown(outcome), detailLink(detailURL)), notice)
 	}

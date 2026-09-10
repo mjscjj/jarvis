@@ -30,6 +30,12 @@ func TodoExtractionJSONSchema() map[string]any {
 				"type": "array", "items": map[string]any{"type": "string"},
 				"description": "真实证据消息 ID；至少一个必须对应本轮 [new] 消息。",
 			},
+			// The strict wire schema includes every key; null means no optional
+			// navigation anchor. It is not a task admission requirement.
+			"trigger_message_id": map[string]any{
+				"type":        []string{"string", "null"},
+				"description": "可选的消息原文跳转锚点，从 source_message_ids 选择一条；无法确定时为 null，不影响任务准入。",
+			},
 			"source_quote": map[string]any{
 				"type":        "string",
 				"description": "从一条被引用的 [new] 消息中逐字连续摘录的原文。",
@@ -45,7 +51,7 @@ func TodoExtractionJSONSchema() map[string]any {
 		},
 		"required": []string{
 			"action_type", "status", "title", "target", "project_hint",
-			"source_message_ids", "source_quote", "payload", "annotation",
+			"source_message_ids", "trigger_message_id", "source_quote", "payload", "annotation",
 		},
 	}
 	return map[string]any{

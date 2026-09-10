@@ -366,6 +366,7 @@ type activityTestMessage struct {
 	SenderType        string         `gorm:"column:sender_type"`
 	MessageType       string         `gorm:"column:message_type"`
 	Content           string         `gorm:"column:content"`
+	SourceURL         *string        `gorm:"column:source_url"`
 	ContentRaw        *string        `gorm:"column:content_raw"`
 	MentionsJSON      datatypes.JSON `gorm:"column:mentions_json"`
 	ReplyTo           *string        `gorm:"column:reply_to"`

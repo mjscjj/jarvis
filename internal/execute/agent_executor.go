@@ -54,6 +54,7 @@ type ExecuteResult struct {
 // the exact Task state it was rendered for, so a stale click fails through the
 // existing optimistic lock.
 type QuestionNotification struct {
+	SourceURL string
 	TaskID    uint64
 	RunID     uint64
 	Version   int32
@@ -696,9 +697,10 @@ func (e *AgentExecutor) notifyQuestion(ctx context.Context, result *ExecuteResul
 }
 
 // questionSnapshot rebuilds the notification a question card is rendered from.
-// execution_result is the only source, so the card can be re-rendered word for
-// word after the answer instead of being read back from Feishu, whose message
-// API returns an internal node tree that card/update refuses to accept.
+// Question text comes from execution_result; the origin link comes from the
+// frozen source_payload. Both survive card re-rendering without reading the
+// card back from Feishu, whose message API returns an internal node tree that
+// card/update refuses to accept.
 func questionSnapshot(task *domain.Task) (QuestionNotification, error) {
 	var stored struct {
 		Summary     string          `json:"summary"`
@@ -715,6 +717,7 @@ func questionSnapshot(task *domain.Task) (QuestionNotification, error) {
 	return QuestionNotification{
 		TaskID: task.ID, RunID: stored.SourceRunID, Version: task.Version,
 		TaskTitle: task.Title, Summary: stored.Summary, Question: *question,
+		SourceURL: contextpack.SourceURL(task.SourcePayload),
 	}, nil
 }
 

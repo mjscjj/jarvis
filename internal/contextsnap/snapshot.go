@@ -139,6 +139,7 @@ type Message struct {
 	SenderOpenID string `json:"sender_open_id"`
 	SenderName   string `json:"sender_name"`
 	Content      string `json:"content"`
+	SourceURL    string `json:"source_url,omitempty"`
 	RootID       string `json:"root_id,omitempty"`
 	ThreadID     string `json:"thread_id,omitempty"`
 	CreateTime   int64  `json:"create_time"`

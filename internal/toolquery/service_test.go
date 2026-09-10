@@ -120,7 +120,7 @@ func openTestDB(t *testing.T) *gorm.DB {
 			id INTEGER PRIMARY KEY AUTOINCREMENT, message_id TEXT NOT NULL UNIQUE,
 			chat_id TEXT NOT NULL, group_id INTEGER, chat_mode TEXT NOT NULL,
 			sender_open_id TEXT NOT NULL, sender_name TEXT NOT NULL, sender_type TEXT NOT NULL,
-			message_type TEXT NOT NULL, content TEXT NOT NULL, content_raw TEXT,
+			message_type TEXT NOT NULL, content TEXT NOT NULL, source_url TEXT, content_raw TEXT,
 			mentions_json TEXT, reply_to TEXT, root_id TEXT, thread_id TEXT,
 			create_time INTEGER NOT NULL, update_time INTEGER, source TEXT NOT NULL,
 			render_ok INTEGER NOT NULL DEFAULT 1,

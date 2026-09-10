@@ -931,6 +931,7 @@ func (s *Service) toDomainMessage(group *domain.Group, item CLIMessage) (*domain
 		SenderType:   senderType,
 		MessageType:  item.MessageType,
 		Content:      item.Content,
+		SourceURL:    nullableString(item.MessageAppLink),
 		ReplyTo:      nullableString(item.ParentID),
 		RootID:       nullableString(item.RootID),
 		ThreadID:     nullableString(item.ThreadID),
@@ -952,6 +953,13 @@ func upsertMessage(tx *gorm.DB, incoming *domain.Message) (bool, error) {
 			return false, fmt.Errorf("insert message %s: %w", incoming.MessageID, err)
 		}
 		return true, nil
+	}
+	// Link enrichment can arrive on a poll after the message was captured. It
+	// does not require an edit timestamp and does not count as a new message.
+	if incoming.SourceURL != nil && (existing.SourceURL == nil || *existing.SourceURL != *incoming.SourceURL) {
+		if err := tx.Model(&existing).Update("source_url", incoming.SourceURL).Error; err != nil {
+			return false, fmt.Errorf("update message link %s: %w", incoming.MessageID, err)
+		}
 	}
 	if incoming.UpdateTime == nil || (existing.UpdateTime != nil && *incoming.UpdateTime <= *existing.UpdateTime) {
 		return false, nil

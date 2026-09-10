@@ -98,6 +98,7 @@ type Candidate struct {
 	Target           string          `json:"target"`
 	ProjectHint      *string         `json:"project_hint"`
 	SourceMessageIDs []string        `json:"source_message_ids"`
+	TriggerMessageID string          `json:"trigger_message_id,omitempty"`
 	SourceQuote      string          `json:"source_quote"`
 	Payload          string          `json:"payload"`
 	Annotation       json.RawMessage `json:"annotation,omitempty"`

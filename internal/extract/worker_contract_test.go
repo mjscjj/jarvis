@@ -87,6 +87,6 @@ func contractStrictCandidate() Candidate {
 	return Candidate{
 		ActionType: "code_change", Status: "extracted", Title: "Modify auth", Target: "jarvis auth refactor",
 		Payload:          "Implement the requested auth change in repo jarvis and merge it.",
-		SourceMessageIDs: []string{"om_new"}, SourceQuote: "new request: modify auth",
+		SourceMessageIDs: []string{"om_new"}, TriggerMessageID: "om_new", SourceQuote: "new request: modify auth",
 	}
 }

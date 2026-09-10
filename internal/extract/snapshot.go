@@ -158,7 +158,8 @@ func snapshotConversation(unit ConversationUnit) []contextsnap.Message {
 		conversation = append(conversation, contextsnap.Message{
 			MessageID: message.MessageID, ChatID: message.ChatID, ChatMode: message.ChatMode,
 			SenderOpenID: message.SenderOpenID, SenderName: message.SenderName,
-			Content: message.Content, RootID: message.RootID, ThreadID: message.ThreadID, CreateTime: message.CreateTime,
+			SourceURL: message.SourceURL,
+			Content:   message.Content, RootID: message.RootID, ThreadID: message.ThreadID, CreateTime: message.CreateTime,
 		})
 	}
 	return conversation

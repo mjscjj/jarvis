@@ -500,7 +500,8 @@ func messageContext(message *domain.Message, isNew bool) MessageContext {
 		DatabaseID: message.ID, MessageID: message.MessageID, ChatID: message.ChatID, ChatMode: message.ChatMode,
 		SenderOpenID: message.SenderOpenID, SenderName: message.SenderName, SenderType: message.SenderType,
 		Source: message.Source, MessageType: message.MessageType, Content: message.Content,
-		RootID: stringValue(message.RootID), ThreadID: stringValue(message.ThreadID),
+		SourceURL: stringValue(message.SourceURL),
+		RootID:    stringValue(message.RootID), ThreadID: stringValue(message.ThreadID),
 		CreateTime: message.CreateTime, IsNew: isNew, Extractable: extractableMessage(message),
 	}
 }

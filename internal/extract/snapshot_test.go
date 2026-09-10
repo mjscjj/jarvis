@@ -47,7 +47,7 @@ func TestFrozenMaterialsKeepAdvertisedProjectCatalog(t *testing.T) {
 		OtherProjects: []OtherProjectContext{{ID: projectID, Name: "唯一项目"}},
 	}
 	unit := ConversationUnit{Key: "chat", Messages: []MessageContext{{MessageID: "om_1", Content: "请处理"}}}
-	candidate := Candidate{SourceMessageIDs: []string{"om_1"}, Annotation: json.RawMessage(`{"background":"相关项目"}`)}
+	candidate := Candidate{SourceMessageIDs: []string{"om_1"}, TriggerMessageID: "om_1", Annotation: json.RawMessage(`{"background":"相关项目"}`)}
 	snapshot, err := (&PipelineStore{}).buildContextSnapshot(t.Context(), batch, unit, candidate, &projectID, nil)
 	if err != nil {
 		t.Fatal(err)

@@ -76,6 +76,7 @@ type TaskList struct {
 }
 
 type TaskView struct {
+	SourceURL            string                `json:"source_url,omitempty"`
 	SourceMessageIDs     json.RawMessage       `json:"source_message_ids,omitempty"`
 	ID                   uint64                `json:"id"`
 	TodoID               *uint64               `json:"todo_id"`
@@ -1421,6 +1422,7 @@ func taskView(ctx context.Context, task *domain.Task) TaskView {
 		ID: task.ID, TodoID: task.TodoID, Title: task.Title, ActionType: task.ActionType,
 		Target:        task.Target,
 		SourcePayload: rawJSON(task.SourcePayload),
+		SourceURL:     contextpack.SourceURL(task.SourcePayload),
 		SourceType:    task.SourceType, SourceID: task.SourceID, OccurrenceKey: task.OccurrenceKey,
 		Status: task.Status, ExecutionResult: rawJSON(task.ExecutionResult),
 		Summary: task.Summary, LastProgressAt: task.LastProgressAt,
