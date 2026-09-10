@@ -28,10 +28,11 @@ export JARVIS_TRAEX_BIN=/absolute/path/to/traex
 
 BytedCLI 会按脚本中固定的版本安装到 runtime，无需全局安装。
 
-lark-cli 必须支持 `skills read`，并内嵌 `lark-shared`、`lark-contact`、`lark-drive`、`lark-doc`、`lark-im` 及其参考文件。打包脚本会对实际待打包的 binary 做离线读取检查；这些说明随 CLI 一起进入 DMG，不复制打包机的个人 Skills，也不要求用户另装。可单独检查：
+lark-cli 必须支持 `skills read`，并内嵌 `lark-shared`、`lark-contact`、`lark-drive`、`lark-doc`、`lark-im` 及其参考文件。`command -v lark-cli` 通常返回官方 npm 包的启动脚本，打包脚本会将其解析为同一包内的 arm64 原生 binary，再对复制到 runtime 的实际文件做离线读取检查；这些说明随 CLI 一起进入 DMG，不复制打包机的个人 Skills，也不要求用户另装。可单独检查：
 
 ```bash
-bash packaging/macos/check-lark-skills.sh "$(command -v lark-cli)"
+lark_cli_bin="$(packaging/macos/resolve-lark-cli-bin.sh "$(command -v lark-cli)")"
+bash packaging/macos/check-lark-skills.sh "$lark_cli_bin"
 ```
 
 ## 一键打包

@@ -7,7 +7,7 @@ output_dir=${1:-"$repo_root/build/macos-runtime"}
 staging_dir="${output_dir}.next"
 qdrant_bin=${JARVIS_QDRANT_BIN:-"$repo_root/bin/qdrant"}
 cc_connect_bin=${JARVIS_CC_CONNECT_BIN:-"$repo_root/bin/cc-connect-jarvis"}
-lark_cli_bin=${JARVIS_LARK_CLI_BIN:-"$(command -v lark-cli 2>/dev/null || true)"}
+lark_cli_entry=${JARVIS_LARK_CLI_BIN:-"$(command -v lark-cli 2>/dev/null || true)"}
 traex_bin=${JARVIS_TRAEX_BIN:-"$(command -v traex 2>/dev/null || true)"}
 node_bin=${JARVIS_NODE_BIN:-"$(command -v node 2>/dev/null || true)"}
 jq_bin=${JARVIS_JQ_BIN:-"$(command -v jq 2>/dev/null || true)"}
@@ -33,14 +33,14 @@ if [[ ! -x "$cc_connect_bin" && -x "$output_dir/bin/cc-connect-jarvis" ]]; then
 fi
 [[ -x "$qdrant_bin" ]] || fail "missing Qdrant binary; run ./scripts/jarvis-install install-qdrant"
 [[ -x "$cc_connect_bin" ]] || fail "missing CC Connect binary; run ./scripts/jarvis-install install-cc-connect"
-[[ -x "$lark_cli_bin" ]] || fail "missing lark-cli binary; set JARVIS_LARK_CLI_BIN"
+[[ -x "$lark_cli_entry" ]] || fail "missing lark-cli binary; set JARVIS_LARK_CLI_BIN"
+lark_cli_bin="$("$script_dir/resolve-lark-cli-bin.sh" "$lark_cli_entry")"
 if [[ ! -x "$traex_bin" && -x "$HOME/.local/bin/traex" ]]; then
   traex_bin="$HOME/.local/bin/traex"
 fi
 [[ -x "$traex_bin" ]] || fail "missing Trae CLI binary; set JARVIS_TRAEX_BIN"
 [[ -x "$node_bin" ]] || fail "missing Node binary; set JARVIS_NODE_BIN"
 [[ -x "$jq_bin" ]] || fail "missing jq binary; set JARVIS_JQ_BIN"
-JARVIS_JQ_BIN="$jq_bin" bash "$script_dir/check-lark-skills.sh" "$lark_cli_bin"
 
 rm -rf "$staging_dir"
 mkdir -p "$staging_dir/bin"
@@ -61,6 +61,7 @@ install -m 0755 "$lark_cli_bin" "$staging_dir/bin/lark-cli"
 install -m 0755 "$traex_bin" "$staging_dir/bin/traex"
 install -m 0755 "$node_bin" "$staging_dir/bin/node"
 install -m 0755 "$jq_bin" "$staging_dir/bin/jq"
+JARVIS_JQ_BIN="$staging_dir/bin/jq" bash "$script_dir/check-lark-skills.sh" "$staging_dir/bin/lark-cli"
 mkdir -p "$staging_dir/lib/bytedcli"
 NPM_CONFIG_REGISTRY=${NPM_CONFIG_REGISTRY:-http://bnpm.byted.org} \
   npm install --prefix "$staging_dir/lib/bytedcli" \
