@@ -35,6 +35,16 @@ import './styles/clues-automation.css'
 
 const { Paragraph, Text } = Typography
 
+const weekdayOptions = [
+  { value: 1, label: '周一' },
+  { value: 2, label: '周二' },
+  { value: 3, label: '周三' },
+  { value: 4, label: '周四' },
+  { value: 5, label: '周五' },
+  { value: 6, label: '周六' },
+  { value: 0, label: '周日' },
+]
+
 const statusMeta: Record<ScheduledTaskStatus, { label: string; color: string }> = {
   binding: { label: '正在绑定会话', color: 'orange' },
   active: { label: '等待调度', color: 'green' },
@@ -55,6 +65,7 @@ interface FormValue {
   context_snapshot: string
   schedule_type: ScheduledTaskScheduleType
   daily_time?: Dayjs
+  weekday?: number
   interval_minutes?: number
   run_at?: Dayjs
   enabled: boolean
@@ -74,8 +85,12 @@ function toInput(value: FormValue): ScheduledTaskInput {
   if (context === null || Array.isArray(context) || typeof context !== 'object') {
     throw new Error('上下文必须是 JSON 对象')
   }
-  if (value.schedule_type === 'daily' && !value.daily_time) {
-    throw new Error('请选择每天执行时间')
+  const fixedTime = value.schedule_type === 'daily' || value.schedule_type === 'weekly'
+  if (fixedTime && !value.daily_time) {
+    throw new Error('请选择执行时间')
+  }
+  if (value.schedule_type === 'weekly' && !weekdayOptions.some((option) => option.value === value.weekday)) {
+    throw new Error('请选择每周几执行')
   }
   if (value.schedule_type === 'interval' && (!value.interval_minutes || value.interval_minutes <= 0)) {
     throw new Error('执行间隔必须大于 0 分钟')
@@ -89,7 +104,8 @@ function toInput(value: FormValue): ScheduledTaskInput {
     instruction: value.instruction.trim(),
     context_snapshot: context as Record<string, unknown>,
     schedule_type: value.schedule_type,
-    daily_time: value.schedule_type === 'daily' ? value.daily_time!.format('HH:mm') : null,
+    daily_time: fixedTime ? value.daily_time!.format('HH:mm') : null,
+    weekday: value.schedule_type === 'weekly' ? value.weekday! : null,
     interval_minutes: value.schedule_type === 'interval' ? value.interval_minutes! : null,
     run_at: value.schedule_type === 'once' ? value.run_at!.toISOString() : null,
     enabled: value.enabled,
@@ -99,6 +115,7 @@ function toInput(value: FormValue): ScheduledTaskInput {
 function scheduleText(task: ScheduledTask): string {
   if (task.schedule_type === 'once') return `执行一次 · ${formatDateTime(task.run_at)}`
   if (task.schedule_type === 'daily') return `每天 ${task.daily_time}`
+  if (task.schedule_type === 'weekly') return `每${weekdayOptions.find((option) => option.value === task.weekday)?.label ?? '（星期未设置）'} ${task.daily_time}`
   return `每 ${task.interval_minutes} 分钟`
 }
 
@@ -184,6 +201,7 @@ export default function ScheduledTasks({ delegationsEnabled }: { delegationsEnab
     form.setFieldsValue({
       title: '', instruction: '', context_snapshot: '{}',
       schedule_type: 'daily', daily_time: dailyTimeValue('09:00'),
+      weekday: 1,
       interval_minutes: 10, run_at: dayjs().add(10, 'minute'), enabled: true,
     })
     setModalOpen(true)
@@ -196,6 +214,7 @@ export default function ScheduledTasks({ delegationsEnabled }: { delegationsEnab
       instruction: task.instruction,
       context_snapshot: JSON.stringify(task.context_snapshot ?? {}, null, 2),
       schedule_type: task.schedule_type,
+      weekday: task.weekday ?? 1,
       daily_time: task.daily_time ? dailyTimeValue(task.daily_time) : undefined,
       interval_minutes: task.interval_minutes ?? undefined,
       run_at: task.run_at ? dayjs(task.run_at) : undefined,
@@ -504,15 +523,21 @@ export default function ScheduledTasks({ delegationsEnabled }: { delegationsEnab
             <Select options={[
               { value: 'once', label: '指定时间执行一次' },
               { value: 'daily', label: '每天指定时间' },
+              { value: 'weekly', label: '每周指定时间' },
               { value: 'interval', label: '每隔 N 分钟' },
             ]} />
           </Form.Item>
+          {scheduleType === 'weekly' && (
+            <Form.Item name="weekday" label="每周几" rules={[{ required: true, message: '请选择每周几执行' }]}>
+              <Select options={weekdayOptions} />
+            </Form.Item>
+          )}
           {scheduleType === 'once' ? (
             <Form.Item name="run_at" label="执行时间" rules={[{ required: true, message: '请选择执行时间' }]}>
               <DatePicker showTime format="YYYY-MM-DD HH:mm" style={{ width: '100%' }} />
             </Form.Item>
-          ) : scheduleType === 'daily' ? (
-            <Form.Item name="daily_time" label="每天执行时间（本机时区）" rules={[{ required: true, message: '请选择执行时间' }]}>
+          ) : scheduleType === 'daily' || scheduleType === 'weekly' ? (
+            <Form.Item name="daily_time" label="执行时间（Jarvis 运行机器时区）" rules={[{ required: true, message: '请选择执行时间' }]}>
               <TimePicker format="HH:mm" minuteStep={1} style={{ width: '100%' }} />
             </Form.Item>
           ) : (

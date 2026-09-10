@@ -1017,7 +1017,7 @@ export interface AgentConfigPreview {
 
 export type ScheduledTaskStatus = 'binding' | 'active' | 'running' | 'completed'
 export type ScheduledTaskLastRunStatus = 'done' | 'failed'
-export type ScheduledTaskScheduleType = 'once' | 'daily' | 'interval'
+export type ScheduledTaskScheduleType = 'once' | 'daily' | 'weekly' | 'interval'
 
 export interface ScheduledTask {
   id: number
@@ -1032,6 +1032,7 @@ export interface ScheduledTask {
   context_snapshot: Record<string, unknown>
   schedule_type: ScheduledTaskScheduleType
   daily_time: string | null
+  weekday: number | null
   interval_minutes: number | null
   run_at: string | null
   next_run_at: string
@@ -1054,6 +1055,7 @@ export interface ScheduledTaskInput {
   context_snapshot: Record<string, unknown>
   schedule_type: ScheduledTaskScheduleType
   daily_time: string | null
+  weekday: number | null
   interval_minutes: number | null
   run_at: string | null
   enabled: boolean

@@ -129,7 +129,7 @@ func TestJarvisToolsListCommandsReturnCompactSummaries(t *testing.T) {
 		case "/api/tasks":
 			fmt.Fprint(w, `{"code":0,"data":{"total":1,"page":1,"page_size":20,"items":[{"id":2,"title":"task","source_payload":{"large":true},"execution_result":"large","status":"done"}]}}`)
 		case "/api/scheduled-tasks":
-			fmt.Fprint(w, `{"code":0,"data":{"items":[{"id":3,"title":"timer","instruction":"large","dispatch_payload":{"large":true},"context_snapshot":{"large":true},"status":"active"}]}}`)
+			fmt.Fprint(w, `{"code":0,"data":{"items":[{"id":3,"title":"timer","schedule_type":"weekly","weekday":0,"daily_time":"09:00","instruction":"large","dispatch_payload":{"large":true},"context_snapshot":{"large":true},"status":"active"}]}}`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -156,6 +156,9 @@ func TestJarvisToolsListCommandsReturnCompactSummaries(t *testing.T) {
 				if strings.Contains(out, `"`+field+`"`) {
 					t.Fatalf("%s leaked %s: %s", check.command, field, out)
 				}
+			}
+			if check.command == "list-scheduled-tasks" && (!strings.Contains(out, `"weekday":0`) || !strings.Contains(out, `"schedule_type":"weekly"`) || !strings.Contains(out, `"daily_time":"09:00"`)) {
+				t.Fatalf("weekly schedule missing from summary: %s", out)
 			}
 		})
 	}

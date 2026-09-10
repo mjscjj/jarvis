@@ -39,6 +39,7 @@ type Input struct {
 	ContextSnapshot json.RawMessage `json:"context_snapshot"`
 	ScheduleType    string          `json:"schedule_type"`
 	DailyTime       *string         `json:"daily_time"`
+	Weekday         *int            `json:"weekday"`
 	IntervalMinutes *int            `json:"interval_minutes"`
 	RunAt           *time.Time      `json:"run_at"`
 	Enabled         *bool           `json:"enabled"`
@@ -58,6 +59,7 @@ type View struct {
 	ContextSnapshot json.RawMessage `json:"context_snapshot"`
 	ScheduleType    string          `json:"schedule_type"`
 	DailyTime       *string         `json:"daily_time"`
+	Weekday         *int            `json:"weekday"`
 	IntervalMinutes *int            `json:"interval_minutes"`
 	RunAt           *time.Time      `json:"run_at"`
 	NextRunAt       time.Time       `json:"next_run_at"`
@@ -172,7 +174,7 @@ func (s *Service) Create(ctx context.Context, input Input) (*View, error) {
 		DispatchPayload: datatypes.JSON(normalized.DispatchPayload),
 		Title:           normalized.Title, ActionType: normalized.ActionType, Instruction: normalized.Instruction,
 		ContextSnapshot: datatypes.JSON(normalized.ContextSnapshot),
-		ScheduleType:    normalized.ScheduleType, DailyTime: normalized.DailyTime,
+		ScheduleType:    normalized.ScheduleType, DailyTime: normalized.DailyTime, Weekday: normalized.Weekday,
 		IntervalMinutes: normalized.IntervalMinutes, RunAt: normalized.RunAt, NextRunAt: nextRunAt,
 		Enabled: *normalized.Enabled, Status: normalized.initialStatus,
 	}
@@ -247,7 +249,7 @@ func (s *Service) Update(ctx context.Context, id uint64, input Input) (*View, er
 		Updates(map[string]any{
 			"title": normalized.Title, "action_type": normalized.ActionType, "instruction": normalized.Instruction,
 			"context_snapshot": datatypes.JSON(normalized.ContextSnapshot),
-			"schedule_type":    normalized.ScheduleType, "daily_time": normalized.DailyTime,
+			"schedule_type":    normalized.ScheduleType, "daily_time": normalized.DailyTime, "weekday": normalized.Weekday,
 			"interval_minutes": normalized.IntervalMinutes, "run_at": normalized.RunAt, "next_run_at": nextRunAt,
 			"enabled": *normalized.Enabled, "status": "active",
 		})
@@ -669,10 +671,13 @@ func normalizeInput(input Input, now time.Time, location *time.Location) (Input,
 		enabled := true
 		input.Enabled = &enabled
 	}
+	if input.ScheduleType != "weekly" {
+		input.Weekday = nil
+	}
 	switch input.ScheduleType {
-	case "daily":
+	case "daily", "weekly":
 		if input.DailyTime == nil {
-			return Input{}, time.Time{}, fmt.Errorf("%w: daily_time is required for daily schedule", ErrInvalidInput)
+			return Input{}, time.Time{}, fmt.Errorf("%w: daily_time is required for %s schedule", ErrInvalidInput, input.ScheduleType)
 		}
 		dailyTime := strings.TrimSpace(*input.DailyTime)
 		if _, _, err := parseDailyTime(dailyTime); err != nil {
@@ -696,7 +701,7 @@ func normalizeInput(input Input, now time.Time, location *time.Location) (Input,
 		input.DailyTime = nil
 		input.IntervalMinutes = nil
 	default:
-		return Input{}, time.Time{}, fmt.Errorf("%w: schedule_type must be once, daily or interval", ErrInvalidInput)
+		return Input{}, time.Time{}, fmt.Errorf("%w: schedule_type must be once, daily, weekly or interval", ErrInvalidInput)
 	}
 	nextRunAt, err := nextOccurrenceFromInput(input, now, location)
 	if err != nil {
@@ -707,15 +712,26 @@ func normalizeInput(input Input, now time.Time, location *time.Location) (Input,
 
 func nextOccurrenceFromInput(input Input, after time.Time, location *time.Location) (time.Time, error) {
 	switch input.ScheduleType {
-	case "daily":
+	case "daily", "weekly":
+		if input.DailyTime == nil {
+			return time.Time{}, fmt.Errorf("daily_time is required")
+		}
 		hour, minute, err := parseDailyTime(*input.DailyTime)
 		if err != nil {
 			return time.Time{}, err
 		}
 		localAfter := after.In(location)
-		candidate := time.Date(localAfter.Year(), localAfter.Month(), localAfter.Day(), hour, minute, 0, 0, location)
+		days, period := 0, 1
+		if input.ScheduleType == "weekly" {
+			if input.Weekday == nil || *input.Weekday < 0 || *input.Weekday > 6 {
+				return time.Time{}, fmt.Errorf("weekday must be between 0 (Sunday) and 6 (Saturday) for weekly schedule")
+			}
+			days = (*input.Weekday - int(localAfter.Weekday()) + 7) % 7
+			period = 7
+		}
+		candidate := time.Date(localAfter.Year(), localAfter.Month(), localAfter.Day()+days, hour, minute, 0, 0, location)
 		if !candidate.After(localAfter) {
-			candidate = candidate.AddDate(0, 0, 1)
+			candidate = time.Date(localAfter.Year(), localAfter.Month(), localAfter.Day()+days+period, hour, minute, 0, 0, location)
 		}
 		return candidate.UTC(), nil
 	case "interval":
@@ -735,11 +751,8 @@ func nextOccurrence(task *domain.ScheduledTask, after time.Time, location *time.
 		return time.Time{}, fmt.Errorf("scheduled task is nil")
 	}
 	switch task.ScheduleType {
-	case "daily":
-		if task.DailyTime == nil {
-			return time.Time{}, fmt.Errorf("daily_time is empty")
-		}
-		input := Input{ScheduleType: "daily", DailyTime: task.DailyTime}
+	case "daily", "weekly":
+		input := Input{ScheduleType: task.ScheduleType, DailyTime: task.DailyTime, Weekday: task.Weekday}
 		return nextOccurrenceFromInput(input, after, location)
 	case "interval":
 		if task.IntervalMinutes == nil || *task.IntervalMinutes <= 0 {
@@ -798,7 +811,7 @@ func toView(row *domain.ScheduledTask) View {
 		DispatchPayload: json.RawMessage(append([]byte(nil), row.DispatchPayload...)),
 		Title:           row.Title, ActionType: row.ActionType, Instruction: row.Instruction,
 		ContextSnapshot: json.RawMessage(append([]byte(nil), row.ContextSnapshot...)),
-		ScheduleType:    row.ScheduleType, DailyTime: row.DailyTime,
+		ScheduleType:    row.ScheduleType, DailyTime: row.DailyTime, Weekday: row.Weekday,
 		IntervalMinutes: row.IntervalMinutes, RunAt: row.RunAt, NextRunAt: row.NextRunAt,
 		Enabled: row.Enabled, Status: row.Status, LastRunStatus: row.LastRunStatus, LastTaskID: row.LastTaskID,
 		LastResult: row.LastResult, LastErrorDetail: row.LastErrorDetail,
