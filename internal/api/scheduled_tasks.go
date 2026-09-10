@@ -14,7 +14,7 @@ import (
 )
 
 type ScheduledTaskService interface {
-	List(context.Context, scheduledtask.ListFilter) ([]scheduledtask.View, error)
+	List(context.Context, scheduledtask.ListFilter) ([]scheduledtask.ListItem, error)
 	Get(context.Context, uint64) (*scheduledtask.View, error)
 	Create(context.Context, scheduledtask.Input) (*scheduledtask.View, error)
 	CreateYield(context.Context, scheduledtask.YieldInput) (*scheduledtask.View, error)

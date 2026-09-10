@@ -70,6 +70,7 @@ import type {
   AgentConfigStage,
   ScheduledTask,
   ScheduledTaskInput,
+  ScheduledTaskListItem,
   RuntimeSettings,
   RuntimeSettingsView,
   SecuritySettings,
@@ -660,10 +661,14 @@ export function getAgentConfigPreview(stage: AgentConfigStage, signal?: AbortSig
   return request<AgentConfigPreview>(`/api/agent-config/stages/${encodeURIComponent(stage)}/preview`, { signal })
 }
 
-export function listScheduledTasks(status = '', signal?: AbortSignal): Promise<{ items: ScheduledTask[] }> {
+export function listScheduledTasks(status = '', signal?: AbortSignal): Promise<{ items: ScheduledTaskListItem[] }> {
   const params = new URLSearchParams({ limit: '200' })
   if (status) params.set('status', status)
-  return request<{ items: ScheduledTask[] }>(`/api/scheduled-tasks?${params.toString()}`, { signal })
+  return request<{ items: ScheduledTaskListItem[] }>(`/api/scheduled-tasks?${params.toString()}`, { signal })
+}
+
+export function getScheduledTask(id: number, signal?: AbortSignal): Promise<ScheduledTask> {
+  return request<ScheduledTask>(`/api/scheduled-tasks/${id}`, { signal })
 }
 
 export function createScheduledTask(body: ScheduledTaskInput): Promise<ScheduledTask> {

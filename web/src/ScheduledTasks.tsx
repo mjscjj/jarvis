@@ -26,11 +26,24 @@ import {
 import type { TableColumnsType } from 'antd'
 import { DeleteOutlined, EditOutlined, PlusOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import dayjs, { type Dayjs } from 'dayjs'
-import { createScheduledTask, deleteScheduledTask, listScheduledTasks, triggerScheduledTask, updateScheduledTask } from './api'
+import {
+  createScheduledTask,
+  deleteScheduledTask,
+  getScheduledTask,
+  listScheduledTasks,
+  triggerScheduledTask,
+  updateScheduledTask,
+} from './api'
 import MergedPageHeader from './components/MergedPageHeader'
 import { usePageContext } from './pageContext'
 import { useAgentIdentity } from './agentIdentity'
-import type { ScheduledTask, ScheduledTaskInput, ScheduledTaskScheduleType, ScheduledTaskStatus } from './types'
+import type {
+  ScheduledTask,
+  ScheduledTaskInput,
+  ScheduledTaskListItem,
+  ScheduledTaskScheduleType,
+  ScheduledTaskStatus,
+} from './types'
 import './styles/clues-automation.css'
 
 const { Paragraph, Text } = Typography
@@ -112,7 +125,7 @@ function toInput(value: FormValue): ScheduledTaskInput {
   }
 }
 
-function scheduleText(task: ScheduledTask): string {
+function scheduleText(task: ScheduledTaskListItem): string {
   if (task.schedule_type === 'once') return `执行一次 · ${formatDateTime(task.run_at)}`
   if (task.schedule_type === 'daily') return `每天 ${task.daily_time}`
   if (task.schedule_type === 'weekly') return `每${weekdayOptions.find((option) => option.value === task.weekday)?.label ?? '（星期未设置）'} ${task.daily_time}`
@@ -135,7 +148,7 @@ function dailyTimeValue(value: string): Dayjs {
   return dayjs().hour(hour).minute(minute).second(0).millisecond(0)
 }
 
-function lastRunText(task: ScheduledTask): string {
+function lastRunText(task: ScheduledTaskListItem): string {
   if (task.last_error_detail) return task.last_error_detail
   if (task.last_task_id) return `Task #${task.last_task_id} · ${task.last_result || '已提交执行'}`
   return '尚未触发'
@@ -146,7 +159,7 @@ export default function ScheduledTasks({ delegationsEnabled }: { delegationsEnab
   const { context, navigate, setViewState } = usePageContext()
   const routeView: ScheduleView = context.view_state.view === 'wakeups' ? 'wakeups' : 'automations'
   const routeStatus = context.view_state.status || ''
-  const [items, setItems] = useState<ScheduledTask[]>([])
+  const [items, setItems] = useState<ScheduledTaskListItem[]>([])
   const [view, setView] = useState<ScheduleView>(routeView)
   const [status, setStatus] = useState(routeStatus)
   const [loading, setLoading] = useState(false)
@@ -207,18 +220,34 @@ export default function ScheduledTasks({ delegationsEnabled }: { delegationsEnab
     setModalOpen(true)
   }
 
-  const openEdit = (task: ScheduledTask) => {
-    setEditing(task)
+  const loadDetail = async (task: ScheduledTaskListItem): Promise<ScheduledTask | null> => {
+    try {
+      return await getScheduledTask(task.id)
+    } catch (cause) {
+      message.error(`加载自动化详情失败：${errorText(cause)}`)
+      return null
+    }
+  }
+
+  const openDetail = async (task: ScheduledTaskListItem) => {
+    const detail = await loadDetail(task)
+    if (detail) setSelected(detail)
+  }
+
+  const openEdit = async (task: ScheduledTaskListItem) => {
+    const detail = await loadDetail(task)
+    if (!detail) return
+    setEditing(detail)
     form.setFieldsValue({
-      title: task.title,
-      instruction: task.instruction,
-      context_snapshot: JSON.stringify(task.context_snapshot ?? {}, null, 2),
-      schedule_type: task.schedule_type,
-      weekday: task.weekday ?? 1,
-      daily_time: task.daily_time ? dailyTimeValue(task.daily_time) : undefined,
-      interval_minutes: task.interval_minutes ?? undefined,
-      run_at: task.run_at ? dayjs(task.run_at) : undefined,
-      enabled: task.enabled,
+      title: detail.title,
+      instruction: detail.instruction,
+      context_snapshot: JSON.stringify(detail.context_snapshot ?? {}, null, 2),
+      schedule_type: detail.schedule_type,
+      weekday: detail.weekday ?? 1,
+      daily_time: detail.daily_time ? dailyTimeValue(detail.daily_time) : undefined,
+      interval_minutes: detail.interval_minutes ?? undefined,
+      run_at: detail.run_at ? dayjs(detail.run_at) : undefined,
+      enabled: detail.enabled,
     })
     setModalOpen(true)
   }
@@ -245,7 +274,7 @@ export default function ScheduledTasks({ delegationsEnabled }: { delegationsEnab
     }
   }
 
-  const trigger = async (task: ScheduledTask) => {
+  const trigger = async (task: ScheduledTaskListItem) => {
     try {
       await triggerScheduledTask(task.id)
       message.success(task.schedule_type === 'once'
@@ -257,7 +286,7 @@ export default function ScheduledTasks({ delegationsEnabled }: { delegationsEnab
     }
   }
 
-  const remove = async (task: ScheduledTask) => {
+  const remove = async (task: ScheduledTaskListItem) => {
     try {
       await deleteScheduledTask(task.id)
       message.success('自动化已删除')
@@ -268,7 +297,7 @@ export default function ScheduledTasks({ delegationsEnabled }: { delegationsEnab
     }
   }
 
-  const automationColumns: TableColumnsType<ScheduledTask> = [
+  const automationColumns: TableColumnsType<ScheduledTaskListItem> = [
     {
       title: '自动化', dataIndex: 'title', width: 360,
       render: (value: string, task) => (
@@ -327,7 +356,7 @@ export default function ScheduledTasks({ delegationsEnabled }: { delegationsEnab
               aria-label="编辑自动化"
               icon={<EditOutlined />}
               disabled={task.status === 'running'}
-              onClick={() => openEdit(task)}
+              onClick={() => void openEdit(task)}
             />
           </Tooltip>
           <Popconfirm title="删除这条自动化？" okText="删除" cancelText="取消" onConfirm={() => remove(task)}>
@@ -338,7 +367,7 @@ export default function ScheduledTasks({ delegationsEnabled }: { delegationsEnab
     },
   ]
 
-  const wakeupColumns: TableColumnsType<ScheduledTask> = [
+  const wakeupColumns: TableColumnsType<ScheduledTaskListItem> = [
     {
       title: '系统任务', dataIndex: 'title', width: 390,
       render: (value: string, task) => (
@@ -441,7 +470,7 @@ export default function ScheduledTasks({ delegationsEnabled }: { delegationsEnab
       )}
 
       <Card className="table-card automation-table-card" variant="borderless">
-        <Table<ScheduledTask>
+        <Table<ScheduledTaskListItem>
           rowKey="id"
           size="small"
           loading={loading}
@@ -451,11 +480,11 @@ export default function ScheduledTasks({ delegationsEnabled }: { delegationsEnab
           scroll={{ x: view === 'automations' ? 906 : 890 }}
           locale={{ emptyText: view === 'automations' ? '还没有自动化' : '当前没有系统任务' }}
           onRow={(task) => ({
-            onClick: () => setSelected(task),
+            onClick: () => void openDetail(task),
             onKeyDown: (event) => {
               if (event.key === 'Enter' || event.key === ' ') {
                 event.preventDefault()
-                setSelected(task)
+                void openDetail(task)
               }
             },
             tabIndex: 0,
