@@ -104,7 +104,7 @@ function EffectivePreview({ preview }: { preview?: AgentConfigPreview }) {
   )
 }
 
-export default function AgentSettings({ embedded = false }: { embedded?: boolean }) {
+export default function AgentSettings() {
   const { context, setViewState } = usePageContext()
   const requestedView = context.view_state.stage
   const activeView: AgentSettingsView = requestedView === 'm3' || requestedView === 'other' ? requestedView : 'm5'
@@ -273,13 +273,13 @@ export default function AgentSettings({ embedded = false }: { embedded?: boolean
 
   return (
     <div className="agent-settings-page">
-      {!embedded && <PageHeader title="工作设定" subtitle="配置任务执行、线索发现及其他 Agent" />}
+      <PageHeader title="工作设定" subtitle="配置任务执行、线索发现及其他 Agent" />
       {error && <Alert type="error" showIcon title="工作设定操作失败" description={error} closable onClose={() => setError(undefined)} />}
       {notice && <Alert type="success" showIcon title={notice} closable onClose={() => setNotice(undefined)} />}
       <Spin spinning={loading}>
         <Tabs
           activeKey={activeView}
-          onChange={(stage) => setViewState(embedded ? { view: 'agents', stage } : { stage })}
+          onChange={(stage) => setViewState({ stage })}
           items={[
             { key: 'm5', label: '任务执行', children: stagePanel('m5') },
             { key: 'm3', label: '线索发现', children: stagePanel('m3') },

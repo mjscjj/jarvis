@@ -29,6 +29,7 @@ const PAGE_LABELS: Record<string, string> = {
   clues: '线索',
   todos: '线索',
   management: '系统设置',
+  agents: '工作设定',
   settings: '系统设置',
   debug: '运行诊断',
   'system-tasks': '系统任务',
@@ -64,7 +65,7 @@ function pageLabel(activeKey: string): string {
 }
 
 function pageGroup(activeKey: string): string {
-  if (['management', 'settings', 'debug', 'system-tasks'].includes(activeKey)) return 'system'
+  if (['management', 'agents', 'settings', 'debug', 'system-tasks'].includes(activeKey)) return 'system'
   if (['today', 'overview', 'review', 'progress', 'workbench'].includes(activeKey)) return 'workbench'
   if (['tasks', 'automation', 'scheduled-tasks'].includes(activeKey)) return 'tasks'
   const label = pageLabel(activeKey)

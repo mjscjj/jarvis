@@ -25,6 +25,7 @@ const pageHashes: Record<string, string> = {
   'scheduled-tasks': '/manage/automations',
   plugins: '/plugins',
   security: '/security',
+  agents: '/agents',
   settings: '/manage/settings',
   debug: '/manage/runtime',
 }
@@ -39,12 +40,19 @@ interface HashRoute {
   viewState: Record<string, string>
 }
 
+function isLegacyAgentSettingsHash(): boolean {
+  const raw = window.location.hash.replace(/^#/, '')
+  const [path, query = ''] = raw.split('?')
+  return path === '/manage/settings' && new URLSearchParams(query).get('view') === 'agents'
+}
+
 function routeFromHash(initialKey: string): HashRoute {
   const raw = window.location.hash.replace(/^#/, '')
   const [path, query = ''] = raw.split('?')
   const viewState = Object.fromEntries(new URLSearchParams(query).entries())
-  if (path === '/agents') {
-    return { key: 'settings', selection: null, viewState: { ...viewState, view: 'agents' } }
+  if (path === '/manage/settings' && viewState.view === 'agents') {
+    const { view: _view, ...agentViewState } = viewState
+    return { key: 'agents', selection: null, viewState: agentViewState }
   }
   if (path === '/manage/settings' && viewState.view === 'security') {
     return { key: 'security', selection: null, viewState: {} }
@@ -103,7 +111,7 @@ export function PageContextProvider({
   useEffect(() => {
     if (!window.location.hash) {
       writePageHash(initialKey, null, {}, true)
-    } else if (window.location.hash.replace(/^#/, '').split('?')[0] === '/agents') {
+    } else if (isLegacyAgentSettingsHash()) {
       writePageHash(initialRoute.key, initialRoute.selection, initialRoute.viewState, true)
     }
     const syncFromHash = () => {
@@ -111,7 +119,7 @@ export function PageContextProvider({
       setActiveKeyState(route.key)
       setSelectionState(route.selection)
       setViewStateState(route.viewState)
-      if (window.location.hash.replace(/^#/, '').split('?')[0] === '/agents') {
+      if (isLegacyAgentSettingsHash()) {
         writePageHash(route.key, route.selection, route.viewState, true)
       }
     }
