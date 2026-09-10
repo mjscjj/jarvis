@@ -21,10 +21,14 @@ test('keeps legacy OKR hashes readable after the Biz OKR rename', () => {
 })
 
 test('redirects legacy agent and security settings hashes to their current pages', () => {
+  assert.equal(pageHash('agents', null, { stage: 'm3' }), '#/agents?stage=m3')
   assert.deepEqual(routeFromHash('#/agents?stage=m3', 'overview'), {
-    key: 'settings',
+    key: 'agents', selection: null, viewState: { stage: 'm3' },
+  })
+  assert.deepEqual(routeFromHash('#/manage/settings?view=agents&stage=m3', 'overview'), {
+    key: 'agents',
     selection: null,
-    viewState: { stage: 'm3', view: 'agents' },
+    viewState: { stage: 'm3' },
   })
   assert.deepEqual(routeFromHash('#/manage/settings?view=security', 'overview'), {
     key: 'security',

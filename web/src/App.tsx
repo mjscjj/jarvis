@@ -52,6 +52,7 @@ const Tasks = lazy(() => import('./Tasks'))
 const Progress = lazy(() => import('./Progress'))
 const Background = lazy(() => import('./Background'))
 const Settings = lazy(() => import('./Background').then((module) => ({ default: module.Settings })))
+const AgentSettings = lazy(() => import('./AgentSettings'))
 const Todos = lazy(() => import('./Todos'))
 const ScheduledTasks = lazy(() => import('./ScheduledTasks'))
 const Debug = lazy(() => import('./Debug'))
@@ -89,6 +90,7 @@ const pageLabels: Record<string, string> = {
   'scheduled-tasks': '任务',
   plugins: '插件',
   security: '安全保护',
+  agents: '工作设定',
   settings: '系统设置',
   debug: '运行状态',
   ...Object.fromEntries(appModuleRegistry.map((module) => [module.key, module.label])),
@@ -221,6 +223,7 @@ function AppShell() {
       icon: managementIcon,
       children: [
         { key: 'todos', label: '线索', icon: <CheckCircleOutlined /> },
+        { key: 'agents', label: '工作设定', icon: <EditOutlined /> },
         { key: 'settings', label: '系统设置', icon: <SettingOutlined /> },
         { key: 'debug', label: '运行状态', icon: <ToolOutlined /> },
       ],
@@ -237,6 +240,7 @@ function AppShell() {
     plugins: <Plugins />,
     background: <Background />,
     security: <SecuritySettings />,
+    agents: <AgentSettings />,
     settings: <Settings />,
     progress: <Progress />,
     debug: <Debug />,
@@ -720,6 +724,7 @@ function AppShell() {
           {[
             { key: 'security', label: '安全保护', icon: <SafetyCertificateOutlined /> },
             { key: 'todos', label: '线索', icon: <CheckCircleOutlined /> },
+            { key: 'agents', label: '工作设定', icon: <EditOutlined /> },
             { key: 'settings', label: '系统设置', icon: <SettingOutlined /> },
             { key: 'debug', label: '运行状态', icon: <ToolOutlined /> },
           ].map((item) => (

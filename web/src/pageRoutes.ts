@@ -11,6 +11,7 @@ const pageHashes: Record<string, string> = {
   'scheduled-tasks': '/manage/automations',
   plugins: '/plugins',
   security: '/security',
+  agents: '/agents',
   settings: '/manage/settings',
   debug: '/manage/runtime',
 }
@@ -33,8 +34,9 @@ export function routeFromHash(hash: string, initialKey: string): HashRoute {
   const raw = hash.replace(/^#/, '')
   const [path, query = ''] = raw.split('?')
   const viewState = Object.fromEntries(new URLSearchParams(query).entries())
-  if (path === '/agents') {
-    return { key: 'settings', selection: null, viewState: { ...viewState, view: 'agents' } }
+  if (path === '/manage/settings' && viewState.view === 'agents') {
+    const { view: _view, ...agentViewState } = viewState
+    return { key: 'agents', selection: null, viewState: agentViewState }
   }
   if (path === '/manage/settings' && viewState.view === 'security') {
     return { key: 'security', selection: null, viewState: {} }

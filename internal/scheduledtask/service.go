@@ -840,6 +840,9 @@ func normalizeInput(input Input, now time.Time, location *time.Location) (Input,
 }
 
 func nextOccurrenceFromInput(input Input, after time.Time, location *time.Location) (time.Time, error) {
+	if (input.ScheduleType == "daily" || input.ScheduleType == "weekly") && input.DailyTime == nil {
+		return time.Time{}, fmt.Errorf("daily_time is required")
+	}
 	switch input.ScheduleType {
 	case "daily":
 		hour, minute, err := parseDailyTime(*input.DailyTime)

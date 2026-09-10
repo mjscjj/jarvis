@@ -15,7 +15,7 @@ fail() {
 read_skill() {
   local content
   content="$("$binary" skills read "$1")" || fail "cannot read $1"
-  [[ -n "${content//[[:space:]]/}" ]] || fail "empty content: $1"
+  [[ "$content" == *[![:space:]]* ]] || fail "empty content: $1"
 }
 
 for skill in lark-shared lark-contact lark-drive lark-doc lark-im; do

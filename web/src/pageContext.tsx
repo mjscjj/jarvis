@@ -17,6 +17,12 @@ export interface PageContextValue {
 }
 
 const Context = createContext<PageContextValue | null>(null)
+
+function isLegacyAgentSettingsHash(): boolean {
+  const [path, query = ''] = window.location.hash.replace(/^#/, '').split('?')
+  return path === '/manage/settings' && new URLSearchParams(query).get('view') === 'agents'
+}
+
 function writePageHash(
   key: string,
   selection: PageSelection | null,
@@ -50,7 +56,7 @@ export function PageContextProvider({
   useEffect(() => {
     if (!window.location.hash) {
       writePageHash(initialKey, null, {}, true)
-    } else if (window.location.hash.replace(/^#/, '').split('?')[0] === '/agents') {
+    } else if (isLegacyAgentSettingsHash()) {
       writePageHash(initialRoute.key, initialRoute.selection, initialRoute.viewState, true)
     }
     const syncFromHash = () => {
@@ -58,7 +64,7 @@ export function PageContextProvider({
       setActiveKeyState(route.key)
       setSelectionState(route.selection)
       setViewStateState(route.viewState)
-      if (window.location.hash.replace(/^#/, '').split('?')[0] === '/agents') {
+      if (isLegacyAgentSettingsHash()) {
         writePageHash(route.key, route.selection, route.viewState, true)
       }
     }

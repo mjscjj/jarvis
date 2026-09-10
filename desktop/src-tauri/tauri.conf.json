@@ -31,7 +31,8 @@
       "generated/runtime/": "runtime/"
     },
     "macOS": {
-      "signingIdentity": "-"
+      "signingIdentity": "-",
+      "minimumSystemVersion": "14.0"
     },
     "icon": [
       "icons/32x32.png",

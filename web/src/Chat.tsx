@@ -74,6 +74,7 @@ const PAGE_LABELS: Record<string, string> = {
   clues: '线索',
   todos: '线索',
   management: '系统设置',
+  agents: '工作设定',
   settings: '系统设置',
   debug: '运行诊断',
   'system-tasks': '系统任务',
@@ -116,7 +117,7 @@ function pageLabel(context: PageContext): string {
 function pageGroup(context: PageContext): string {
   if (context.active_key === 'biz-okr' && context.view_state.tab === 'agent-flows') return 'automation'
   if (context.active_key === 'biz-okr' && isOKRTab(context.view_state.tab) && isWeeklyWorkspaceTab(context.view_state.tab)) return 'weekly'
-  if (['management', 'settings', 'debug', 'system-tasks'].includes(context.active_key)) return 'system'
+  if (['management', 'agents', 'settings', 'debug', 'system-tasks'].includes(context.active_key)) return 'system'
   if (['today', 'overview', 'review', 'progress', 'workbench'].includes(context.active_key)) return 'workbench'
   if (['tasks', 'automation', 'scheduled-tasks'].includes(context.active_key)) return 'tasks'
   if (['memory', 'background'].includes(context.active_key)) return 'memory'
