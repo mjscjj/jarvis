@@ -15,6 +15,7 @@ func TestSpecificBindAddressDoesNotNeedNetwork(t *testing.T) {
 		{"localhost:19900", "http://localhost:19900/#/work/task/7", true},
 		{"[::1]:19900", "http://[::1]:19900/#/work/task/7", true},
 		{"192.168.1.20:18800", "http://192.168.1.20:18800/#/work/task/7", false},
+		{"203.0.113.20:18800", "http://203.0.113.20:18800/#/work/task/7", false},
 		{"jarvis.local:18800", "http://jarvis.local:18800/#/work/task/7", false},
 	} {
 		t.Run(tc.address, func(t *testing.T) {
@@ -22,7 +23,7 @@ func TestSpecificBindAddressDoesNotNeedNetwork(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			r.resolveLANIPv4 = func() (net.IP, error) { t.Fatal("specific address must work offline"); return nil, nil }
+			r.resolveIPv4 = func() (net.IP, error) { t.Fatal("specific address must work offline"); return nil, nil }
 			got, err := r.Task(7)
 			if err != nil {
 				t.Fatal(err)
@@ -34,28 +35,28 @@ func TestSpecificBindAddressDoesNotNeedNetwork(t *testing.T) {
 	}
 }
 
-func TestWildcardResolvesCurrentLAN(t *testing.T) {
+func TestWildcardResolvesCurrentAddress(t *testing.T) {
 	for _, address := range []string{"0.0.0.0:18800", ":18800", "[::]:18800"} {
 		r, err := New(address, "")
 		if err != nil {
 			t.Fatal(err)
 		}
 		current := "192.168.1.20"
-		r.resolveLANIPv4 = func() (net.IP, error) { return net.ParseIP(current), nil }
-		for _, ip := range []string{"192.168.1.20", "10.0.0.2"} {
+		r.resolveIPv4 = func() (net.IP, error) { return net.ParseIP(current), nil }
+		for _, ip := range []string{"192.168.1.20", "10.0.0.2", "203.0.113.20"} {
 			current = ip
 			link, err := r.Task(7)
 			if err != nil || link.URL != "http://"+ip+":18800/#/work/task/7" {
 				t.Fatalf("link=%+v err=%v", link, err)
 			}
 		}
-		r.resolveLANIPv4 = func() (net.IP, error) { return nil, errors.New("no route") }
+		r.resolveIPv4 = func() (net.IP, error) { return nil, errors.New("no route") }
 		if _, err := r.Task(7); err == nil {
 			t.Fatal("expected route error")
 		}
-		r.resolveLANIPv4 = func() (net.IP, error) { return net.ParseIP("127.0.0.1"), nil }
+		r.resolveIPv4 = func() (net.IP, error) { return net.ParseIP("127.0.0.1"), nil }
 		if _, err := r.Task(7); err == nil {
-			t.Fatal("expected invalid LAN error")
+			t.Fatal("expected invalid address error")
 		}
 	}
 }
@@ -86,7 +87,7 @@ func TestPublicURLOverridesListenAddress(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				r.resolveLANIPv4 = func() (net.IP, error) { t.Fatal("explicit URL must not resolve LAN"); return nil, nil }
+				r.resolveIPv4 = func() (net.IP, error) { t.Fatal("explicit URL must not resolve LAN"); return nil, nil }
 				got, err := r.Task(7)
 				if err != nil || got.URL != tc.want || got.Label != tc.label {
 					t.Fatalf("link=%+v err=%v", got, err)

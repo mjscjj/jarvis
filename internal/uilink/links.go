@@ -15,10 +15,10 @@ type Link struct {
 }
 
 type Resolver struct {
-	publicURL      *url.URL
-	host           string
-	port           string
-	resolveLANIPv4 func() (net.IP, error)
+	publicURL   *url.URL
+	host        string
+	port        string
+	resolveIPv4 func() (net.IP, error)
 }
 
 // New uses an explicit browser-facing URL when configured (for example behind
@@ -33,7 +33,7 @@ func New(address, publicURL string) (*Resolver, error) {
 	if err != nil || number < 1 || number > 65535 {
 		return nil, fmt.Errorf("UI link requires a fixed valid port: %q", port)
 	}
-	r := &Resolver{host: host, port: port, resolveLANIPv4: currentLANIPv4}
+	r := &Resolver{host: host, port: port, resolveIPv4: currentIPv4}
 	if raw := strings.TrimSpace(publicURL); raw != "" {
 		u, err := url.Parse(raw)
 		if err != nil {
@@ -71,14 +71,14 @@ func (r *Resolver) Task(id uint64) (Link, error) {
 	host := r.host
 	ip := net.ParseIP(host)
 	if host == "" || (ip != nil && ip.IsUnspecified()) {
-		lan, err := r.resolveLANIPv4()
+		address, err := r.resolveIPv4()
 		if err != nil {
-			return Link{}, fmt.Errorf("resolve UI link LAN address: %w", err)
+			return Link{}, fmt.Errorf("resolve UI link address: %w", err)
 		}
-		if lan.To4() == nil || !lan.IsPrivate() || lan.IsLoopback() || lan.IsUnspecified() {
-			return Link{}, fmt.Errorf("UI link LAN address %q is not a private IPv4", lan)
+		if address.To4() == nil || !address.IsGlobalUnicast() || address.IsLoopback() {
+			return Link{}, fmt.Errorf("UI link address %q is not a unicast IPv4", address)
 		}
-		host = lan.String()
+		host = address.String()
 	}
 	return Link{URL: fmt.Sprintf("http://%s/#/work/task/%d", net.JoinHostPort(host, r.port), id), Label: detailLabel(host)}, nil
 }
@@ -90,7 +90,7 @@ func detailLabel(host string) string {
 	return "查看详情"
 }
 
-func currentLANIPv4() (net.IP, error) {
+func currentIPv4() (net.IP, error) {
 	connection, err := net.DialUDP("udp4", nil, &net.UDPAddr{IP: net.ParseIP("1.1.1.1"), Port: 53})
 	if err != nil {
 		return nil, err

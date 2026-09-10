@@ -8,7 +8,7 @@ identity:
 
 server:
   addr: "127.0.0.1:18800"
-  public_url: ""                         # 卡片详情访问入口；远端部署在 runtime 配置浏览器实际使用的 URL
+  public_url: ""                         # 卡片详情入口；有域名填域名 URL，无域名填 IP URL，留空按实际监听地址生成
   web_root: "web/dist"
   log_files:                              # 调试面板尾读并归并的运行日志；stderr 里有各 cron 运行结果，必须一起读
     - "var/log/jarvis-server.log"

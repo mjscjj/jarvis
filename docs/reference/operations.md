@@ -132,15 +132,16 @@ conf/config.yaml
 ### 卡片详情访问地址
 
 `server.addr` 控制服务监听，`server.public_url` 指定通知、提问及回答后的卡片
-使用的浏览器访问入口。Linux 服务器部署时，在 `conf/config.runtime.yaml`
-配置浏览器实际使用的域名地址，例如：
+使用的浏览器访问入口。Mac 和 Linux 使用同一规则：有域名填域名 URL，
+没有域名填可访问的 IP 地址 URL（含端口）；未配置时按实际监听地址生成链接。
+在 `conf/config.runtime.yaml` 配置，例如：
 
 ```yaml
 server:
   public_url: "https://jarvis.example.com"
 ```
 
-示例地址需替换成自己的入口。支持 HTTP/HTTPS、自定义端口与代理路径；地址应指向
+没有域名时也可填写 `http://服务器IP:18800`。示例地址需替换成自己的入口。支持 HTTP/HTTPS、自定义端口与代理路径；地址应指向
 Jarvis 首页，不带查询参数或 `#/...` 路由。这个字段只生成链接，不创建代理、
 隧道或修改监听范围。使用路径前缀时，代理需同时支持前端资源与 API 路由。
 保存后重启生效，后台保存运行设置会保留此配置。
@@ -148,7 +149,7 @@ Jarvis 首页，不带查询参数或 `#/...` 路由。这个字段只生成链�
 Mac 本机安装将 `server.public_url` 留空，按实际监听地址生成链接
 （桌面 `-addr` 覆盖同样生效，默认 `http://127.0.0.1:18800`）。
 回环地址标注“本机访问”，需要点击链接的设备已运行 Jarvis 或对应端口转发。
-通配监听且未配置访问入口时，使用实时解析的局域网 IPv4；跨网络访问应显式配置入口。
+通配监听且未配置访问入口时，使用默认路由对应的本机 IPv4，支持内网及公网地址；跨网络或 NAT 后的访问应显式配置入口。
 
 Jarvis Bot 的飞书长连接由 CC Connect 独占。`jarvis-server` 不启动 Feishu event consumer，M2 按 `capture.scan_schedule` 增量轮询工作消息；不要为同一个 app 恢复第二条连接。Jarvis 的飞书读写直接使用 lark-cli 当前默认身份，CC Connect `jarvis-codex` 绑定该默认 App，Feishu `allow_from` 默认只允许 Principal 本人；机器校验入口是 `./scripts/jarvis-install validate-binding`。
 
