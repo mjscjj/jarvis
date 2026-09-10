@@ -80,7 +80,7 @@ func TestRepositoryM5EffectivePromptUsesExplicitMessageTool(t *testing.T) {
 	for _, want := range []string{
 		"普通业务消息：显式工具动作",
 		"先完整确定受众、会话位置或原消息锚点",
-		"所有普通业务消息都通过 `feishu-send-message` Skill",
+		"给我本人的主动通知和动作回执使用 `jarvis-tools notice-principal` 发卡片",
 		"feishu-send-message",
 	} {
 		if !strings.Contains(prompt, want) {
@@ -90,7 +90,7 @@ func TestRepositoryM5EffectivePromptUsesExplicitMessageTool(t *testing.T) {
 	if strings.Contains(prompt, "user_message") {
 		t.Fatalf("effective M5 prompt still contains legacy implicit message field:\n%s", prompt)
 	}
-	for _, obsolete := range []string{"apply 阶段", "APPROVED_PROPOSAL", "awaiting_approval"} {
+	for _, obsolete := range []string{"apply 阶段", "APPROVED_PROPOSAL", "awaiting_approval", "最迟收尾时私聊我一条", "所有普通业务消息都通过", "读取 `feishu-send-message` Skill 并按其步骤发送"} {
 		if strings.Contains(prompt, obsolete) {
 			t.Fatalf("effective M5 prompt contains obsolete approval protocol %q:\n%s", obsolete, prompt)
 		}

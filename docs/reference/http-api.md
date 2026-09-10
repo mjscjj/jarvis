@@ -77,3 +77,7 @@ Runtime settings 写入后需要重启进程生效；prompts/rules/Skills 按各
 - 对话：`POST /api/chat`（SSE）
 
 对话只在 `chat.enabled=true` 且依赖构造成功时注册。
+
+### Principal 通知卡片
+
+`POST /api/notices/principal`：由 Agent 显式调用，给当前 Principal 发 Bot 卡片。请求包含 `content`、`idempotency_key`，可选 `type`（默认 Notice，开放字符串）、`links`、`details`、`extra`、`task_id`。返回消息凭据和 effect，错误响应也保留部分发送凭据；不改变 Task 状态。CLI：`jarvis-tools notice-principal --payload-file FILE`。详见 [通知卡片说明](../summery/notice-principal-proposal.md)。

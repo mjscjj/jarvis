@@ -17,6 +17,7 @@ import (
 	"jarvis/internal/execute"
 	"jarvis/internal/extract"
 	"jarvis/internal/insight"
+	"jarvis/internal/notice"
 	"jarvis/internal/plugin"
 	"jarvis/internal/progress"
 	"jarvis/internal/scheduledtask"
@@ -42,6 +43,7 @@ type Dependencies struct {
 	TaskSubmitter      *taskcreate.Submitter
 	Executor           *execute.AgentExecutor
 	MessageRecaller    *effectops.MessageRecaller // 撤回任务已发出的飞书消息
+	PrincipalNotices   *notice.Service
 	Projects           *background.ProjectService
 	ProjectPortability *background.ProjectPortabilityService
 	KeyMatters         *background.KeyMatterService
@@ -226,6 +228,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.POST("/api/tasks/:task_id/supplement", SupplementTask(deps.Tasks))
 	// 撤回任务「对外产出」里的某条飞书消息（走 lark-cli，按钮点击即高危确认）。
 	h.POST("/api/tasks/:task_id/effects/recall-message", RecallEffectMessage(deps.MessageRecaller, deps.Tasks))
+	h.POST("/api/notices/principal", NoticePrincipal(deps.PrincipalNotices))
 	if deps.Executor != nil {
 		h.GET("/api/tasks/:task_id/output", GetTaskRunOutput(deps.Executor))
 		h.POST("/api/tasks/:task_id/execute", ExecuteTask(deps.Executor))

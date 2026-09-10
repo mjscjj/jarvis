@@ -213,7 +213,7 @@ func TestRepositoryFeishuMessageSkillDefinesM5SendClosure(t *testing.T) {
 	}
 	skill := string(content)
 	for _, want := range []string{
-		"所有 M5 普通业务消息都使用本 Skill",
+		"给 principal 本人的主动通知和动作回执使用 `jarvis-tools notice-principal`",
 		"不执行本 Skill 的任何写命令",
 		"jarvis-config show-principal",
 		"不能改读 Task 仓库里的同名文件",
@@ -225,7 +225,7 @@ func TestRepositoryFeishuMessageSkillDefinesM5SendClosure(t *testing.T) {
 		"+chat-members-list",
 		"--page-all --page-limit 0",
 		"多个候选、成员不完整或用途不确定时停止",
-		"不要自动创建群、改用 user 身份或更换目标",
+		"发送失败原样报错，不换身份或会话",
 		"JARVIS_TASK_ID",
 		"飞书幂等窗口只有一小时",
 		"+messages-mget",
@@ -578,10 +578,10 @@ func TestReportCapabilitiesAvoidOKRAPIAndMorningBriefClosesSend(t *testing.T) {
 	}
 	morning := string(raw)
 	for _, want := range []string{
-		"--idempotency-key",
+		"idempotency_key",
 		"morning-brief-YYYYMMDD-HHMMSS",
-		"lark-cli im +messages-mget",
-		"读回成功",
+		"jarvis-tools notice-principal --payload-file",
+		"verified=true",
 		"list-backlinks",
 	} {
 		if !strings.Contains(morning, want) {

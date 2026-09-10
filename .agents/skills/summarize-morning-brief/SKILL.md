@@ -187,29 +187,23 @@ Coverage 行格式必须保持 `- <Lane>: <status>`，status 只能是
 
 ## 9. 投递
 
-需要投递时，先读：
+需要投递时，查看统一通知工具：
 
 ```bash
-jarvis-tools get-skill --name feishu-send-message
+jarvis-tools notice-principal --help
 ```
 
-然后：
+准备本轮通知 JSON 文件：`type` 可用 `Brief`，`content` 使用第 8 节的飞书正文，开头自然概括今日主题，不另写标题，`idempotency_key` 使用本轮 `run_id`；其他内容按需放 `details` 或 `extra`。然后：
 
 ```bash
-jarvis-tools get-principal
-lark-cli im +messages-send \
-  --user-id "<principal open_id>" \
-  --markdown "<飞书正文>" \
-  --idempotency-key "<本轮 run_id>" \
-  --as bot
+jarvis-tools notice-principal --payload-file <本轮通知JSON文件>
 ```
 
 硬约束：
 
 - 收件人只能是 Principal 本人
 - `run_id` 也是本轮稳定幂等键，必须使用上面的短格式并保持不变；同一轮失败重试不能生成新 key
-- 发送响应递归去重后必须恰好得到一个 `message_id`，随后执行 `lark-cli im +messages-mget --message-ids "<message_id>" --as bot`，确认目标会话和正文与本轮一致
-- 只有退出码为 0 且读回成功后，才把 `message_id` 和时间写入 `00-context.md` 的 `delivered:` 行
+- 通知工具负责发送和读回；只有退出码为 0 且返回 `verified=true`，才把 `message_id` 和时间写入 `00-context.md` 的 `delivered:` 行，并在运行结果保留返回的 effect
 - 失败时保留完整版，在 Coverage/数据说明写原始错误，不换渠道静默重试
 - 生成失败时不发送任何看似成功的简报
 - 已有 `delivered:` 且本轮未要求重投时，不重复发送

@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net"
 	"sort"
 	"strings"
 	"unicode/utf8"
 
 	"jarvis/internal/agentidentity"
 	"jarvis/internal/execute"
+	"jarvis/internal/uilink"
 )
 
 // callbackAction is the action name CC Connect routes on. It is historical and
@@ -26,18 +26,13 @@ type larkRunner interface {
 // parked. It is intentionally a direct call: no outbox, polling, or fallback
 // path is needed for this local single-user runtime.
 type Notifier struct {
-	lark           larkRunner
-	agentName      string
-	principal      string
-	serverPort     string
-	resolveLANIPv4 func() (net.IP, error)
+	lark      larkRunner
+	agentName string
+	principal string
+	links     *uilink.Resolver
 }
 
 func NewNotifier(lark larkRunner, agentName, principalOpenID, serverAddr string) (*Notifier, error) {
-	return newNotifier(lark, agentName, principalOpenID, serverAddr, currentLANIPv4)
-}
-
-func newNotifier(lark larkRunner, agentName, principalOpenID, serverAddr string, resolveLANIPv4 func() (net.IP, error)) (*Notifier, error) {
 	if lark == nil {
 		return nil, fmt.Errorf("question card lark client is nil")
 	}
@@ -49,25 +44,22 @@ func newNotifier(lark larkRunner, agentName, principalOpenID, serverAddr string,
 	if principalOpenID == "" {
 		return nil, fmt.Errorf("question card principal open_id is empty")
 	}
-	_, port, err := net.SplitHostPort(strings.TrimSpace(serverAddr))
-	if err != nil || port == "" {
-		return nil, fmt.Errorf("question card server address %q is invalid", serverAddr)
+	links, err := uilink.New(serverAddr)
+	if err != nil {
+		return nil, err
 	}
-	if resolveLANIPv4 == nil {
-		return nil, fmt.Errorf("question card LAN IPv4 resolver is nil")
-	}
-	return &Notifier{lark: lark, agentName: agentName, principal: principalOpenID, serverPort: port, resolveLANIPv4: resolveLANIPv4}, nil
+	return &Notifier{lark: lark, agentName: agentName, principal: principalOpenID, links: links}, nil
 }
 
 func (n *Notifier) SendQuestion(ctx context.Context, notice execute.QuestionNotification) (*execute.QuestionDelivery, error) {
 	if notice.TaskID == 0 || notice.RunID == 0 || notice.Version <= 0 {
 		return nil, fmt.Errorf("question notification task/run/version is invalid")
 	}
-	detailURL, err := n.detailURL(notice.TaskID)
+	detail, err := n.links.Task(notice.TaskID)
 	if err != nil {
 		return nil, err
 	}
-	content, err := json.Marshal(questionCard(notice, detailURL, ""))
+	content, err := json.Marshal(questionCard(notice, detail, ""))
 	if err != nil {
 		return nil, fmt.Errorf("encode question card task_id=%d: %w", notice.TaskID, err)
 	}
@@ -90,7 +82,7 @@ func (n *Notifier) SendQuestion(ctx context.Context, notice execute.QuestionNoti
 		MessageID: messageIDs[0],
 		Target:    n.principal,
 		Preview:   truncateRunes(notice.Question.Title, 160),
-		URL:       detailURL,
+		URL:       detail.URL,
 	}, nil
 }
 
@@ -101,40 +93,15 @@ func (n *Notifier) AnsweredCard(notice execute.QuestionNotification, outcome str
 	if strings.TrimSpace(outcome) == "" {
 		return nil, fmt.Errorf("answered question card outcome is empty")
 	}
-	detailURL, err := n.detailURL(notice.TaskID)
+	detail, err := n.links.Task(notice.TaskID)
 	if err != nil {
 		return nil, err
 	}
-	content, err := json.Marshal(questionCard(notice, detailURL, outcome))
+	content, err := json.Marshal(questionCard(notice, detail, outcome))
 	if err != nil {
 		return nil, fmt.Errorf("encode answered question card task_id=%d: %w", notice.TaskID, err)
 	}
 	return content, nil
-}
-
-func (n *Notifier) detailURL(taskID uint64) (string, error) {
-	ip, err := n.resolveLANIPv4()
-	if err != nil {
-		return "", fmt.Errorf("resolve question detail LAN IPv4: %w", err)
-	}
-	ip = ip.To4()
-	if ip == nil || !ip.IsPrivate() || ip.IsLoopback() || ip.IsUnspecified() {
-		return "", fmt.Errorf("resolved question detail address %q is not a private LAN IPv4", ip)
-	}
-	return fmt.Sprintf("http://%s/#/work/task/%d", net.JoinHostPort(ip.String(), n.serverPort), taskID), nil
-}
-
-func currentLANIPv4() (net.IP, error) {
-	connection, err := net.DialUDP("udp4", nil, &net.UDPAddr{IP: net.ParseIP("1.1.1.1"), Port: 53})
-	if err != nil {
-		return nil, err
-	}
-	defer connection.Close()
-	address, ok := connection.LocalAddr().(*net.UDPAddr)
-	if !ok || address.IP == nil {
-		return nil, fmt.Errorf("default route returned no local IPv4")
-	}
-	return address.IP, nil
 }
 
 // questionCard renders the pending question when outcome is empty and the
@@ -145,7 +112,7 @@ func currentLANIPv4() (net.IP, error) {
 //
 // Questions with inputs use one form so a click carries every entered value.
 // A plain two-button decision needs no form and uses a compact two-column row.
-func questionCard(notice execute.QuestionNotification, detailURL, outcome string) map[string]any {
+func questionCard(notice execute.QuestionNotification, detail uilink.Link, outcome string) map[string]any {
 	question := notice.Question
 	body := strings.TrimSpace(question.Body)
 	elements := []any{}
@@ -161,7 +128,7 @@ func questionCard(notice execute.QuestionNotification, detailURL, outcome string
 	}
 
 	if outcome = strings.TrimSpace(outcome); outcome != "" {
-		return card(append(elements, markdown(outcome), detailLink(detailURL)), notice)
+		return card(append(elements, markdown(outcome), detailLink(detail)), notice)
 	}
 
 	if compactDecision(question.Fields) {
@@ -185,7 +152,7 @@ func questionCard(notice execute.QuestionNotification, detailURL, outcome string
 			"tag": "form", "name": "jarvis_ask_form", "elements": controls,
 		})
 	}
-	elements = append(elements, detailLink(detailURL))
+	elements = append(elements, detailLink(detail))
 	return card(elements, notice)
 }
 
@@ -295,9 +262,9 @@ func progressPanel(summary string) map[string]any {
 	}
 }
 
-func detailLink(url string) map[string]any {
+func detailLink(link uilink.Link) map[string]any {
 	return map[string]any{
-		"tag": "markdown", "content": "[查看详情](" + url + ")",
+		"tag": "markdown", "content": "[" + link.Label + "](" + link.URL + ")",
 		"text_size": "notation", "text_align": "right",
 		"margin": "2px 0px 0px 0px",
 	}

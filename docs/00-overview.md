@@ -204,7 +204,7 @@ pending -> executing -> done | observing | failed
 - 运行部署：[reference/operations.md](reference/operations.md)
 - 页面真源：`web/src/App.tsx`
 - 当前主导航：Overview、任务、定时任务、待办、背景、设置、进度、运行状态
-- 生产服务监听 `0.0.0.0:18800`；每次发送飞书问题卡片时实时解析当前局域网 IPv4，用于“查看详情”链接
+- 飞书提问、审批及关联任务的 Notice 卡片统一通过 `internal/uilink` 按实际监听地址生成“查看详情”链接（包含安装包的 `-addr` 覆盖）。具体绑定地址直接使用；通配监听才实时解析局域网 IPv4。安装包默认 `127.0.0.1:18800`，链接标注“Jarvis 所在电脑”，需在该电脑且 App 运行时打开。
 
 ## 9. 当前已知实现缺口
 

@@ -52,6 +52,7 @@ subcommands:
   get-context            Assemble current principal/project/chat work context
   update-group           Replace one group's control fields
   get-principal          Get the assistant owner's profile
+  notice-principal       Send an agent-authored Feishu card to the principal
   update-principal       Replace the principal's control fields
   list-persons           List important people, optionally by role
   get-person             Get one person by Feishu open_id
@@ -451,6 +452,36 @@ example:
   jarvis-tools close-task --id 42 --payload '{"expected_version":2,"result":{"summary":"关闭结果","evidence":"支持材料"}}'
 EOF
       ;;
+    notice-principal) cat <<'EOF'
+usage: jarvis-tools notice-principal [--payload JSON|- | --payload-file PATH] [--config PATH]
+
+Send one Bot card to the configured principal. No recipient or card JSON needed.
+Required: content (Markdown), idempotency_key (stable, <=50 bytes).
+Optional: type (defaults to Notice), links [{label,url}], details (folded
+Markdown), extra (free text or open JSON, displayed in a supplemental panel),
+task_id (defaults to JARVIS_TASK_ID; validates/audits the task and adds its details link).
+The task link uses the runtime listen address; packaged local links require the
+computer running Jarvis. Use links for business materials, not hand-built task URLs.
+
+Type suggestions: Notice, Update, Reminder, Alert, Brief. These are examples,
+not an enum; custom words work unchanged. Type never selects a workflow.
+Write 1–3 natural sentences of content, opening with a brief description of
+what happened. There is no separate title field or headline. Do not add a
+heading, bold headline or "Title:" label. Put long explanation in details and
+original sources in links. Optional sections can be omitted.
+
+Reuse the same idempotency_key on retry. An error can contain a partial delivery
+receipt: inspect message_id/send_response, prior run effects and
+var/log/principal-notices.jsonl before retry.
+The Feishu deduplication window is limited; this is not exactly-once delivery.
+Success returns verified, message_id, chat_id, url and effect. M5 records the
+returned effect verbatim in its run effects. Sending does not change Task state.
+
+example:
+  jarvis-tools notice-principal --payload-file notice.json
+  jarvis-tools notice-principal --payload - < notice.json
+EOF
+      ;;
     append-clue) cat <<'EOF'
 usage: jarvis-tools append-clue --source SOURCE --external-id ID --title TEXT
                                [--content TEXT|-] [--occurred-at RFC3339] [--config PATH]
@@ -661,9 +692,10 @@ api_write() {
   local method="$1"
   local path="$2"
   local json_body="$3"
+  local timeout="${4:-30}"
   local url="${API_BASE}${path}"
   local body http_code
-  body="$(curl -sS -w '\n%{http_code}' --max-time 30 -X "$method" \
+  body="$(curl -sS -w '\n%{http_code}' --max-time "$timeout" -X "$method" \
     -H 'Content-Type: application/json' --data "$json_body" "$url")" || fail "curl failed for ${url}"
   http_code="$(printf '%s\n' "$body" | tail -n1)"
   body="$(printf '%s\n' "$body" | sed '$d')"
@@ -781,6 +813,7 @@ NAME=""
 STATUS=""
 LIMIT="200"
 PAYLOAD="-"
+PAYLOAD_FILE=""
 AT=""
 REASON="-"
 SOURCE=""
@@ -822,6 +855,7 @@ reset_flags() {
   STATUS=""
   LIMIT="200"
   PAYLOAD="-"
+  PAYLOAD_FILE=""
   AT=""
   REASON="-"
   SOURCE=""
@@ -866,6 +900,7 @@ require_command_flag() {
     get-project) allowed+=" --id --code" ;;
     get-key-matter | touch-key-matter | touch-resource) allowed+=" --id" ;;
     create-project | create-key-matter | update-principal | create-person | create-resource | create-task) allowed+=" --payload" ;;
+    notice-principal) allowed+=" --payload --payload-file" ;;
     update-project | update-key-matter | update-group | update-person | update-resource) allowed+=" --id --payload" ;;
     archive-project | close-key-matter | delete-person | delete-resource) allowed+=" --id" ;;
     list-groups) allowed+=" --keyword --limit" ;;
@@ -1120,6 +1155,15 @@ consume_flags() {
         ;;
       --payload=*)
         PAYLOAD="${1#--payload=}"
+        shift
+        ;;
+      --payload-file)
+        [[ $# -ge 2 ]] || fail "$1 requires a value"
+        PAYLOAD_FILE="$2"
+        shift 2
+        ;;
+      --payload-file=*)
+        PAYLOAD_FILE="${1#--payload-file=}"
         shift
         ;;
       --at)
@@ -1446,6 +1490,25 @@ cmd_get_key_matter() {
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
   local body
   body="$(api_get "/api/key-matters/${ID}")"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
+cmd_notice_principal() {
+  reset_flags
+  consume_flags "$@"
+  [[ -z "$PAYLOAD_FILE" || "$PAYLOAD" == "-" ]] || fail "choose --payload or --payload-file"
+  if [[ -n "$PAYLOAD_FILE" ]]; then
+    [[ -f "$PAYLOAD_FILE" ]] || fail "notice payload file not found: $PAYLOAD_FILE"
+    PAYLOAD="$(cat -- "$PAYLOAD_FILE")"
+  fi
+  local payload body
+  payload="$(read_payload_object notice-principal)"
+  if [[ -n "${JARVIS_TASK_ID:-}" ]] && ! jq -e 'has("task_id")' <<<"$payload" >/dev/null; then
+    [[ "$JARVIS_TASK_ID" =~ ^[1-9][0-9]*$ ]] || fail "JARVIS_TASK_ID must be positive"
+    payload="$(jq -c --argjson task_id "$JARVIS_TASK_ID" '. + {task_id:$task_id}' <<<"$payload")"
+  fi
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  body="$(api_write POST /api/notices/principal "$payload" 300)"
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
 
@@ -2481,6 +2544,7 @@ case "$SUBCOMMAND" in
   list-skills)          cmd_list_skills "$@" ;;
   get-skill)            cmd_get_skill "$@" ;;
   append-shared-memory) cmd_append_shared_memory "$@" ;;
+  notice-principal)     cmd_notice_principal "$@" ;;
   append-clue)          cmd_append_clue "$@" ;;
   append-fact)          cmd_append_fact "$@" ;;
   append-facts-batch)   cmd_append_facts_batch "$@" ;;

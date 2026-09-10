@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"jarvis/internal/execute"
+	"jarvis/internal/uilink"
 )
 
 func TestSourceButtonIsNavigationAndSurvivesAnswer(t *testing.T) {
@@ -21,7 +22,7 @@ func TestSourceButtonIsNavigationAndSurvivesAnswer(t *testing.T) {
 				notice.Question.Fields = append(notice.Question.Fields, execute.QuestionField{Type: execute.FieldInput, Name: "note", Label: "补充"})
 			}
 			notice.SourceURL = link
-			card := questionCard(notice, "https://example.com/task", outcome)
+			card := questionCard(notice, uilink.Link{URL: "https://example.com/task", Label: "查看详情"}, outcome)
 			elements := card["body"].(map[string]any)["elements"].([]any)
 			found := 0
 			for _, item := range elements {
@@ -50,7 +51,7 @@ func TestSourceButtonIsNavigationAndSurvivesAnswer(t *testing.T) {
 				t.Fatalf("source buttons = %d", found)
 			}
 			notice.SourceURL = ""
-			raw, _ := json.Marshal(questionCard(notice, "https://example.com/task", outcome))
+			raw, _ := json.Marshal(questionCard(notice, uilink.Link{URL: "https://example.com/task", Label: "查看详情"}, outcome))
 			if strings.Contains(string(raw), "消息原文") {
 				t.Fatal("source button without a source URL")
 			}

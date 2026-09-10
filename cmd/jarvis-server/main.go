@@ -37,6 +37,7 @@ import (
 	"jarvis/internal/larkcli"
 	"jarvis/internal/meetingsweep"
 	"jarvis/internal/morningbrief"
+	"jarvis/internal/notice"
 	"jarvis/internal/observability"
 	"jarvis/internal/pipeline"
 	"jarvis/internal/plugin"
@@ -210,6 +211,10 @@ func main() {
 	})
 	if err != nil {
 		fatalf("initialize lark-cli failed: %v", err)
+	}
+	principalNotices, err := notice.NewService(db, larkClient, cfg.Extract.PrincipalOpenID, filepath.Join(runtimeRoot, "var", "log", "principal-notices.jsonl"), cfg.Server.Addr)
+	if err != nil {
+		fatalf("initialize principal notices failed: %v", err)
 	}
 	captureService, err := capture.NewService(db, larkClient, capture.Options{
 		PageSize:            cfg.Capture.PageSize,
@@ -947,8 +952,9 @@ func main() {
 		Auth:             authService,
 		DB:               db, Todos: todoStore, TodoStatus: todoStore,
 		Tasks: taskService, TaskSubmitter: taskSubmitter, Executor: agentExecutor,
-		MessageRecaller: messageRecaller,
-		Projects:        projectService, ProjectPortability: projectPortabilityService,
+		MessageRecaller:  messageRecaller,
+		PrincipalNotices: principalNotices,
+		Projects:         projectService, ProjectPortability: projectPortabilityService,
 		KeyMatters: keyMatterService,
 		Persons:    personService, Groups: groupService,
 		Resolve: resolveService, Profile: profileService, Resources: resourceService,

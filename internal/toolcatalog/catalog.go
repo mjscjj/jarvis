@@ -39,6 +39,7 @@ func Block(stage string) (string, error) {
 		"- `list-todos` / `list-tasks` 返回摘要和来源消息 ID；用 `--query` 搜索、`--source-message-id` 精确匹配原生消息 ID，可加 `--project-id` / `--group-id`，用 `--page` / `--limit` 翻页。Task 查询覆盖所有来源和完成、失败状态。",
 		"- `get-task` / `get-todo --id ID` 默认给来源原文与简短说明；`--context conversation|background|SECTION` 直接读冻结会话、背景或指定区块，`--message-id ID` 读冻结快照中的单条原文，`--context full` 显式展开全部。Todo 后续读取可带 `--revision` 防止跨修订混读。",
 		"- `list-task-runs --id TASK_ID --page N --limit N` 查历史摘要；`get-task-run --id RUN_ID` 读完整结果和 effects，`--include-prompt` 才加载该 run 的 prompt。",
+		"- `notice-principal --payload-file FILE` 用 Bot 给 Principal 发卡片：type 是开放展示文字（默认 Notice，可参考 Update、Reminder、Alert、Brief，也可自拟），content 为自然叙述的消息正文，开头一句概括事情，不单列 title、不写标题标签或大号标题；links、details（折叠详情）、extra（自由补充内容）可选。idempotency_key 为稳定发送键；task_id 可选，CLI 默认携带 JARVIS_TASK_ID，服务自动附上任务详情链接，无需自行拼接本地地址；links 用于业务材料链接。返回消息凭据及可原样记录的 effect；不改变任务状态。完整参数见命令 --help。",
 		"- 查本地已采集对话先用 `query-messages`，已知数据库 ID 时用 `get-message`；查附件与文档引用先用 `query-captured-resources`，命中后再用 `get-captured-resource` 加载正文。",
 		"- `yield-until` 需要 Task runner 注入 `JARVIS_TASK_ID`，创建归属当前 Task 的恢复触发；`create-scheduled-task` 创建独立触发。",
 		"- `create-task` / `start-task` / `update-task` / `close-task` 需要 `JARVIS_AGENT_STAGE=proactive`，其它阶段调用会被命令拒绝。",
