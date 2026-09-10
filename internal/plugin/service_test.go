@@ -229,6 +229,44 @@ func TestBuiltinMeegoDefaultsToThirtyDayLookback(t *testing.T) {
 	}
 }
 
+func TestBuiltinCodebaseDefaultsToThreeDayLookback(t *testing.T) {
+	registry, err := BuiltinRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, ok := registry.Get("codebase")
+	if !ok {
+		t.Fatal("Codebase manifest is missing")
+	}
+	if string(manifest.DefaultConfig) != `{"lookback_days":3}` {
+		t.Fatalf("Codebase default config = %s", manifest.DefaultConfig)
+	}
+	instruction := scheduleInput(manifest, manifest.DefaultConfig, true).Instruction
+	if !strings.Contains(instruction, `"lookback_days":3`) {
+		t.Fatalf("Codebase schedule instruction = %q", instruction)
+	}
+}
+
+// A stored empty config must fall back to the manifest bound, so an existing
+// installation that predates the bound is still collected within the window.
+func TestEffectiveConfigBoundsStoredEmptyCodebaseConfig(t *testing.T) {
+	registry, err := BuiltinRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest, ok := registry.Get("codebase")
+	if !ok {
+		t.Fatal("Codebase manifest is missing")
+	}
+	config, err := effectiveConfig(manifest, json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(config) != `{"lookback_days":3}` {
+		t.Fatalf("effective config = %s", config)
+	}
+}
+
 func TestUpdateRejectsNonObjectConfig(t *testing.T) {
 	db := openPluginDB(t)
 	authorizer := newAuthorizer(fakeRunner{run: func(_ string, _ []string) ([]byte, error) {

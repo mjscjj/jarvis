@@ -57,30 +57,48 @@ function errorText(cause: unknown): string {
 }
 
 const defaultOncallSearchTerms = ['oncall', '值班']
-const defaultMeegoLookbackDays = 30
 
-function meegoLookbackDays(item: Plugin): number {
+const lookbackPlugins: Record<string, { fallbackDays: number; title: string; hint: string }> = {
+  meego: {
+    fallbackDays: 30,
+    title: '创建时间范围',
+    hint: '只采集最近这些天内创建、且仍未完成的 Meego 工作项。',
+  },
+  codebase: {
+    fallbackDays: 3,
+    title: '更新时间范围',
+    hint: '只采集最近这些天内有更新的开放 MR；更早的历史 MR 不再重复投递。',
+  },
+}
+
+function lookbackDays(item: Plugin, fallbackDays: number): number {
   const configured = item.config.lookback_days
   return typeof configured === 'number' && Number.isInteger(configured) && configured > 0
     ? configured
-    : defaultMeegoLookbackDays
+    : fallbackDays
 }
 
-function MeegoLookbackConfig({
+function LookbackConfig({
   item,
+  fallbackDays,
+  title,
+  hint,
   onUpdated,
   onError,
 }: {
   item: Plugin
+  fallbackDays: number
+  title: string
+  hint: string
   onUpdated: (plugin: Plugin) => void
   onError: (error: string) => void
 }) {
-  const [days, setDays] = useState(() => meegoLookbackDays(item))
+  const [days, setDays] = useState(() => lookbackDays(item, fallbackDays))
   const [saving, setSaving] = useState(false)
-  const savedDays = meegoLookbackDays(item)
+  const savedDays = lookbackDays(item, fallbackDays)
 
   useEffect(() => {
-    setDays(meegoLookbackDays(item))
+    setDays(lookbackDays(item, fallbackDays))
   }, [item.revision])
 
   const save = async () => {
@@ -102,8 +120,8 @@ function MeegoLookbackConfig({
     <section className="plugin-config-section">
       <div className="plugin-config-heading">
         <div>
-          <Title level={4}>创建时间范围</Title>
-          <Text type="secondary">只采集最近这些天内创建、且仍未完成的 Meego 工作项。</Text>
+          <Title level={4}>{title}</Title>
+          <Text type="secondary">{hint}</Text>
         </div>
         <Button type="primary" icon={<SaveOutlined />} loading={saving} disabled={days === savedDays} onClick={() => void save()}>
           保存规则
@@ -115,7 +133,7 @@ function MeegoLookbackConfig({
         precision={0}
         value={days}
         addonAfter="天"
-        onChange={(value) => setDays(value ?? defaultMeegoLookbackDays)}
+        onChange={(value) => setDays(value ?? fallbackDays)}
       />
     </section>
   )
@@ -407,9 +425,12 @@ export default function Plugins() {
         </Space>
       </div>
       {item.last_error && <Alert type="error" showIcon message={item.last_error} />}
-      {item.id === 'meego' && (
-        <MeegoLookbackConfig
+      {lookbackPlugins[item.id] && (
+        <LookbackConfig
           item={item}
+          fallbackDays={lookbackPlugins[item.id].fallbackDays}
+          title={lookbackPlugins[item.id].title}
+          hint={lookbackPlugins[item.id].hint}
           onUpdated={applyUpdate}
           onError={(message) => {
             setError(message)
