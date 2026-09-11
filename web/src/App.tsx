@@ -35,6 +35,7 @@ import { DeveloperHelpButton } from './components/DeveloperDocuments'
 const { Sider, Content } = Layout
 const { Title } = Typography
 
+const AppUpdate = lazy(() => import('./AppUpdate'))
 const Delegations = lazy(() => import('./Delegations'))
 const Tasks = lazy(() => import('./Tasks'))
 const Progress = lazy(() => import('./Progress'))
@@ -427,11 +428,17 @@ function AppShell() {
 
 export default function App() {
   return (
-    <AgentIdentityProvider>
-      <AuthProvider>
-        <AuthenticatedApp />
-      </AuthProvider>
-    </AgentIdentityProvider>
+    <>
+      {/* The update prompt is independent of login and onboarding state. */}
+      <Suspense fallback={null}>
+        <AppUpdate />
+      </Suspense>
+      <AgentIdentityProvider>
+        <AuthProvider>
+          <AuthenticatedApp />
+        </AuthProvider>
+      </AgentIdentityProvider>
+    </>
   )
 }
 

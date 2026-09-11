@@ -1,10 +1,6 @@
 import { openUrl } from '@tauri-apps/plugin-opener'
 
-function isTauriRuntime() {
-  return Boolean(
-    (globalThis as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__,
-  )
-}
+import { isTauriRuntime } from './tauri'
 
 export function installExternalLinkHandler() {
   if (!isTauriRuntime()) return () => {}
