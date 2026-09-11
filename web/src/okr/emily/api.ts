@@ -214,6 +214,7 @@ interface APIAuthStatus {
   expires_at?: string
   user?: {
     open_id: string
+    union_id?: string
     name: string
     avatar_url?: string
     email?: string
@@ -1034,6 +1035,7 @@ export async function getAuthStatus(): Promise<AuthStatus> {
     expiresAt: value.expires_at,
     user: value.user ? {
       openId: value.user.open_id,
+      unionId: value.user.union_id,
       name: value.user.name,
       avatarUrl: value.user.avatar_url,
       email: value.user.email,
@@ -1059,6 +1061,7 @@ export async function pollFeishuLogin(loginId: string): Promise<FeishuDeviceLogi
     retryAfterSeconds: value.retry_after_seconds,
     user: value.user ? {
       openId: value.user.open_id,
+      unionId: value.user.union_id,
       name: value.user.name,
       avatarUrl: value.user.avatar_url,
       email: value.user.email,

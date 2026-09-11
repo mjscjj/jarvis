@@ -168,6 +168,7 @@ export interface PersonSearchItem {
 
 export interface AuthUser {
   openId: string
+  unionId?: string
   name: string
   avatarUrl?: string
   email?: string

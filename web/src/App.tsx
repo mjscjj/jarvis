@@ -32,6 +32,7 @@ import { appModuleRegistry } from './modules/registry'
 import type { AppModuleChildDefinition, AppModuleDefinition } from './modules/registry'
 import { isWeeklyShareViewState } from './okr/emily/share'
 import { getAuthStatus as getOKRAuthStatus } from './okr/emily/api'
+import type { AuthUser as OKRAuthUser } from './okr/emily/types'
 import type { Plugin } from './types'
 import jarvisIcon from './assets/jarvis-icon.png'
 import { DeveloperHelpButton } from './components/DeveloperDocuments'
@@ -106,9 +107,12 @@ function AppShell() {
   const [mobileModuleKey, setMobileModuleKey] = useState<string>()
   const [moduleEnablement, setModuleEnablement] = useState<Record<string, boolean>>()
   const [okrManagementAccess, setOKRManagementAccess] = useState(false)
-  const [okrUserEmail, setOKRUserEmail] = useState<string>()
-  const showOKRChat = ['lixiaolin', 'chujiejie.1'].includes(user?.username ?? '') || [user?.email, okrUserEmail]
-    .some((email) => ['claire.li@bytedance.com', 'chujiejie.1@bytedance.com'].includes(email?.trim().toLowerCase() ?? ''))
+  const [okrUser, setOKRUser] = useState<OKRAuthUser>()
+  // Feishu login can omit email; union_id keeps Claire and Chujiejie's
+  // existing sessions recognizable across login apps.
+  const showOKRChat = ['on_af023f3c29b03b3d90cffedbc703b005', 'on_94b5aa46ca92b7aecd01031e5b2f0dc4'].includes(okrUser?.unionId ?? '') ||
+    ['lixiaolin', 'chujiejie.1'].includes(user?.username ?? '') || [user?.email, okrUser?.email]
+      .some((email) => ['claire.li@bytedance.com', 'chujiejie.1@bytedance.com'].includes(email?.trim().toLowerCase() ?? ''))
   const [moduleLoadError, setModuleLoadError] = useState<string>()
   const [enabledPlugins, setEnabledPlugins] = useState<Array<Pick<Plugin, 'id' | 'name' | 'kind' | 'enabled'>>>([])
   const [shuttingDown, setShuttingDown] = useState(false)
@@ -271,11 +275,11 @@ function AppShell() {
       void getOKRAuthStatus()
         .then((auth) => {
           setOKRManagementAccess(auth.managementAccess)
-          setOKRUserEmail(auth.authenticated ? auth.user?.email : undefined)
+          setOKRUser(auth.authenticated ? auth.user : undefined)
         })
         .catch(() => {
           setOKRManagementAccess(false)
-          setOKRUserEmail(undefined)
+          setOKRUser(undefined)
         })
     }
     refresh()
