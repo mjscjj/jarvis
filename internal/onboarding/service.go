@@ -256,7 +256,8 @@ func (s *Service) Status(ctx context.Context) (*Status, error) {
 	if err != nil {
 		return nil, err
 	}
-	if savedOpenID != "" && savedOpenID != lark.User.OpenID {
+	identityMatches := savedOpenID == "" || savedOpenID == lark.User.OpenID
+	if !identityMatches {
 		configuration.MachineConfigurationReady = false
 		worldModelReady = false
 		lark.Error = "当前飞书用户与本机已保存身份不同，请使用原账号重新授权；已有世界模型不会自动覆盖"
@@ -270,8 +271,10 @@ func (s *Service) Status(ctx context.Context) (*Status, error) {
 		AgentName:          agentName,
 		RuntimeID:          s.runtimeID,
 	}
-	// Saving configuration does not apply it to this running desktop process.
-	result.AppReady = (!s.options.Desktop || s.runtimeConfigured) && configuration.MachineConfigurationReady &&
+	// Desktop installation must finish and apply its saved configuration. Source
+	// deployments use their existing configuration and CLI credentials; missing
+	// desktop initialization markers do not mean those connections are broken.
+	result.AppReady = (!s.options.Desktop || (s.runtimeConfigured && configuration.MachineConfigurationReady)) && identityMatches &&
 		lark.Bot.Status == "ready" && lark.Bot.Verified && lark.User.Status == "ready" && lark.User.Verified &&
 		agent.Authenticated
 	result.Completed = result.AppReady && result.WorldModelReady

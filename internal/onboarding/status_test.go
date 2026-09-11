@@ -12,8 +12,54 @@ import (
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"jarvis/internal/config"
 	"jarvis/internal/domain"
 )
+
+func TestStatusSeparatesSourceConnectionsFromDesktopInitialization(t *testing.T) {
+	for _, test := range []struct {
+		name             string
+		desktop          bool
+		failedAgent      bool
+		failedUser       bool
+		identityMismatch bool
+		wantReady        bool
+	}{
+		{name: "source with valid connections", wantReady: true},
+		{name: "desktop still needs initialization", desktop: true},
+		{name: "source with expired agent login", failedAgent: true},
+		{name: "source with expired Feishu login", failedUser: true},
+		{name: "source with another saved identity", identityMismatch: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			service := newFinalizeTestService(t)
+			service.options.Desktop = test.desktop
+			if test.identityMismatch {
+				if err := os.WriteFile(config.RuntimeOverridePath(service.options.ConfigPath), []byte("identity:\n  display_name: Jarvis\nextract:\n  principal_open_id: ou_other\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			runner := service.runner
+			service.runner = commandFunc(func(ctx context.Context, bin string, args []string, input string) ([]byte, error) {
+				if test.failedAgent && strings.Join(args, " ") == "login status" {
+					return []byte("Not logged in"), errors.New("exit 1")
+				}
+				output, err := runner.Run(ctx, bin, args, input)
+				if test.failedUser && strings.Join(args, " ") == "auth status --json --verify" {
+					output = []byte(strings.ReplaceAll(string(output), `"tokenStatus":"valid"`, `"tokenStatus":"expired"`))
+				}
+				return output, err
+			})
+			status, err := service.Status(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if status.Configuration.MachineConfigurationReady || status.AppReady != test.wantReady {
+				t.Fatalf("initialization=%v app_ready=%v, want false/%v: %+v", status.Configuration.MachineConfigurationReady, status.AppReady, test.wantReady, status)
+			}
+		})
+	}
+}
 
 func TestStatusChecksIndependentLoginsConcurrently(t *testing.T) {
 	root := t.TempDir()
