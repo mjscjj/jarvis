@@ -85,7 +85,7 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
       if (setupCanEnter(current, localStorage.getItem(restartKey))) return
       if (setupAction(current) !== 'start') return
       let previousRuntime = localStorage.getItem(restartKey)
-      if (!current.configuration.machine_configuration_ready && !previousRuntime) {
+      if (!current.app_ready && !previousRuntime) {
         const result = await finalizeSetup(appSecret)
         previousRuntime = result.runtime_id
         localStorage.setItem(restartKey, previousRuntime)

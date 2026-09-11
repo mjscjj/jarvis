@@ -39,6 +39,14 @@ test('app entry depends on usable runtime, not world model completion', () => {
   assert.equal(setupCanEnter(status, 'previous-runtime'), true)
 })
 
+test('saved configuration after failed finalize cannot enter the old runtime', () => {
+  const status = ready()
+  status.configuration.machine_configuration_ready = true
+  assert.equal(setupAction(status), 'start')
+  assert.equal(setupCanEnter(status, null), false)
+  assert.equal(setupCanEnter(status, status.runtime_id), false)
+})
+
 test('background progress shows recorded waiting reason, wake time and failure', () => {
   const task = { status: 'waiting', summary: '第一轮已写入人物', execution_result: { waiting: { reason: '等待文档权限生效', wake_at: '2026-09-10T12:00:00Z' } } } as unknown as Task
   const waiting = worldModelProgress(task)
