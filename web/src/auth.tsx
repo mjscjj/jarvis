@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from 'react'
 import { Button, Result, Spin, Typography } from 'antd'
 import { LinkOutlined, LoginOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
-import { authEvents, completeByteDanceLogin, getAuthStatus, loginWithByteDance, logoutFromJarvis } from './api'
+import { authEvents, completeByteDanceLogin, getAuthStatus, loginWithByteDance, logoutFromJarvis, setAuthRecoveryHandler } from './api'
 import type { AuthUser, AuthView } from './types'
 import { DeveloperDocumentLinks } from './components/DeveloperDocuments'
 
@@ -62,11 +62,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     mounted.current = true
+    setAuthRecoveryHandler(recover)
     const expired = () => { void recover() }
     authEvents.addEventListener('expired', expired)
     void recover()
     return () => {
       mounted.current = false
+      setAuthRecoveryHandler(null)
       authEvents.removeEventListener('expired', expired)
     }
   }, [recover])

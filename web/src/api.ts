@@ -105,10 +105,29 @@ interface RequestOptions {
 
 export const authEvents = new EventTarget()
 
+let authRecoveryHandler: (() => Promise<void>) | null = null
+
+export function setAuthRecoveryHandler(handler: (() => Promise<void>) | null): void {
+  authRecoveryHandler = handler
+}
+
+function isAuthPath(path: string): boolean {
+  return path.startsWith('/api/auth/')
+}
+
+function canRetryAfterAuth(options?: RequestInit): boolean {
+  const method = (options?.method || 'GET').toUpperCase()
+  return method === 'GET' || method === 'HEAD'
+}
+
 export async function apiFetch(path: string, options?: RequestInit): Promise<Response> {
   const response = await fetch(path, options)
-  if (response.status === 401 && !path.startsWith('/api/auth/')) {
+  if (response.status === 401 && !isAuthPath(path)) {
     authEvents.dispatchEvent(new Event('expired'))
+    if (authRecoveryHandler && canRetryAfterAuth(options)) {
+      await authRecoveryHandler()
+      if (!options?.signal?.aborted) return fetch(path, options)
+    }
   }
   return response
 }
@@ -348,7 +367,7 @@ export function listPages(all = false, signal?: AbortSignal): Promise<PageIndexI
 }
 
 export async function updatePage(type: PageType, id: number, body: PageUpdateInput): Promise<PageView> {
-  const response = await fetch(`/api/pages/${type}/${id}`, {
+  const response = await apiFetch(`/api/pages/${type}/${id}`, {
     method: 'PUT',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
