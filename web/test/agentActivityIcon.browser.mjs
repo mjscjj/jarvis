@@ -68,8 +68,8 @@ try {
   const setTasks = async next => { tasks = next; await refresh() }
   await waitState('idle')
   const idleBox = await icon.boundingBox()
-  assert.equal(idleBox.width, 44)
-  assert.equal(idleBox.height, 44)
+  assert.equal(idleBox.width, 60)
+  assert.equal(idleBox.height, 60)
 
   // Poll discovers execution without visiting the task page.
   tasks = [{ id: 1, status: 'executing', source_type: 'manual' }]
@@ -85,7 +85,7 @@ try {
 
   await setTasks([{ id: 1, status: 'executing' }, { id: 2, status: 'executing', source_type: 'scheduled_task' }, { id: 3, status: 'pending' }])
   await page.getByRole('button', { name: 'Jarvis：正在执行 2 个任务，点击查看版本与更新' }).waitFor()
-  assert.equal(await orbit.evaluate(el => getComputedStyle(el).animationDuration), '2.4s')
+  assert.equal(await orbit.evaluate(el => getComputedStyle(el).animationDuration), '1.8s')
   await icon.hover()
   // Becoming interactive must not drop the execution state the icon reports.
   await page.getByRole('tooltip', { name: '正在执行 2 个任务 · 点击查看版本与更新' }).waitFor()
@@ -96,9 +96,9 @@ try {
   await page.locator('.sider-collapse-btn').click()
   await page.waitForTimeout(400)
   const collapsed = await icon.boundingBox()
-  assert.equal(collapsed.width, 44)
+  assert.equal(collapsed.width, 48)
   const sider = await page.locator('.app-sider').boundingBox()
-  assert.ok(collapsed.x - 4 >= sider.x && collapsed.x + 48 <= sider.x + sider.width, 'Glow fits collapsed sidebar')
+  assert.ok(collapsed.x - 7 >= sider.x && collapsed.x + 55 <= sider.x + sider.width, 'Glow fits collapsed sidebar')
   await page.locator('.sider-collapse-btn').click()
 
   await page.emulateMedia({ reducedMotion: 'reduce' })
