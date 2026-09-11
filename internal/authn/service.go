@@ -168,12 +168,9 @@ func (s *Service) beginLogin(ctx context.Context) (LoginResult, error) {
 	// isolates credentials and sessions under profiles/<name>/. Without it a
 	// visitor's login would overwrite the host's own ByteDance credentials.
 	profile := "jarvis-web-" + flowID
-	// Jarvis consumes bytedcli's resumable ByteCloud device-flow contract:
-	// --begin returns a completion token and verification URL, then --complete
-	// finishes the same flow. --session is a different browser-session flow and
-	// may legitimately return success without either value when it reuses an
-	// existing session.
-	raw, err := s.run(ctx, profile, "auth", "login", "--begin")
+	// Explicit QR session mode acquires the visitor's browser SSO session.
+	// ByteCloud's default device flow is a different authorization contract.
+	raw, err := s.run(ctx, profile, "auth", "login", "--begin", "--session", "--session-method", "qr")
 	if err != nil {
 		return LoginResult{}, commandError("start ByteDance SSO", raw, err)
 	}
@@ -215,13 +212,23 @@ func (s *Service) Complete(ctx context.Context, flowID string) (LoginResult, err
 		s.discardFlow(ctx, flowID, pendingFlow.profile)
 		return LoginResult{}, commandError("complete ByteDance SSO", raw, err)
 	}
-	user, authenticated, err := s.probe(ctx, pendingFlow.profile)
+	// The session CLI exits successfully for pending and expired challenges too.
+	switch findString(decodeJSONValues(raw), "login_status") {
+	case "pending":
+		return LoginResult{}, ErrPending
+	case "expired":
+		s.discardFlow(ctx, flowID, pendingFlow.profile)
+		return LoginResult{}, fmt.Errorf("SSO QR code expired; please start login again")
+	case "success":
+		// Only a completed browser session may be used to resolve the visitor.
+	default:
+		s.discardFlow(ctx, flowID, pendingFlow.profile)
+		return LoginResult{}, fmt.Errorf("complete ByteDance SSO: unexpected login status")
+	}
+	user, err := s.probe(ctx, pendingFlow.profile)
 	if err != nil {
 		s.discardFlow(ctx, flowID, pendingFlow.profile)
 		return LoginResult{}, err
-	}
-	if !authenticated {
-		return LoginResult{}, ErrPending
 	}
 	// Jarvis only needs to learn who this is. Dropping the throwaway profile
 	// keeps the visitor's corporate credentials off this host.
@@ -307,32 +314,26 @@ func (s *Service) startSession(user User) (LoginResult, error) {
 	}, nil
 }
 
-func (s *Service) probe(ctx context.Context, profile string) (User, bool, error) {
-	raw, err := s.run(ctx, profile, "auth", "status")
+// userinfo resolves the verified session JWT bootstrapped by --complete.
+// auth status's bytecloud_auth.identity belongs to the separate SDK login.
+func (s *Service) probe(ctx context.Context, profile string) (User, error) {
+	raw, err := s.run(ctx, profile, "auth", "userinfo")
 	if err != nil {
-		return User{}, false, commandError("read ByteDance SSO status", raw, err)
+		return User{}, commandError("read ByteDance SSO identity", raw, err)
 	}
-	var status struct {
-		Data struct {
-			Authenticated bool `json:"authenticated"`
-			ByteCloudAuth struct {
-				Identity User `json:"identity"`
-			} `json:"bytecloud_auth"`
-		} `json:"data"`
+	var response struct {
+		Data User `json:"data"`
 	}
-	if err := json.Unmarshal(raw, &status); err != nil {
-		return User{}, false, fmt.Errorf("read ByteDance SSO status: decode response: %w", err)
+	if err := json.Unmarshal(raw, &response); err != nil {
+		return User{}, fmt.Errorf("read ByteDance SSO identity: decode response: %w", err)
 	}
-	if !status.Data.Authenticated {
-		return User{}, false, nil
-	}
-	user := status.Data.ByteCloudAuth.Identity
+	user := response.Data
 	user.Username = strings.TrimSpace(user.Username)
 	user.Email = strings.TrimSpace(user.Email)
 	if user.Username == "" || user.Email == "" {
-		return User{}, false, fmt.Errorf("read ByteDance SSO status: authenticated identity is incomplete")
+		return User{}, fmt.Errorf("read ByteDance SSO identity: authenticated identity is incomplete")
 	}
-	return user, true, nil
+	return user, nil
 }
 
 func (s *Service) run(ctx context.Context, profile string, args ...string) ([]byte, error) {

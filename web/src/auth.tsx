@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Button, Result, Spin, Typography } from 'antd'
+import { Button, QRCode, Result, Spin, Typography } from 'antd'
 import { LinkOutlined, LoginOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
 import { authEvents, completeByteDanceLogin, getAuthStatus, loginWithByteDance, logoutFromJarvis, setAuthRecoveryHandler } from './api'
 import type { AuthUser, AuthView } from './types'
@@ -173,12 +173,14 @@ export function AuthGate({ agentName, children }: { agentName: string; children:
     window.addEventListener('hashchange', sync)
     return () => window.removeEventListener('hashchange', sync)
   }, [])
+  // Module visitors do not need a principal session, including during recovery.
+  if (onModuleRoute) return children
   if (loading) {
     return <div className="auth-loading"><Spin size="small" /><span>正在验证字节身份...</span></div>
   }
   // App modules carry their own visitor login, so they render without the
   // outer principal SSO session. Everything else stays behind the gate.
-  if (!enabled || user || onModuleRoute) return children
+  if (!enabled || user) return children
 
   return (
     <main className="auth-page">
@@ -188,6 +190,8 @@ export function AuthGate({ agentName, children }: { agentName: string; children:
         <Typography.Paragraph>使用字节身份登录</Typography.Paragraph>
         {pending?.verification_url ? (
           <>
+            <QRCode value={pending.verification_url} size={200} />
+            <Typography.Text>请使用飞书扫描二维码授权登录</Typography.Text>
             <Button type="primary" icon={<LinkOutlined />} href={pending.verification_url} target="_blank" rel="noreferrer">
               打开 SSO 授权页
             </Button>

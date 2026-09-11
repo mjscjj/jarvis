@@ -94,7 +94,8 @@ function AppShell() {
   const { enabled: authEnabled, user, logout } = useAuth()
   const { context, navigate } = usePageContext()
   const weeklyShare = context.active_key === 'biz-okr' && isWeeklyShareViewState(context.view_state)
-  const runtimeFailures = useRuntimeFailureCount()
+  const principalAccess = !authEnabled || Boolean(user)
+  const runtimeFailures = useRuntimeFailureCount(60_000, principalAccess)
   const [siderCollapsed, setSiderCollapsed] = useLocalStorage('jarvis.siderCollapsed', false)
   const siderWidth = siderCollapsed ? SIDER_COLLAPSED_WIDTH : SIDER_WIDTH
   // Preserve an existing main-branch plugin choice when initializing the
@@ -144,6 +145,7 @@ function AppShell() {
     : pageLabels[context.active_key] || 'Jarvis'
 
   const refreshPlugins = useCallback(async () => {
+    if (!principalAccess) return
     try {
       const result = await listPluginInstallations()
       setEnabledPlugins(result.items.filter((item) => item.enabled))
@@ -152,7 +154,7 @@ function AppShell() {
     } finally {
       setPluginsLoaded(true)
     }
-  }, [])
+  }, [principalAccess])
 
   useEffect(() => {
     void refreshPlugins()
@@ -509,7 +511,7 @@ function AppShell() {
               {pages[context.active_key]}
             </Suspense>
             <Suspense fallback={null}>
-              <Chat compact={context.active_key !== 'chat'} hidden={context.active_key === 'biz-okr'} />
+              {principalAccess && <Chat compact={context.active_key !== 'chat'} hidden={context.active_key === 'biz-okr'} />}
             </Suspense>
           </Content>
         </div>
