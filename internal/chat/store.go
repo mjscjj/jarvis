@@ -42,6 +42,7 @@ type SessionView struct {
 }
 
 type MessageView struct {
+	Status      string           `json:"status,omitempty"`
 	ID          string           `json:"id"`
 	Role        string           `json:"role"`
 	Text        string           `json:"text"`
@@ -300,6 +301,18 @@ func (s *Service) GetSession(ctx context.Context, id string) (*SessionView, erro
 	}
 	for _, message := range messages {
 		mv := MessageView{ID: message.ID, Role: message.Role, Text: message.Text, Attachments: attachmentsByMessage[message.ID], CreatedAt: message.CreatedAt}
+		if len(message.Meta) > 0 {
+			var meta struct {
+				Status string `json:"status"`
+			}
+			if err := json.Unmarshal(message.Meta, &meta); err != nil {
+				return nil, fmt.Errorf("read chat message status: %w", err)
+			}
+			mv.Status = meta.Status
+			if mv.Status == "streaming" && !view.Running {
+				mv.Status = "interrupted"
+			}
+		}
 		if message.Agent != nil {
 			mv.Agent = *message.Agent
 		}

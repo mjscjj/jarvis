@@ -23,6 +23,10 @@ const maxCodexOutputBytes = 1 << 20
 // run when a CodexRunner is constructed.
 const resumeProbeTimeout = 20 * time.Second
 
+// processWaitDelay 是子进程退出（或被取消）之后，允许 Run 继续等待管道关闭的
+// 上限。只在异常路径生效。
+const processWaitDelay = 5 * time.Second
+
 // maxResumeSchemaRewrites is how many extra times a session may be asked to
 // restate its final message after returning one that broke the contract. It
 // applies to fresh runs too: --output-schema describes the contract to the
@@ -477,6 +481,9 @@ func (r *CodexRunner) run(ctx context.Context, prompt, sandbox, repoPath string,
 		}
 		return err
 	}
+	// 孙进程继承 stdout/stderr 后，即使 codex 本身已退出，Run 也会一直等到管道
+	// 关闭。没有这个上限，一个残留后台进程就能让本次执行永不返回。
+	command.WaitDelay = processWaitDelay
 	if strings.TrimSpace(repoPath) == "" && invocation.TaskID == 0 {
 		command.Dir = tempDir
 	} else if strings.TrimSpace(repoPath) != "" {

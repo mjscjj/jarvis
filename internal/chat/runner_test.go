@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -188,6 +189,46 @@ while :; do printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"te
 	}
 	if elapsed := time.Since(started); elapsed > time.Second {
 		t.Fatalf("Stream() took %s after consumer failure; child process was not stopped promptly", elapsed)
+	}
+}
+
+// A CLI that spawns a background process leaves that grandchild holding the
+// inherited stderr pipe, so Wait blocks until the grandchild exits — for as long
+// as it lives, the caller's session slot stays locked. The turn itself streamed
+// fine, but a pipe timeout must remain an explicit failure rather than fake success.
+// Runs for roughly processWaitDelay.
+func TestRunnerDoesNotWaitForLeakedGrandchild(t *testing.T) {
+	t.Parallel()
+	bin := filepath.Join(t.TempDir(), "cursor-agent-test")
+	// stdout is redirected so only the stderr pipe stays held: the stream itself
+	// must reach EOF, otherwise this would test the parser rather than Wait.
+	script := `#!/bin/sh
+sleep 120 >/dev/null &
+printf '%s\n' '{"type":"system","session_id":"cursor-1"}'
+printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}]},"session_id":"cursor-1","timestamp_ms":1}'
+exit 0
+`
+	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	r := runner{agent: "cursor", bin: bin, model: "auto", timeout: 90 * time.Second}
+	var text string
+	started := time.Now()
+	err := r.Stream(context.Background(), "hello", "", nil, func(e Event) error {
+		if e.Kind == EventDelta {
+			text += e.Text
+		}
+		return nil
+	})
+	elapsed := time.Since(started)
+	if !errors.Is(err, exec.ErrWaitDelay) {
+		t.Fatalf("Stream() error = %v, want ErrWaitDelay", err)
+	}
+	if text != "hi" {
+		t.Fatalf("streamed text = %q, want %q", text, "hi")
+	}
+	if elapsed > processWaitDelay+10*time.Second {
+		t.Fatalf("Stream() took %s; Wait was not bounded by the leaked grandchild's lifetime", elapsed)
 	}
 }
 
