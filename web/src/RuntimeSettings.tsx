@@ -330,12 +330,10 @@ export default function RuntimeSettings() {
             <NumberField name="extract_concurrency" label="并发会话数" min={1} max={16} help="不同单聊或群聊可并行；同一个 chat_id 始终串行。" />
             <NumberField name="extract_batch_messages" label="每批消息上限" min={1} max={5000} />
           </Section>
-          <Section title="输入上下文" description="决定每次提取能看到多少近期消息、开放 Todo、今天的事实明细、关键人事实和最近有进展的任务。">
+          <Section title="输入上下文" description="决定每次提取能看到多少近期消息、开放 Todo 和最近有进展的任务。">
             <NumberField name="extract_context_messages" label="每个会话前文条数" min={0} max={500} />
             <NumberField name="extract_context_window_minutes" label="前文时间窗（分钟）" min={1} max={10080} />
             <NumberField name="extract_open_todo_limit" label="开放 Todo 上限" min={1} max={1000} help="随 Prompt 提供的未关闭 Todo 数量，用于避免重复创建。" />
-            <NumberField name="extract_fact_limit" label="每主体今天事实上限" min={1} max={100} help="每个主体（群/项目/人）今天注入的明细事实条数；前一天另加一条日压缩摘要。" />
-            <NumberField name="extract_key_person_limit" label="关键人事实人数上限" min={1} max={50} help="交办人、leader 与本轮发言者取并集后，最多取多少人注入人物事实。" />
             <NumberField name="extract_recent_task_limit" label="最近有进展任务上限" min={1} max={100} help="注入近期有进展的任务摘要条数。" />
             <NumberField name="extract_max_prompt_chars" label="Prompt 字符上限" min={1000} max={1000000} step={1000} />
           </Section>
