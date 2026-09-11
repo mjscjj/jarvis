@@ -96,7 +96,7 @@ func (a *Authorizer) Probe(ctx context.Context, provider string) AuthStatus {
 }
 
 func (a *Authorizer) Begin(ctx context.Context, provider string) AuthStatus {
-	if status := a.Probe(ctx, provider); status.Status == AuthAuthorized {
+	if status := a.Probe(ctx, provider); status.Status != AuthRequired {
 		return status
 	}
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
@@ -105,7 +105,7 @@ func (a *Authorizer) Begin(ctx context.Context, provider string) AuthStatus {
 	args := []string{"--json"}
 	switch provider {
 	case "bytedcli-session":
-		args = append(args, "auth", "login", "--begin", "--session")
+		args = append(args, "auth", "login", "--begin")
 	case "lark-cli-im":
 		bin = "lark-cli"
 		args = []string{"auth", "login", "--domain", "im", "--no-wait", "--json"}
@@ -168,7 +168,7 @@ func (a *Authorizer) Complete(ctx context.Context, provider, flowID string) Auth
 		a.mu.Lock()
 		delete(a.flows, flow.ID)
 		a.mu.Unlock()
-		return AuthStatus{Status: AuthAuthorized}
+		return a.Probe(ctx, provider)
 	}
 	if hasErrorCode(raw, "AUTHORIZATION_PENDING", "SLOW_DOWN") {
 		return AuthStatus{
