@@ -69,7 +69,21 @@ lark-cli contact +search-user \
 
 ### 给个人发消息
 
-除 principal 本人外，不让 Bot 直接私聊对方。先用 principal 和对方的 open_id 搜索已有私有助手群；`+chat-search` 需要按返回的 page token 查完所有页：
+按 M5 的审批判断和会话选择执行，不强制所有个人消息走助手群。不能用 principal 身份代发个人私聊，也不能让 Bot 回复它不在场的真人私聊。
+
+**Bot 单聊**：使用 Bot 自身身份直接发给已核验的对方：
+
+```bash
+lark-cli im +messages-send \
+  --user-id "<target open_id>" \
+  --markdown '<消息内容>' \
+  --idempotency-key "<稳定幂等键>" \
+  --as bot
+```
+
+按第 5 节读回确认后，按 M5 rules 用 `notice-principal` 完成 CC。原消息和 CC 分别使用稳定幂等键、记录凭据与 effects；CC 失败只补 CC。发送失败原样交回 M5，不自动换身份或建群。
+
+**助手群**：确需助手群时，先用 principal 和对方的 open_id 搜索已有私有助手群；`+chat-search` 需要按返回的 page token 查完所有页：
 
 ```bash
 lark-cli im +chat-search \
@@ -109,7 +123,7 @@ lark-cli im +chat-create \
 
 创建后必须再次用 `+chat-members-list --page-all --page-limit 0` 做同样的完整核验。建群是已经发生的独立副作用：成功后在最终结果申报一条 `feishu_chat` effect；即使随后发消息失败，也不能把已建群写成没有发生。重跑时先搜索并复用这个群。
 
-然后用 Bot 在群里发送。按 M5 rules 构造真实 mention：除私聊 principal 本人外，必须真实 `@` principal；面向具体个人时同时真实 `@` 对方。助手群因此同时 `@` 对方和 principal：
+然后用 Bot 在助手群里发送，同时真实 `@` 对方和 principal：
 
 ```bash
 lark-cli im +messages-send \
@@ -144,7 +158,7 @@ lark-cli im chat.members create \
 
 ### 在群聊里给某个人发消息
 
-由 M5 根据语义选择准确的原消息锚点，不使用“最新一条消息”替代判断。在相关消息下面创建话题，并同时真实 `@` 对方和 principal：
+由 M5 根据语义选择准确的原消息锚点，不使用“最新一条消息”替代判断。在相关消息下面创建话题，真实 `@` 对方。principal 在群内时同时真实 `@` principal，如下例；不在群内时不放无效 mention，按 M5 rules 另行 CC：
 
 ```bash
 lark-cli im +messages-reply \
@@ -157,7 +171,7 @@ lark-cli im +messages-reply \
 
 ### 给整个群发消息
 
-存在明确原消息锚点时仍使用 `+messages-reply --reply-in-thread`，但不因“发给整个群”而额外 `@` 无关成员；仍必须真实 `@` principal。只有没有锚点的主动群公告才直接发到 `chat_id`：
+存在明确原消息锚点时仍使用 `+messages-reply --reply-in-thread`，不额外 `@` 无关成员。principal 在群内时真实 `@` principal，如下例；不在群内时按 M5 rules 另行 CC。只有没有锚点的主动群公告才直接发到 `chat_id`：
 
 ```bash
 lark-cli im +messages-send \
