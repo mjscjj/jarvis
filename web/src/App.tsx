@@ -27,9 +27,10 @@ import { OnboardingGate } from './Onboarding'
 import { PageContextProvider, usePageContext } from './pageContext'
 import { useLocalStorage } from './hooks/useLocalStorage'
 import { useRuntimeFailureCount } from './hooks/useRuntimeFailureCount'
+import { useExecutingTaskCount } from './hooks/useExecutingTaskCount'
 import { listPluginInstallations, shutdownJarvis } from './api'
 import type { Plugin } from './types'
-import jarvisIcon from './assets/jarvis-icon.png'
+import { AgentActivityIcon } from './components/AgentActivityIcon'
 import { DeveloperHelpButton } from './components/DeveloperDocuments'
 
 const { Sider, Content } = Layout
@@ -73,6 +74,7 @@ function AppShell() {
   const { user, logout } = useAuth()
   const { context, navigate } = usePageContext()
   const runtimeFailures = useRuntimeFailureCount()
+  const executingTasks = useExecutingTaskCount()
   const [siderCollapsed, setSiderCollapsed] = useLocalStorage('jarvis.siderCollapsed', false)
   const [managementOpen, setManagementOpen] = useState(false)
   const [pluginsOpen, setPluginsOpen] = useLocalStorage('jarvis.pluginsOpen', true)
@@ -256,7 +258,7 @@ function AppShell() {
       {messageContext}
       <Sider className="app-sider" width={SIDER_WIDTH} collapsedWidth={SIDER_COLLAPSED_WIDTH} collapsed={siderCollapsed} theme="light">
         <div className={`sider-brand ${siderCollapsed ? 'is-collapsed' : ''}`}>
-          <img className="sider-brand-icon" src={jarvisIcon} alt={`${agentName} 图标`} />
+          <AgentActivityIcon name={agentName} {...executingTasks} />
           {!siderCollapsed && (
             <div className="sider-brand-copy">
               <div className="sider-name-row">

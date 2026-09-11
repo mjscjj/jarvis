@@ -1,0 +1,107 @@
+.agent-activity-icon {
+  position: relative;
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  border-radius: 13px;
+}
+
+.agent-activity-icon:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 4px;
+}
+
+.agent-activity-core {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  transition: transform 500ms ease-out;
+}
+
+.agent-activity-core > img { display: block; }
+
+.agent-activity-halo {
+  position: absolute;
+  inset: -4px;
+  overflow: hidden;
+  border-radius: 17px;
+  pointer-events: none;
+}
+
+.agent-activity-halo > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(ellipse, rgb(46 204 255 / 55%) 20%, rgb(46 204 255 / 24%) 55%, transparent 72%);
+  animation: agent-core-breathe 3s ease-in-out infinite;
+}
+
+.agent-activity-flow {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.agent-activity-halo,
+.agent-activity-flow {
+  opacity: 0;
+  transition: opacity 500ms ease-out;
+}
+
+.agent-activity-ring { opacity: .35; }
+
+.agent-activity-orbit {
+  transform-origin: 128px 124px;
+  animation: agent-core-orbit 2.4s linear infinite;
+}
+
+.agent-activity-icon[data-state='running'] .agent-activity-core {
+  transform: scale(1.04);
+  transition-duration: 300ms;
+}
+
+.agent-activity-icon[data-state='running'] .agent-activity-halo,
+.agent-activity-icon[data-state='running'] .agent-activity-flow {
+  opacity: 1;
+  transition-duration: 300ms;
+}
+
+.agent-activity-icon:not([data-state='running']) .agent-activity-orbit,
+.agent-activity-icon:not([data-state='running']) .agent-activity-halo > span {
+  animation-play-state: paused;
+}
+
+.agent-activity-error {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  display: grid;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--color-bg-elevated);
+  border-radius: 50%;
+  background: var(--color-warning);
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+@keyframes agent-core-orbit { to { transform: rotate(360deg); } }
+@keyframes agent-core-breathe {
+  0%, 100% { opacity: .5; transform: scale(.94); }
+  50% { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-activity-icon[data-state] .agent-activity-core { transform: none; transition: none; }
+  .agent-activity-halo, .agent-activity-flow { transition: none; }
+  .agent-activity-orbit { display: none; animation: none; }
+  .agent-activity-halo > span { animation: none; }
+  .agent-activity-ring { opacity: .85; }
+}

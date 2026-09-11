@@ -1,0 +1,34 @@
+import { Tooltip } from 'antd'
+import jarvisIcon from '../assets/jarvis-icon.png'
+import type { ExecutingTaskState } from '../hooks/useExecutingTaskCount'
+import '../styles/agent-activity-icon.css'
+
+export function AgentActivityIcon({ name, count, error }: ExecutingTaskState & { name: string }) {
+  const running = !error && count !== undefined && count > 0
+  const status = error ? 'error' : count === undefined ? 'loading' : running ? 'running' : 'idle'
+  const label = error
+    ? '任务状态读取失败'
+    : count === undefined ? '正在读取任务状态'
+      : running ? `正在执行 ${count} 个任务` : '暂无执行中的任务'
+
+  return (
+    <Tooltip title={error ? `${label}：${error}` : label}>
+      <span className="agent-activity-icon" data-state={status} role="img" aria-label={`${name}：${label}`} tabIndex={0}>
+        <span className="agent-activity-halo" aria-hidden="true"><span /></span>
+        <span className="agent-activity-core" aria-hidden="true">
+          <img className="sider-brand-icon" src={jarvisIcon} alt="" />
+          <svg className="agent-activity-flow" viewBox="0 0 256 256" fill="none">
+            <circle className="agent-activity-ring" cx="128" cy="124" r="64" stroke="#65e5ff" strokeWidth="5" />
+            <g className="agent-activity-orbit">
+              <path d="M 173.25 78.75 A 64 64 0 0 1 192 124" stroke="#2acbff" strokeWidth="10" strokeLinecap="round" opacity=".35" />
+              <path d="M 187.13 99.51 A 64 64 0 0 1 192 124" stroke="#8af1ff" strokeWidth="6" strokeLinecap="round" />
+              <circle cx="192" cy="124" r="9" fill="#4addff" opacity=".3" />
+              <circle cx="192" cy="124" r="4.5" fill="#ecfdff" />
+            </g>
+          </svg>
+        </span>
+        {error && <span className="agent-activity-error" aria-hidden="true">!</span>}
+      </span>
+    </Tooltip>
+  )
+}
