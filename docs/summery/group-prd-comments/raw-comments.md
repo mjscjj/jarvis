@@ -1,37 +1,38 @@
-# Claire（李潇琳）近 3 个月「初评/组内评审群」内飞书 PRD 评论原始材料
+# Claire（李潇琳）近 3 个月「三个评审群」内飞书 PRD 评论原始材料
 
-> 数据源：`drive +search --chat-ids <三个评审群>` 枚举群内分享的云文档 → `drive +list-comments --solved-status all` 抽取本人评论（open_id `ou_4bb78ddd152503b76a40232afa2420dd`），仅保留创建时间 ≥ 2026-06-11 的评论。
-> 群：Backstage初评(oc_1506...)、平台融合初评(oc_5f13...)、组内评审(oc_43d3...)。
-> 采集：2026-09-11 10:40 UTC；命中 18 篇 PRD/文档、52 条本人评论。
+> 数据源：`drive +search --chat-ids <三个评审群>` **全量翻页**枚举群内分享的云文档（去重后 871 篇）→ `drive +list-comments --solved-status all` 全量翻页抽取本人评论（open_id `ou_4bb78ddd152503b76a40232afa2420dd`），仅保留创建时间 ≥ 2026-06-11 的评论。
+> 三个群：Backstage初评(oc_1506…)、平台融合初评(oc_5f13…)、组内评审(oc_43d3…)。
+> 采集：2026-09-11（全量翻页版）；群内分享文档 357 / 202 / 439 篇，去重 871 篇；命中本人评论 18 篇文档、52 条评论。
+> 说明：平台融合初评群近 3 个月无本人评论；命中集中在组内评审群（10 篇/33 条）与 Backstage初评群（8 篇/19 条）。
 
 ---
 
 ## 目录
 
-1. [【主播招募】经纪人认领跟进线索](#1) — 7 条｜组内评审群
+1. [【主播招募】经纪人认领&跟进线索](#1) — 7 条｜组内评审群
 2. [【CN Growth // 公会增长】CN Buddy Program 2nd phase iteration // 公会服务费功能二期迭代](#2) — 7 条｜组内评审群
-3. [ [Agency Growth]TCN conference H5](#3) — 6 条｜Backstage初评群
-4. [AI 客服 - for 公会  AM](#4) — 5 条｜组内评审群
-5. [【公会基础经营】线索管理EUTTPTTP部署-支持EUUS内广线索回流](#5) — 4 条｜Backstage初评群
+3. [[Agency Growth]TCN conference H5](#3) — 6 条｜Backstage初评群
+4. [AI 客服 - for 公会 & AM](#4) — 5 条｜组内评审群
+5. [【公会基础经营】线索管理EUTTP&TTP部署-支持EU&US内广线索回流](#5) — 4 条｜Backstage初评群
 6. [【公会主播】PGC专项：公会主播中心新增Star Creator模块](#6) — 4 条｜组内评审群
-7. [【公会主播】协商退会三方仲裁开区](#7) — 3 条｜组内评审群
-8. [UGC撮合试点：Pair匹配前置验收](#8) — 2 条｜Backstage初评群
-9. [[跨线Arena][TCN Growth] 公会平台移动端主框架](#9) — 2 条｜Backstage初评群
+7. [【公会主播】协商退会&三方仲裁开区](#7) — 3 条｜组内评审群
+8. [[跨线Arena][TCN Growth] 公会平台移动端主框架](#8) — 2 条｜Backstage初评群
+9. [UGC撮合试点：Pair匹配前置验收](#9) — 2 条｜Backstage初评群
 10. [[公会主播] 入会即有LIVE Studio权限 // Users gain immediate LIVE Studio permission upon joining the CN](#10) — 2 条｜Backstage初评群
-11. [【公会主播】PGC专项：主播列表详情页透传star creator达成状态](#11) — 2 条｜组内评审群
-12. [主播报告建议调整新增调优进度](#12) — 2 条｜组内评审群
-13. [[Agency Growth]C端活动联动公会赛//TCN campaign bond to creator campaign ](#13) — 1 条｜Backstage初评群
-14. [[TCN Growth] 支持PGC公会赛落地——报名赛](#14) — 1 条｜Backstage初评群
-15. [【公会基础经营】官网主页优化](#15) — 1 条｜Backstage初评群
-16. [[Agency Growth]政策测算沙盒能力迭代](#16) — 1 条｜组内评审群
-17. [【主播招募】主播招募状态展示可筛选](#17) — 1 条｜组内评审群
-18. [[Agency Growth]激励诊断与助手：政策理解、诊断与行动优化建议//Incentive diagnosis  assistant: Fee policy ...](#18) — 1 条｜组内评审群
+11. [【公会主播】PGC专项：主播列表&详情页透传star creator达成状态](#11) — 2 条｜组内评审群
+12. [主播报告建议调整&新增调优进度](#12) — 2 条｜组内评审群
+13. [[Agency Growth]C端活动联动公会赛//TCN campaign bond to creator campaign](#13) — 1 条｜Backstage初评群
+14. [【公会基础经营】官网主页优化](#14) — 1 条｜Backstage初评群
+15. [[TCN Growth] 支持PGC公会赛落地——报名赛](#15) — 1 条｜Backstage初评群
+16. [【主播招募】主播招募状态展示&可筛选](#16) — 1 条｜组内评审群
+17. [[Agency Growth]政策测算沙盒能力迭代](#17) — 1 条｜组内评审群
+18. [[Agency Growth]激励诊断与助手：政策理解、诊断与行动优化建议//Incentive diagnosis & assistant: Fee policy ...](#18) — 1 条｜组内评审群
 
 ---
 
 
 <a id="1"></a>
-## 1. 【主播招募】经纪人认领跟进线索
+## 1. 【主播招募】经纪人认领&跟进线索
 
 - 链接：https://bytedance.larkoffice.com/wiki/U1rdwXvhIi1NcVkm6EecQqV3nSc
 - 类型：DOCX｜Owner：李丹｜出现群：组内评审群
@@ -84,7 +85,7 @@
 
 
 <a id="4"></a>
-## 4. AI 客服 - for 公会  AM
+## 4. AI 客服 - for 公会 & AM
 
 - 链接：https://bytedance.sg.larkoffice.com/docx/Md1rdtT9Xov94rxd42flxc3PgUd
 - 类型：DOCX｜Owner：何金川｜出现群：组内评审群
@@ -100,7 +101,7 @@
 
 
 <a id="5"></a>
-## 5. 【公会基础经营】线索管理EUTTPTTP部署-支持EUUS内广线索回流
+## 5. 【公会基础经营】线索管理EUTTP&TTP部署-支持EU&US内广线索回流
 
 - 链接：https://bytedance.my.larkoffice.com/docx/McRVdpQfEoeGJax9KDEmCUJdyxb
 - 类型：DOCX｜Owner：冯安琪｜出现群：Backstage初评群
@@ -130,7 +131,7 @@
 
 
 <a id="7"></a>
-## 7. 【公会主播】协商退会三方仲裁开区
+## 7. 【公会主播】协商退会&三方仲裁开区
 
 - 链接：https://bytedance.larkoffice.com/wiki/E0O4wByv4i7JMDkKNpjc7d6OnTg
 - 类型：DOCX｜Owner：周琳｜出现群：组内评审群
@@ -144,20 +145,7 @@
 
 
 <a id="8"></a>
-## 8. UGC撮合试点：Pair匹配前置验收
-
-- 链接：https://bytedance.larkoffice.com/wiki/KwPHwPZL2iCdFMkzv7ZcnGBMnJf
-- 类型：DOCX｜Owner：李丹｜出现群：Backstage初评群
-- 本人评论数：2
-
-| # | 引用上下文 | 评论内容 | 时间(UTC) |
-|---|---|---|---|
-| 1 | 主播找公会 | 这是不是写错了 | 2026-07-10 06:00 |
-| 2 | UGC撮合试点：Pair匹配前置验收 | 这个能给我一个表或者一个agent么，输入一个uid或者agency id,看匹配结果 | 2026-07-10 06:30 |
-
-
-<a id="9"></a>
-## 9. [跨线Arena][TCN Growth] 公会平台移动端主框架
+## 8. [跨线Arena][TCN Growth] 公会平台移动端主框架
 
 - 链接：https://bytedance.sg.larkoffice.com/docx/NAl1dmDiJoOLmexceuflJhUKgub
 - 类型：DOCX｜Owner：浦新翩｜出现群：Backstage初评群
@@ -167,6 +155,19 @@
 |---|---|---|---|
 | 1 | 移动端布局原 | 这个和现在的差异是啥 | 2026-07-22 06:09 |
 | 2 | Step3：生成桌面快捷方式； | 这个看看怎么强引导 | 2026-07-22 06:11 |
+
+
+<a id="9"></a>
+## 9. UGC撮合试点：Pair匹配前置验收
+
+- 链接：https://bytedance.larkoffice.com/wiki/KwPHwPZL2iCdFMkzv7ZcnGBMnJf
+- 类型：DOCX｜Owner：李丹｜出现群：Backstage初评群
+- 本人评论数：2
+
+| # | 引用上下文 | 评论内容 | 时间(UTC) |
+|---|---|---|---|
+| 1 | 主播找公会 | 这是不是写错了 | 2026-07-10 06:00 |
+| 2 | UGC撮合试点：Pair匹配前置验收 | 这个能给我一个表或者一个agent么，输入一个uid或者agency id,看匹配结果 | 2026-07-10 06:30 |
 
 
 <a id="10"></a>
@@ -183,7 +184,7 @@
 
 
 <a id="11"></a>
-## 11. 【公会主播】PGC专项：主播列表详情页透传star creator达成状态
+## 11. 【公会主播】PGC专项：主播列表&详情页透传star creator达成状态
 
 - 链接：https://bytedance.larkoffice.com/wiki/KF6QwCeYNiiBxok9S5tc0XkrnHb
 - 类型：DOCX｜Owner：王曼琪｜出现群：组内评审群
@@ -191,12 +192,12 @@
 
 | # | 引用上下文 | 评论内容 | 时间(UTC) |
 |---|---|---|---|
-| 1 | 画面表现达标 你的直播画面整体干净、清晰，观看体验舒适。光线充足，能够清楚展现人物形象；人物比例协调，背景整洁，没有明显干扰因素。画面质量、清晰度和动态表现已经 | Pending更细化 概念再对 | 2026-08-05 06:22 |
+| 1 | 画面表现达标 你的直播画面整体干净、清晰，观看体验舒适。光线充足，能够清楚展现人物形象；人物比例协调，背景整洁，没有明显干扰因素。画面质量、清晰度和动态表现已经达到较好的水平。 观众不会因为画面体验不佳而快速离开直播间，有助于提升停留时长，并保持稳定的观看 | Pending更细化 概念再对 | 2026-08-05 06:22 |
 | 2 | 做功引导操作「提升建议」 | 这个看看咋优化吧，感觉说了跟没说一样，没什么指导意义 | 2026-08-19 03:59 |
 
 
 <a id="12"></a>
-## 12. 主播报告建议调整新增调优进度
+## 12. 主播报告建议调整&新增调优进度
 
 - 链接：https://bytedance.larkoffice.com/wiki/JUCHwQxhaiqmo4kKA5ec2vgMnGe
 - 类型：DOCX｜Owner：张月仁｜出现群：组内评审群
@@ -221,19 +222,7 @@
 
 
 <a id="14"></a>
-## 14. [TCN Growth] 支持PGC公会赛落地——报名赛
-
-- 链接：https://bytedance.sg.larkoffice.com/docx/RVrFdIqSBo1MZqx8inelUH9LgJe
-- 类型：DOCX｜Owner：浦新翩｜出现群：Backstage初评群
-- 本人评论数：1
-
-| # | 引用上下文 | 评论内容 | 时间(UTC) |
-|---|---|---|---|
-| 1 | [TCN Growth] 支持PGC公会赛落地：新增相关玩法指标及主播圈选 | 整个方案都没sign off，产品判断一下哪些是基建吧 | 2026-07-08 06:08 |
-
-
-<a id="15"></a>
-## 15. 【公会基础经营】官网主页优化
+## 14. 【公会基础经营】官网主页优化
 
 - 链接：https://bytedance.sg.larkoffice.com/docx/TrfHdYgcfo6ycdx9wa5lc6hZg3b
 - 类型：DOCX｜Owner：彭哲｜出现群：Backstage初评群
@@ -244,20 +233,20 @@
 | 1 | SEO 周期内（上线后一年）提升官网UV + 3400 | 搞半天才3400，这个咋算出来的 | 2026-06-22 07:57 |
 
 
-<a id="16"></a>
-## 16. [Agency Growth]政策测算沙盒能力迭代
+<a id="15"></a>
+## 15. [TCN Growth] 支持PGC公会赛落地——报名赛
 
-- 链接：https://bytedance.larkoffice.com/wiki/Lzn1wjUqwiSf1okMb5WcRtzlnfg
-- 类型：DOCX｜Owner：杨丽莹｜出现群：组内评审群
+- 链接：https://bytedance.sg.larkoffice.com/docx/RVrFdIqSBo1MZqx8inelUH9LgJe
+- 类型：DOCX｜Owner：浦新翩｜出现群：Backstage初评群
 - 本人评论数：1
 
 | # | 引用上下文 | 评论内容 | 时间(UTC) |
 |---|---|---|---|
-| 1 | [画板] | 看不清，讲一下 | 2026-08-26 06:16 |
+| 1 | [TCN Growth] 支持PGC公会赛落地：新增相关玩法指标及主播圈选 | 整个方案都没sign off，产品判断一下哪些是基建吧 | 2026-07-08 06:08 |
 
 
-<a id="17"></a>
-## 17. 【主播招募】主播招募状态展示可筛选
+<a id="16"></a>
+## 16. 【主播招募】主播招募状态展示&可筛选
 
 - 链接：https://bytedance.larkoffice.com/wiki/YpNywFjJEimoNLk3pXdcNFkwnud
 - 类型：DOCX｜Owner：李丹｜出现群：组内评审群
@@ -268,8 +257,20 @@
 | 1 | hover 时展示具体不可以邀约的原因； | 具体是啥 | 2026-08-26 06:11 |
 
 
+<a id="17"></a>
+## 17. [Agency Growth]政策测算沙盒能力迭代
+
+- 链接：https://bytedance.larkoffice.com/wiki/Lzn1wjUqwiSf1okMb5WcRtzlnfg
+- 类型：DOCX｜Owner：杨丽莹｜出现群：组内评审群
+- 本人评论数：1
+
+| # | 引用上下文 | 评论内容 | 时间(UTC) |
+|---|---|---|---|
+| 1 | [画板] | 看不清，讲一下 | 2026-08-26 06:16 |
+
+
 <a id="18"></a>
-## 18. [Agency Growth]激励诊断与助手：政策理解、诊断与行动优化建议//Incentive diagnosis  assistant: Fee policy ...
+## 18. [Agency Growth]激励诊断与助手：政策理解、诊断与行动优化建议//Incentive diagnosis & assistant: Fee policy ...
 
 - 链接：https://bytedance.larkoffice.com/wiki/VF1rwyOEyiDNc3kG2wncHSIXnge
 - 类型：DOCX｜Owner：杨丽莹｜出现群：组内评审群
@@ -278,3 +279,4 @@
 | # | 引用上下文 | 评论内容 | 时间(UTC) |
 |---|---|---|---|
 | 1 | 诊断skill输出信息 | 这个逻辑有点没看懂 | 2026-07-22 06:23 |
+
