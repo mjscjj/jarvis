@@ -1,0 +1,125 @@
+.security-page {
+  width: 100%;
+}
+
+.security-page .page-header {
+  margin-bottom: var(--space-4);
+}
+
+.security-page .page-title.ant-typography {
+  font-size: 20px;
+}
+
+.security-settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.security-settings > .ant-alert {
+  padding-block: 7px;
+  font-size: 13px;
+}
+
+.security-settings-loading {
+  padding: 40px;
+  text-align: center;
+}
+
+.security-policy-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.security-policy-card,
+.security-audit-card {
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
+}
+
+.security-policy-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.security-policy-card > .ant-card-body,
+.security-audit-card > .ant-card-body {
+  padding: var(--space-4);
+}
+
+.security-policy-card::before {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--color-primary);
+  content: '';
+}
+
+.security-policy-card.is-pending::before {
+  background: #d89614;
+}
+
+.security-policy-card h4.ant-typography,
+.security-audit-card h4.ant-typography {
+  margin: 0 0 2px !important;
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.security-policy-card .ant-typography,
+.security-audit-header .ant-typography {
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.security-policy-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  color: var(--color-primary);
+  background:
+    linear-gradient(145deg, rgb(42 114 86 / 18%), rgb(42 114 86 / 6%)),
+    var(--color-bg-soft);
+  font-size: 16px;
+}
+
+.security-audit-boundary {
+  margin: var(--space-3) 0;
+}
+
+.security-audit-boundary .ant-alert-message {
+  font-size: 13px;
+}
+
+.security-audit-boundary .ant-alert-description {
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.security-policy-actions {
+  margin-top: var(--space-4);
+}
+
+.security-audit-header {
+  margin-bottom: var(--space-3);
+}
+
+.security-audit-card .ant-table {
+  font-size: 12px;
+}
+
+.security-audit-card .ant-table-thead > tr > th,
+.security-audit-card .ant-table-tbody > tr > td {
+  padding-block: 9px;
+}
+
+@media (max-width: 900px) {
+  .security-policy-grid {
+    grid-template-columns: 1fr;
+  }
+}
