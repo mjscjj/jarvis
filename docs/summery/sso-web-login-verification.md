@@ -26,10 +26,11 @@
 
 Partition：CN。
 
-待确认并登记的精确 Origin（不带末尾斜线）：
+用户已确认本机使用域名，待确认并登记的精确 Origin（不带末尾斜线）：
 
-- 正式：`https://emily.bytedance.net`
-- 独立测试：`http://n199-199-203.byted.org:18813`
+- `https://emily.bytedance.net`
+
+2026-09-11 实测此域名的 `/healthz` 正常，`/api/auth/status` 返回 `enabled:false`，对应当前线上服务。先前的 `n199-199-203.byted.org:18813` 只是独立 worktree 临时测试入口，不作为用户指定的接入域名。
 
 需要平台确认已有登记状态、域名是否满足内网解析要求，以及测试环境 HTTP Cookie 限制。测试应优先配备独立 HTTPS 域名。
 
