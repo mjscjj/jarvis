@@ -58,12 +58,61 @@ func TestAppCreationPublishesOnlyConnectionURL(t *testing.T) {
 	}
 }
 
+type unconfiguredSetupRunner struct{ setupRunner }
+
+func (unconfiguredSetupRunner) Run(context.Context, string, []string, string) ([]byte, error) {
+	// lark-cli 1.0.93 returns this error for an empty configuration directory.
+	return []byte(`{"ok":false,"error":{"type":"config","subtype":"not_configured","message":"not configured"}}`), errors.New("exit status 3")
+}
+
+func TestUnconfiguredLarkCanStartFirstConnection(t *testing.T) {
+	service := &Service{runner: unconfiguredSetupRunner{}, flows: make(map[string]*Flow)}
+	status := service.larkStatus(t.Context())
+	if !status.Available || status.AppID != "" || status.Error != "" {
+		t.Fatalf("fresh installation should be ready to connect: %+v", status)
+	}
+	flow, err := service.BeginLarkSetup(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if flow.Status != flowPending {
+		t.Fatalf("connection status = %q, want pending", flow.Status)
+	}
+	deadline := time.After(time.Second)
+	for {
+		current, err := service.Flow(flow.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if current.Status != flowPending {
+			if current.Status != flowSuccess || current.VerificationURL != "https://example.test/connect" {
+				t.Fatalf("first connection did not publish its URL: %+v", current)
+			}
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatal("first connection did not finish")
+		case <-time.After(time.Millisecond):
+		}
+	}
+}
+
 func TestFailedStatusCheckDoesNotCreateAnotherApp(t *testing.T) {
-	service := &Service{runner: commandFunc(func(context.Context, string, []string, string) ([]byte, error) {
-		return nil, errors.New("network offline")
-	})}
-	if _, err := service.BeginLarkSetup(t.Context()); err == nil {
-		t.Fatal("created app after failed status check")
+	for name, output := range map[string]string{
+		"network":            "network offline",
+		"credentials":        `{"ok":false,"error":{"type":"authorization","subtype":"invalid_credentials"}}`,
+		"missing profile":    `{"ok":false,"error":{"type":"config","subtype":"not_configured","field":"--profile"}}`,
+		"malformed response": `{"error":`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			service := &Service{runner: commandFunc(func(context.Context, string, []string, string) ([]byte, error) {
+				return []byte(output), errors.New("status check failed")
+			})}
+			if _, err := service.BeginLarkSetup(t.Context()); err == nil {
+				t.Fatal("created app after failed status check")
+			}
+		})
 	}
 }
 

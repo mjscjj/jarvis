@@ -671,6 +671,18 @@ func (s *Service) CancelFlow(id string) (*Flow, error) {
 func (s *Service) larkStatus(ctx context.Context) LarkStatus {
 	output, err := s.runner.Run(ctx, s.options.LarkCLIBin, []string{"auth", "status", "--json", "--verify"}, "")
 	if err != nil {
+		var failure struct {
+			Error struct {
+				Type    string `json:"type"`
+				Subtype string `json:"subtype"`
+				Field   string `json:"field"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(output, &failure) == nil && failure.Error.Type == "config" &&
+			failure.Error.Subtype == "not_configured" && failure.Error.Field == "" {
+			// No app yet is a normal first-run state; an invalid selected profile is not.
+			return LarkStatus{Available: true}
+		}
 		return LarkStatus{Available: !errors.Is(err, exec.ErrNotFound), Error: commandError("检查飞书授权", output, err).Error()}
 	}
 	var payload larkAuthPayload
