@@ -145,7 +145,6 @@ type LarkStatus struct {
 type AgentStatus struct {
 	Available     bool   `json:"available"`
 	Authenticated bool   `json:"authenticated"`
-	Version       string `json:"version,omitempty"`
 	Error         string `json:"error,omitempty"`
 }
 
@@ -218,15 +217,19 @@ func (s *Service) Status(ctx context.Context) (*Status, error) {
 	if err != nil {
 		return nil, err
 	}
-	lark := s.larkStatus(ctx)
-	if s.options.Desktop && !lark.CredentialAvailable {
-		configuration.MachineConfigurationReady = false
-	}
 	agentName, savedOpenID, err := s.savedIdentity()
 	if err != nil {
 		return nil, err
 	}
-	agent := s.agentStatus(ctx)
+	// The two CLIs own independent credentials; neither check needs to wait
+	// for the other. Still require both results before reporting readiness.
+	agentResult := make(chan AgentStatus, 1)
+	go func() { agentResult <- s.agentStatus(ctx) }()
+	lark := s.larkStatus(ctx)
+	agent := <-agentResult
+	if s.options.Desktop && !lark.CredentialAvailable {
+		configuration.MachineConfigurationReady = false
+	}
 	worldModelReady, err := s.worldModelReady(ctx, lark.User.OpenID)
 	if err != nil {
 		return nil, err
@@ -310,7 +313,7 @@ func (s *Service) BeginLarkLogin(ctx context.Context) (*Flow, error) {
 func (s *Service) BeginAgentLogin(ctx context.Context) (*Flow, error) {
 	status := s.agentStatus(ctx)
 	if status.Authenticated {
-		return &Flow{Status: flowSuccess, Output: status.Version}, nil
+		return &Flow{Status: flowSuccess}, nil
 	}
 	flowID, err := randomID()
 	if err != nil {
@@ -669,6 +672,8 @@ func (s *Service) CancelFlow(id string) (*Flow, error) {
 }
 
 func (s *Service) larkStatus(ctx context.Context) LarkStatus {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
 	output, err := s.runner.Run(ctx, s.options.LarkCLIBin, []string{"auth", "status", "--json", "--verify"}, "")
 	if err != nil {
 		var failure struct {
@@ -712,12 +717,10 @@ func (s *Service) larkStatus(ctx context.Context) LarkStatus {
 }
 
 func (s *Service) agentStatus(ctx context.Context) AgentStatus {
-	versionOutput, versionErr := s.runner.Run(ctx, s.options.AgentCLIBin, []string{"--version"}, "")
-	if versionErr != nil {
-		return AgentStatus{Error: commandError("检查 Trae CLI", versionOutput, versionErr).Error()}
-	}
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
 	loginOutput, loginErr := s.runner.Run(ctx, s.options.AgentCLIBin, []string{"login", "status"}, "")
-	status := AgentStatus{Available: true, Version: strings.TrimSpace(string(versionOutput))}
+	status := AgentStatus{Available: !errors.Is(loginErr, exec.ErrNotFound)}
 	if loginErr == nil && strings.HasPrefix(strings.TrimSpace(string(loginOutput)), "Logged in") {
 		status.Authenticated = true
 	} else if loginErr != nil {
