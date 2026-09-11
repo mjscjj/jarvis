@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -140,7 +141,9 @@ func TestServiceDefaultsDisabledAndGatesOwnedSkill(t *testing.T) {
 
 func TestEnableAuthorizedPluginCreatesAndTriggersSchedule(t *testing.T) {
 	db := openPluginDB(t)
+	var probes atomic.Int32
 	authorizer := newAuthorizer(fakeRunner{run: func(_ string, _ []string) ([]byte, error) {
+		probes.Add(1)
 		return []byte(`{"status":"success","data":{"authenticated":true}}`), nil
 	}})
 	scheduler := newFakeScheduler()
@@ -157,6 +160,9 @@ func TestEnableAuthorizedPluginCreatesAndTriggersSchedule(t *testing.T) {
 	}
 	if scheduler.triggers != 1 {
 		t.Fatalf("triggers = %d, want 1", scheduler.triggers)
+	}
+	if got := probes.Load(); got != 1 {
+		t.Fatalf("authorization probes = %d, want 1", got)
 	}
 	if !strings.Contains(scheduler.items[*view.ScheduledTaskID].Instruction, "codebase-clue-collector") {
 		t.Fatalf("schedule instruction = %q", scheduler.items[*view.ScheduledTaskID].Instruction)
@@ -522,5 +528,57 @@ func TestInstallationsNeverProbeExternalAuthorization(t *testing.T) {
 	}
 	if len(rows) != len(registry.List()) {
 		t.Fatalf("installations=%+v", rows)
+	}
+}
+
+func TestListDoesNotProbeExternalAuthorization(t *testing.T) {
+	registry, err := BuiltinRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	authorizer := newAuthorizer(fakeRunner{run: func(_ string, _ []string) ([]byte, error) {
+		calls.Add(1)
+		t.Fatal("plugin list unexpectedly probed external authorization")
+		return nil, nil
+	}})
+	service, err := NewService(openPluginDB(t), registry, authorizer, newFakeScheduler())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := service.List(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := calls.Load(); got != 0 {
+		t.Fatalf("provider probes = %d, want 0", got)
+	}
+	for _, item := range items {
+		if item.Kind == KindCollector && item.Authorization.Status != AuthPending {
+			t.Fatalf("collector %s authorization = %#v, want pending", item.ID, item.Authorization)
+		}
+	}
+}
+
+func TestPluginDetailProbesAuthorization(t *testing.T) {
+	var calls atomic.Int32
+	authorizer := newAuthorizer(fakeRunner{run: func(_ string, _ []string) ([]byte, error) {
+		calls.Add(1)
+		return []byte(`{"status":"success","data":{"authenticated":true}}`), nil
+	}})
+	service, err := NewService(openPluginDB(t), onePluginRegistry(t), authorizer, newFakeScheduler())
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, err := service.Get(t.Context(), "codebase")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Authorization.Status != AuthAuthorized {
+		t.Fatalf("authorization = %#v", view.Authorization)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("provider probes = %d, want 1", got)
 	}
 }
