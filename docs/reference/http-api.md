@@ -23,6 +23,12 @@
 - `POST /api/auth/login/complete`：轮询并完成 SSO 登录。
 - `POST /api/auth/logout`：只清除 Jarvis 浏览器会话，不清除全机 BytedCLI 授权。
 
+前端由 AuthProvider 统一处理首次登录与会话失效恢复。并发 401 共用一次恢复，
+优先复用 BytedCLI 身份；失败的写请求不自动重放。主动退出后须点击登录才能恢复。
+
+`POST /api/setup/lark/credentials` 接收 `app_secret`，验证并更新当前飞书应用的
+CLI 与已有 CC Connect 配置，随后请求服务重启；不改变 App ID，也不重做首次初始化。
+
 浏览器发起的管理 API 请求需要 Jarvis 会话；健康检查、认证接口、`POST /api/clues`、卡片回调和无浏览器 Fetch Metadata 的本机 Agent/CLI 请求不经过该门禁。
 
 ## 健康与工作项

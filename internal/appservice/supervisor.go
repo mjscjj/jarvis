@@ -149,6 +149,14 @@ func (s *Supervisor) Run(ctx context.Context, output io.Writer) error {
 			}
 			if _, err := os.Stat(s.layout.RestartRequestPath); err == nil {
 				_ = os.Remove(s.layout.RestartRequestPath)
+				// Runtime configuration includes CC Connect credentials. Stop the old
+				// connection before loading the updated config on the next tick.
+				if ccConnect != nil {
+					stopProcess(ccConnect, 15*time.Second)
+					ccConnect = nil
+					ccConnectDone = nil
+					processes = processes[:2]
+				}
 				stopProcess(server, 15*time.Second)
 				server, err = s.startProcess(
 					"jarvis-server",

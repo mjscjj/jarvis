@@ -57,7 +57,7 @@ func TestRepositoryRulesKeepExecuteOnlyCapabilitiesOutOfExtract(t *testing.T) {
 	}
 }
 
-func TestRepositoryFeedbackAdmissionRuleBelongsOnlyToExtractNormalProfile(t *testing.T) {
+func TestRepositoryExtractProfilesDoNotRestoreFeedbackAdmissionException(t *testing.T) {
 	service, err := NewService(filepath.Join("..", "..", "conf", "rules"))
 	if err != nil {
 		t.Fatalf("NewService(repository rules): %v", err)
@@ -71,21 +71,17 @@ func TestRepositoryFeedbackAdmissionRuleBelongsOnlyToExtractNormalProfile(t *tes
 		t.Fatalf("Block(execute): %v", err)
 	}
 
-	for _, want := range []string{
+	for _, removed := range []string{
 		"每个独立的用户问题、负面体验、功能诉求和待验证修复",
 		"Pulse 已派人",
 	} {
-		if !strings.Contains(extract, want) {
-			t.Fatalf("extract rules missing feedback admission guidance %q:\n%s", want, extract)
-		}
-		if strings.Contains(execute, want) {
-			t.Fatalf("execute rules contain M3-owned admission guidance %q:\n%s", want, execute)
+		if strings.Contains(extract, removed) || strings.Contains(execute, removed) {
+			t.Fatalf("rules restore removed feedback admission exception %q", removed)
 		}
 	}
 	quiet, normal, active := strings.Index(extract, "### quiet"), strings.Index(extract, "### normal"), strings.Index(extract, "### active")
-	feedback := strings.Index(extract, "每个独立的用户问题")
-	if quiet < 0 || normal <= quiet || active <= normal || feedback <= normal || feedback >= active {
-		t.Fatal("default feedback admission must belong to normal profile, not quiet or common rules")
+	if quiet < 0 || normal <= quiet || active <= normal {
+		t.Fatal("extract rules must preserve all three initiative profiles")
 	}
 }
 

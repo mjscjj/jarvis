@@ -3,6 +3,9 @@
 当前脚本生成 macOS 14 及以上、Apple Silicon (`arm64`) 的自包含 `Jarvis.app` 和 DMG。运行数据写入
 `~/Library/Application Support/Jarvis`，不会写回应用包。
 
+本文面向构建和发布人员；用户首次安装、覆盖安装、自动更新和排障见
+[macOS 安装与自动更新](../../docs/reference/macos-install-and-update.md)。
+
 ## 环境要求
 
 - macOS 14+ Apple Silicon
@@ -58,13 +61,65 @@ bash packaging/macos/check-lark-skills.sh "$lark_cli_bin"
 产物路径：
 
 ```text
-desktop/src-tauri/target/release/bundle/dmg/Jarvis_0.1.0_aarch64.dmg
+desktop/src-tauri/target/release/bundle/dmg/Jarvis_<version>_aarch64.dmg
 ```
+
+## 发布自动更新
+
+客户端更新行为见[用户安装文档](../../docs/reference/macos-install-and-update.md#自动更新)。
+
+### 托管配置
+
+更新文件由 Jarvis 主服务的可选模块提供。仅发布机设置：
+
+```text
+JARVIS_UPDATE_ROOT=/data00/home/chujiejie.1/jarvis-updates
+```
+
+目录必须已存在；配置了不存在的目录时启动报错。未设置或为空时不注册更新路由，
+普通客户端无需设置。DEV2 将该环境变量配置在
+`com.bytedance.jarvis.server.service.d/update-root.conf` 的 `[Service]` 中。
+修改主服务配置后的构建或重启使用 `./scripts/rebuild-server.sh`。
+
+现有 TLB 和网关继续使用原路由；网关将更新请求转给 DEV2 Jarvis `18801`。
+完整路由由 AMZ 仓库 `product-demo/DEPLOY.md` 维护。
+
+### 构建与发布
+
+首次发布机准备一次更新签名密钥：
+
+```bash
+npm --prefix desktop exec tauri signer generate -- \
+  --ci -w "$HOME/.tauri/jarvis-updater.key"
+```
+
+私钥只留在发布机。公钥正文注册在 `desktop/src-tauri/tauri.conf.json`；丢失私钥后，
+已经安装的客户端无法信任另一把密钥签发的更新。
+
+发布前同步修改并保持相同的 SemVer：
+
+- `desktop/src-tauri/tauri.conf.json`
+- `desktop/src-tauri/Cargo.toml`
+- `desktop/package.json`
+
+随后执行：
+
+```bash
+./packaging/macos/publish-update.sh "本次更新说明"
+```
+
+脚本复用完整 DMG 构建门禁，生成 `.app.tar.gz` 和 `.sig`，再将版本化更新包、DMG
+上传到 DEV2，先移动版本化安装包，最后替换 `latest.json`。清单替换是单文件操作，
+整批文件不是一个原子事务。每次发布使用新版本号，不覆盖已发布的版本化文件。默认目标是
+`chujiejie.1@10.199.197.219:/data00/home/chujiejie.1/jarvis-updates`，可用
+`JARVIS_UPDATE_REMOTE`、`JARVIS_UPDATE_REMOTE_ROOT` 和
+`JARVIS_UPDATE_BASE_URL` 覆盖。首个带 updater 的版本仍需手动安装一次，后续版本
+才会自动更新。
 
 ## 验收
 
 ```bash
-hdiutil verify desktop/src-tauri/target/release/bundle/dmg/Jarvis_0.1.0_aarch64.dmg
+hdiutil verify desktop/src-tauri/target/release/bundle/dmg/Jarvis_<version>_aarch64.dmg
 codesign --verify --deep --strict --verbose=2 \
   desktop/src-tauri/target/release/bundle/macos/Jarvis.app
 ```
@@ -79,6 +134,30 @@ DMG 挂载窗口同时提供“插件扩展与解耦规范”和“代码提交�
 初始化页面的帮助和开发文档默认折叠；进入应用后可点击左侧导航下方的小问号查看。
 链接统一维护在 `web/src/helpDocuments.json`，Web 与 DMG 打包共同读取。
 
+### 2026-09-11 更新验收
+
+发布版本 `0.1.2`，正式更新清单已切换。验证结果：
+
+- 网关只转发更新请求；Jarvis 托管默认关闭，显式配置后提供文件，目录不存在时启动报错。
+- 线上安装包完整下载，SHA-256 与发布文件一致；使用 Tauri updater 同款验签实现校验通过。
+- 隔离客户端完成 `0.1.1 → 0.1.2` 下载、验签、安装和自动重启，重启后服务和界面恢复。
+- SQLite 完整性检查通过；人物事实页、Fact、自定义配置和 shared memory 保留。
+- 错误签名被拒绝，旧版和数据保留；新版再次启动只检查清单，不重复下载或重启。
+- 正式应用签名、runtime 自包含检查及 DMG 校验通过。
+
+客户端测试副本使用相同 updater 源码和候选 runtime，仅调整应用标识、更新地址及
+测试数据目录/监听地址；未替换日常使用的 `/Applications/Jarvis.app`。
+本次不包含飞书登录和业务任务的全量回归。
+
+发布产物 SHA-256：
+
+```text
+Jarvis_0.1.2_aarch64.app.tar.gz  c63b4d6b7908a78b8fcb5cfdf3c0c21e3a13c9032eda093be3ca31ed517de5aa
+Jarvis_0.1.2_aarch64.dmg         d04b51ef2e3063fcf4224d1926617d34148c96230904a5ccd4507d6579a512b8
+```
+
+本机验收日志与结果保存在 `var/update-acceptance-20260911/`，不随安装包分发。
+
 ## 签名
 
 默认使用 ad-hoc 签名，仅用于内部测试。对外分发前需配置 Apple Developer ID，
@@ -89,5 +168,4 @@ DMG 挂载窗口同时提供“插件扩展与解耦规范”和“代码提交�
 - `missing Qdrant binary`：安装到 `bin/qdrant`，或设置 `JARVIS_QDRANT_BIN`。
 - `missing CC Connect binary`：安装到 `bin/cc-connect-jarvis`，或设置
   `JARVIS_CC_CONNECT_BIN`。
-- 授权按钮无响应：确认使用的是最新 DMG；桌面外链依赖 Tauri opener，普通旧
-  `.app` 不会自动更新。
+- 授权按钮无响应：桌面外链依赖 Tauri opener；0.1.0 及更早版本需手动覆盖安装带 updater 的版本。

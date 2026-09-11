@@ -145,7 +145,6 @@ type LarkStatus struct {
 type AgentStatus struct {
 	Available     bool   `json:"available"`
 	Authenticated bool   `json:"authenticated"`
-	Version       string `json:"version,omitempty"`
 	Error         string `json:"error,omitempty"`
 }
 
@@ -218,15 +217,19 @@ func (s *Service) Status(ctx context.Context) (*Status, error) {
 	if err != nil {
 		return nil, err
 	}
-	lark := s.larkStatus(ctx)
-	if s.options.Desktop && !lark.CredentialAvailable {
-		configuration.MachineConfigurationReady = false
-	}
 	agentName, savedOpenID, err := s.savedIdentity()
 	if err != nil {
 		return nil, err
 	}
-	agent := s.agentStatus(ctx)
+	// The two CLIs own independent credentials; neither check needs to wait
+	// for the other. Still require both results before reporting readiness.
+	agentResult := make(chan AgentStatus, 1)
+	go func() { agentResult <- s.agentStatus(ctx) }()
+	lark := s.larkStatus(ctx)
+	agent := <-agentResult
+	if s.options.Desktop && !lark.CredentialAvailable {
+		configuration.MachineConfigurationReady = false
+	}
 	worldModelReady, err := s.worldModelReady(ctx, lark.User.OpenID)
 	if err != nil {
 		return nil, err
@@ -279,6 +282,8 @@ func (s *Service) BeginLarkSetup(ctx context.Context) (*Flow, error) {
 }
 
 func (s *Service) BeginLarkLogin(ctx context.Context) (*Flow, error) {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
 	output, err := s.runner.Run(ctx, s.options.LarkCLIBin, []string{
 		"auth", "login",
 		"--recommend", "--scope", "im:message:readonly",
@@ -310,7 +315,7 @@ func (s *Service) BeginLarkLogin(ctx context.Context) (*Flow, error) {
 func (s *Service) BeginAgentLogin(ctx context.Context) (*Flow, error) {
 	status := s.agentStatus(ctx)
 	if status.Authenticated {
-		return &Flow{Status: flowSuccess, Output: status.Version}, nil
+		return &Flow{Status: flowSuccess}, nil
 	}
 	flowID, err := randomID()
 	if err != nil {
@@ -464,6 +469,8 @@ func (s *Service) BootstrapWorldModel(ctx context.Context) (*domain.Task, error)
 }
 
 func (s *Service) checkBotEvents(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 40*time.Second)
+	defer cancel()
 	for _, event := range []string{"im.message.receive_v1", "card.action.trigger"} {
 		output, err := s.runner.Run(ctx, s.options.LarkCLIBin, []string{"event", "consume", event, "--as", "bot", "--dry-run"}, "")
 		if err != nil {
@@ -669,9 +676,31 @@ func (s *Service) CancelFlow(id string) (*Flow, error) {
 }
 
 func (s *Service) larkStatus(ctx context.Context) LarkStatus {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
 	output, err := s.runner.Run(ctx, s.options.LarkCLIBin, []string{"auth", "status", "--json", "--verify"}, "")
 	if err != nil {
-		return LarkStatus{Available: !errors.Is(err, exec.ErrNotFound), Error: commandError("检查飞书授权", output, err).Error()}
+		var failure struct {
+			Error struct {
+				Type    string `json:"type"`
+				Subtype string `json:"subtype"`
+				Field   string `json:"field"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(output, &failure) == nil && failure.Error.Type == "config" &&
+			failure.Error.Subtype == "not_configured" && failure.Error.Field == "" {
+			// No app yet is a normal first-run state; an invalid selected profile is not.
+			return LarkStatus{Available: true}
+		}
+		status := LarkStatus{Available: !errors.Is(err, exec.ErrNotFound), Error: commandError("检查飞书授权", output, err).Error()}
+		// Read the configured App ID even if remote credential verification failed.
+		// Keep the verification error; knowing the app is not proof it is ready.
+		if ctx.Err() == nil && status.Available {
+			if current, configErr := s.currentLarkConfig(ctx); configErr == nil {
+				status.AppID = current.AppID
+			}
+		}
+		return status
 	}
 	var payload larkAuthPayload
 	if err := json.Unmarshal(output, &payload); err != nil {
@@ -700,12 +729,10 @@ func (s *Service) larkStatus(ctx context.Context) LarkStatus {
 }
 
 func (s *Service) agentStatus(ctx context.Context) AgentStatus {
-	versionOutput, versionErr := s.runner.Run(ctx, s.options.AgentCLIBin, []string{"--version"}, "")
-	if versionErr != nil {
-		return AgentStatus{Error: commandError("检查 Trae CLI", versionOutput, versionErr).Error()}
-	}
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
 	loginOutput, loginErr := s.runner.Run(ctx, s.options.AgentCLIBin, []string{"login", "status"}, "")
-	status := AgentStatus{Available: true, Version: strings.TrimSpace(string(versionOutput))}
+	status := AgentStatus{Available: !errors.Is(loginErr, exec.ErrNotFound)}
 	if loginErr == nil && strings.HasPrefix(strings.TrimSpace(string(loginOutput)), "Logged in") {
 		status.Authenticated = true
 	} else if loginErr != nil {

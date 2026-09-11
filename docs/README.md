@@ -48,6 +48,7 @@
 | [KeyMatter 关键事项实体](design-key-matter.md) | implemented-history | 已落地；当前实体边界见总纲，字段与接口以代码真源为准 |
 | [HTTP API](reference/http-api.md) | current | 路由分组；`router.go` 仍为真源 |
 | [运行与部署](reference/operations.md) | current | launchd、端口、签名和重建 |
+| [macOS 安装与自动更新](reference/macos-install-and-update.md) | current | DMG 首装、数据保留、自动更新入口与排障 |
 | [Lark / bytedcli 指南](guide-lark-byted-cli.md) | guide | 当前 CLI 用法，版本变化时需复核 help |
 
 ## 提案与实现中设计

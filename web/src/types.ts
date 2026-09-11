@@ -184,7 +184,6 @@ export interface SetupStatus {
   agent: {
     available: boolean
     authenticated: boolean
-    version?: string
     error?: string
   }
   world_model_ready: boolean

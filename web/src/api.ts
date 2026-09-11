@@ -100,69 +100,95 @@ interface RequestOptions {
   signal?: AbortSignal
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   body?: unknown
+  timeoutMs?: number
 }
 
+export const authEvents = new EventTarget()
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const response = await fetch(path, {
-    signal: options.signal,
-    method: options.method || 'GET',
-    headers: { Accept: 'application/json', ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }) },
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
-  })
-  const payload = (await response.json()) as APIResponse<T>
-  if (!response.ok || payload.code !== 0 || payload.data === undefined) {
-    throw new Error(payload.msg || `请求失败：HTTP ${response.status}`)
+  const controller = new AbortController()
+  const abort = () => controller.abort(options.signal?.reason)
+  if (options.signal?.aborted) abort()
+  else options.signal?.addEventListener('abort', abort, { once: true })
+  const timer = options.timeoutMs
+    ? setTimeout(() => controller.abort(new Error('请求超时，请检查网络后重试')), options.timeoutMs)
+    : undefined
+  try {
+    const response = await fetch(path, {
+      signal: controller.signal,
+      method: options.method || 'GET',
+      headers: { Accept: 'application/json', ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    })
+    if (response.status === 401 && !path.startsWith('/api/auth/')) {
+      authEvents.dispatchEvent(new Event('expired'))
+    }
+    const payload = (await response.json()) as APIResponse<T>
+    if (!response.ok || payload.code !== 0 || payload.data === undefined) {
+      throw new Error(payload.msg || `请求失败：HTTP ${response.status}`)
+    }
+    return payload.data
+  } finally {
+    clearTimeout(timer)
+    options.signal?.removeEventListener('abort', abort)
   }
-  return payload.data
 }
 
 export function getAuthStatus(signal?: AbortSignal): Promise<AuthView> {
-  return request<AuthView>('/api/auth/status', { signal })
+  return request<AuthView>('/api/auth/status', { signal, timeoutMs: 25000 })
 }
 
 export function loginWithByteDance(): Promise<AuthView> {
-  return request<AuthView>('/api/auth/login', { method: 'POST' })
+  return request<AuthView>('/api/auth/login', { method: 'POST', timeoutMs: 45000 })
 }
 
 export function completeByteDanceLogin(flowId: string): Promise<AuthView> {
   return request<AuthView>('/api/auth/login/complete', {
     method: 'POST',
     body: { flow_id: flowId },
+    timeoutMs: 45000,
   })
 }
 
 export function logoutFromJarvis(): Promise<AuthView> {
-  return request<AuthView>('/api/auth/logout', { method: 'POST' })
+  return request<AuthView>('/api/auth/logout', { method: 'POST', timeoutMs: 25000 })
 }
 
 export function getSetupStatus(signal?: AbortSignal): Promise<SetupStatus> {
-  return request<SetupStatus>('/api/setup/status', { signal })
+  return request<SetupStatus>('/api/setup/status', { signal, timeoutMs: 30000 })
 }
 
 export function beginSetupLarkConnection(): Promise<SetupFlow> {
-  return request<SetupFlow>('/api/setup/lark/connect', { method: 'POST' })
+  return request<SetupFlow>('/api/setup/lark/connect', { method: 'POST', timeoutMs: 30000 })
 }
 
 export function beginSetupLarkLogin(): Promise<SetupFlow> {
-  return request<SetupFlow>('/api/setup/lark/login', { method: 'POST' })
+  return request<SetupFlow>('/api/setup/lark/login', { method: 'POST', timeoutMs: 30000 })
 }
 
 export function beginSetupAgentLogin(): Promise<SetupFlow> {
-  return request<SetupFlow>('/api/setup/agent/login', { method: 'POST' })
+  return request<SetupFlow>('/api/setup/agent/login', { method: 'POST', timeoutMs: 30000 })
 }
 
 export function getSetupFlow(flowId: string, signal?: AbortSignal): Promise<SetupFlow> {
-  return request<SetupFlow>(`/api/setup/flows/${encodeURIComponent(flowId)}`, { signal })
+  return request<SetupFlow>(`/api/setup/flows/${encodeURIComponent(flowId)}`, { signal, timeoutMs: 25000 })
 }
 
 export function cancelSetupFlow(flowId: string): Promise<SetupFlow> {
-  return request<SetupFlow>(`/api/setup/flows/${encodeURIComponent(flowId)}/cancel`, { method: 'POST' })
+  return request<SetupFlow>(`/api/setup/flows/${encodeURIComponent(flowId)}/cancel`, { method: 'POST', timeoutMs: 25000 })
 }
 
 export function finalizeSetup(appSecret: string): Promise<SetupStatus> {
   return request<SetupStatus>('/api/setup/finalize', {
     method: 'POST',
     body: { app_secret: appSecret },
+    timeoutMs: 120000,
+  })
+}
+
+export function repairSetupLarkCredentials(appSecret: string): Promise<{ saved: boolean }> {
+  return request<{ saved: boolean }>('/api/setup/lark/credentials', {
+    method: 'POST', body: { app_secret: appSecret }, timeoutMs: 60000,
   })
 }
 
@@ -703,7 +729,7 @@ export function updatePlugin(id: string, enabled: boolean, expectedRevision: num
 }
 
 export function authorizePlugin(id: string): Promise<PluginAuthorization> {
-  return request<PluginAuthorization>(`/api/plugins/${encodeURIComponent(id)}/authorize`, { method: 'POST' })
+  return request<PluginAuthorization>(`/api/plugins/${encodeURIComponent(id)}/authorize`, { method: 'POST', timeoutMs: 45000 })
 }
 
 export function completePluginAuthorization(
@@ -712,7 +738,7 @@ export function completePluginAuthorization(
 ): Promise<{ authorization: PluginAuthorization; plugin: Plugin | null }> {
   return request<{ authorization: PluginAuthorization; plugin: Plugin | null }>(
     `/api/plugins/${encodeURIComponent(id)}/authorize/complete`,
-    { method: 'POST', body: { flow_id: flowId } },
+    { method: 'POST', body: { flow_id: flowId }, timeoutMs: 45000 },
   )
 }
 

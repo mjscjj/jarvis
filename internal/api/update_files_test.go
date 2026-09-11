@@ -37,6 +37,15 @@ func TestUpdateFileHandlerServesManifestAndArtifact(t *testing.T) {
 		t.Fatalf("manifest body = %q", got)
 	}
 
+	download := ut.PerformRequest(h.Engine, "GET", "/jarvis-updates/Jarvis_0.1.1_aarch64.app.tar.gz", nil).Result()
+	if download.StatusCode() != consts.StatusOK || string(download.Body()) != "artifact" {
+		t.Fatalf("artifact GET status=%d body=%q", download.StatusCode(), download.Body())
+	}
+	missing := ut.PerformRequest(h.Engine, "GET", "/jarvis-updates/missing.tar.gz", nil).Result()
+	if missing.StatusCode() != consts.StatusNotFound {
+		t.Fatalf("missing artifact status = %d", missing.StatusCode())
+	}
+
 	artifact := ut.PerformRequest(h.Engine, "HEAD", "/jarvis-updates/Jarvis_0.1.1_aarch64.app.tar.gz", nil).Result()
 	if artifact.StatusCode() != consts.StatusOK {
 		t.Fatalf("artifact status = %d body=%s", artifact.StatusCode(), artifact.Body())

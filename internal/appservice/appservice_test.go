@@ -256,6 +256,7 @@ func TestSupervisorStartsCCConnectAndRestartsServerAfterOnboarding(t *testing.T)
 		t.Fatal(err)
 	}
 	waitForFileLines(t, serverStarts, 2)
+	waitForFileLines(t, ccStarted, 2)
 	waitForTestHTTP(t, "http://"+serverAddress+"/healthz")
 
 	cancel()
@@ -333,7 +334,7 @@ func writeRestartableTestChild(t *testing.T, path, testBinary, address, startLog
 func writeLongRunningChild(t *testing.T, path, startedPath string) {
 	t.Helper()
 	script := fmt.Sprintf(
-		"#!/bin/sh\necho started > %q\ntrap 'exit 0' TERM INT\nwhile true; do sleep 1; done\n",
+		"#!/bin/sh\necho started >> %q\ntrap 'exit 0' TERM INT\nwhile true; do sleep 1; done\n",
 		startedPath,
 	)
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {

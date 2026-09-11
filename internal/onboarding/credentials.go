@@ -96,3 +96,98 @@ func (s *Service) savedSecret(appID string) (string, error) {
 	}
 	return "", nil
 }
+
+type larkConfig struct {
+	AppID   string `json:"appId"`
+	Brand   string `json:"brand"`
+	Lang    string `json:"lang"`
+	Profile string `json:"profile"`
+}
+
+func (s *Service) currentLarkConfig(ctx context.Context) (*larkConfig, error) {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	output, err := s.runner.Run(ctx, s.options.LarkCLIBin, []string{"config", "show"}, "")
+	if err != nil {
+		return nil, fmt.Errorf("无法读取当前飞书应用配置，请重新检查")
+	}
+	var current larkConfig
+	if json.Unmarshal(output, &current) != nil || current.AppID == "" || current.Profile == "" {
+		return nil, fmt.Errorf("当前飞书应用配置缺少 App ID 或 profile，请先完成连接")
+	}
+	return &current, nil
+}
+
+// RepairLarkCredentials updates the same app in its two existing consumers.
+// It never changes principal configuration or initializes the world model.
+func (s *Service) RepairLarkCredentials(ctx context.Context, secret string) error {
+	ctx, cancel := context.WithTimeout(ctx, 50*time.Second)
+	defer cancel()
+	current, err := s.currentLarkConfig(ctx)
+	if err != nil {
+		return err
+	}
+	if current.Brand != "feishu" {
+		return fmt.Errorf("当前密钥验证仅支持飞书应用")
+	}
+	secret = strings.TrimSpace(secret)
+	if err := verifyAppCredentials(ctx, s.options.HTTPClient, current.AppID, secret); err != nil {
+		return err
+	}
+	path := filepath.Join(s.options.StateRoot, "cc-connect", "config.toml")
+	// Parse the existing config before updating either consumer, so malformed
+	// or differently bound configs cannot be silently replaced.
+	updated, err := updatedCCSecret(path, current.AppID, secret)
+	if err != nil {
+		return err
+	}
+	args := []string{"config", "init", "--name", current.Profile,
+		"--app-id", current.AppID, "--brand", current.Brand, "--app-secret-stdin"}
+	if current.Lang != "" {
+		args = append(args, "--lang", current.Lang)
+	}
+	if _, err := s.runner.Run(ctx, s.options.LarkCLIBin, args, secret+"\n"); err != nil {
+		return fmt.Errorf("更新当前飞书应用密钥失败，请重试；聊天配置尚未修改")
+	}
+	if updated == nil {
+		return nil // First installation will create CC Connect config in Finalize.
+	}
+	if err := os.WriteFile(path, updated, 0o600); err != nil {
+		return fmt.Errorf("飞书 CLI 已更新，但保存聊天配置失败，请重试：%w", err)
+	}
+	if err := os.WriteFile(filepath.Join(s.options.StateRoot, "restart.requested"), []byte("credentials\n"), 0o600); err != nil {
+		return fmt.Errorf("密钥已保存，但请求重启失败，请重启 Jarvis：%w", err)
+	}
+	return nil
+}
+
+func updatedCCSecret(path, appID, secret string) ([]byte, error) {
+	raw, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("无法读取已有聊天配置：%w", err)
+	}
+	var document map[string]any
+	if err := toml.Unmarshal(raw, &document); err != nil {
+		return nil, fmt.Errorf("已有聊天配置格式错误，请先修复；不会覆盖现有配置")
+	}
+	projects, _ := document["projects"].([]any)
+	for _, entry := range projects {
+		project, _ := entry.(map[string]any)
+		if project["name"] != "jarvis-codex" {
+			continue
+		}
+		platforms, _ := project["platforms"].([]any)
+		for _, entry := range platforms {
+			platform, _ := entry.(map[string]any)
+			options, _ := platform["options"].(map[string]any)
+			if platform["type"] == "feishu" && options["app_id"] == appID {
+				options["app_secret"] = secret
+				return toml.Marshal(document)
+			}
+		}
+	}
+	return nil, fmt.Errorf("当前飞书应用与已有 Jarvis 聊天配置不匹配，请恢复原应用后重试；不会覆盖已有绑定")
+}

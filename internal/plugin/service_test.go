@@ -378,15 +378,20 @@ func TestUpdateRejectsStaleRevision(t *testing.T) {
 
 func TestAuthorizerBeginAndComplete(t *testing.T) {
 	calls := 0
+	completed := false
 	authorizer := newAuthorizer(fakeRunner{run: func(_ string, args []string) ([]byte, error) {
 		calls++
 		command := strings.Join(args, " ")
 		switch {
 		case strings.Contains(command, "auth status"):
-			return []byte(`{"status":"success","data":{"authenticated":false}}`), nil
+			return []byte(fmt.Sprintf(`{"status":"success","data":{"authenticated":%t}}`, completed)), nil
 		case strings.Contains(command, "--begin"):
+			if strings.Contains(command, "--session") {
+				t.Fatal("unexpected browser session login")
+			}
 			return []byte("{\"event\":\"qr_image_ready\",\"data\":{\"complete_token\":\"resume-1\",\"verification_uri_complete\":\"https://example.test/login\",\"user_code\":\"ABCD\"}}\n"), nil
 		case strings.Contains(command, "--complete"):
+			completed = true
 			return []byte(`{"status":"success","data":{"authenticated":true}}`), nil
 		default:
 			return nil, fmt.Errorf("unexpected args: %s", command)
@@ -400,8 +405,8 @@ func TestAuthorizerBeginAndComplete(t *testing.T) {
 	if complete.Status != AuthAuthorized {
 		t.Fatalf("complete = %#v", complete)
 	}
-	if calls != 3 {
-		t.Fatalf("calls = %d, want 3", calls)
+	if calls != 4 {
+		t.Fatalf("calls = %d, want 4", calls)
 	}
 }
 
@@ -457,15 +462,20 @@ func TestProbeTreatsLarkTokenMissingAsAuthorizationRequired(t *testing.T) {
 
 func TestLarkIMAuthorizationUsesDeviceFlow(t *testing.T) {
 	var commands []string
+	completed := false
 	authorizer := newAuthorizer(fakeRunner{run: func(bin string, args []string) ([]byte, error) {
 		command := bin + " " + strings.Join(args, " ")
 		commands = append(commands, command)
 		switch {
 		case strings.Contains(command, "im +chat-search"):
+			if completed {
+				return []byte(`{"ok":true,"data":{"chats":[]}}`), nil
+			}
 			return []byte(`{"ok":false,"error":{"type":"authorization","subtype":"missing_scope","code":99991679,"message":"login required"}}`), errors.New("exit 1")
 		case strings.Contains(command, "--no-wait"):
 			return []byte(`{"data":{"device_code":"device-1","verification_uri":"https://example.test/login","user_code":"ABCD"}}`), nil
 		case strings.Contains(command, "--device-code"):
+			completed = true
 			return []byte(`{"status":"success"}`), nil
 		default:
 			return nil, fmt.Errorf("unexpected command: %s", command)
@@ -479,7 +489,7 @@ func TestLarkIMAuthorizationUsesDeviceFlow(t *testing.T) {
 	if complete.Status != AuthAuthorized {
 		t.Fatalf("complete = %#v", complete)
 	}
-	if len(commands) != 3 || !strings.HasPrefix(commands[1], "lark-cli auth login") ||
+	if len(commands) != 4 || !strings.HasPrefix(commands[1], "lark-cli auth login") ||
 		!strings.Contains(commands[2], "--device-code device-1") {
 		t.Fatalf("commands = %#v", commands)
 	}
@@ -580,5 +590,30 @@ func TestPluginDetailProbesAuthorization(t *testing.T) {
 	}
 	if got := calls.Load(); got != 1 {
 		t.Fatalf("provider probes = %d, want 1", got)
+	}
+}
+
+func TestAuthorizationCheckFailureDoesNotStartLogin(t *testing.T) {
+	a := newAuthorizer(fakeRunner{run: func(_ string, args []string) ([]byte, error) {
+		if strings.Join(args, " ") != "--json auth status" {
+			t.Fatal("started login after a network error")
+		}
+		return nil, errors.New("network unavailable")
+	}})
+	if status := a.Begin(t.Context(), "bytedcli-session"); status.Status != AuthUnavailable {
+		t.Fatalf("status=%+v", status)
+	}
+}
+
+func TestCompletionDoesNotClaimAuthorizationWithoutSuccessfulProbe(t *testing.T) {
+	a := newAuthorizer(fakeRunner{run: func(_ string, args []string) ([]byte, error) {
+		if strings.Contains(strings.Join(args, " "), "--complete") {
+			return []byte(`{"status":"success"}`), nil
+		}
+		return []byte(`{"data":{"authenticated":false}}`), nil
+	}})
+	a.flows["test"] = authFlow{ID: "test", Provider: "bytedcli-session", Token: "test"}
+	if status := a.Complete(t.Context(), "bytedcli-session", "test"); status.Status != AuthRequired {
+		t.Fatalf("unverified completion=%+v", status)
 	}
 }
