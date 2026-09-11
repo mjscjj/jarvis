@@ -150,3 +150,14 @@ func RepairOnboardingLarkCredentials(service *onboarding.Service) app.HandlerFun
 		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"saved": true}})
 	}
 }
+
+func GetOnboardingPermissionConfig(service *onboarding.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		permissions, err := service.PermissionConfig(ctx)
+		if err != nil {
+			writeAPIError(c, consts.StatusInternalServerError, 50040, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": permissions})
+	}
+}

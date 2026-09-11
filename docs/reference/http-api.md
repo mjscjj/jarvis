@@ -26,6 +26,8 @@
 前端由 AuthProvider 统一处理首次登录与会话失效恢复。并发 401 共用一次恢复，
 优先复用 BytedCLI 身份；失败的写请求不自动重放。主动退出后须点击登录才能恢复。
 
+`GET /api/setup/lark/permissions` 返回当前内置功能的应用权限导入配置（`scopes.tenant` / `scopes.user`），与统一 OAuth 脚本共用清单。`GET /api/setup/status` 的 `lark.application_checks` 分别返回消息事件和卡片回调的 `event`、`ready`、失败时的 `error`；这些应用配置检查不等同于个人登录或授权。
+
 `POST /api/setup/lark/credentials` 接收 `app_secret`，验证并更新当前飞书应用的
 CLI 与已有 CC Connect 配置，随后请求服务重启；不改变 App ID，也不重做首次初始化。
 

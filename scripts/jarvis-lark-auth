@@ -69,14 +69,46 @@ scopes=(
   task:tasklist:write
 )
 
+# Bot transport, attachments, reactions and document-comment replies.
+# Application permissions are separate from the user OAuth list above.
+bot_scopes=(
+  im:message:readonly
+  im:message:send_as_bot
+  im:resource
+  im:chat:read
+  im:message.reactions:read
+  im:message.reactions:write_only
+  drive:drive.metadata:readonly
+  docs:document.comment:read
+  docs:document.comment:create
+  docs:document.comment:write_only
+)
+
+json_array() {
+  local separator=''
+  printf '['
+  for scope in "$@"; do
+    printf '%s"%s"' "$separator" "$scope"
+    separator=','
+  done
+  printf ']'
+}
+
 action=${1:-}
 lark_cli=${2:-lark-cli}
 if (( $# > 2 )); then
-  printf 'usage: jarvis-lark-auth begin|check [lark-cli binary]\n' >&2
+  printf 'usage: jarvis-lark-auth begin|check|permissions [lark-cli binary]\n' >&2
   exit 2
 fi
 case "$action" in
+  permissions)
+    printf '{"scopes":{"tenant":'
+    json_array "${bot_scopes[@]}"
+    printf ',"user":'
+    json_array "${scopes[@]}"
+    printf '}}\n'
+    ;;
   begin) exec "$lark_cli" auth login --scope "${scopes[*]}" --no-wait --json ;;
   check) exec "$lark_cli" auth check --scope "${scopes[*]}" --json ;;
-  *) printf 'usage: jarvis-lark-auth begin|check [lark-cli binary]\n' >&2; exit 2 ;;
+  *) printf 'usage: jarvis-lark-auth begin|check|permissions [lark-cli binary]\n' >&2; exit 2 ;;
 esac

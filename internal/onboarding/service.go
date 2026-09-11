@@ -154,13 +154,14 @@ type IdentityStatus struct {
 }
 
 type LarkStatus struct {
-	Available           bool           `json:"available"`
-	AppID               string         `json:"app_id,omitempty"`
-	AppName             string         `json:"app_name,omitempty"`
-	Bot                 IdentityStatus `json:"bot"`
-	User                IdentityStatus `json:"user"`
-	Error               string         `json:"error,omitempty"`
-	CredentialAvailable bool           `json:"credential_available"`
+	Available           bool               `json:"available"`
+	AppID               string             `json:"app_id,omitempty"`
+	AppName             string             `json:"app_name,omitempty"`
+	Bot                 IdentityStatus     `json:"bot"`
+	User                IdentityStatus     `json:"user"`
+	Error               string             `json:"error,omitempty"`
+	CredentialAvailable bool               `json:"credential_available"`
+	ApplicationChecks   []ApplicationCheck `json:"application_checks"`
 }
 
 type AgentStatus struct {
@@ -267,6 +268,10 @@ func (s *Service) Status(ctx context.Context) (*Status, error) {
 	agentResult := make(chan AgentStatus, 1)
 	go func() { agentResult <- s.agentStatus(ctx) }()
 	lark := s.larkStatus(ctx)
+	lark.ApplicationChecks = []ApplicationCheck{}
+	if lark.Bot.Verified && lark.Bot.Status == "ready" {
+		lark.ApplicationChecks = s.botEventChecks(ctx)
+	}
 	agent := <-agentResult
 	if s.options.Desktop && !lark.CredentialAvailable {
 		configuration.MachineConfigurationReady = false
@@ -290,7 +295,7 @@ func (s *Service) Status(ctx context.Context) (*Status, error) {
 	}
 	// Saving configuration does not apply it to this running desktop process.
 	result.AppReady = (!s.options.Desktop || s.runtimeConfigured) && configuration.MachineConfigurationReady &&
-		lark.Bot.Status == "ready" && lark.Bot.Verified && lark.User.Status == "ready" && lark.User.Verified &&
+		lark.Bot.Status == "ready" && lark.Bot.Verified && lark.User.Status == "ready" && lark.User.Verified && botEventsError(lark.ApplicationChecks) == nil &&
 		agent.Authenticated
 	result.Completed = result.AppReady && result.WorldModelReady
 	return result, nil
@@ -356,7 +361,7 @@ func (s *Service) BeginLarkLogin(ctx context.Context) (*Flow, error) {
 }
 
 func (s *Service) larkAuthorization(ctx context.Context, action string) ([]byte, error) {
-	return s.runner.Run(ctx, "bash", []string{
+	return s.runner.RunJSON(ctx, "bash", []string{
 		filepath.Join(s.options.RuntimeRoot, "scripts", "jarvis-lark-auth"), action, s.options.LarkCLIBin,
 	}, "")
 }
@@ -515,29 +520,6 @@ func (s *Service) BootstrapWorldModel(ctx context.Context) (*domain.Task, error)
 		ActorType:     "user",
 		EventDetail:   map[string]any{"channel": "desktop_onboarding"},
 	})
-}
-
-func (s *Service) checkBotEvents(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, 40*time.Second)
-	defer cancel()
-	for _, event := range []string{"im.message.receive_v1", "card.action.trigger"} {
-		output, err := s.runner.Run(ctx, s.options.LarkCLIBin, []string{"event", "consume", event, "--as", "bot", "--dry-run"}, "")
-		if err != nil {
-			return commandError("检查飞书应用事件 "+event, output, err)
-		}
-		var result struct {
-			OK   bool `json:"ok"`
-			Data struct {
-				Decision struct {
-					Status string `json:"status"`
-				} `json:"decision"`
-			} `json:"data"`
-		}
-		if json.Unmarshal(output, &result) != nil || !result.OK || result.Data.Decision.Status != "ready" {
-			return fmt.Errorf("当前飞书应用的 %s 尚未就绪，请检查消息权限、事件订阅和版本发布后重试", event)
-		}
-	}
-	return nil
 }
 
 func (s *Service) ensurePrincipalProfile(ctx context.Context, identity IdentityStatus) error {
@@ -726,7 +708,7 @@ func (s *Service) CancelFlow(id string) (*Flow, error) {
 
 func (s *Service) larkStatus(ctx context.Context) LarkStatus {
 	statusCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	output, err := s.runner.Run(statusCtx, s.options.LarkCLIBin, []string{"auth", "status", "--json", "--verify"}, "")
+	output, err := s.runner.RunJSON(statusCtx, s.options.LarkCLIBin, []string{"auth", "status", "--json", "--verify"}, "")
 	cancel()
 	if err != nil {
 		var failure struct {
