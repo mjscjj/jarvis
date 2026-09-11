@@ -1,0 +1,26 @@
+[
+  {
+    "kind": "feishu_chat",
+    "title": "Emily Bot 加入 Emily pro小组",
+    "target": "oc_1815508d70ee0bc368acaf148b876693",
+    "extra": {
+      "operation": "add_bot",
+      "app_id": "cli_a9521bb5a8f79bdb",
+      "receipt_file": "bot-join.json",
+      "verified_members_file": "bot-members-verified.json"
+    }
+  },
+  {
+    "kind": "feishu_message",
+    "title": "Emily PRD Review 产品宣发卡片",
+    "target": "oc_1815508d70ee0bc368acaf148b876693",
+    "url": "https://applink.feishu.cn/client/chat/open?openChatId=oc_1815508d70ee0bc368acaf148b876693&position=421",
+    "preview": "三条每周 PRD 评审配置、排期与 Skill 完善方向；已真实 @ 李潇琳。",
+    "extra": {
+      "message_id": "om_x100b650934740cbcdfa3dfc88900f81",
+      "idempotency_key": "emily-prd-launch-60bc558c562d6927",
+      "verified": true,
+      "mention": "ou_4bb78ddd152503b76a40232afa2420dd"
+    }
+  }
+]

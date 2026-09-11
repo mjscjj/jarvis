@@ -1,0 +1,530 @@
+[
+ {
+  "title": "【主播招募】经纪人认领&跟进线索",
+  "url": "https://bytedance.larkoffice.com/wiki/U1rdwXvhIi1NcVkm6EecQqV3nSc",
+  "token": "U1rdwXvhIi1NcVkm6EecQqV3nSc",
+  "doc_types": "DOCX",
+  "owner": "李丹",
+  "groups": [
+   "group-internal"
+  ],
+  "comments": [
+   {
+    "quote": "【待评估】tab里，新增 「待领取」线索选项",
+    "text": "这里面看看怎么强化引导",
+    "create_time": 1787724748,
+    "time_iso": "2026-08-26 06:12"
+   },
+   {
+    "quote": "超管弹窗文案 - 开启认领功能",
+    "text": "这个弹窗能关闭吗",
+    "create_time": 1787724804,
+    "time_iso": "2026-08-26 06:13"
+   },
+   {
+    "quote": "日了解认领情况>认领线索",
+    "text": "在哪能看领了多少条",
+    "create_time": 1787724896,
+    "time_iso": "2026-08-26 06:14"
+   },
+   {
+    "quote": "日了解认领情况>认领线索",
+    "text": "这里核心逻辑是不是也不只是认领，认领不建联有用么",
+    "create_time": 1787724911,
+    "time_iso": "2026-08-26 06:15"
+   },
+   {
+    "quote": " 开启认领： 开启后继续配置以下功能",
+    "text": "为啥要做这个功能，预期谁是不打开的",
+    "create_time": 1788321381,
+    "time_iso": "2026-09-02 03:56"
+   },
+   {
+    "quote": "- 开启认领：未开启认领时，只有公会长/超管可以看到「待认领」线索，线索均由管理者下发",
+    "text": "为啥只能二选一",
+    "create_time": 1788321408,
+    "time_iso": "2026-09-02 03:56"
+   },
+   {
+    "quote": "被其他人领取了的线索动画消失",
+    "text": "这个要瞬间消失吗",
+    "create_time": 1788321510,
+    "time_iso": "2026-09-02 03:58"
+   }
+  ]
+ },
+ {
+  "title": "【CN Growth // 公会增长】CN Buddy Program 2nd phase iteration // 公会服务费功能二期迭代",
+  "url": "https://bytedance.larkoffice.com/wiki/ELJhwA2kviVch9kIzVMcqncInfc",
+  "token": "ELJhwA2kviVch9kIzVMcqncInfc",
+  "doc_types": "DOCX",
+  "owner": "Ethan Ng",
+  "groups": [
+   "group-internal"
+  ],
+  "comments": [
+   {
+    "quote": "材料清单说明和文案：",
+    "text": "啥样的内容，有指导吗",
+    "create_time": 1783490484,
+    "time_iso": "2026-07-08 06:01"
+   },
+   {
+    "quote": "审批公会伙伴计划调整申请】",
+    "text": "我记得这个决策不是说争议才批",
+    "create_time": 1783490771,
+    "time_iso": "2026-07-08 06:06"
+   },
+   {
+    "quote": "审批公会伙伴计划调整申请】",
+    "text": "现在是每个变化比例都要批吗",
+    "create_time": 1783490782,
+    "time_iso": "2026-07-08 06:06"
+   },
+   {
+    "quote": "公会申请开通飞书通知】",
+    "text": "这个也是每个都要批吗",
+    "create_time": 1783490796,
+    "time_iso": "2026-07-08 06:06"
+   },
+   {
+    "quote": "公会POC",
+    "text": "权限以及使用规范是啥",
+    "create_time": 1785301666,
+    "time_iso": "2026-07-29 05:07"
+   },
+   {
+    "quote": " 80",
+    "text": "90分？",
+    "create_time": 1785301700,
+    "time_iso": "2026-07-29 05:08"
+   },
+   {
+    "quote": "0–95%",
+    "text": "100%？",
+    "create_time": 1785301743,
+    "time_iso": "2026-07-29 05:09"
+   }
+  ]
+ },
+ {
+  "title": " [Agency Growth]TCN conference H5",
+  "url": "https://bytedance.my.larkoffice.com/docx/IgOPd0RojoESa8xnAkSmzUuyy1d",
+  "token": "IgOPd0RojoESa8xnAkSmzUuyy1d",
+  "doc_types": "DOCX",
+  "owner": "陈渝腊",
+  "groups": [
+   "backstage-initial"
+  ],
+  "comments": [
+   {
+    "quote": "[图片]",
+    "text": "这个是不是把公会的名字展示一下",
+    "create_time": 1782355082,
+    "time_iso": "2026-06-25 02:38"
+   },
+   {
+    "quote": "[图片]",
+    "text": "这个引导语加一下，为啥人家要看白皮书",
+    "create_time": 1782355113,
+    "time_iso": "2026-06-25 02:38"
+   },
+   {
+    "quote": "[图片]",
+    "text": "这个交互左右滑不是很友好",
+    "create_time": 1782355134,
+    "time_iso": "2026-06-25 02:38"
+   },
+   {
+    "quote": "[图片]",
+    "text": "这个页面是for啥",
+    "create_time": 1782355263,
+    "time_iso": "2026-06-25 02:41"
+   },
+   {
+    "quote": "[图片]",
+    "text": "设计逻辑是啥",
+    "create_time": 1782355278,
+    "time_iso": "2026-06-25 02:41"
+   },
+   {
+    "quote": "邀请制：仅提前邀请的名单可参与，无法由用户在H5预约",
+    "text": "邀请制要不就对非邀请人不参与了吧",
+    "create_time": 1782355377,
+    "time_iso": "2026-06-25 02:42"
+   }
+  ]
+ },
+ {
+  "title": "AI 客服 - for 公会 & AM",
+  "url": "https://bytedance.sg.larkoffice.com/docx/Md1rdtT9Xov94rxd42flxc3PgUd",
+  "token": "Md1rdtT9Xov94rxd42flxc3PgUd",
+  "doc_types": "DOCX",
+  "owner": "何金川",
+  "groups": [
+   "group-internal"
+  ],
+  "comments": [
+   {
+    "quote": "客服Agent相关指标",
+    "text": "这块对齐客服平台",
+    "create_time": 1787119033,
+    "time_iso": "2026-08-19 05:57"
+   },
+   {
+    "quote": "Bax 需要在跟用户对话期间，在特定情况下答复之后，提供用户可转人工选项具体明细&策略 - ",
+    "text": "有点没太理解，不是说不和Bax融合",
+    "create_time": 1787119564,
+    "time_iso": "2026-08-19 06:06"
+   },
+   {
+    "quote": "客服入口 vs Bax：定位有什么不同？",
+    "text": "讲一下",
+    "create_time": 1787724502,
+    "time_iso": "2026-08-26 06:08"
+   },
+   {
+    "quote": "回答正文内容要求：",
+    "text": "这个是不是增加一些情绪价值先",
+    "create_time": 1787724568,
+    "time_iso": "2026-08-26 06:09"
+   },
+   {
+    "quote": "[图片]",
+    "text": "讲一下",
+    "create_time": 1787725170,
+    "time_iso": "2026-08-26 06:19"
+   }
+  ]
+ },
+ {
+  "title": "【公会基础经营】线索管理EUTTP&TTP部署-支持EU&US内广线索回流",
+  "url": "https://bytedance.my.larkoffice.com/docx/McRVdpQfEoeGJax9KDEmCUJdyxb",
+  "token": "McRVdpQfEoeGJax9KDEmCUJdyxb",
+  "doc_types": "DOCX",
+  "owner": "冯安琪",
+  "groups": [
+   "backstage-initial"
+  ],
+  "comments": [
+   {
+    "quote": "仅“Provide more details”涉及算法模型，评分权重10%，本次暂不支持，其他评分标准字段都可用",
+    "text": "怎么理解",
+    "create_time": 1784700234,
+    "time_iso": "2026-07-22 06:03"
+   },
+   {
+    "quote": "eads 服务在 US-TTP / EU-TTP 各部署一份，US 内广线索落 US-TTP，EU 内广线索落 EU-TTP，数据本地闭环",
+    "text": "后续谁可以使用跟进",
+    "create_time": 1784700325,
+    "time_iso": "2026-07-22 06:05"
+   },
+   {
+    "quote": "S-TTP / EU-TTP 各部署一份，自动化工作流本地调用",
+    "text": "我记得说这个成本很高",
+    "create_time": 1784700337,
+    "time_iso": "2026-07-22 06:05"
+   },
+   {
+    "quote": "After",
+    "text": "能按照BPO的流程画个跟进图吗",
+    "create_time": 1784700359,
+    "time_iso": "2026-07-22 06:05"
+   }
+  ]
+ },
+ {
+  "title": "【公会主播】PGC专项：公会主播中心新增Star Creator模块",
+  "url": "https://bytedance.sg.larkoffice.com/docx/OsPqdYeB9oC8D1xDza7l43LTg4b",
+  "token": "OsPqdYeB9oC8D1xDza7l43LTg4b",
+  "doc_types": "DOCX",
+  "owner": "吴阳",
+  "groups": [
+   "group-internal"
+  ],
+  "comments": [
+   {
+    "quote": "画面表现：基于直播间的声画动态质量表现，评估直播间制作水平对观众的吸引能力，通过模型进行表现打分",
+    "text": "这个好像也跟概念互动有关联，pending",
+    "create_time": 1785911007,
+    "time_iso": "2026-08-05 06:23"
+   },
+   {
+    "quote": "新增「star creator达标天数」字段",
+    "text": "这不应该是个固定指标吧",
+    "create_time": 1787111719,
+    "time_iso": "2026-08-19 03:55"
+   },
+   {
+    "quote": "新增「star creator达标天数」字段",
+    "text": "应该是个活动页概念？",
+    "create_time": 1787111727,
+    "time_iso": "2026-08-19 03:55"
+   },
+   {
+    "quote": "[图片]",
+    "text": "这是活动，还是政策的",
+    "create_time": 1787111904,
+    "time_iso": "2026-08-19 03:58"
+   }
+  ]
+ },
+ {
+  "title": "【公会主播】协商退会&三方仲裁开区",
+  "url": "https://bytedance.larkoffice.com/wiki/E0O4wByv4i7JMDkKNpjc7d6OnTg",
+  "token": "E0O4wByv4i7JMDkKNpjc7d6OnTg",
+  "doc_types": "DOCX",
+  "owner": "周琳",
+  "groups": [
+   "group-internal"
+  ],
+  "comments": [
+   {
+    "quote": "用户交互&设计",
+    "text": "Opt out目前进展是什么",
+    "create_time": 1787111641,
+    "time_iso": "2026-08-19 03:54"
+   },
+   {
+    "quote": "若拒绝，则继续适用原退会规则",
+    "text": "怎么理解",
+    "create_time": 1787111676,
+    "time_iso": "2026-08-19 03:54"
+   },
+   {
+    "quote": "主播opt-out / opt-out后重新接受新规通知，",
+    "text": "存量也是opt out吧",
+    "create_time": 1787724304,
+    "time_iso": "2026-08-26 06:05"
+   }
+  ]
+ },
+ {
+  "title": "[跨线Arena][TCN Growth] 公会平台移动端主框架",
+  "url": "https://bytedance.sg.larkoffice.com/docx/NAl1dmDiJoOLmexceuflJhUKgub",
+  "token": "NAl1dmDiJoOLmexceuflJhUKgub",
+  "doc_types": "DOCX",
+  "owner": "浦新翩",
+  "groups": [
+   "backstage-initial"
+  ],
+  "comments": [
+   {
+    "quote": "移动端布局原",
+    "text": "这个和现在的差异是啥",
+    "create_time": 1784700599,
+    "time_iso": "2026-07-22 06:09"
+   },
+   {
+    "quote": "Step3：生成桌面快捷方式；",
+    "text": "这个看看怎么强引导",
+    "create_time": 1784700663,
+    "time_iso": "2026-07-22 06:11"
+   }
+  ]
+ },
+ {
+  "title": "UGC撮合试点：Pair匹配前置验收",
+  "url": "https://bytedance.larkoffice.com/wiki/KwPHwPZL2iCdFMkzv7ZcnGBMnJf",
+  "token": "KwPHwPZL2iCdFMkzv7ZcnGBMnJf",
+  "doc_types": "DOCX",
+  "owner": "李丹",
+  "groups": [
+   "backstage-initial"
+  ],
+  "comments": [
+   {
+    "quote": "主播找公会",
+    "text": "这是不是写错了",
+    "create_time": 1783663249,
+    "time_iso": "2026-07-10 06:00"
+   },
+   {
+    "quote": "UGC撮合试点：Pair匹配前置验收",
+    "text": "这个能给我一个表或者一个agent么，输入一个uid或者agency id,看匹配结果",
+    "create_time": 1783665047,
+    "time_iso": "2026-07-10 06:30"
+   }
+  ]
+ },
+ {
+  "title": "[公会主播] 入会即有LIVE Studio权限 // Users gain immediate LIVE Studio permission upon joining the CN",
+  "url": "https://bytedance.larkoffice.com/wiki/GNhQwSRQfic5VckYN88cY3CFnLh",
+  "token": "GNhQwSRQfic5VckYN88cY3CFnLh",
+  "doc_types": "DOCX",
+  "owner": "周琳",
+  "groups": [
+   "backstage-initial"
+  ],
+  "comments": [
+   {
+    "quote": "LS权限公会准入 LS权限主播准入",
+    "text": "准出逻辑是啥",
+    "create_time": 1785911136,
+    "time_iso": "2026-08-05 06:25"
+   },
+   {
+    "quote": "LS权限公会准入 LS权限主播准入",
+    "text": "公会主播退出公会失去开播权限吗",
+    "create_time": 1785911146,
+    "time_iso": "2026-08-05 06:25"
+   }
+  ]
+ },
+ {
+  "title": "【公会主播】PGC专项：主播列表&详情页透传star creator达成状态",
+  "url": "https://bytedance.larkoffice.com/wiki/KF6QwCeYNiiBxok9S5tc0XkrnHb",
+  "token": "KF6QwCeYNiiBxok9S5tc0XkrnHb",
+  "doc_types": "DOCX",
+  "owner": "王曼琪",
+  "groups": [
+   "group-internal"
+  ],
+  "comments": [
+   {
+    "quote": "画面表现达标 你的直播画面整体干净、清晰，观看体验舒适。光线充足，能够清楚展现人物形象；人物比例协调，背景整洁，没有明显干扰因素。画面质量、清晰度和动态表现已经达到较好的水平。 观众不会因为画面体验不佳而快速离开直播间，有助于提升停留时长，并保持稳定的观看",
+    "text": "Pending更细化 概念再对",
+    "create_time": 1785910952,
+    "time_iso": "2026-08-05 06:22"
+   },
+   {
+    "quote": "做功引导操作「提升建议」",
+    "text": "这个看看咋优化吧，感觉说了跟没说一样，没什么指导意义",
+    "create_time": 1787111988,
+    "time_iso": "2026-08-19 03:59"
+   }
+  ]
+ },
+ {
+  "title": "主播报告建议调整&新增调优进度",
+  "url": "https://bytedance.larkoffice.com/wiki/JUCHwQxhaiqmo4kKA5ec2vgMnGe",
+  "token": "JUCHwQxhaiqmo4kKA5ec2vgMnGe",
+  "doc_types": "DOCX",
+  "owner": "张月仁",
+  "groups": [
+   "group-internal"
+  ],
+  "comments": [
+   {
+    "quote": "建议总数上限为6条，优先展示P0建议，P1建议补充",
+    "text": "6条会失焦吧",
+    "create_time": 1781140908,
+    "time_iso": "2026-06-11 01:21"
+   },
+   {
+    "quote": "重复建议的处理逻辑",
+    "text": "给点例子",
+    "create_time": 1781140990,
+    "time_iso": "2026-06-11 01:23"
+   }
+  ]
+ },
+ {
+  "title": "[Agency Growth]C端活动联动公会赛//TCN campaign bond to creator campaign ",
+  "url": "https://bytedance.my.larkoffice.com/docx/LYsxdubdroTUOixIHtemsaWIyMg",
+  "token": "LYsxdubdroTUOixIHtemsaWIyMg",
+  "doc_types": "DOCX",
+  "owner": "陈渝腊",
+  "groups": [
+   "backstage-initial"
+  ],
+  "comments": [
+   {
+    "quote": "无论B活动开始早于或者晚于C活动",
+    "text": "没看懂，B活动是不是不能早于C啊",
+    "create_time": 1785302253,
+    "time_iso": "2026-07-29 05:17"
+   }
+  ]
+ },
+ {
+  "title": "【公会基础经营】官网主页优化",
+  "url": "https://bytedance.sg.larkoffice.com/docx/TrfHdYgcfo6ycdx9wa5lc6hZg3b",
+  "token": "TrfHdYgcfo6ycdx9wa5lc6hZg3b",
+  "doc_types": "DOCX",
+  "owner": "彭哲",
+  "groups": [
+   "backstage-initial"
+  ],
+  "comments": [
+   {
+    "quote": "SEO 周期内（上线后一年）提升官网UV + 3400",
+    "text": "搞半天才3400，这个咋算出来的",
+    "create_time": 1782115039,
+    "time_iso": "2026-06-22 07:57"
+   }
+  ]
+ },
+ {
+  "title": "[TCN Growth] 支持PGC公会赛落地——报名赛",
+  "url": "https://bytedance.sg.larkoffice.com/docx/RVrFdIqSBo1MZqx8inelUH9LgJe",
+  "token": "RVrFdIqSBo1MZqx8inelUH9LgJe",
+  "doc_types": "DOCX",
+  "owner": "浦新翩",
+  "groups": [
+   "backstage-initial"
+  ],
+  "comments": [
+   {
+    "quote": "[TCN Growth] 支持PGC公会赛落地：新增相关玩法指标及主播圈选",
+    "text": "整个方案都没sign off，产品判断一下哪些是基建吧",
+    "create_time": 1783490888,
+    "time_iso": "2026-07-08 06:08"
+   }
+  ]
+ },
+ {
+  "title": "【主播招募】主播招募状态展示&可筛选",
+  "url": "https://bytedance.larkoffice.com/wiki/YpNywFjJEimoNLk3pXdcNFkwnud",
+  "token": "YpNywFjJEimoNLk3pXdcNFkwnud",
+  "doc_types": "DOCX",
+  "owner": "李丹",
+  "groups": [
+   "group-internal"
+  ],
+  "comments": [
+   {
+    "quote": "hover 时展示具体不可以邀约的原因； ",
+    "text": "具体是啥",
+    "create_time": 1787724687,
+    "time_iso": "2026-08-26 06:11"
+   }
+  ]
+ },
+ {
+  "title": "[Agency Growth]政策测算沙盒能力迭代",
+  "url": "https://bytedance.larkoffice.com/wiki/Lzn1wjUqwiSf1okMb5WcRtzlnfg",
+  "token": "Lzn1wjUqwiSf1okMb5WcRtzlnfg",
+  "doc_types": "DOCX",
+  "owner": "杨丽莹",
+  "groups": [
+   "group-internal"
+  ],
+  "comments": [
+   {
+    "quote": "[画板]",
+    "text": "看不清，讲一下",
+    "create_time": 1787724986,
+    "time_iso": "2026-08-26 06:16"
+   }
+  ]
+ },
+ {
+  "title": "[Agency Growth]激励诊断与助手：政策理解、诊断与行动优化建议//Incentive diagnosis & assistant: Fee policy ...",
+  "url": "https://bytedance.larkoffice.com/wiki/VF1rwyOEyiDNc3kG2wncHSIXnge",
+  "token": "VF1rwyOEyiDNc3kG2wncHSIXnge",
+  "doc_types": "DOCX",
+  "owner": "杨丽莹",
+  "groups": [
+   "group-internal"
+  ],
+  "comments": [
+   {
+    "quote": "诊断skill输出信息",
+    "text": "这个逻辑有点没看懂",
+    "create_time": 1784701436,
+    "time_iso": "2026-07-22 06:23"
+   }
+  ]
+ }
+]
