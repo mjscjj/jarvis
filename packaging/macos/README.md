@@ -3,6 +3,9 @@
 当前脚本生成 macOS 14 及以上、Apple Silicon (`arm64`) 的自包含 `Jarvis.app` 和 DMG。运行数据写入
 `~/Library/Application Support/Jarvis`，不会写回应用包。
 
+本文面向构建和发布人员；用户首次安装、覆盖安装、自动更新和排障见
+[macOS 安装与自动更新](../../docs/reference/macos-install-and-update.md)。
+
 ## 环境要求
 
 - macOS 14+ Apple Silicon
@@ -58,13 +61,49 @@ bash packaging/macos/check-lark-skills.sh "$lark_cli_bin"
 产物路径：
 
 ```text
-desktop/src-tauri/target/release/bundle/dmg/Jarvis_0.1.0_aarch64.dmg
+desktop/src-tauri/target/release/bundle/dmg/Jarvis_<version>_aarch64.dmg
 ```
+
+## 发布自动更新
+
+桌面应用启动成功后会通过
+`https://jarvisx.bytedance.net/jarvis-updates/latest.json` 检查更新。发现更高版本时，
+使用 Tauri updater 校验签名、安装并重启；用户数据仍保存在
+`~/Library/Application Support/Jarvis`。
+
+首次发布机准备一次更新签名密钥：
+
+```bash
+npm --prefix desktop exec tauri signer generate -- \
+  --ci -w "$HOME/.tauri/jarvis-updater.key"
+```
+
+私钥只留在发布机。公钥正文注册在 `desktop/src-tauri/tauri.conf.json`；丢失私钥后，
+已经安装的客户端无法信任另一把密钥签发的更新。
+
+发布前同步修改并保持相同的 SemVer：
+
+- `desktop/src-tauri/tauri.conf.json`
+- `desktop/src-tauri/Cargo.toml`
+- `desktop/package.json`
+
+随后执行：
+
+```bash
+./packaging/macos/publish-update.sh "本次更新说明"
+```
+
+脚本复用完整 DMG 构建门禁，生成 `.app.tar.gz` 和 `.sig`，再将版本化更新包、DMG
+与最后写入的 `latest.json` 原子发布到 DEV2。默认目标是
+`chujiejie.1@10.199.197.219:/data00/home/chujiejie.1/jarvis-updates`，可用
+`JARVIS_UPDATE_REMOTE`、`JARVIS_UPDATE_REMOTE_ROOT` 和
+`JARVIS_UPDATE_BASE_URL` 覆盖。首个带 updater 的版本仍需手动安装一次，后续版本
+才会自动更新。
 
 ## 验收
 
 ```bash
-hdiutil verify desktop/src-tauri/target/release/bundle/dmg/Jarvis_0.1.0_aarch64.dmg
+hdiutil verify desktop/src-tauri/target/release/bundle/dmg/Jarvis_<version>_aarch64.dmg
 codesign --verify --deep --strict --verbose=2 \
   desktop/src-tauri/target/release/bundle/macos/Jarvis.app
 ```

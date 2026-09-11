@@ -104,7 +104,18 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 - 改前端页面：`web/src/`
 - 新增插件或拆分插件耦合：[插件扩展与解耦规范](docs/summery/plugin-extension-spec.md)（含当前接入步骤与尚未实施的改造提案）
 
-## 给其他人安装（推荐）
+## 安装方式
+
+macOS 14+ Apple Silicon 用户优先使用 DMG：
+
+- [macOS 安装、覆盖安装与自动更新](docs/reference/macos-install-and-update.md)
+- [下载当前首个自动更新版本 Jarvis 0.1.1](https://jarvisx.bytedance.net/jarvis-updates/Jarvis_0.1.1_aarch64.dmg)
+
+0.1.1 及后续版本会从 `jarvisx.bytedance.net` 检查签名更新并自动安装；0.1.0
+及更早版本需要先手动覆盖安装 0.1.1。应用位于 `/Applications/Jarvis.app`，用户数据
+独立保存在 `~/Library/Application Support/Jarvis`，覆盖应用不会删除数据。
+
+### 源码安装
 
 当前远端是需要权限的 Code 仓库。使用者先 clone **完整仓库**，再在仓库根目录启动支持 repo-local `.agents/skills/` 的 Agent：
 
