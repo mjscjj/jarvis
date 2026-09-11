@@ -108,6 +108,16 @@ func TestOrphanedStreamingReplyIsShownAsInterrupted(t *testing.T) {
 	if err != nil || view.Running || view.Messages[0].Status != "interrupted" || view.Messages[0].Text != row.Text {
 		t.Fatalf("restarted view: %+v, %v", view, err)
 	}
+	// A later turn must not make the older interrupted reply look live again.
+	svc.active[session.ID] = func() {}
+	next := domain.ChatMessage{ID: "next-reply", SessionID: session.ID, Role: "assistant", Meta: datatypes.JSON(`{"status":"streaming"}`)}
+	if err := svc.db.Create(&next).Error; err != nil {
+		t.Fatal(err)
+	}
+	view, err = svc.GetSession(t.Context(), session.ID)
+	if err != nil || view.Messages[0].Status != "interrupted" || view.Messages[1].Status != "streaming" {
+		t.Fatalf("later turn: %+v, %v", view, err)
+	}
 }
 
 func TestAcceptedEventFollowsMessageAndAttachmentPersistence(t *testing.T) {

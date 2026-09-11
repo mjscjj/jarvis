@@ -299,7 +299,7 @@ func (s *Service) GetSession(ctx context.Context, id string) (*SessionView, erro
 	for _, file := range sentAttachments {
 		attachmentsByMessage[*file.MessageID] = append(attachmentsByMessage[*file.MessageID], attachmentView(file))
 	}
-	for _, message := range messages {
+	for index, message := range messages {
 		mv := MessageView{ID: message.ID, Role: message.Role, Text: message.Text, Attachments: attachmentsByMessage[message.ID], CreatedAt: message.CreatedAt}
 		if len(message.Meta) > 0 {
 			var meta struct {
@@ -309,7 +309,7 @@ func (s *Service) GetSession(ctx context.Context, id string) (*SessionView, erro
 				return nil, fmt.Errorf("read chat message status: %w", err)
 			}
 			mv.Status = meta.Status
-			if mv.Status == "streaming" && !view.Running {
+			if mv.Status == "streaming" && (!view.Running || index != len(messages)-1) {
 				mv.Status = "interrupted"
 			}
 		}
