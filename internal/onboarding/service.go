@@ -119,10 +119,11 @@ type Service struct {
 	options Options
 	runner  CommandRunner
 
-	mu          sync.Mutex
-	flows       map[string]*Flow
-	runtimeID   string
-	bootstrapMu sync.Mutex
+	mu                sync.Mutex
+	flows             map[string]*Flow
+	runtimeID         string
+	runtimeConfigured bool
+	bootstrapMu       sync.Mutex
 }
 
 type IdentityStatus struct {
@@ -167,6 +168,7 @@ type Flow struct {
 	Output          string `json:"output,omitempty"`
 	Error           string `json:"error,omitempty"`
 	cancel          context.CancelFunc
+	kind            string
 }
 
 type larkAuthPayload struct {
@@ -209,7 +211,12 @@ func NewService(options Options) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Service{options: options, runner: options.Runner, flows: make(map[string]*Flow), runtimeID: runtimeID}, nil
+	configuration, err := config.InspectInitialization(options.ConfigPath)
+	if err != nil {
+		return nil, err
+	}
+	return &Service{options: options, runner: options.Runner, flows: make(map[string]*Flow), runtimeID: runtimeID,
+		runtimeConfigured: configuration.MachineConfigurationReady}, nil
 }
 
 // Bootstrap reads only the local installation boundary. It does not claim that
@@ -261,7 +268,8 @@ func (s *Service) Status(ctx context.Context) (*Status, error) {
 		AgentName:       agentName,
 		RuntimeID:       s.runtimeID,
 	}
-	result.AppReady = configuration.MachineConfigurationReady &&
+	// Saving configuration does not apply it to this running desktop process.
+	result.AppReady = (!s.options.Desktop || s.runtimeConfigured) && configuration.MachineConfigurationReady &&
 		lark.Bot.Status == "ready" && lark.Bot.Verified && lark.User.Status == "ready" && lark.User.Verified &&
 		agent.Authenticated
 	result.Completed = result.AppReady && result.WorldModelReady
@@ -283,11 +291,16 @@ func (s *Service) BeginLarkSetup(ctx context.Context) (*Flow, error) {
 	s.mu.Lock()
 	for _, flow := range s.flows {
 		if flow.Status == flowPending {
+			if flow.kind == "lark_setup" {
+				result := cloneFlow(flow)
+				s.mu.Unlock()
+				return result, nil
+			}
 			s.mu.Unlock()
 			return nil, fmt.Errorf("请先完成或取消当前连接")
 		}
 	}
-	flow := &Flow{ID: id, Status: flowPending}
+	flow := &Flow{ID: id, Status: flowPending, kind: "lark_setup"}
 	s.flows[id] = flow
 	result := cloneFlow(flow)
 	s.mu.Unlock()
@@ -420,14 +433,14 @@ func (s *Service) Finalize(ctx context.Context, agentName, gitAuthor, appSecret 
 	if err := s.requireWorldModel(); err != nil {
 		return nil, err
 	}
-	// Finish the slow status checks before scheduling the runtime restart.
+	// Finish slow checks before requesting restart; report write failures to the caller.
 	status, err := s.Status(ctx)
 	if err != nil {
 		return nil, err
 	}
-	time.AfterFunc(750*time.Millisecond, func() {
-		_ = os.WriteFile(filepath.Join(s.options.StateRoot, "restart.requested"), []byte("setup\n"), 0o600)
-	})
+	if err := os.WriteFile(filepath.Join(s.options.StateRoot, "restart.requested"), []byte("setup\n"), 0o600); err != nil {
+		return nil, fmt.Errorf("request runtime restart: %w", err)
+	}
 	return status, nil
 }
 
