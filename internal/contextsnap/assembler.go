@@ -26,7 +26,7 @@ type AssembleOptions struct {
 }
 
 // Assembler builds one canonical background shape. Assemble serves ordinary
-// Task creation; AssembleConversation adds conversation scope for backend chat
+// Task creation; AssembleConversation adds conversation scope for CC Connect
 // and ScheduledTask wake-ups without duplicating lookup logic.
 type Assembler struct {
 	db              *gorm.DB
@@ -50,7 +50,7 @@ func (a *Assembler) Assemble(ctx context.Context, options AssembleOptions) (json
 }
 
 // AssembleConversation adds conversation scope to the common background. It is
-// intentionally reserved for backend chat and ScheduledTask wake-ups; ordinary
+// intentionally reserved for CC Connect and ScheduledTask wake-ups; ordinary
 // Task execution keeps its frozen context.
 func (a *Assembler) AssembleConversation(ctx context.Context, options AssembleOptions) (json.RawMessage, error) {
 	return a.assemble(ctx, options, true)

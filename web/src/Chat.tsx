@@ -22,7 +22,7 @@ interface ListEnvelope<T> {
 }
 
 const SOURCE_OPTIONS: ChatSource[] = [
-  { kind: 'workspace', label: '自动参考工作上下文' },
+  { kind: 'workspace', label: '工作资料（按需查询）' },
   { kind: 'tasks', label: '任务与当前进展' },
   { kind: 'world', label: '世界模型' },
   { kind: 'messages', label: '已采集消息与资料' },
@@ -52,6 +52,9 @@ function parseSSEBlock(block: string): { event: string; data: string } {
 }
 function agentLabel(agent: string): string {
   return ({ codex: 'Codex', trae: 'TRAE', cursor: 'Cursor' } as Record<string, string>)[agent] || agent
+}
+function sourceLabel(source: ChatSource): string {
+  return SOURCE_OPTIONS.find((option) => option.kind === source.kind)?.label || source.label
 }
 function dayGroup(value: string): string {
   const date = new Date(value),
@@ -181,7 +184,7 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
             agent: chosenAgent,
             model: chosenModel,
             reasoning_effort: defaultEffort(chosen),
-            sources: [{ kind: 'workspace', label: '自动参考工作上下文' }],
+            sources: [],
             draft: {},
             from_session_id: fromSessionID || '',
           }),
@@ -227,7 +230,7 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
               agent: available.id,
               model: selected.id,
               reasoning_effort: defaultEffort(selected),
-              sources: [{ kind: 'workspace', label: '自动参考工作上下文' }],
+              sources: [],
               draft: {},
               from_session_id: '',
             }),
@@ -318,8 +321,7 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
         body: JSON.stringify({
           message: text,
           attachment_ids: attachments.map((item) => item.id),
-          sources: active.sources,
-          page_context: context,
+          sources: active.sources.map((source) => ({ ...source, label: sourceLabel(source) })),
         }),
       })
       if (!response.ok || !response.body) throw new Error(`对话请求失败：HTTP ${response.status}`)
@@ -509,7 +511,7 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
   const activeRunning = active ? running.has(active.id) || Boolean(active.running) : false
   const sourcePicker = active && (
     <div className="chat-source-picker">
-      <Text type="secondary">优先参考这些资料，必要时补充查证</Text>
+      <Text type="secondary">指定优先查询范围，不自动加载资料正文</Text>
       {SOURCE_OPTIONS.map((source) => (
         <Checkbox
           key={source.kind}
@@ -676,7 +678,7 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
                 <EditOutlined />
               </button>
             )}
-            <span>{active?.sources.length ? `优先参考 ${active.sources.map((item) => item.label).join('、')}` : '自动参考工作上下文'}</span>
+            <span>{active?.sources.length ? `按需查询 ${active.sources.map(sourceLabel).join('、')}` : '需要资料时按需查询'}</span>
           </div>
           <Tooltip title="导出 Markdown">
             <Button type="text" icon={<DownloadOutlined />} onClick={exportSession} />
@@ -750,7 +752,7 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
               <div className="chat-source-chips">
                 {active.sources.map((source) => (
                   <span key={source.kind}>
-                    {source.label}
+                    {sourceLabel(source)}
                     <button
                       type="button"
                       aria-label={`移除 ${source.label}`}

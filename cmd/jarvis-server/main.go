@@ -903,17 +903,15 @@ func main() {
 	var chatService *chat.Service
 	if cfg.Chat.Enabled {
 		chatService, err = chat.NewService(chat.Options{
-			AgentName:        cfg.Identity.DisplayName,
-			Bin:              cfg.Execute.Bin,
-			Model:            cfg.Chat.Model,
-			Sandbox:          cfg.Chat.Sandbox,
-			ReasoningEffort:  cfg.Chat.ReasoningEffort,
-			Timeout:          time.Duration(cfg.Chat.TimeoutSeconds) * time.Second,
-			DB:               db,
-			FilesRoot:        filepath.Join(runtimeRoot, "data", "chat"),
-			Prompts:          runtimePrompts,
-			SharedMemory:     sharedMemoryService,
-			ContextAssembler: contextAssembler,
+			AgentName:       cfg.Identity.DisplayName,
+			Bin:             cfg.Execute.Bin,
+			Model:           cfg.Chat.Model,
+			Sandbox:         cfg.Chat.Sandbox,
+			ReasoningEffort: cfg.Chat.ReasoningEffort,
+			Timeout:         time.Duration(cfg.Chat.TimeoutSeconds) * time.Second,
+			DB:              db,
+			FilesRoot:       filepath.Join(runtimeRoot, "data", "chat"),
+			Prompts:         runtimePrompts,
 		})
 		if err != nil {
 			fatalf("initialize chat service failed: %v", err)

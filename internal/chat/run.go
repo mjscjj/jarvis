@@ -12,10 +12,9 @@ import (
 )
 
 type SendInput struct {
-	Message       string       `json:"message"`
-	AttachmentIDs []string     `json:"attachment_ids"`
-	Sources       []Source     `json:"sources"`
-	PageContext   *PageContext `json:"page_context"`
+	Message       string   `json:"message"`
+	AttachmentIDs []string `json:"attachment_ids"`
+	Sources       []Source `json:"sources"`
 }
 
 func (s *Service) StreamSession(ctx context.Context, sessionID string, input SendInput, emit func(Event) error) error {
@@ -69,7 +68,7 @@ func (s *Service) StreamSession(ctx context.Context, sessionID string, input Sen
 			imagePaths = append(imagePaths, a.LocalPath)
 		}
 	}
-	meta, err := encodeJSON(map[string]any{"sources": input.Sources, "page_context": input.PageContext})
+	meta, err := encodeJSON(map[string]any{"sources": input.Sources})
 	if err != nil {
 		return err
 	}
@@ -136,7 +135,7 @@ func (s *Service) StreamSession(ctx context.Context, sessionID string, input Sen
 	if agentMessage == "" {
 		agentMessage = "请阅读并处理我附上的文件。"
 	}
-	req := Request{Message: agentMessage, ThreadID: valueOrEmpty(row.NativeThreadID), Agent: row.Agent, Model: row.Model, ReasoningEffort: row.ReasoningEffort, AttachmentPaths: paths, ImagePaths: imagePaths, Sources: input.Sources, VisibleHistory: visibleHistory, PageContext: input.PageContext}
+	req := Request{Message: agentMessage, ThreadID: valueOrEmpty(row.NativeThreadID), Agent: row.Agent, Model: row.Model, ReasoningEffort: row.ReasoningEffort, AttachmentPaths: paths, ImagePaths: imagePaths, Sources: input.Sources, VisibleHistory: visibleHistory}
 	runErr := s.Stream(runCtx, req, func(event Event) error {
 		if event.Kind == EventThread && strings.TrimSpace(event.ThreadID) != "" {
 			thread := strings.TrimSpace(event.ThreadID)

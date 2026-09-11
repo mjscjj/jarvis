@@ -398,6 +398,26 @@ func TestInlineSkillRespectsAvailabilityGate(t *testing.T) {
 	}
 }
 
+func TestRepositoryChatSkillIsReadableWithoutStageInjection(t *testing.T) {
+	svc, err := NewService(filepath.Join("..", "..", ".agents", "skills"), filepath.Join("..", "..", "conf", "skills.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := svc.Content(t.Context(), "jarvis-chat")
+	if err != nil || content == nil || strings.TrimSpace(content.Content) == "" {
+		t.Fatalf("chat Skill must be readable on demand: %v", err)
+	}
+	for _, stage := range []string{StageExtract, StageExecute, StageProactive} {
+		catalog, err := svc.Catalog(t.Context(), stage)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(catalog, "jarvis-chat") {
+			t.Fatalf("chat Skill leaked into %s", stage)
+		}
+	}
+}
+
 func TestRepositoryInstallationSkillsAreStandalone(t *testing.T) {
 	service, err := NewService(
 		filepath.Join("..", "..", ".agents", "skills"),

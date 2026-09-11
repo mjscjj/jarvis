@@ -49,6 +49,9 @@ func Block(stage string) (string, error) {
 		"- bytedcli：查询内部代码、commit、MR、issue 等研发信息。先用 `bytedcli --help` 查看领域，再用 `bytedcli --json <领域> --help` 查看该领域命令，最后用 `bytedcli --json <子命令路径> --help` 查看参数；不要加载全量帮助。",
 		"- git：查询和操作本地代码仓库。",
 	}
+	if stage == StageChat {
+		lines = append(lines, "- 对话查询 Skill：`jarvis-tools get-skill --name jarvis-chat` 读取正文；`list-skills --keyword TEXT` 查找其它领域 Skill。")
+	}
 	lines = append(lines, "END_AVAILABLE_TOOLS")
 	return strings.Join(lines, "\n"), nil
 }
