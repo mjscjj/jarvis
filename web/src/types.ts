@@ -1255,6 +1255,7 @@ export interface AuthView {
   status: 'authenticated' | 'unauthenticated' | 'pending'
   user?: AuthUser
   verification_url?: string
+  lark_applink_url?: string
   user_code?: string
   flow_id?: string
 }

@@ -191,10 +191,10 @@ export function AuthGate({ agentName, children }: { agentName: string; children:
         {pending?.verification_url ? (
           <>
             <QRCode value={pending.verification_url} size={200} />
-            <Typography.Text>请使用飞书扫描二维码授权登录</Typography.Text>
-            <Button type="primary" icon={<LinkOutlined />} href={pending.verification_url} target="_blank" rel="noreferrer">
-              打开 SSO 授权页
-            </Button>
+            <Typography.Text>请用手机飞书扫码，或在电脑飞书客户端中授权</Typography.Text>
+            {pending.lark_applink_url && <Button type="primary" icon={<LinkOutlined />} href={pending.lark_applink_url} target="_blank" rel="noreferrer">
+              在飞书客户端授权
+            </Button>}
             {pending.user_code && <Typography.Text className="auth-code">验证码：{pending.user_code}</Typography.Text>}
             <Typography.Text type="secondary">授权完成后此页面会自动进入</Typography.Text>
           </>

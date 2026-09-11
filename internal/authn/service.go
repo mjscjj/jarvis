@@ -41,6 +41,7 @@ type View struct {
 	Status          string  `json:"status"`
 	User            *User   `json:"user,omitempty"`
 	VerificationURL *string `json:"verification_url,omitempty"`
+	LarkAppLinkURL  *string `json:"lark_applink_url,omitempty"`
 	UserCode        *string `json:"user_code,omitempty"`
 	FlowID          *string `json:"flow_id,omitempty"`
 }
@@ -190,7 +191,8 @@ func (s *Service) beginLogin(ctx context.Context) (LoginResult, error) {
 	s.mu.Unlock()
 	return LoginResult{View: View{
 		Enabled: true, Status: StatusPending, VerificationURL: stringPointer(url),
-		UserCode: optionalString(code), FlowID: stringPointer(flowID),
+		LarkAppLinkURL: optionalString(findString(values, "lark_applink_url")),
+		UserCode:       optionalString(code), FlowID: stringPointer(flowID),
 	}}, nil
 }
 

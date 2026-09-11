@@ -21,7 +21,7 @@ func TestLoginCompletesDeviceFlow(t *testing.T) {
 		command := strings.Join(args, " ")
 		switch {
 		case strings.HasSuffix(command, "auth login --begin --session --session-method qr"):
-			return []byte(`{"event":"qr_image_ready","data":{"complete_token":"resume-1","verification_uri_complete":"https://sso.example/login","user_code":"ABCD"}}`), nil
+			return []byte(`{"event":"qr_image_ready","data":{"complete_token":"resume-1","verification_uri_complete":"https://sso.example/login","lark_applink_url":"https://applink.feishu.cn/client/web_url/open?url=sso","user_code":"ABCD"}}`), nil
 		case strings.HasSuffix(command, "auth login --complete resume-1"):
 			return []byte(`{"status":"success","data":{"login_mode":"session","login_status":"success"}}`), nil
 		case strings.HasSuffix(command, "auth userinfo"):
@@ -39,6 +39,9 @@ func TestLoginCompletesDeviceFlow(t *testing.T) {
 	}
 	if begin.Status != StatusPending || begin.FlowID == nil || begin.VerificationURL == nil {
 		t.Fatalf("begin = %#v", begin)
+	}
+	if *begin.VerificationURL != "https://sso.example/login" || begin.LarkAppLinkURL == nil || *begin.LarkAppLinkURL != "https://applink.feishu.cn/client/web_url/open?url=sso" {
+		t.Fatalf("QR and client links must remain separate: %#v", begin.View)
 	}
 	complete, err := service.Complete(t.Context(), *begin.FlowID)
 	if err != nil {
