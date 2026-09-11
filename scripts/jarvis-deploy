@@ -67,9 +67,12 @@ fi
 if [[ "$CONFIG_PATH" != /* ]]; then
   CONFIG_PATH="${REPO_ROOT}/${CONFIG_PATH}"
 fi
+go run ./cmd/jarvis-config discard-retired-chat --config "$CONFIG_PATH"
 INSTANCE="$("${SCRIPT_DIR}/jarvis-instance" "$CONFIG_PATH")"
 CONFIG_PATH="$(jq -er '.config_path' <<<"$INSTANCE")"
 API_BASE="$(jq -er '.api_base' <<<"$INSTANCE")"
+source "${SCRIPT_DIR}/lib/retire-chat-sidecar.sh"
+retire_chat_sidecar "$(jq -er '.launchd_label' <<<"$INSTANCE")" "$REPO_ROOT"
 
 npm --prefix "${REPO_ROOT}/web" ci
 npm --prefix "${REPO_ROOT}/web" run build

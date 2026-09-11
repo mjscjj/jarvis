@@ -387,8 +387,8 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
       setError('每条消息最多添加 10 个文件')
       return
     }
-    if (items.some((file) => file.size > 25 * 1024 * 1024)) {
-      setError('单个文件不能超过 25 MiB')
+    if (items.some((file) => file.size > 12 * 1024 * 1024)) {
+      setError('单个文件不能超过 12 MiB')
       return
     }
     setUploading(true)

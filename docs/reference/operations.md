@@ -10,18 +10,18 @@
 ./scripts/jarvis-deploy
 ```
 
-脚本先 fast-forward pull 当前 upstream 并构建前端，再按 `uname` 分发：macOS 复用现有签名 build + launchd 链路；Linux 构建 main/chat binary 并注册到当前用户的 systemd manager。最后统一验证首页、主服务 readiness，以及启用时的 Chat health。
+脚本先 fast-forward pull 当前 upstream，删除旧聊天配置及对应实例的 sidecar 服务，再构建前端并按 `uname` 分发：macOS 复用现有签名 build + launchd 链路；Linux 构建主服务并注册到当前用户的 systemd manager。最后统一验证首页与主服务 readiness，对话由主服务承载。
 
 本地运行会修改 Git 跟踪的 `data/okr/okr.db`。只有明确要丢弃该运行改动、使用 Git 版本时才运行 `./scripts/jarvis-deploy --remote-okr-db`；其它 tracked 修改会让 pull fail-fast。当前工作树尚未提交时使用 `--skip-pull`。
 
-Linux 日志仍写配置中的 `server.log_files` 和 `var/log/jarvis-chat*.log`；服务状态用 `systemctl --user status <unit>` 查看。unit 名沿用配置路径生成的 launchd label 并加 `.service`，不同配置保持隔离。
+Linux 日志写配置中的 `server.log_files`；服务状态用 `systemctl --user status <unit>` 查看。unit 名沿用配置路径生成的 launchd label 并加 `.service`，不同配置保持隔离。
 
 ## 服务
 
 | Label | 端口 | 安装方式 | 日志 |
 |---|---:|---|---|
 | `com.bytedance.jarvis.server.<配置路径摘要>` | `server.addr` | `./scripts/install-launchd.sh` | `var/log/jarvis-server.log`, `var/log/jarvis-server.error.log` |
-| `<实例服务名>.web` | 后端相邻且避开 Chat 的端口 | 手工 link + `launchctl bootstrap` | `var/log/vite.log`, `var/log/vite.error.log` |
+| `<实例服务名>.web` | 后端相邻端口 | 手工 link + `launchctl bootstrap` | `var/log/vite.log`, `var/log/vite.error.log` |
 | `com.bytedance.jarvis.qdrant` | 6333/6334 | `./scripts/install-qdrant.sh` | `var/log/jarvis-qdrant.log`, `var/log/jarvis-qdrant.error.log` |
 | `com.cc-connect.service`（macOS）/ `com.bytedance.jarvis.cc-connect`（Linux） | 9810/9820 | CC daemon / `install-cc-systemd.sh` | CC 日志或 `journalctl --user` |
 

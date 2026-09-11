@@ -28,6 +28,33 @@ func newPersistentTestService(t *testing.T) *Service {
 	return svc
 }
 
+func TestSaveUploadSizeBoundary(t *testing.T) {
+	svc := newPersistentTestService(t)
+	session, err := svc.CreateSession(t.Context(), CreateSessionInput{Agent: "codex", Model: "gpt-5.5", ReasoningEffort: "high"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, size := range []int64{12 << 20, (12 << 20) + 1} {
+		copied := false
+		_, err := svc.SaveUpload(t.Context(), session.ID, "boundary.bin", "application/octet-stream", size, func(path string) error {
+			copied = true
+			file, err := os.Create(path)
+			if err != nil {
+				return err
+			}
+			defer file.Close()
+			return file.Truncate(size)
+		})
+		if size == 12<<20 {
+			if err != nil || !copied {
+				t.Fatalf("12 MiB rejected: %v", err)
+			}
+		} else if !errors.Is(err, ErrInvalidInput) || copied {
+			t.Fatalf("oversized file copied=%v, error=%v", copied, err)
+		}
+	}
+}
+
 func TestSessionPersistenceSearchForkAndAttachments(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

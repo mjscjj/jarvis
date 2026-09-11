@@ -10,7 +10,7 @@ import { BoardProvider } from './emily/store'
 import { PreviewReviewProvider } from './emily/aiReviewContext'
 import IdentityBoundary from './IdentityBoundary'
 import { isWeeklyWorkspaceTab, okrTabForWeeklyWorkspace, resolveOKRTab, weeklyWorkspace, type OKRTab } from './navigation'
-import { withOKRScope, withOKRTarget } from './chatContext'
+import { withOKRScope } from './pageScope'
 import { isWeeklyShareViewState, weeklyShareTab, weeklyShareWorkspaceTab, type WeeklyShareTab } from './emily/share'
 import { templateKeyForDataset } from './emily/weekCatalog'
 import type { AuthStatus } from './emily/types'
@@ -18,7 +18,7 @@ import { activeQuarterForViewState, okrPlanDefaultQuarter, previousQuarter, quar
 import './emily/index.css'
 
 function PageContextSync({ surface }: { surface: 'okr' | 'weekly-report' }) {
-  const { quarter, week, reset, syncState } = useBoard()
+  const { quarter, week } = useBoard()
   const { context, setViewState } = usePageContext()
 
   useEffect(() => {
@@ -26,33 +26,6 @@ function PageContextSync({ surface }: { surface: 'okr' | 'weekly-report' }) {
     const next = withOKRScope(context.view_state, surface, quarter, week)
     if (JSON.stringify(next) !== JSON.stringify(context.view_state)) setViewState(next, true)
   }, [context.view_state, quarter, setViewState, surface, week])
-
-  useEffect(() => {
-    const selectTarget = (event: PointerEvent) => {
-      const element = event.target instanceof Element
-        ? event.target.closest<HTMLElement>('[data-okr-target-kind]')
-        : null
-      if (!element) return
-      const next = withOKRTarget(context.view_state, surface, quarter, week, {
-        objectiveId: element.dataset.okrObjectiveId,
-        krId: element.dataset.okrKrId,
-        pointId: element.dataset.okrPointId,
-        progressId: element.dataset.okrProgressId,
-      })
-      setViewState(next, true)
-    }
-    document.addEventListener('pointerdown', selectTarget, true)
-    return () => document.removeEventListener('pointerdown', selectTarget, true)
-  }, [context.view_state, quarter, setViewState, surface, week])
-
-  useEffect(() => {
-    const refresh = () => {
-      if (syncState.kind === 'loading' || syncState.kind === 'saving' || syncState.kind === 'conflict') return
-      reset()
-    }
-    window.addEventListener('jarvis:chat-completed', refresh)
-    return () => window.removeEventListener('jarvis:chat-completed', refresh)
-  }, [reset, syncState.kind])
 
   return null
 }

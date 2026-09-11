@@ -32,6 +32,17 @@ func run(args []string, stdout io.Writer) error {
 		return runShowPrincipal(args[1:], stdout)
 	case "initialization-status":
 		return runInitializationStatus(args[1:], stdout)
+	case "discard-retired-chat":
+		flags := flag.NewFlagSet("discard-retired-chat", flag.ContinueOnError)
+		flags.SetOutput(io.Discard)
+		path := flags.String("config", "conf/config.yaml", "base config path")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 {
+			return fmt.Errorf("unexpected positional arguments: %v", flags.Args())
+		}
+		return config.DiscardRetiredChatConfig(*path)
 	default:
 		return fmt.Errorf("unknown subcommand %q", args[0])
 	}

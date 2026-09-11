@@ -49,7 +49,7 @@ function EntryRow({ objectiveId, krId, pointId, entry, readOnly }: { objectiveId
   const { patchEntry, removeEntry } = useBoard()
 
   return (
-    <div data-okr-target-kind="progress" data-okr-objective-id={objectiveId} data-okr-kr-id={krId} data-okr-point-id={pointId} data-okr-progress-id={entry.id} className="group/entry flex items-start gap-2.5 rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-2.5">
+    <div className="group/entry flex items-start gap-2.5 rounded-lg border border-slate-200/80 bg-slate-50/70 px-3 py-2.5">
       <span className="pt-0.5">
         <StatusSelect value={entry.status} onChange={(status) => patchEntry(pointId, entry.id, { status })} readOnly={readOnly} />
       </span>
@@ -399,7 +399,7 @@ function PointBlock({ objectiveId, krId, point, index, open, onToggle, onMoveUp,
   const showReview = reviewEnabled || (showProgress && review)
   const reviewTarget = { kind: 'point' as const, objectiveId, krId, pointId: point.id, title: point.title }
   return (
-    <article id={`point-${point.id}`} data-okr-target-kind="point" data-okr-objective-id={objectiveId} data-okr-kr-id={krId} data-okr-point-id={point.id} className="scroll-mt-5 border-l-2 border-slate-200 pl-3 sm:pl-4">
+    <article id={`point-${point.id}`} className="scroll-mt-5 border-l-2 border-slate-200 pl-3 sm:pl-4">
       <PointHeader objectiveId={objectiveId} krId={krId} point={point} index={index} open={open} onToggle={onToggle} onMoveUp={onMoveUp} onMoveDown={onMoveDown} readOnly={definitionReadOnly} structureReadOnly={structureReadOnly} showProgress={showProgress} showScore={showReview} scoreReadOnly={progressReadOnly} tagSuggestions={tagSuggestions} deleteWarning={deleteWarning} />
       {showReview && <div className="mt-1.5 flex justify-end pl-7"><PreviewReviewButton target={reviewTarget} label="AI评审" /></div>}
       {showReview && <PreviewReviewPanel target={reviewTarget} className="mt-1.5 ml-7" />}
@@ -497,7 +497,7 @@ function KrCard({ objectiveId, kr, closed, toggle, onMoveUp, onMoveDown, readOnl
   const showScore = showProgress && isReviewTemplate(templateKey)
   const reviewTarget = { kind: 'kr' as const, objectiveId, krId: kr.id, title: kr.title }
   return (
-    <article data-okr-target-kind="kr" data-okr-objective-id={objectiveId} data-okr-kr-id={kr.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_2px_8px_rgba(31,35,40,0.035)]">
+    <article className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_2px_8px_rgba(31,35,40,0.035)]">
 	  <KrHeader objectiveId={objectiveId} kr={kr} open={open} onToggle={() => toggle(kr.id)} onMoveUp={onMoveUp} onMoveDown={onMoveDown} readOnly={readOnly} structureReadOnly={structureLocked} showScore={showScore} scoreReadOnly={readOnly || progressReadOnly} />
       {showScore && <div className="flex justify-end px-4 pt-2"><PreviewReviewButton target={reviewTarget} label="AI评审" /></div>}
       {showScore && <PreviewReviewPanel target={reviewTarget} className="mx-4 mt-2" />}

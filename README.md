@@ -232,6 +232,8 @@ curl -s "$(./scripts/jarvis-api-base)/readyz" | jq
 
 对话与主服务共用进程和 `/api/chat/*` 路由；重启主服务会中断当前对话轮次，已保存的会话历史继续保留。
 
+升级时部署脚本会删除旧聊天的 `bin`、`addr`、`fast_mode`、`history_dir` 配置，停用并删除对应实例的旧 sidecar 服务定义、二进制和日志。旧 Markdown 对话不迁入新会话。聊天附件单个上限为 12 MiB，HTTP 层另预留 64 KiB 上传封装空间。
+
 ### 首次安装
 
 ```bash

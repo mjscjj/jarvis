@@ -1119,9 +1119,9 @@ func main() {
 
 	h := server.Default(
 		server.WithHostPorts(cfg.Server.Addr),
-		// OKR accepts 10 MiB images; keep room for multipart framing so Hertz
-		// does not reject a valid image before the upload handler can validate it.
-		server.WithMaxRequestBodySize(12<<20),
+		// Chat accepts 12 MiB files (OKR images: 10 MiB). Reserve 64 KiB for
+		// multipart framing; each upload handler still enforces its file limit.
+		server.WithMaxRequestBodySize(chat.MaxAttachmentBytes+(64<<10)),
 	)
 	h.Use(hertzgzip.Gzip(hertzgzip.BestSpeed, hertzgzip.WithExcludedPaths([]string{"/api/chat"})))
 	h.Use(observability.Middleware())

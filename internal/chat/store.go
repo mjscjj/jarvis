@@ -398,6 +398,10 @@ func (s *Service) DeleteSession(ctx context.Context, id string) error {
 	return nil
 }
 
+// MaxAttachmentBytes is the per-file upload limit; HTTP multipart framing is
+// accounted for separately by the server's request body limit.
+const MaxAttachmentBytes = 12 << 20
+
 func (s *Service) SaveUpload(ctx context.Context, sessionID, name, mime string, size int64, copyFile func(string) error) (*AttachmentView, error) {
 	if _, err := s.GetSession(ctx, sessionID); err != nil {
 		return nil, err
@@ -405,8 +409,8 @@ func (s *Service) SaveUpload(ctx context.Context, sessionID, name, mime string, 
 	if size <= 0 {
 		return nil, fmt.Errorf("%w: attachment is empty", ErrInvalidInput)
 	}
-	if size > 25<<20 {
-		return nil, fmt.Errorf("%w: attachment exceeds 25 MiB", ErrInvalidInput)
+	if size > MaxAttachmentBytes {
+		return nil, fmt.Errorf("%w: attachment exceeds 12 MiB", ErrInvalidInput)
 	}
 	id, err := newID("ca_")
 	if err != nil {

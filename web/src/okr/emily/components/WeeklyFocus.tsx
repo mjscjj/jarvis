@@ -91,11 +91,6 @@ export function WeeklyFocus({ comments, onOpenComment, onCommentOrderChange, rea
   }, [quarter, week])
 
   useEffect(() => { void load() }, [load])
-  useEffect(() => {
-    const refresh = () => void load()
-    window.addEventListener('jarvis:chat-completed', refresh)
-    return () => window.removeEventListener('jarvis:chat-completed', refresh)
-  }, [load])
 
   const patchLocal = (id: string, patch: Partial<FollowUpItem>) => {
     setItems((current) => current.map((item) => item.id === id ? { ...item, ...patch } : item))

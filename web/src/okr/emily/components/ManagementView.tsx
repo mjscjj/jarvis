@@ -95,7 +95,7 @@ function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories, deta
   }
 
   return (
-    <article id={commentTargetElementId(commentTarget)} onClick={commentSurface.onClick} data-okr-target-kind="kr" data-okr-objective-id={objectiveId} data-okr-kr-id={kr.id} className={`group/kr group/commentable grid grid-cols-[minmax(0,1fr)_auto] gap-2 transition-[background-color,box-shadow] ${cardHierarchy ? 'overflow-hidden rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 shadow-[0_2px_8px_rgba(31,35,40,0.035)]' : 'px-3.5 py-2'} ${commentSurface.enabled ? 'cursor-pointer hover:bg-indigo-50/70' : cardHierarchy ? '' : 'hover:bg-slate-50/70'} ${commentSurface.selected || commentSurface.focused ? 'bg-indigo-50/80 ring-2 ring-inset ring-indigo-500' : ''}`}>
+    <article id={commentTargetElementId(commentTarget)} onClick={commentSurface.onClick} className={`group/kr group/commentable grid grid-cols-[minmax(0,1fr)_auto] gap-2 transition-[background-color,box-shadow] ${cardHierarchy ? 'overflow-hidden rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 shadow-[0_2px_8px_rgba(31,35,40,0.035)]' : 'px-3.5 py-2'} ${commentSurface.enabled ? 'cursor-pointer hover:bg-indigo-50/70' : cardHierarchy ? '' : 'hover:bg-slate-50/70'} ${commentSurface.selected || commentSurface.focused ? 'bg-indigo-50/80 ring-2 ring-inset ring-indigo-500' : ''}`}>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-1.5">
 			{cardHierarchy && <button type="button" onClick={onToggleDetails} title={detailsOpen ? '折叠 KR' : '展开 KR'} aria-label={detailsOpen ? '折叠 KR' : '展开 KR'} aria-expanded={detailsOpen} className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><svg viewBox="0 0 12 12" aria-hidden className={`size-3 transition-transform ${detailsOpen ? 'rotate-90' : ''}`}><path d="M4 2.2 L8.8 6 L4 9.8 Z" fill="currentColor" /></svg></button>}
@@ -260,7 +260,7 @@ function ObjectiveEditorHeader({
 	}
 
 	return (
-		<div id={commentTargetElementId(commentTarget)} onClick={commentSurface.onClick} data-okr-target-kind="objective" data-okr-objective-id={objective.id} className={`group/commentable flex flex-wrap items-center gap-2 ${cardHierarchy ? 'mb-3 px-1' : 'min-h-9 border-y border-slate-100 bg-slate-50/80 px-3.5 py-1.5 first:border-t-0'} ${commentSurface.enabled ? 'cursor-pointer hover:bg-indigo-50/70' : ''} ${commentSurface.selected || commentSurface.focused ? 'ring-2 ring-inset ring-indigo-500' : ''}`}>
+		<div id={commentTargetElementId(commentTarget)} onClick={commentSurface.onClick} className={`group/commentable flex flex-wrap items-center gap-2 ${cardHierarchy ? 'mb-3 px-1' : 'min-h-9 border-y border-slate-100 bg-slate-50/80 px-3.5 py-1.5 first:border-t-0'} ${commentSurface.enabled ? 'cursor-pointer hover:bg-indigo-50/70' : ''} ${commentSurface.selected || commentSurface.focused ? 'ring-2 ring-inset ring-indigo-500' : ''}`}>
 			{!readOnly && editing ? <>
 				<input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void save(); if (event.key === 'Escape') cancel() }} aria-label="O 标题" className={`h-7 min-w-64 flex-1 rounded-md border border-slate-200 bg-white px-2 font-medium text-slate-700 outline-none focus:border-blue-400 ${cardHierarchy ? 'text-[15px]' : 'text-[11px]'}`} />
 				<button type="button" disabled={busy || !title.trim()} onClick={() => void save()} className="h-6 rounded-md bg-blue-600 px-2 text-[9px] font-medium text-white disabled:opacity-40">保存</button>

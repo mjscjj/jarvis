@@ -149,7 +149,10 @@ try {
   assert.ok(sessions.get('s2').sources.some(item => item.kind === 'world'))
   await page.getByRole('button', { name: '更多对话设置', exact: true }).click()
 
-  await page.locator('.chat-dock input[type=file]').setInputFiles({ name: 'note.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') })
+  await page.locator('.chat-dock input[type=file]').setInputFiles({ name: 'oversized.bin', mimeType: 'application/octet-stream', buffer: Buffer.alloc(12 * 1024 * 1024 + 1) })
+  await page.getByText('单个文件不能超过 12 MiB', { exact: true }).waitFor()
+  assert.equal(sessions.get('s2').pending_attachments?.length || 0, 0)
+  await page.locator('.chat-dock input[type=file]').setInputFiles({ name: 'note.txt', mimeType: 'text/plain', buffer: Buffer.alloc(12 * 1024 * 1024) })
   await page.getByRole('button', { name: '移除 note.txt', exact: true }).waitFor()
   await page.getByRole('button', { name: '移除 note.txt', exact: true }).click()
   await page.getByRole('button', { name: '移除 note.txt', exact: true }).waitFor({ state: 'detached' })
@@ -158,6 +161,7 @@ try {
   await input.press('Enter')
   await page.getByRole('button', { name: '停止回复', exact: true }).waitFor()
   assert.equal(await page.getByRole('button', { name: '切换 Agent：TRAE', exact: true }).isDisabled(), true)
+  await page.waitForFunction(() => window.__chatSends.length > 0)
   const firstSend = (await page.evaluate(() => window.__chatSends))[0]
   assert.equal(Object.hasOwn(firstSend, 'page_context'), false, 'ambient page context must not be sent')
   assert.ok(firstSend.sources.some(source => source.kind === 'world'), 'explicit sources must survive')
