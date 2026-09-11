@@ -258,7 +258,7 @@ function AppShell() {
       {messageContext}
       <Sider className="app-sider" width={SIDER_WIDTH} collapsedWidth={SIDER_COLLAPSED_WIDTH} collapsed={siderCollapsed} theme="light">
         <div className={`sider-brand ${siderCollapsed ? 'is-collapsed' : ''}`}>
-          <AgentActivityIcon name={agentName} {...executingTasks} />
+          <AgentActivityIcon name={agentName} {...executingTasks} onActivate={() => navigate('settings', { view: 'about' })} />
           {!siderCollapsed && (
             <div className="sider-brand-copy">
               <div className="sider-name-row">

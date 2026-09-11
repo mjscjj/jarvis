@@ -3,7 +3,9 @@ import jarvisIcon from '../assets/jarvis-icon.png'
 import type { ExecutingTaskState } from '../hooks/useExecutingTaskCount'
 import '../styles/agent-activity-icon.css'
 
-export function AgentActivityIcon({ name, count, error }: ExecutingTaskState & { name: string }) {
+const activateHint = '点击查看版本与更新'
+
+export function AgentActivityIcon({ name, count, error, onActivate }: ExecutingTaskState & { name: string; onActivate: () => void }) {
   const running = !error && count !== undefined && count > 0
   const status = error ? 'error' : count === undefined ? 'loading' : running ? 'running' : 'idle'
   const label = error
@@ -12,8 +14,8 @@ export function AgentActivityIcon({ name, count, error }: ExecutingTaskState & {
       : running ? `正在执行 ${count} 个任务` : '暂无执行中的任务'
 
   return (
-    <Tooltip title={error ? `${label}：${error}` : label}>
-      <span className="agent-activity-icon" data-state={status} role="img" aria-label={`${name}：${label}`} tabIndex={0}>
+    <Tooltip title={`${error ? `${label}：${error}` : label} · ${activateHint}`}>
+      <button type="button" className="agent-activity-icon" data-state={status} aria-label={`${name}：${label}，${activateHint}`} onClick={onActivate}>
         <span className="agent-activity-halo" aria-hidden="true"><span /></span>
         <span className="agent-activity-core" aria-hidden="true">
           <img className="sider-brand-icon" src={jarvisIcon} alt="" />
@@ -28,7 +30,7 @@ export function AgentActivityIcon({ name, count, error }: ExecutingTaskState & {
           </svg>
         </span>
         {error && <span className="agent-activity-error" aria-hidden="true">!</span>}
-      </span>
+      </button>
     </Tooltip>
   )
 }

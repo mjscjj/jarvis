@@ -84,10 +84,11 @@ try {
   if (process.env.ACTIVITY_TEST_SCREENSHOT) await page.screenshot({ path: process.env.ACTIVITY_TEST_SCREENSHOT })
 
   await setTasks([{ id: 1, status: 'executing' }, { id: 2, status: 'executing', source_type: 'scheduled_task' }, { id: 3, status: 'pending' }])
-  await page.getByRole('img', { name: 'Jarvis：正在执行 2 个任务' }).waitFor()
+  await page.getByRole('button', { name: 'Jarvis：正在执行 2 个任务，点击查看版本与更新' }).waitFor()
   assert.equal(await orbit.evaluate(el => getComputedStyle(el).animationDuration), '2.4s')
   await icon.hover()
-  await page.getByRole('tooltip', { name: '正在执行 2 个任务' }).waitFor()
+  // Becoming interactive must not drop the execution state the icon reports.
+  await page.getByRole('tooltip', { name: '正在执行 2 个任务 · 点击查看版本与更新' }).waitFor()
   await page.getByRole('button', { name: '修改机器人名称' }).click()
   await page.getByRole('textbox', { name: '机器人名称' }).fill('测试名称')
   await page.getByRole('textbox', { name: '机器人名称' }).press('Escape')
@@ -154,7 +155,7 @@ try {
   tasks = [{ id: 1, status: 'executing', source_type: 'scheduled_task' }]
   await waitState('running')
   assert.deepEqual(errors, [])
-  console.log(JSON.stringify({ result: 'passed', activityCalls, checks: ['real App shell', 'polling across pages', 'manual and scheduled execution', 'total across pagination', 'non-executing statuses', 'animated orbit', 'stable layout', 'name editing', 'collapsed glow bounds', 'reduced motion', 'API failure and recovery', 'visibility pause/resume', 'aborted response ignored'] }))
+  console.log(JSON.stringify({ result: 'passed', activityCalls, checks: ['real App shell', 'polling across pages', 'manual and scheduled execution', 'total across pagination', 'non-executing statuses', 'animated orbit', 'stable layout', 'interactive button semantics', 'name editing', 'collapsed glow bounds', 'reduced motion', 'API failure and recovery', 'visibility pause/resume', 'aborted response ignored'] }))
 } catch (error) {
   console.error(JSON.stringify({ errors, body: (await page.locator('body').innerText()).slice(0, 2200) }))
   throw error

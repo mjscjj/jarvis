@@ -4,7 +4,11 @@
   width: 44px;
   height: 44px;
   flex: 0 0 44px;
+  border: 0;
+  padding: 0;
   border-radius: 13px;
+  background: none;
+  cursor: pointer;
 }
 
 .agent-activity-icon:focus-visible {
