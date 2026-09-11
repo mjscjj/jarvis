@@ -12,7 +12,8 @@
 
 - macOS 14 或更高版本
 - Apple Silicon（arm64）
-- 当前使用 ad-hoc 应用签名，尚未接入 Apple Developer ID 和 notarization
+- 当前使用 ad-hoc 应用签名，尚未接入 Apple Developer ID 和 notarization。版本更新后
+  macOS 可能要求重新授予系统权限；当前不承诺 TCC/Keychain 授权跨版本保持。
 - 更新包始终使用独立的 Tauri 签名校验，不能关闭
 
 ## 首次安装

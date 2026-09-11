@@ -1,5 +1,7 @@
 #!/bin/zsh
 set -euo pipefail
+# The SemVer check below uses ## repetition, which only matches under this option.
+setopt extended_glob
 
 script_dir=${0:A:h}
 repo_root=${script_dir:h:h}
@@ -35,18 +37,22 @@ cargo_version=$(awk -F ' *= *' '/^version *=/ { gsub(/"/, "", $2); print $2; exi
 [[ "$cargo_version" == "$version" ]] ||
   fail "Cargo.toml version $cargo_version does not match $version"
 
-export TAURI_SIGNING_PRIVATE_KEY=$(<"$private_key")
-export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}
+release_name="Jarvis_${version}_aarch64.app.tar.gz"
+dmg_name="Jarvis_${version}_aarch64.dmg"
+ssh "$remote" "test ! -e '$remote_root/$release_name' && test ! -e '$remote_root/$dmg_name'" ||
+  fail "version $version already exists or remote preflight failed; publish a new version"
 "$script_dir/build-dmg.sh"
 
 artifact="$bundle_root/macos/Jarvis.app.tar.gz"
 signature_path="$artifact.sig"
 dmg="$bundle_root/dmg/Jarvis_${version}_aarch64.dmg"
-for path in "$artifact" "$signature_path" "$dmg"; do
-  [[ -f "$path" ]] || fail "missing build artifact: $path"
+# Only the signer reads the key; npm/cargo build processes do not inherit it.
+env -u TAURI_SIGNING_PRIVATE_KEY "$repo_root/desktop/node_modules/.bin/tauri" signer sign \
+  --private-key-path "$private_key" --password "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" "$artifact"
+for artifact_path in "$artifact" "$signature_path" "$dmg"; do
+  [[ -f "$artifact_path" ]] || fail "missing build artifact: $artifact_path"
 done
 
-release_name="Jarvis_${version}_aarch64.app.tar.gz"
 staging=$(mktemp -d "${TMPDIR:-/tmp}/jarvis-update.XXXXXX")
 trap 'rm -rf "$staging"' EXIT
 cp "$artifact" "$staging/$release_name"
@@ -69,7 +75,7 @@ jq -n \
     }
   }' >"$staging/latest.json"
 
-remote_staging="$remote_root/.publish-${version}-$$"
+remote_staging="${remote_root}.publish-${version}-$$"
 ssh "$remote" "mkdir -p '$remote_staging'"
 scp "$staging/$release_name" "$staging/$(basename "$dmg")" "$staging/latest.json" \
   "$remote:$remote_staging/"
@@ -79,6 +85,8 @@ ssh "$remote" "
   test -s '$remote_staging/$(basename "$dmg")'
   test -s '$remote_staging/latest.json'
   mkdir -p '$remote_root'
+  test ! -e '$remote_root/$release_name'
+  test ! -e '$remote_root/$(basename "$dmg")'
   mv '$remote_staging/$release_name' '$remote_root/$release_name'
   mv '$remote_staging/$(basename "$dmg")' '$remote_root/$(basename "$dmg")'
   mv '$remote_staging/latest.json' '$remote_root/latest.json'

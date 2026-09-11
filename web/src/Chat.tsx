@@ -292,6 +292,7 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
       } catch (cause) {
         if (cancelled) return
         reportError(cause)
+        return
       }
       timer = window.setTimeout(() => void poll(), 2000)
     }
@@ -568,8 +569,8 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
         ]
       : []),
   ]
-  const displayMessages = active?.messages || [],
-    currentStream = active ? streamText[active.id] || (active.running && !running.has(active.id) ? '上一轮仍在回复，完成后自动更新…' : '') : ''
+  const displayMessages = (active?.messages || []).filter((item) => item.status !== 'streaming'),
+    currentStream = active ? streamText[active.id] || (active.running && !running.has(active.id) ? active.messages?.find((item) => item.status === 'streaming')?.text || '上一轮仍在回复，完成后自动更新…' : '') : ''
   if (compact) {
     const latest = activeRunning
       ? { id: 'stream', role: 'assistant' as const, text: currentStream || '', created_at: '', agent: active?.agent, model: active?.model }
@@ -612,7 +613,7 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
             <span>你的思考与行动</span>
           </div>
         </div>
-        <Button className="chat-new-button" icon={<PlusOutlined />} onClick={() => void createSession()}>
+        <Button className="chat-new-button" icon={<PlusOutlined />} onClick={() => void attempt(createSession())}>
           新对话
         </Button>
         <Input
@@ -622,7 +623,7 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
           placeholder="搜索会话和消息"
           onChange={(event) => {
             setQuery(event.target.value)
-            void loadSessions(archived, event.target.value)
+            void attempt(loadSessions(archived, event.target.value))
           }}
         />
         <div className="chat-session-list">
@@ -630,7 +631,7 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
             <div key={group}>
               <div className="chat-history-group">{group}</div>
               {items.map((session) => (
-                <button key={session.id} type="button" className={`chat-session-item ${session.id === active?.id ? 'is-active' : ''}`} onClick={() => void openSession(session.id)}>
+                <button key={session.id} type="button" className={`chat-session-item ${session.id === active?.id ? 'is-active' : ''}`} onClick={() => void attempt(openSession(session.id))}>
                   <strong>{session.title}</strong>
                   <span>
                     {agentLabel(session.agent)} · {session.model}
@@ -648,7 +649,7 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
           onClick={() => {
             const next = !archived
             setArchived(next)
-            void loadSessions(next, query)
+            void attempt(loadSessions(next, query))
           }}
         >
           {archived ? '返回最近会话' : '查看已归档会话'}
@@ -665,11 +666,11 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
                 onChange={(event) => setActive({ ...active, title: event.target.value })}
                 onPressEnter={() => {
                   setEditingTitle(false)
-                  void updateSession({ title: active.title })
+                  void attempt(updateSession({ title: active.title }))
                 }}
                 onBlur={() => {
                   setEditingTitle(false)
-                  void updateSession({ title: active.title })
+                  void attempt(updateSession({ title: active.title }))
                 }}
               />
             ) : (
@@ -688,7 +689,7 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
               items: menuItems,
               onClick: ({ key }) => {
                 if (key === 'export') exportSession()
-                if (key === 'archive') void doArchive()
+                if (key === 'archive') void attempt(doArchive())
                 if (key === 'delete') void removeSession()
               },
             }}
@@ -757,9 +758,9 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
                       type="button"
                       aria-label={`移除 ${source.label}`}
                       onClick={() =>
-                        void updateSession({
+                        void attempt(updateSession({
                           sources: active.sources.filter((item) => item.kind !== source.kind),
-                        })
+                        }))
                       }
                     >
                       ×
@@ -791,7 +792,7 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
               onKeyDown={(event) => {
                 if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
                   event.preventDefault()
-                  void send()
+                  void attempt(send())
                 }
               }}
             />
@@ -834,7 +835,7 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
                   onOpenChange={(open) => {
                     if (open && active) void loadModels(active.agent, true).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
                   }}
-                  onChange={(value) => void changeModel(value)}
+                  onChange={(value) => void attempt(changeModel(value))}
                   options={modelOptions}
                 />
                 {!!currentModel?.reasoning_efforts?.length && (
@@ -842,17 +843,17 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
                     value={active?.reasoning_effort}
                     className="chat-effort-select"
                     disabled={activeRunning}
-                    onChange={(value) => void updateSession({ reasoning_effort: value })}
+                    onChange={(value) => void attempt(updateSession({ reasoning_effort: value }))}
                     options={currentModel.reasoning_efforts.map((value) => ({ value, label: value }))}
                   />
                 )}
               </div>
               {activeRunning ? (
-                <Button danger icon={<StopOutlined />} onClick={() => void stop()}>
+                <Button danger icon={<StopOutlined />} onClick={() => void attempt(stop())}>
                   停止
                 </Button>
               ) : (
-                <Button type="primary" icon={<SendOutlined />} disabled={!input.trim() && !attachments.length} onClick={() => void send()}>
+                <Button type="primary" icon={<SendOutlined />} disabled={!input.trim() && !attachments.length} onClick={() => void attempt(send())}>
                   发送
                 </Button>
               )}
@@ -862,12 +863,12 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
         </div>
       </div>
       <Drawer title="会话历史" placement="left" size="min(320px, 88vw)" open={historyOpen} onClose={() => setHistoryOpen(false)}>
-        <Button block icon={<PlusOutlined />} onClick={() => void createSession()}>
+        <Button block icon={<PlusOutlined />} onClick={() => void attempt(createSession())}>
           新对话
         </Button>
         <div className="chat-drawer-sessions">
           {sessions.map((session) => (
-            <button key={session.id} onClick={() => void openSession(session.id)}>
+            <button key={session.id} onClick={() => void attempt(openSession(session.id))}>
               <strong>{session.title}</strong>
               <span>
                 {agentLabel(session.agent)} · {session.model}
@@ -904,6 +905,7 @@ function ChatMessageCard({ message, agentName, shortName, typing = false }: { me
           <div className="chat-user-text">{message.text}</div>
         )}
       </div>
+      {message.status === 'interrupted' && <Text type="secondary">回复已中断，以上为已保存内容。</Text>}
       {!!message.attachments?.length && (
         <div className="chat-message-files">
           {message.attachments.map((file) => (

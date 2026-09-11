@@ -4,8 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
+
+	"jarvis/internal/datatypes"
+	"jarvis/internal/domain"
 )
 
 func TestSessionRunningAndRejectedInputRemainIntact(t *testing.T) {
@@ -43,6 +48,75 @@ func TestSessionRunningAndRejectedInputRemainIntact(t *testing.T) {
 	view, err = svc.GetSession(t.Context(), session.ID)
 	if err != nil || view.Running {
 		t.Fatalf("completed view: %+v, %v", view, err)
+	}
+}
+
+func TestReplyPersistsBeforeDeliveryAndRecordsInterruption(t *testing.T) {
+	for _, interrupted := range []bool{false, true} {
+		t.Run(fmt.Sprintf("interrupted=%v", interrupted), func(t *testing.T) {
+			binDir := t.TempDir()
+			script := "#!/bin/sh\nprintf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"native-test\"}' '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"saved reply\"}}'\n"
+			if err := os.WriteFile(filepath.Join(binDir, "codex"), []byte(script), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			svc := newPersistentTestService(t)
+			session, err := svc.CreateSession(t.Context(), CreateSessionInput{Agent: "codex", Model: "test", ReasoningEffort: "high"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			stop := errors.New("downstream interrupted")
+			err = svc.StreamSession(t.Context(), session.ID, SendInput{Message: "hello"}, func(event Event) error {
+				if event.Kind != EventDelta {
+					return nil
+				}
+				view, err := svc.GetSession(t.Context(), session.ID)
+				if err != nil || len(view.Messages) != 2 || view.Messages[1].Text != "saved reply" || view.Messages[1].Status != "streaming" {
+					t.Fatalf("reply not persisted before delivery: %+v, %v", view, err)
+				}
+				if interrupted {
+					return stop
+				}
+				return nil
+			})
+			if interrupted && !errors.Is(err, stop) || !interrupted && err != nil {
+				t.Fatalf("run: %v", err)
+			}
+			view, err := svc.GetSession(t.Context(), session.ID)
+			want := "completed"
+			if interrupted {
+				want = "interrupted"
+			}
+			if err != nil || view.Running || view.Messages[1].Text != "saved reply" || view.Messages[1].Status != want {
+				t.Fatalf("final reply: %+v, %v", view, err)
+			}
+		})
+	}
+}
+
+func TestOrphanedStreamingReplyIsShownAsInterrupted(t *testing.T) {
+	svc := newPersistentTestService(t)
+	session, err := svc.CreateSession(t.Context(), CreateSessionInput{Agent: "codex", Model: "test", ReasoningEffort: "high"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := domain.ChatMessage{ID: "reply", SessionID: session.ID, Role: "assistant", Text: "saved before restart", Meta: datatypes.JSON(`{"status":"streaming"}`)}
+	if err := svc.db.Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	view, err := svc.GetSession(t.Context(), session.ID)
+	if err != nil || view.Running || view.Messages[0].Status != "interrupted" || view.Messages[0].Text != row.Text {
+		t.Fatalf("restarted view: %+v, %v", view, err)
+	}
+	// A later turn must not make the older interrupted reply look live again.
+	svc.active[session.ID] = func() {}
+	next := domain.ChatMessage{ID: "next-reply", SessionID: session.ID, Role: "assistant", Meta: datatypes.JSON(`{"status":"streaming"}`)}
+	if err := svc.db.Create(&next).Error; err != nil {
+		t.Fatal(err)
+	}
+	view, err = svc.GetSession(t.Context(), session.ID)
+	if err != nil || view.Messages[0].Status != "interrupted" || view.Messages[1].Status != "streaming" {
+		t.Fatalf("later turn: %+v, %v", view, err)
 	}
 }
 

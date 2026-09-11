@@ -29,10 +29,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signedOut = useRef(false)
   const mounted = useRef(false)
   const pendingRef = useRef<AuthView | null>(null)
+  const userRef = useRef<AuthUser | null>(null)
 
   const apply = useCallback((view: AuthView) => {
     if (!mounted.current || signedOut.current) return
     setEnabled(view.enabled)
+    userRef.current = view.user ?? null
     setUser(view.user ?? null)
     const next = view.status === 'pending' ? view : null
     pendingRef.current = next
@@ -42,7 +44,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const recover = useCallback((): Promise<void> => {
     if (inFlight.current) return inFlight.current
     if (signedOut.current || pendingRef.current) return Promise.resolve()
-    setLoading(true)
+    // loading 表示「还没有可用身份」。已登录时被后台 401 触发的重新验证不能翻起
+    // 它：AuthGate 会卸载整棵树，正在流式输出的对话和填写中的表单会一起丢掉。
+    // 验证真的失败时下面清 user，届时才回到登录页。
+    if (!userRef.current) setLoading(true)
     setError('')
     const operation = (async () => {
       try {
@@ -51,6 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         apply(!status.enabled || status.user ? status : await loginWithByteDance())
       } catch (cause) {
         if (mounted.current && !signedOut.current) {
+          userRef.current = null
           setUser(null)
           setError(cause instanceof Error ? cause.message : String(cause))
         }
@@ -116,6 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // Finish any recovery before invalidating its newly issued cookie.
       await inFlight.current
       await logoutFromJarvis()
+      userRef.current = null
       setUser(null)
       setError('')
     } catch (cause) {

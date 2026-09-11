@@ -10,7 +10,19 @@ import (
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
+	hertzgzip "github.com/hertz-contrib/gzip"
 )
+
+// UpdateFilePrefix is the route prefix that serves desktop update files.
+const UpdateFilePrefix = "/jarvis-updates"
+
+// Compression builds the process-wide gzip middleware. Exclusions are prefix
+// matches. The middleware reads the whole response body before compressing, so
+// the update prefix must stay excluded: an artifact of a few hundred MB would
+// otherwise be buffered in memory on every request instead of streamed.
+func Compression() app.HandlerFunc {
+	return hertzgzip.Gzip(hertzgzip.BestSpeed, hertzgzip.WithExcludedPaths([]string{"/api/chat", UpdateFilePrefix}))
+}
 
 func NewUpdateFileHandler(root string) (app.HandlerFunc, error) {
 	absolute, err := filepath.Abs(strings.TrimSpace(root))
@@ -32,7 +44,7 @@ func NewUpdateFileHandler(root string) (app.HandlerFunc, error) {
 			return
 		}
 		path := filepath.Join(absolute, filename)
-		fileInfo, err := os.Stat(path)
+		fileInfo, err := os.Lstat(path)
 		if err != nil || !fileInfo.Mode().IsRegular() {
 			c.String(consts.StatusNotFound, "update file not found")
 			return

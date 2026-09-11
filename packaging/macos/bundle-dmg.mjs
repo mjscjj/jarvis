@@ -35,6 +35,10 @@ try {
   ]);
   run("codesign", ["--force", "--deep", "--sign", "-", appPath]);
   run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", appPath]);
+  // Archive the same final signed app that is copied into the DMG below.
+  const updaterPath = join(bundleRoot, "macos", `${config.productName}.app.tar.gz`);
+  await rm(`${updaterPath}.sig`, { force: true });
+  run("tar", ["-czf", updaterPath, "-C", join(bundleRoot, "macos"), `${config.productName}.app`]);
   await mkdir(dmgDirectory, { recursive: true });
   await rm(dmgPath, { force: true });
   run("ditto", [appPath, join(staging, `${config.productName}.app`)]);

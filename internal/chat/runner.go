@@ -12,6 +12,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -19,8 +20,13 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
+
+// processWaitDelay 是子进程退出（或被取消）之后，允许 Wait 继续等待管道关闭的
+// 上限。只在异常路径生效，正常一轮对话读完即退出。
+const processWaitDelay = 5 * time.Second
 
 // EventKind 是 runner 向上游吐出的流式事件类型。它与 SSE 契约一一对应，
 // 但刻意与 HTTP/SSE 解耦——runner 只关心 codex，不认识 Hertz。
@@ -189,6 +195,22 @@ func (r *runner) Stream(ctx context.Context, prompt, threadID string, imagePaths
 	command := exec.CommandContext(runCtx, r.bin, r.args(threadID, imagePaths)...)
 	command.Env = append(os.Environ(), "JARVIS_AGENT_STAGE=chat")
 	command.Stdin = strings.NewReader(prompt)
+	// 自成进程组，取消时连同 CLI 派生的孙进程一起杀掉；否则 CommandContext
+	// 只杀直接子进程，孙进程会继续跑。
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	command.Cancel = func() error {
+		if command.Process == nil {
+			return os.ErrProcessDone
+		}
+		err := syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+		if errors.Is(err, syscall.ESRCH) {
+			return os.ErrProcessDone
+		}
+		return err
+	}
+	// 孙进程继承 stdout/stderr 管道后，即使 CLI 本身已退出，Wait 也会一直等到
+	// 管道全部关闭。没有这个上限，一个残留后台进程就能永久占住会话槽位。
+	command.WaitDelay = processWaitDelay
 	stdout, err := command.StdoutPipe()
 	if err != nil {
 		return fmt.Errorf("open codex stdout pipe: %w", err)

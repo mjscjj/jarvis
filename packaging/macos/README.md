@@ -1,46 +1,23 @@
-# Jarvis macOS 打包
+# Jarvis macOS 打包与发布指引
 
-当前脚本生成 macOS 14 及以上、Apple Silicon (`arm64`) 的自包含 `Jarvis.app` 和 DMG。运行数据写入
-`~/Library/Application Support/Jarvis`，不会写回应用包。
+> Status: current
+> Authority: macOS 应用打包与自动更新发布操作入口
+> Last verified: 2026-09-11
 
-本文面向构建和发布人员；用户首次安装、覆盖安装、自动更新和排障见
+本文说明如何从源码生成 Apple Silicon 版 `Jarvis.app`、DMG 和 Tauri 自动更新包，
+以及如何发布自动更新。用户安装、覆盖升级和客户端排障见
 [macOS 安装与自动更新](../../docs/reference/macos-install-and-update.md)。
 
-## 环境要求
+当前产物支持 macOS 14 及以上、Apple Silicon（arm64）。应用使用 ad-hoc 签名，
+尚未接入 Apple Developer ID 和 notarization；自动更新包始终使用独立的 Tauri
+私钥签名。
 
-- macOS 14+ Apple Silicon
-- Go、Node.js/npm、Rust/Cargo
-- `lark-cli`、`traex`
-- Qdrant 和 CC Connect 二进制
+macOS 最低版本和 jq 版本、下载地址、摘要由
+`packaging/macos/runtime-manifest.sh` 定义；CC Connect 的集成版本由
+`integrations/cc-connect/manifest.sh` 定义。修改这些机器约束时应更新对应 manifest，
+本文只说明操作方式。
 
-默认从仓库读取：
-
-```text
-bin/qdrant
-bin/cc-connect-jarvis
-```
-
-若它们不在仓库中，可通过环境变量指定：
-
-```bash
-export JARVIS_QDRANT_BIN=/absolute/path/to/qdrant
-export JARVIS_CC_CONNECT_BIN=/absolute/path/to/cc-connect-jarvis
-export JARVIS_LARK_CLI_BIN=/absolute/path/to/lark-cli
-export JARVIS_TRAEX_BIN=/absolute/path/to/traex
-```
-
-BytedCLI 会按脚本中固定的版本安装到 runtime，无需全局安装。
-runtime 使用的 jq 会从 jqlang 官方 Release 下载固定的 arm64 版本并校验 SHA256，
-不复制打包机的 Homebrew jq。
-
-lark-cli 必须支持 `skills read`，并内嵌 `lark-shared`、`lark-contact`、`lark-drive`、`lark-doc`、`lark-im` 及其参考文件。`command -v lark-cli` 通常返回官方 npm 包的启动脚本，打包脚本会将其解析为同一包内的 arm64 原生 binary，再对复制到 runtime 的实际文件做离线读取检查；这些说明随 CLI 一起进入 DMG，不复制打包机的个人 Skills，也不要求用户另装。可单独检查：
-
-```bash
-lark_cli_bin="$(packaging/macos/resolve-lark-cli-bin.sh "$(command -v lark-cli)")"
-bash packaging/macos/check-lark-skills.sh "$lark_cli_bin"
-```
-
-## 一键打包
+## 最短打包流程
 
 在仓库根目录执行：
 
@@ -48,124 +25,246 @@ bash packaging/macos/check-lark-skills.sh "$lark_cli_bin"
 ./packaging/macos/build-dmg.sh
 ```
 
-脚本会自动：
-
-1. 安装 Web 和 Tauri 构建依赖。
-2. 构建 Web、`jarvis-server`、`jarvis-app-service` 和 `jarvis-config`。
-3. 组装并签名 Qdrant、CC Connect、lark-cli、Trae CLI、BytedCLI 等 runtime。
-4. 校验每个 Mach-O 的 arm64 架构、最低系统版本和动态依赖闭包，并在最小环境中
-   对实际 runtime 命令做冒烟测试。
-5. 构建 `Jarvis.app`，再次校验包内 runtime 和应用声明的最低系统版本。
-6. 创建并校验 DMG。
-
-产物路径：
+成功后生成：
 
 ```text
+desktop/src-tauri/target/release/bundle/macos/Jarvis.app
+desktop/src-tauri/target/release/bundle/macos/Jarvis.app.tar.gz
 desktop/src-tauri/target/release/bundle/dmg/Jarvis_<version>_aarch64.dmg
 ```
 
-## 发布自动更新
+本地构建不需要 updater 私钥。`build-dmg.sh` 生成最终签名的应用、DMG 和更新压缩包；
+发布脚本在构建完成后单独读取私钥，为更新压缩包生成 `.sig`。
 
-客户端更新行为见[用户安装文档](../../docs/reference/macos-install-and-update.md#自动更新)。
+## 构建前准备
 
-### 托管配置
+### 机器与工具链
 
-更新文件由 Jarvis 主服务的可选模块提供。仅发布机设置：
+- macOS 14 或更高版本、Apple Silicon（arm64）。
+- Go 1.26.4 或更高版本。
+- 满足 `web/package-lock.json` 所锁定 Vite 版本要求的 Node.js 和 npm；当前要求为
+  `^20.19.0` 或 `>=22.12.0`。
+- Rust 和 Cargo；`build-dmg.sh` 会将 `~/.cargo/bin` 加入 `PATH`。
+- Xcode Command Line Tools，提供 C 编译器、`codesign`、`lipo`、`vtool`、
+  `otool` 和 `hdiutil`。
+- `curl`、`shasum`；发布时还需要本机 `jq`、`ssh` 和 `scp`。
 
-```text
-JARVIS_UPDATE_ROOT=/data00/home/chujiejie.1/jarvis-updates
-```
-
-目录必须已存在；配置了不存在的目录时启动报错。未设置或为空时不注册更新路由，
-普通客户端无需设置。DEV2 将该环境变量配置在
-`com.bytedance.jarvis.server.service.d/update-root.conf` 的 `[Service]` 中。
-修改主服务配置后的构建或重启使用 `./scripts/rebuild-server.sh`。
-
-现有 TLB 和网关继续使用原路由；网关将更新请求转给 DEV2 Jarvis `18801`。
-完整路由由 AMZ 仓库 `product-demo/DEPLOY.md` 维护。
-
-### 构建与发布
-
-首次发布机准备一次更新签名密钥：
+建议先检查：
 
 ```bash
+./scripts/check-build-toolchain.sh
+command -v cargo npm node lark-cli traex
+```
+
+### runtime 输入
+
+打包脚本需要以下 arm64 可执行文件：
+
+- Qdrant：默认 `bin/qdrant`，可用 `JARVIS_QDRANT_BIN` 覆盖。
+- CC Connect：默认 `bin/cc-connect-jarvis`，可用 `JARVIS_CC_CONNECT_BIN` 覆盖。
+- lark-cli：默认从 `PATH` 查找，可用 `JARVIS_LARK_CLI_BIN` 覆盖。官方 npm
+  launcher 会被解析为同包内的原生 binary。
+- Trae CLI：默认从 `PATH` 或 `~/.local/bin/traex` 查找，可用
+  `JARVIS_TRAEX_BIN` 覆盖。
+- Node.js：默认使用 `PATH` 中的 `node`，可用 `JARVIS_NODE_BIN` 覆盖。
+
+缺少仓库内依赖时可执行：
+
+```bash
+./scripts/jarvis-install install-qdrant
+./scripts/jarvis-install install-cc-connect
+```
+
+runtime 还会在构建时：
+
+- 从 jqlang GitHub Release 下载固定版本的 jq，并校验 SHA-256。
+- 从 npm 安装固定版本的 BytedCLI，默认版本为 `0.147.0`，可用
+  `JARVIS_BYTEDCLI_VERSION` 覆盖。
+- 将 Trae CLI 同时作为 `traex` 和 `codex` 入口打包。
+
+Web 依赖的 lockfile 指向 npmjs，Desktop 依赖的 lockfile 和 BytedCLI 默认指向
+`http://bnpm.byted.org`；Go 模块按本机 `GOPROXY` 下载。完整打包通常需要公司网络
+以及访问 GitHub Release 的能力。`NPM_CONFIG_REGISTRY` 可覆盖 BytedCLI 的 registry，
+但目标 registry 必须包含该内部包。
+
+### updater 签名密钥
+
+发布机首次准备密钥时执行：
+
+```bash
+mkdir -p "$HOME/.tauri"
 npm --prefix desktop exec tauri signer generate -- \
   --ci -w "$HOME/.tauri/jarvis-updater.key"
 ```
 
-私钥只留在发布机。公钥正文注册在 `desktop/src-tauri/tauri.conf.json`；丢失私钥后，
-已经安装的客户端无法信任另一把密钥签发的更新。
+将生成的公钥正文配置到 `desktop/src-tauri/tauri.conf.json` 的
+`plugins.updater.pubkey`。已有客户端信任当前公钥后，不得重新生成并替换密钥；否则旧
+客户端无法验证后续更新。私钥以明文文件保存在发布机，不要提交到仓库。
 
-发布前同步修改并保持相同的 SemVer：
+## 完整构建链路
+
+入口是 `./packaging/macos/build-dmg.sh`，流程如下：
+
+1. 检查 macOS、arm64、Cargo、Node.js 和 npm，并执行
+   `packaging/macos/*.test.mjs`。
+2. 通过 `npm --prefix desktop ci` 安装固定的 Tauri CLI 依赖。
+3. 执行 `npm --prefix desktop run dmg`。该命令先运行
+   `tauri build --bundles app`，再运行 `bundle-dmg.mjs`。
+4. Tauri 根据 `beforeBuildCommand` 调用 `prepare-runtime.sh`：
+   - 安装并构建 Web。
+   - 构建 `jarvis-server`、`jarvis-app-service` 和 `jarvis-config`。
+   - 复制 Qdrant、CC Connect、lark-cli、Trae CLI 和 Node.js。
+   - 下载 jq，安装 BytedCLI，并创建 `bytedcli`、`codex` launcher。
+   - 复制 `conf/`、`.agents/`、`scripts/`、项目说明和 Web 产物；
+     `conf/config.runtime.yaml` 不进入安装包。
+   - 校验 runtime 后逐个签名原生 binary，再以 staging 目录替换最终 runtime。
+5. Tauri 编译 release 版桌面壳，将 runtime 放入
+   `Jarvis.app/Contents/Resources/runtime`；不在 Tauri 阶段生成 updater 包。
+6. `bundle-dmg.mjs` 再次校验包内 runtime 和应用最低系统版本，对最终应用执行
+   ad-hoc deep signing，并验证签名，再将这份应用归档为 `.app.tar.gz`。
+7. DMG staging 目录加入 `Jarvis.app`、`Applications` 软链接，以及
+   `web/src/helpDocuments.json` 声明的网页快捷方式。
+8. `hdiutil` 生成 HFS+、UDZO、zlib level 9 的 DMG，并执行完整性校验。
+
+DMG 和 updater 包均来自完成最终签名校验的同一份 `Jarvis.app`。构建过程不读取
+updater 私钥；发布时单独调用 Tauri signer 生成 `.sig`。
+
+runtime 校验会 fail-fast 检查：
+
+- 所有原生程序都是单一 arm64 Mach-O。
+- 每个程序声明的最低 macOS 版本不高于 14.0。
+- 动态链接只依赖 `/usr/lib` 和 `/System/Library`。
+- lark-cli 内嵌的 `lark-shared`、`lark-contact`、`lark-drive`、`lark-doc`、
+  `lark-im` 及其 references 均可离线读取。
+- Qdrant、CC Connect、lark-cli、Trae CLI、Node.js、jq、BytedCLI 和 codex
+  在最小环境中可以启动并返回预期版本。
+- CC Connect 版本与仓库 manifest 一致。
+
+## 独立验收
+
+完整构建已经包含 runtime、应用签名和 DMG 校验。需要独立复核时执行：
+
+```bash
+version="$(jq -r '.version' desktop/src-tauri/tauri.conf.json)"
+app="desktop/src-tauri/target/release/bundle/macos/Jarvis.app"
+dmg="desktop/src-tauri/target/release/bundle/dmg/Jarvis_${version}_aarch64.dmg"
+
+packaging/macos/validate-runtime.sh \
+  "$app/Contents/Resources/runtime" "$app"
+codesign --verify --deep --strict --verbose=2 "$app"
+hdiutil verify "$dmg"
+shasum -a 256 "$dmg"
+```
+
+手工安装验收时挂载 DMG，将 `Jarvis.app` 拖入 `/Applications`，再按
+[安装指引](../../docs/reference/macos-install-and-update.md)检查首次启动与数据保留。
+
+## 发布自动更新
+
+### 更新版本
+
+每次发布必须使用新的 SemVer，并同步以下文件：
 
 - `desktop/src-tauri/tauri.conf.json`
 - `desktop/src-tauri/Cargo.toml`
 - `desktop/package.json`
+- `desktop/src-tauri/Cargo.lock`
+- `desktop/package-lock.json`
 
-随后执行：
+`publish-update.sh` 会硬校验前三处版本一致；两个 lockfile 也应随版本修改提交。脚本不会
+自动递增版本。远端已存在同版本安装包时直接失败，必须提升版本后发布；不能覆盖
+带 immutable 缓存的旧文件。
+
+### 发布命令
+
+确认版本和代码后执行：
 
 ```bash
 ./packaging/macos/publish-update.sh "本次更新说明"
 ```
 
-脚本复用完整 DMG 构建门禁，生成 `.app.tar.gz` 和 `.sig`，再将版本化更新包、DMG
-上传到 DEV2，先移动版本化安装包，最后替换 `latest.json`。清单替换是单文件操作，
-整批文件不是一个原子事务。每次发布使用新版本号，不覆盖已发布的版本化文件。默认目标是
-`chujiejie.1@10.199.197.219:/data00/home/chujiejie.1/jarvis-updates`，可用
-`JARVIS_UPDATE_REMOTE`、`JARVIS_UPDATE_REMOTE_ROOT` 和
-`JARVIS_UPDATE_BASE_URL` 覆盖。首个带 updater 的版本仍需手动安装一次，后续版本
-才会自动更新。
+脚本默认读取 `~/.tauri/jarvis-updater.key`，也可通过
+`TAURI_SIGNING_PRIVATE_KEY_PATH` 指定其他文件。加密私钥的密码通过
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 传入。
 
-## 验收
+默认发布配置：
 
-```bash
-hdiutil verify desktop/src-tauri/target/release/bundle/dmg/Jarvis_<version>_aarch64.dmg
-codesign --verify --deep --strict --verbose=2 \
-  desktop/src-tauri/target/release/bundle/macos/Jarvis.app
+```text
+SSH 目标：chujiejie.1@10.199.197.219
+远端目录：/data00/home/chujiejie.1/jarvis-updates
+下载地址：https://jarvisx.bytedance.net/jarvis-updates
 ```
 
-挂载 DMG 后将 `Jarvis.app` 拖到 `Applications`。首次启动自动检查登录和配置，只补缺项，全程复用同一个飞书 App/Bot，不另填 App ID。
+可分别使用 `JARVIS_UPDATE_REMOTE`、`JARVIS_UPDATE_REMOTE_ROOT` 和
+`JARVIS_UPDATE_BASE_URL` 覆盖。
 
-点击「开始使用」后自动启动服务。登录和服务就绪即进入应用，世界模型在后台初始化，不要求建模完成才能使用，也不把进入应用当作初始化完成。侧边进度面板区分排队、执行、等待条件、需要补充和失败，展示已记录的进展、等待原因及任务运行记录入口；面板可收起，不遮断应用操作。
+发布脚本会：
 
-初始化的完整请求直接携带 Skill 路径、运行目录和恢复要求；同一个任务先建立，再查漏补缺两轮。失败或暂停后点击「从已有结果继续」复用原 Task、工作稿和已写入实体；刷新或重新打开应用只接回任务，不自动反复重试。需要回复时通过原任务的问题卡继续同一会话。取证区分空结果、权限缺失和未完成读取，不按实体数量判定质量。完成后进度面板展示本人职责、项目、关键人物、重点事项、写入位置及未知项的简短结果，关闭后仍可在原任务查看。无需保持安装页打开，但退出 Jarvis 应用会停止本机服务。
+1. 检查远端版本文件尚不存在，再执行完整 DMG 构建门禁。
+2. 独立签名最终 `.app.tar.gz`，生成版本化的安装包、DMG 和 `latest.json`。
+3. 上传到托管目录旁的临时目录。
+4. 先移动版本化安装包和 DMG，最后替换 `latest.json`。
+5. 从下载地址检查 `latest.json` 版本及更新包可访问性。
 
-DMG 挂载窗口同时提供“插件扩展与解耦规范”和“代码提交与评审方案”两个网页快捷方式。
-初始化页面的帮助和开发文档默认折叠；进入应用后可点击左侧导航下方的小问号查看。
-链接统一维护在 `web/src/helpDocuments.json`，Web 与 DMG 打包共同读取。
+这组远端写入不是事务。任一步失败都会直接退出并保留错误；修复后根据远端实际文件决定
+是否重跑，不使用旧版本号掩盖失败。
 
-### 2026-09-11 更新验收
+### 托管配置
 
-发布版本 `0.1.2`，正式更新清单已切换。验证结果：
+Jarvis 主服务仅在发布机配置 `JARVIS_UPDATE_ROOT` 时托管更新文件。目录必须已存在；
+未配置时不注册更新路由；配置成不存在的目录会导致主服务启动失败。DEV2 配置位置和
+网关边界见[运行与部署](../../docs/reference/operations.md#自动更新文件托管)。修改主
+服务配置后的构建或重启使用 `./scripts/rebuild-server.sh`。
 
-- 网关只转发更新请求；Jarvis 托管默认关闭，显式配置后提供文件，目录不存在时启动报错。
-- 线上安装包完整下载，SHA-256 与发布文件一致；使用 Tauri updater 同款验签实现校验通过。
-- 隔离客户端完成 `0.1.1 → 0.1.2` 下载、验签、安装和自动重启，重启后服务和界面恢复。
-- SQLite 完整性检查通过；人物事实页、Fact、自定义配置和 shared memory 保留。
-- 错误签名被拒绝，旧版和数据保留；新版再次启动只检查清单，不重复下载或重启。
-- 正式应用签名、runtime 自包含检查及 DMG 校验通过。
+## 耗时说明
 
-客户端测试副本使用相同 updater 源码和候选 runtime，仅调整应用标识、更新地址及
-测试数据目录/监听地址；未替换日常使用的 `/Applications/Jarvis.app`。
-本次不包含飞书登录和业务任务的全量回归。
+这是完整自包含应用构建，不是只编译 Web。主要耗时来自：
 
-发布产物 SHA-256：
+- 重新组装、校验和签名完整 runtime。
+- 重新执行 npm 安装、Web 构建和三个 Go binary 构建。
+- Rust/Tauri release 编译、应用归档和高压缩比 DMG 创建。
+
+2026-09-11 在当前开发机上测得 runtime 约 874 MB，完整构建约 11 分钟，其中 Rust
+release 编译约 8 分钟。该数据只用于判断数量级，不是构建约束。
+`Compiling jarvis-desktop` 长时间无新日志通常仍在编译或链接；应以进程退出和最终
+`hdiutil ... is VALID` 为准。
+
+## 常见失败
+
+- `missing updater private key`：发布时没有找到私钥文件。检查默认密钥路径或设置
+  `TAURI_SIGNING_PRIVATE_KEY_PATH`；只做本地构建不需要密钥。
+- `missing Qdrant binary`：安装 `bin/qdrant` 或设置 `JARVIS_QDRANT_BIN`。
+- `missing CC Connect binary`：安装 `bin/cc-connect-jarvis` 或设置
+  `JARVIS_CC_CONNECT_BIN`。
+- `missing lark-cli binary` 或 Skills 检查失败：安装带内嵌 Skills 的 arm64
+  lark-cli，必要时设置 `JARVIS_LARK_CLI_BIN`。
+- `not a Mach-O executable` 或架构不是 arm64：覆盖变量指向了 launcher、脚本或其他
+  架构 binary；改为原生 arm64 binary。
+- `non-system dynamic dependency`：输入 binary 依赖包外动态库，不满足自包含要求。
+- BytedCLI 安装失败：检查公司网络和 npm registry。
+- notarization warning：当前 ad-hoc 内部分发流程的预期提示，不代表 DMG 构建失败。
+
+## 签名边界
+
+当前存在两套独立签名：
+
+- Tauri updater 私钥签名 `.app.tar.gz`，客户端用
+  `tauri.conf.json` 中的公钥验签。这是生成和发布更新包的硬要求。
+- macOS `codesign` 当前使用 ad-hoc identity `-`。`JARVIS_APP_SIGN_IDENTITY` 只影响
+  runtime 内原生 binary；`bundle-dmg.mjs` 最终仍会以 `-` deep-sign 整个应用。
+
+因此当前脚本只适合内部安装。外部分发需要单独改造最终应用签名、Developer ID、
+entitlements 和 notarization 流程，不能只设置 `JARVIS_APP_SIGN_IDENTITY`。
+
+## 已验证发布基线
+
+2026-09-11 的历史验收使用本机 Python 静态服务（18992），覆盖 `0.1.1 → 0.1.2`
+客户端下载、验签、安装、自动重启和数据保留；错误签名会被拒绝。该记录不代表
+`publish-update.sh` 或 Go 托管加网关的完整发布链路已验收。历史已发布文件的 SHA-256 为：
 
 ```text
 Jarvis_0.1.2_aarch64.app.tar.gz  c63b4d6b7908a78b8fcb5cfdf3c0c21e3a13c9032eda093be3ca31ed517de5aa
 Jarvis_0.1.2_aarch64.dmg         d04b51ef2e3063fcf4224d1926617d34148c96230904a5ccd4507d6579a512b8
 ```
 
-本机验收日志与结果保存在 `var/update-acceptance-20260911/`，不随安装包分发。
-
-## 签名
-
-默认使用 ad-hoc 签名，仅用于内部测试。对外分发前需配置 Apple Developer ID，
-并完成 notarization。
-
-## 常见问题
-
-- `missing Qdrant binary`：安装到 `bin/qdrant`，或设置 `JARVIS_QDRANT_BIN`。
-- `missing CC Connect binary`：安装到 `bin/cc-connect-jarvis`，或设置
-  `JARVIS_CC_CONNECT_BIN`。
-- 授权按钮无响应：桌面外链依赖 Tauri opener；0.1.0 及更早版本需手动覆盖安装带 updater 的版本。
+本地重新构建会因归档元数据等因素产生不同摘要，不能用以上值校验新构建。

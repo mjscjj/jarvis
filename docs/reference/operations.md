@@ -107,6 +107,20 @@ macOS 底层 `rebuild-server.sh` 会在替换二进制前查询执行中的 Task
 
 不要裸 `go build` 覆盖 `bin/jarvis-server`；否则会改变签名身份，导致完全磁盘访问权限不稳定。
 
+## 自动更新文件托管
+
+Jarvis 主服务通过可选环境变量 `JARVIS_UPDATE_ROOT` 托管桌面端更新文件。未配置或为空
+时不注册 `/jarvis-updates/:filename`；配置后目录必须已存在且是目录，否则 API 路由
+注册失败，主服务直接停止启动。
+
+DEV2 当前通过 `com.bytedance.jarvis.server.service.d/update-root.conf` 设置该变量，
+目录与 `packaging/macos/publish-update.sh` 的远端发布目录保持一致。外部网关路由由
+AMZ 仓库 `product-demo/DEPLOY.md` 维护，本仓库不复制该配置。生产 Jarvis 端口是
+18800；18801 仅用于 Vite 开发服务，不能作为更新托管端口。
+
+构建、签名、上传顺序和发布验收见
+[macOS 打包与发布指引](../../packaging/macos/README.md)。
+
 ## 完整退出
 
 后台“退出”会先返回确认结果，再调用脚本停止所选配置对应的当前实例：

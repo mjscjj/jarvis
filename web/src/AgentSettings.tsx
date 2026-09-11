@@ -53,7 +53,7 @@ interface EditorProps {
   value: string
   placeholder?: string
   saving: boolean
-  allowEmpty?: boolean
+  readOnly?: boolean
   onChange: (value: string) => void
   onSave: () => void
 }
@@ -65,7 +65,7 @@ function MarkdownEditor({
   value,
   placeholder,
   saving,
-  allowEmpty = false,
+  readOnly = false,
   onChange,
   onSave,
 }: EditorProps) {
@@ -80,16 +80,17 @@ function MarkdownEditor({
       </div>
       <Input.TextArea
         value={value}
+        readOnly={readOnly}
         onChange={(event) => onChange(event.target.value)}
         autoSize={{ minRows: 12, maxRows: 28 }}
         placeholder={placeholder}
         className="agent-markdown-editor"
       />
-      <Flex justify="flex-end" style={{ marginTop: 12 }}>
-        <Button type="primary" onClick={onSave} loading={saving} disabled={!allowEmpty && !value.trim()}>
+      {!readOnly && <Flex justify="flex-end" style={{ marginTop: 12 }}>
+        <Button type="primary" onClick={onSave} loading={saving} disabled={!value.trim()}>
           保存修改
         </Button>
-      </Flex>
+      </Flex>}
     </Card>
   )
 }
@@ -271,7 +272,6 @@ export default function AgentSettings() {
             path={stageRule.path}
             value={ruleDrafts[stageRuleKey] ?? ''}
             saving={savingKey === `rule:${stageRuleKey}`}
-            allowEmpty
             onChange={(value) => setRuleDrafts((current) => ({ ...current, [stageRuleKey]: value }))}
             onSave={() => saveRule(stageRuleKey)}
           />
@@ -367,10 +367,11 @@ export default function AgentSettings() {
                         <div className="agent-stage-content">
                           <MarkdownEditor
                             title={item.name}
-                            description={item.description}
+                            description={item.stage === 'cc' ? '当前仅展示安装模板。飞书前台提示词在安装或绑定时写入 CC 配置，暂不支持后台编辑。' : item.description}
                             path={item.path}
                             value={textDrafts[item.key] ?? ''}
                             saving={savingKey === `text:${item.key}`}
+                            readOnly={item.stage === 'cc'}
                             onChange={(value) => setTextDrafts((current) => ({ ...current, [item.key]: value }))}
                             onSave={() => saveText(item.key)}
                           />

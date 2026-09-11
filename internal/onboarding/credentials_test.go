@@ -44,6 +44,10 @@ func (f commandFunc) Run(ctx context.Context, bin string, args []string, input s
 	return f(ctx, bin, args, input)
 }
 
+func (f commandFunc) RunJSON(ctx context.Context, bin string, args []string, input string) ([]byte, error) {
+	return f(ctx, bin, args, input)
+}
+
 func TestInvalidCredentialsDoNotLeakUpstreamOutput(t *testing.T) {
 	err := verifyAppCredentials(t.Context(), credentialClient(t, `{"code":10003,"msg":"secret echoed by upstream"}`), "cli_test", "new-secret")
 	if err == nil || strings.Contains(err.Error(), "secret echoed") || strings.Contains(err.Error(), "new-secret") {
@@ -210,6 +214,9 @@ jarvis_route_claim_secret = "relay-keep"
 	if !reflect.DeepEqual(expected, actual) {
 		t.Fatal("credential repair changed unrelated config values")
 	}
+	if !strings.Contains(string(raw), `app_secret = "new-secret"`) || !strings.Contains(string(raw), `name = "jarvis-codex"`) {
+		t.Fatal("credential repair must preserve the double-quoted strings consumed by CC shell tools")
+	}
 	if calls != 2 {
 		t.Fatalf("commands=%d", calls)
 	}
@@ -272,5 +279,34 @@ func TestFailedLarkVerificationStillIdentifiesConfiguredApp(t *testing.T) {
 	status := s.larkStatus(t.Context())
 	if status.AppID != "cli_test" || status.Error == "" || status.Bot.Verified {
 		t.Fatalf("status=%+v", status)
+	}
+	if flow, err := s.BeginLarkSetup(t.Context()); err == nil || flow != nil {
+		t.Fatalf("invalid configured credentials reported setup success: %v, %v", flow, err)
+	}
+}
+
+func TestConfigShowUsesOnlyStdout(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "lark-cli")
+	// Captured CLI 1.0.93 contract: JSON on stdout, config path on stderr.
+	script := "#!/bin/sh\nprintf '%s\\n' '{\"appId\":\"cli_test\",\"profile\":\"default\",\"brand\":\"feishu\"}'\nprintf '\\nConfig file path: /tmp/config.json\\n' >&2\n"
+	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	s := &Service{options: Options{LarkCLIBin: bin}, runner: execRunner{}}
+	current, err := s.currentLarkConfig(t.Context())
+	if err != nil || current.AppID != "cli_test" || current.Profile != "default" {
+		t.Fatalf("read CLI config: %v, %v", current, err)
+	}
+}
+
+func TestAgentLoginStatusReadsStderr(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "agent")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\nprintf 'Logged in using Trae\\n' >&2\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	s := &Service{options: Options{AgentCLIBin: bin}, runner: execRunner{}}
+	status := s.agentStatus(t.Context())
+	if !status.Authenticated || status.Error != "" {
+		t.Fatalf("stderr login status: %+v", status)
 	}
 }

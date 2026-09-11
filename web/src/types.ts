@@ -1362,6 +1362,7 @@ export interface ChatAttachment {
 }
 
 export interface ChatHistoryMessage {
+  status?: string
   id: string
   role: 'user' | 'assistant'
   text: string

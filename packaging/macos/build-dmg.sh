@@ -15,6 +15,7 @@ command -v cargo >/dev/null 2>&1 || { printf 'build-dmg: cargo is required\n' >&
 command -v npm >/dev/null 2>&1 || { printf 'build-dmg: npm is required\n' >&2; exit 1; }
 command -v node >/dev/null 2>&1 || { printf 'build-dmg: node is required\n' >&2; exit 1; }
 
+unset TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD TAURI_SIGNING_PRIVATE_KEY_PATH
 node --test "$script_dir"/*.test.mjs
 npm --prefix "$repo_root/desktop" ci
 npm --prefix "$repo_root/desktop" run dmg

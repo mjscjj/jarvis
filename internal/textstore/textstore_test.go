@@ -287,6 +287,9 @@ func TestRepositoryCCPromptOwnsTheForegroundHandoffContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if _, err := service.Update(t.Context(), SystemPromptCCKey, Input{Content: content}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("CC installation template must not pretend to support live edits: %v", err)
+	}
 	for _, required := range []string{
 		"{{REPO_ROOT}}", "get-context --chat-id", "get-shared-memory",
 		"create-task", "source_type=manual", "delivery_required", "reply_target",

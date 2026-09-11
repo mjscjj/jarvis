@@ -37,6 +37,7 @@ const (
 
 type CommandRunner interface {
 	Run(context.Context, string, []string, string) ([]byte, error)
+	RunJSON(context.Context, string, []string, string) ([]byte, error)
 }
 
 type streamingCommandRunner interface {
@@ -45,7 +46,7 @@ type streamingCommandRunner interface {
 
 type execRunner struct{}
 
-func (execRunner) Run(ctx context.Context, binary string, args []string, input string) ([]byte, error) {
+func onboardingCommand(ctx context.Context, binary string, args []string, input string) *exec.Cmd {
 	command := exec.CommandContext(ctx, binary, args...)
 	if input != "" {
 		command.Stdin = strings.NewReader(input)
@@ -54,7 +55,26 @@ func (execRunner) Run(ctx context.Context, binary string, args []string, input s
 		"LARKSUITE_CLI_NO_UPDATE_NOTIFIER=1",
 		"LARKSUITE_CLI_NO_SKILLS_NOTIFIER=1",
 	)
-	return command.CombinedOutput()
+	return command
+}
+
+func (execRunner) Run(ctx context.Context, binary string, args []string, input string) ([]byte, error) {
+	return onboardingCommand(ctx, binary, args, input).CombinedOutput()
+}
+
+// JSON commands own stdout; human diagnostics on stderr are not JSON payload.
+func (execRunner) RunJSON(ctx context.Context, binary string, args []string, input string) ([]byte, error) {
+	command := onboardingCommand(ctx, binary, args, input)
+	var stdout, stderr bytes.Buffer
+	command.Stdout, command.Stderr = &stdout, &stderr
+	err := command.Run()
+	if err != nil {
+		if stderr.Len() > 0 {
+			return stderr.Bytes(), err
+		}
+		return stdout.Bytes(), err
+	}
+	return stdout.Bytes(), nil
 }
 
 type synchronizedOutput struct {
@@ -283,11 +303,11 @@ func (s *Service) Status(ctx context.Context) (*Status, error) {
 
 func (s *Service) BeginLarkSetup(ctx context.Context) (*Flow, error) {
 	current := s.larkStatus(ctx)
-	if current.AppID != "" {
-		return &Flow{Status: flowSuccess}, nil // Never create a second App.
-	}
 	if current.Error != "" {
 		return nil, errors.New(current.Error)
+	}
+	if current.AppID != "" {
+		return &Flow{Status: flowSuccess}, nil // Never create a second App.
 	}
 	id, err := randomID()
 	if err != nil {
@@ -710,9 +730,9 @@ func (s *Service) CancelFlow(id string) (*Flow, error) {
 }
 
 func (s *Service) larkStatus(ctx context.Context) LarkStatus {
-	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
-	output, err := s.runner.Run(ctx, s.options.LarkCLIBin, []string{"auth", "status", "--json", "--verify"}, "")
+	statusCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	output, err := s.runner.Run(statusCtx, s.options.LarkCLIBin, []string{"auth", "status", "--json", "--verify"}, "")
+	cancel()
 	if err != nil {
 		var failure struct {
 			Error struct {
@@ -760,7 +780,9 @@ func (s *Service) larkStatus(ctx context.Context) LarkStatus {
 		status.Error = secretErr.Error()
 	}
 	if status.User.Verified {
-		if output, err := s.larkAuthorization(ctx, "check"); err != nil {
+		checkCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		defer cancel()
+		if output, err := s.larkAuthorization(checkCtx, "check"); err != nil {
 			status.User.Verified = false
 			status.Error = commandError("检查安装所需飞书权限，请在安装页重新授权当前应用", output, err).Error()
 		}
@@ -866,6 +888,13 @@ jarvis_event_relay_types = "vc.meeting.participant_meeting_ended_v1"
 `, tomlString(filepath.Join(filepath.Dir(path), "data")), tomlString(runtimeRoot), tomlString(agentBin), tomlString(prompt), tomlString(appID),
 		tomlString(appSecret), tomlString(principalOpenID), tomlString(relaySecret),
 		tomlString(relaySecret), tomlString(relaySecret))
+	return writeSecretConfig(path, []byte(content))
+}
+
+// writeSecretConfig atomically replaces path. Owner-only because the content
+// carries the Feishu app secret; atomic because a torn write leaves CC Connect
+// unable to start.
+func writeSecretConfig(path string, content []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create CC Connect config directory: %w", err)
 	}
@@ -879,7 +908,7 @@ jarvis_event_relay_types = "vc.meeting.participant_meeting_ended_v1"
 		temp.Close()
 		return err
 	}
-	if _, err := temp.WriteString(content); err != nil {
+	if _, err := temp.Write(content); err != nil {
 		temp.Close()
 		return err
 	}

@@ -136,6 +136,20 @@ func (s *Service) StreamSession(ctx context.Context, sessionID string, input Sen
 		agentMessage = "请阅读并处理我附上的文件。"
 	}
 	req := Request{Message: agentMessage, ThreadID: valueOrEmpty(row.NativeThreadID), Agent: row.Agent, Model: row.Model, ReasoningEffort: row.ReasoningEffort, AttachmentPaths: paths, ImagePaths: imagePaths, Sources: input.Sources, VisibleHistory: visibleHistory}
+	assistantID, err := newID("cm_")
+	if err != nil {
+		return err
+	}
+	streamingMeta, err := encodeJSON(map[string]any{"status": "streaming"})
+	if err != nil {
+		return err
+	}
+	agent, model := row.Agent, row.Model
+	assistant := domain.ChatMessage{ID: assistantID, SessionID: sessionID, Role: "assistant", Agent: &agent, Model: &model, Meta: streamingMeta}
+	persist := s.db.WithContext(context.WithoutCancel(ctx))
+	if err := persist.Create(&assistant).Error; err != nil {
+		return fmt.Errorf("save assistant chat message: %w", err)
+	}
 	runErr := s.Stream(runCtx, req, func(event Event) error {
 		if event.Kind == EventThread && strings.TrimSpace(event.ThreadID) != "" {
 			thread := strings.TrimSpace(event.ThreadID)
@@ -145,25 +159,25 @@ func (s *Service) StreamSession(ctx context.Context, sessionID string, input Sen
 		}
 		if event.Kind == EventDelta {
 			response.WriteString(event.Text)
+			// Persist before delivery so refresh/restart keeps every received reply chunk.
+			if err := persist.Model(&assistant).Update("text", response.String()).Error; err != nil {
+				return fmt.Errorf("save assistant chat text: %w", err)
+			}
 		}
 		return emit(event)
 	})
-	if response.Len() > 0 || runErr == nil {
-		assistantID, idErr := newID("cm_")
-		if idErr != nil {
-			return idErr
-		}
-		status := "completed"
-		if runErr != nil {
-			status = "interrupted"
-		}
-		assistantMeta, _ := encodeJSON(map[string]any{"status": status})
-		agent, model := row.Agent, row.Model
-		assistant := domain.ChatMessage{ID: assistantID, SessionID: sessionID, Role: "assistant", Text: response.String(), Agent: &agent, Model: &model, Meta: assistantMeta}
-		if err := s.db.WithContext(context.WithoutCancel(ctx)).Create(&assistant).Error; err != nil {
-			return fmt.Errorf("save assistant chat message: %w", err)
-		}
+	status := "completed"
+	if runErr != nil {
+		status = "interrupted"
 	}
+	assistantMeta, err := encodeJSON(map[string]any{"status": status})
+	if err != nil {
+		return err
+	}
+	if err := persist.Model(&assistant).Update("meta", assistantMeta).Error; err != nil {
+		return fmt.Errorf("save assistant chat status: %w", err)
+	}
+
 	if runErr != nil {
 		return runErr
 	}

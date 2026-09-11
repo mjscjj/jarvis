@@ -69,7 +69,6 @@ import (
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/common/hlog"
-	hertzgzip "github.com/hertz-contrib/gzip"
 	"gorm.io/gorm"
 )
 
@@ -1123,7 +1122,7 @@ func main() {
 		// multipart framing; each upload handler still enforces its file limit.
 		server.WithMaxRequestBodySize(chat.MaxAttachmentBytes+(64<<10)),
 	)
-	h.Use(hertzgzip.Gzip(hertzgzip.BestSpeed, hertzgzip.WithExcludedPaths([]string{"/api/chat"})))
+	h.Use(api.Compression())
 	h.Use(observability.Middleware())
 	h.Use(api.StaticAssetCacheHeaders())
 	authService, err := authn.NewService("bytedcli", 12*time.Hour, cfg.Auth.IsEnabled())

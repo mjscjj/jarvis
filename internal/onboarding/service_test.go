@@ -277,3 +277,11 @@ func TestBootstrapWorldModelCreatesPrincipalBeforeManualTask(t *testing.T) {
 		t.Fatalf("created another initialization task: count=%d, error=%v", count, err)
 	}
 }
+
+func (r onboardingRunnerStub) RunJSON(ctx context.Context, bin string, args []string, input string) ([]byte, error) {
+	return r.Run(ctx, bin, args, input)
+}
+
+func (r streamingRunnerStub) RunJSON(ctx context.Context, bin string, args []string, input string) ([]byte, error) {
+	return r.Run(ctx, bin, args, input)
+}
