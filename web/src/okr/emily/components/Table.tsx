@@ -297,7 +297,7 @@ function KrHeader({ objectiveId, kr, open, onToggle, onMoveUp, onMoveDown, readO
   )
 }
 
-function PointHeader({ compactPresentation = false, objectiveId, krId, point, index, open, onToggle, onMoveUp, onMoveDown, readOnly, structureReadOnly, showProgress = true, showScore = false, scoreReadOnly = true, tagSuggestions, deleteWarning }: { compactPresentation?: boolean; objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; onMoveUp?: () => void; onMoveDown?: () => void; readOnly: boolean; structureReadOnly: boolean; showProgress?: boolean; showScore?: boolean; scoreReadOnly?: boolean; tagSuggestions?: KrTag[]; deleteWarning: string }) {
+function PointHeader({ inlineReview = false, compactPresentation = false, objectiveId, krId, point, index, open, onToggle, onMoveUp, onMoveDown, readOnly, structureReadOnly, showProgress = true, showScore = false, scoreReadOnly = true, tagSuggestions, deleteWarning }: { inlineReview?: boolean; compactPresentation?: boolean; objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; onMoveUp?: () => void; onMoveDown?: () => void; readOnly: boolean; structureReadOnly: boolean; showProgress?: boolean; showScore?: boolean; scoreReadOnly?: boolean; tagSuggestions?: KrTag[]; deleteWarning: string }) {
   const { setPointTitle, setPointKind, setPointMeegoLink, removePoint, addPointTag, removePointTag, setPointScore, week } = useBoard()
   const commentTarget = { type: 'point' as const, id: point.id, title: point.title }
   const commentSurface = useCommentSurface(commentTarget)
@@ -345,7 +345,16 @@ function PointHeader({ compactPresentation = false, objectiveId, krId, point, in
             {showProgress && <span className="pt-1 text-xs text-slate-400">{doing} 进展 · {done} 已完成</span>}
           </div>
           {/* 标签只在「管理与打标」里展示和维护，填写和会议视图不渲染。 */}
-          {tagSuggestions && <div className="mt-1.5 min-w-0"><TagEditor idPrefix={`point-tag-options-${point.id}`} tags={point.tags ?? []} suggestions={tagSuggestions} emptyLabel="+ 要点标签" onAdd={(value, type) => addPointTag(krId, point.id, value, type)} onRemove={(type, value) => removePointTag(krId, point.id, type, value)} /></div>}
+          {tagSuggestions && (compactPresentation && !point.tags?.length ? (
+            <details className="mt-0.5 text-[10px] text-slate-400">
+              <summary className="cursor-pointer">标签</summary>
+              <TagEditor idPrefix={`point-tag-options-${point.id}`} tags={point.tags ?? []} suggestions={tagSuggestions} emptyLabel="+ 要点标签" onAdd={(value, type) => addPointTag(krId, point.id, value, type)} onRemove={(type, value) => removePointTag(krId, point.id, type, value)} />
+            </details>
+          ) : (
+            <div className={compactPresentation ? 'mt-0.5 min-w-0' : 'mt-1.5 min-w-0'}>
+              <TagEditor idPrefix={`point-tag-options-${point.id}`} tags={point.tags ?? []} suggestions={tagSuggestions} emptyLabel="+ 要点标签" onAdd={(value, type) => addPointTag(krId, point.id, value, type)} onRemove={(type, value) => removePointTag(krId, point.id, type, value)} />
+            </div>
+          ))}
           {(point.meegoWorkItemId || editingMeego) && (
             <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[11px] text-slate-400">
               <span>Meego</span>
@@ -360,11 +369,12 @@ function PointHeader({ compactPresentation = false, objectiveId, krId, point, in
             </div>
           )}
           {!structureReadOnly && !point.meegoWorkItemId && !editingMeego && (
-            <button type="button" onClick={() => setEditingMeego(true)} className="mt-1 text-[11px] text-slate-300 opacity-0 transition-opacity hover:text-blue-500 group-hover/point:opacity-100">+ 关联 Meego</button>
+            <button type="button" onClick={() => setEditingMeego(true)} className={compactPresentation ? "hidden text-[11px] text-slate-400 hover:text-blue-500 group-hover/point:inline-block group-focus-within/point:inline-block" : "mt-1 text-[11px] text-slate-300 opacity-0 transition-opacity hover:text-blue-500 group-hover/point:opacity-100"}>+ 关联 Meego</button>
           )}
         </div>
         {!readOnly && <span className="flex max-w-[45%] shrink-0 flex-wrap items-center justify-end gap-1 pt-0.5"><PointPeoplePicker krId={krId} point={point} initialsOnly={compactPresentation} /></span>}
         {readOnly && (point.owners?.length ?? 0) > 0 && <span aria-label="具体 KR 负责人" className="flex max-w-[45%] shrink-0 flex-wrap items-center justify-end gap-1 pt-0.5">{point.owners?.map((owner, ownerIndex) => <KrOwnerBadge key={`${owner.openId || owner.name}:${ownerIndex}`} owner={owner} compact={compactPresentation} />)}</span>}
+        {inlineReview && <PreviewReviewButton target={{ kind: 'point', objectiveId, krId, pointId: point.id, title: point.title }} label="AI评审" />}
         {!readOnly && <MoveButtons label="条具体 KR" onUp={onMoveUp} onDown={onMoveDown} />}
         {!structureReadOnly && (confirmDelete ? (
           <span className="flex shrink-0 items-center gap-1">
@@ -401,8 +411,8 @@ function PointBlock({ compactPresentation = false, objectiveId, krId, point, ind
   const reviewTarget = { kind: 'point' as const, objectiveId, krId, pointId: point.id, title: point.title }
   return (
     <article id={`point-${point.id}`} className="scroll-mt-5 border-l-2 border-slate-200 pl-3 sm:pl-4">
-      <PointHeader compactPresentation={compactPresentation} objectiveId={objectiveId} krId={krId} point={point} index={index} open={open} onToggle={onToggle} onMoveUp={onMoveUp} onMoveDown={onMoveDown} readOnly={definitionReadOnly} structureReadOnly={structureReadOnly} showProgress={showProgress} showScore={!compactPresentation && showReview} scoreReadOnly={progressReadOnly} tagSuggestions={tagSuggestions} deleteWarning={deleteWarning} />
-      {showReview && <div className="mt-1.5 flex justify-end pl-7"><PreviewReviewButton target={reviewTarget} label="AI评审" /></div>}
+      <PointHeader inlineReview={compactPresentation && showReview} compactPresentation={compactPresentation} objectiveId={objectiveId} krId={krId} point={point} index={index} open={open} onToggle={onToggle} onMoveUp={onMoveUp} onMoveDown={onMoveDown} readOnly={definitionReadOnly} structureReadOnly={structureReadOnly} showProgress={showProgress} showScore={!compactPresentation && showReview} scoreReadOnly={progressReadOnly} tagSuggestions={tagSuggestions} deleteWarning={deleteWarning} />
+      {showReview && !compactPresentation && <div className="mt-1.5 flex justify-end pl-7"><PreviewReviewButton target={reviewTarget} label="AI评审" /></div>}
       {showReview && <PreviewReviewPanel target={reviewTarget} className="mt-1.5 ml-7" />}
       {open && showProgress && (review
         ? <div className="mt-2 pl-7">
