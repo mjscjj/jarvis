@@ -49,21 +49,18 @@ export function taskHandlerMeta(task: Task): { label: string; detail: string; co
   const actor = task.resolution?.actor_type
   if (!actor) return null
   if (actor === 'user') return { label: '人工处理', detail: '最终状态由你手动确认', color: 'gold' }
-  if (actor === 'proactive') return { label: '模型关闭', detail: '主动 Agent 核验后收口', color: 'purple' }
+  if (task.resolution?.event_type === 'closed') return { label: 'Agent 关闭', detail: `由 ${actor} Agent 核验后收口`, color: 'purple' }
   if (actor === 'm5') return { label: '模型处理', detail: 'M5 Agent 执行或核验后收口', color: 'blue' }
   return { label: '系统处理', detail: `最终处理者：${actor}`, color: 'default' }
 }
 
-export function modelCloseReason(task: Task): string | null {
-  if (task.resolution?.actor_type !== 'proactive' || task.resolution.event_type !== 'closed') return null
-  return task.summary?.trim() || strField(task.execution_result, 'summary')
+export function isAgentClosure(task: Task): boolean {
+  return task.resolution?.event_type === 'closed' && task.resolution.actor_type !== 'user'
 }
 
-function objectField(value: Record<string, unknown>, key: string): Record<string, unknown> | null {
-  const field = value[key]
-  return field && typeof field === 'object' && !Array.isArray(field)
-    ? field as Record<string, unknown>
-    : null
+export function modelCloseReason(task: Task): string | null {
+  if (!isAgentClosure(task)) return null
+  return task.summary?.trim() || strField(task.execution_result, 'summary')
 }
 
 function textValue(value: unknown): string | null {
@@ -128,4 +125,11 @@ function taskCapture(task: Task): Record<string, unknown> {
  const value = task.source_payload && typeof task.source_payload === 'object' && !Array.isArray(task.source_payload)
    ? (task.source_payload as Record<string, unknown>).capture : null
  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+
+export function objectField(value: Record<string, unknown>, key: string): Record<string, unknown> | null {
+  const field = value[key]
+  return field && typeof field === 'object' && !Array.isArray(field)
+    ? field as Record<string, unknown>
+    : null
 }

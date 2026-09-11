@@ -33,16 +33,16 @@ func TestPrepareTaskEvent(t *testing.T) {
 	}
 }
 
-func TestPrepareTaskEventAcceptsScheduledTaskActor(t *testing.T) {
+func TestPrepareTaskEventAcceptsOpenActorType(t *testing.T) {
 	t.Parallel()
 	event, err := prepareTaskEvent(TaskEventInput{
 		TaskID: 1, TaskVersion: 0, EventType: "created",
-		ToStatus: "pending", ActorType: "scheduled_task", OccurredAt: time.Now(),
+		ToStatus: "pending", ActorType: "review_agent", OccurredAt: time.Now(),
 	})
 	if err != nil {
 		t.Fatalf("prepareTaskEvent() error = %v", err)
 	}
-	if event.ActorType != "scheduled_task" {
+	if event.ActorType != "review_agent" {
 		t.Fatalf("actor_type = %q", event.ActorType)
 	}
 }
@@ -111,11 +111,11 @@ func TestPrepareTaskEventRejectsUnknownType(t *testing.T) {
 	}
 }
 
-func TestPrepareTaskEventRejectsUnknownActor(t *testing.T) {
+func TestPrepareTaskEventRejectsEmptyActor(t *testing.T) {
 	t.Parallel()
 	_, err := prepareTaskEvent(TaskEventInput{
 		TaskID: 1, TaskVersion: 0, EventType: "created",
-		ToStatus: "pending", ActorType: "unknown_stage", OccurredAt: time.Now(),
+		ToStatus: "pending", ActorType: "  ", OccurredAt: time.Now(),
 	})
 	if !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("error = %v, want ErrInvalidInput", err)

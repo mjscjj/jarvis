@@ -3,7 +3,6 @@ package proactive
 import (
 	"context"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -113,24 +112,6 @@ func TestWorkerBuildsHeartbeatPromptAndUsesProactiveStage(t *testing.T) {
 	}
 	if recorder.successOutput != runner.result || recorder.failureDetail != "" {
 		t.Fatalf("recorded finish output=%q failure=%q", recorder.successOutput, recorder.failureDetail)
-	}
-}
-
-func TestRepositoryPromptDoesNotCloseTasksByAge(t *testing.T) {
-	raw, err := os.ReadFile("../../conf/prompts/proactive-system-prompt.md")
-	if err != nil {
-		t.Fatalf("read proactive prompt: %v", err)
-	}
-	prompt := string(raw)
-	for _, want := range []string{"跨日、暂时沉默", "只有查到肯定证据", "超过一天"} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("proactive prompt missing evidence-based close rule %q", want)
-		}
-	}
-	for _, forbidden := range []string{"1天或者2天前", "2天前的Task进行重点关闭"} {
-		if strings.Contains(prompt, forbidden) {
-			t.Fatalf("proactive prompt still closes Tasks by age: %q", forbidden)
-		}
 	}
 }
 

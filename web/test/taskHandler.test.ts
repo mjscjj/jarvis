@@ -16,20 +16,25 @@ function resolvedBy(actorType: string): Task {
 
 test('labels human and model task resolution distinctly', () => {
   assert.equal(taskHandlerMeta(resolvedBy('user'))?.label, '人工处理')
-  assert.equal(taskHandlerMeta(resolvedBy('m5'))?.label, '模型处理')
-  assert.equal(taskHandlerMeta(resolvedBy('proactive'))?.label, '模型关闭')
+  assert.equal(taskHandlerMeta({
+    ...resolvedBy('m5'),
+    resolution: { ...resolvedBy('m5').resolution!, event_type: 'execution_succeeded' },
+  })?.label, '模型处理')
+  assert.equal(taskHandlerMeta(resolvedBy('proactive'))?.label, 'Agent 关闭')
+  assert.equal(taskHandlerMeta(resolvedBy('factengine'))?.label, 'Agent 关闭')
 })
 
 test('does not guess a handler before terminal resolution', () => {
   assert.equal(taskHandlerMeta({ resolution: null } as Task), null)
 })
 
-test('shows the persisted reason only for proactive model closure', () => {
+test('shows the persisted reason for any Agent closure', () => {
   const task = {
     ...resolvedBy('proactive'),
     summary: '跨日审批已过期，当前没有继续执行价值。',
     execution_result: { summary: '旧理由' },
   }
   assert.equal(modelCloseReason(task), '跨日审批已过期，当前没有继续执行价值。')
-  assert.equal(modelCloseReason({ ...task, resolution: { ...task.resolution!, actor_type: 'm5' } }), null)
+  assert.equal(modelCloseReason({ ...task, resolution: { ...task.resolution!, actor_type: 'factengine' } }), '跨日审批已过期，当前没有继续执行价值。')
+  assert.equal(modelCloseReason({ ...task, resolution: { ...task.resolution!, actor_type: 'user' } }), null)
 })

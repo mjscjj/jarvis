@@ -741,7 +741,7 @@ func (c *Config) validateFactEngine() error {
 
 // validateCodexSandbox enforces the codex sandbox mode is one of the values
 // codex CLI accepts. danger-full-access is intentionally allowed: it is the
-// explicit local-trusted-environment posture per docs/design-context-pipeline.md.
+// explicit local-trusted-environment posture per docs/decisions/context-snapshot.md.
 // key is the full config key so the error points at the line to edit — sections
 // do not agree on the field name (codex_sandbox vs sandbox).
 func validateCodexSandbox(key, value string) error {

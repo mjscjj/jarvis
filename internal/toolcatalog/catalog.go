@@ -44,7 +44,7 @@ func Block(stage string) (string, error) {
 		"- 查本地已采集对话先用 `query-messages`，已知数据库 ID 时用 `get-message`；查附件与文档引用先用 `query-captured-resources`，命中后再用 `get-captured-resource` 加载正文。",
 		"- `query-messages --message-ids ID,ID,... --limit 100` 按原始消息 ID 批量精确查询，只返回已存在记录的 id/message_id；每批最多 100 个，不依赖正文关键词或 Task 是否存在。",
 		"- `yield-until` 需要 Task runner 注入 `JARVIS_TASK_ID`，创建归属当前 Task 的恢复触发；`create-scheduled-task` 创建独立触发。",
-		"- `create-task` 创建 `source_type=manual|proactive` 的普通 Task 并交给 M5；`supplement-task` 给现有 Task 追加上下文但不启动，`resume-task` 回答 `needs_human` 问题并续跑原 M5 Session。`start-task` / `update-task` / `close-task` 仍只供 proactive 巡视管理既有 Task。",
+		"- `create-task` 创建 `source_type=manual|proactive` 的普通 Task 并交给 M5；`supplement-task` 给现有 Task 追加上下文但不启动，`resume-task` 回答 `needs_human` 问题并续跑原 M5 Session。`start-task` / `update-task` / `close-task` 管理既有 Task；stage 只用于上下文和留痕，不是权限身份。",
 		"- lark-cli：查询或操作飞书。先用 `lark-cli skills list` 查看能力目录并选定域，再用 `lark-cli skills read <域名>` 查工作流、`lark-cli schema <method>` 查单 API 参数；匹配到飞书 Skill 时先读取 Skill。",
 		"- bytedcli：查询内部代码、commit、MR、issue 等研发信息。先用 `bytedcli --help` 查看领域，再用 `bytedcli --json <领域> --help` 查看该领域命令，最后用 `bytedcli --json <子命令路径> --help` 查看参数；不要加载全量帮助。",
 		"- git：查询和操作本地代码仓库。",

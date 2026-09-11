@@ -543,7 +543,7 @@ func TestUpdateTaskMaintainsMutableSurfaceAndFrozenEvidence(t *testing.T) {
 	if string(view.SourcePayload) != `{"clue":"frozen"}` {
 		t.Fatalf("frozen evidence changed: source_payload=%s", view.SourcePayload)
 	}
-	if len(view.ExecutionSupplements) != 1 || view.ExecutionSupplements[0].Note != instruction || view.ExecutionSupplements[0].Channel != "proactive_agent" {
+	if len(view.ExecutionSupplements) != 1 || view.ExecutionSupplements[0].Note != instruction || view.ExecutionSupplements[0].Channel != "agent:proactive" {
 		t.Fatalf("execution supplements = %#v", view.ExecutionSupplements)
 	}
 	var event domain.TaskEvent

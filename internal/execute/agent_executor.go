@@ -508,13 +508,13 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 		return nil, fmt.Errorf("record resumed execution verdict task_id=%d: %w", task.ID, err)
 	}
 	if result.Outcome == "waiting" {
-		e.finishWaitingRun(run, startedAt)
+		e.finishRunAs(run, startedAt, "waiting")
 	} else if result.Outcome == "needs_human" {
-		e.finishNeedsHumanRun(run, startedAt)
+		e.finishRunAs(run, startedAt, "needs_human")
 	} else if result.Outcome == "observing" {
-		e.finishObservingRun(run, startedAt)
+		e.finishRunAs(run, startedAt, "observing")
 	} else if result.Outcome == "completed" {
-		e.finishSuccessfulRun(run, startedAt)
+		e.finishRunAs(run, startedAt, "succeeded")
 	} else {
 		execErr = fmt.Errorf("task not completed: %s", result.FailureReason)
 		e.failRun(run, startedAt, execErr)
@@ -572,36 +572,9 @@ func renderResumeInstructions(systemPrompt, approvalPolicy, phase, workRules, to
 	return prompt, nil
 }
 
-func (e *AgentExecutor) finishSuccessfulRun(run *domain.ExecutionRun, startedAt time.Time) {
+func (e *AgentExecutor) finishRunAs(run *domain.ExecutionRun, startedAt time.Time, status string) {
 	finished := e.now().UTC()
-	run.Status = "succeeded"
-	run.FinishedAt = &finished
-	ms := finished.Sub(startedAt).Milliseconds()
-	run.DurationMs = &ms
-}
-
-func (e *AgentExecutor) finishWaitingRun(run *domain.ExecutionRun, startedAt time.Time) {
-	finished := e.now().UTC()
-	run.Status = "waiting"
-	run.FinishedAt = &finished
-	ms := finished.Sub(startedAt).Milliseconds()
-	run.DurationMs = &ms
-}
-
-func (e *AgentExecutor) finishNeedsHumanRun(run *domain.ExecutionRun, startedAt time.Time) {
-	finished := e.now().UTC()
-	run.Status = "needs_human"
-	run.FinishedAt = &finished
-	ms := finished.Sub(startedAt).Milliseconds()
-	run.DurationMs = &ms
-}
-
-// finishObservingRun records a run that investigated properly and concluded
-// nobody needs to act. The run did its job, so this is not a failure; it just
-// did not have to change anything, so it is not a completion either.
-func (e *AgentExecutor) finishObservingRun(run *domain.ExecutionRun, startedAt time.Time) {
-	finished := e.now().UTC()
-	run.Status = "observing"
+	run.Status = status
 	run.FinishedAt = &finished
 	ms := finished.Sub(startedAt).Milliseconds()
 	run.DurationMs = &ms
@@ -670,10 +643,7 @@ func (e *AgentExecutor) routeRun(ctx context.Context, task *domain.Task, execVer
 	if writeErr := e.persistRun(ctx, run); writeErr != nil {
 		return nil, fmt.Errorf("persist execution run task_id=%d: %w", task.ID, writeErr)
 	}
-	if execErr != nil {
-		return e.finishRun(ctx, task, execVersion, run, execErr)
-	}
-	return e.finishRun(ctx, task, execVersion, run, nil)
+	return e.finishRun(ctx, task, execVersion, run, execErr)
 }
 
 // notifyQuestion projects an already-persisted question into Feishu, for every
@@ -1045,22 +1015,22 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task) (*domain
 		return e.failRun(run, startedAt, err), nil, err
 	}
 	if result.Outcome == "waiting" {
-		e.finishWaitingRun(run, startedAt)
+		e.finishRunAs(run, startedAt, "waiting")
 		return run, result, nil
 	}
 	if result.Outcome == "needs_human" {
-		e.finishNeedsHumanRun(run, startedAt)
+		e.finishRunAs(run, startedAt, "needs_human")
 		return run, result, nil
 	}
 	if result.Outcome == "observing" {
-		e.finishObservingRun(run, startedAt)
+		e.finishRunAs(run, startedAt, "observing")
 		return run, result, nil
 	}
 	if result.Outcome != "completed" {
 		cause := fmt.Errorf("task not completed: %s", result.FailureReason)
 		return e.failRun(run, startedAt, cause), nil, cause
 	}
-	e.finishSuccessfulRun(run, startedAt)
+	e.finishRunAs(run, startedAt, "succeeded")
 	return run, result, nil
 }
 

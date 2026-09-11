@@ -36,10 +36,6 @@ var taskEventTypes = map[string]struct{}{
 	"human_response_received": {},
 }
 
-var actorTypes = map[string]struct{}{
-	"user": {}, "m5": {}, "proactive": {}, "scheduled_task": {}, "system": {}, "seed": {},
-}
-
 var taskStatuses = map[string]struct{}{
 	"pending": {}, "executing": {}, "waiting": {}, "needs_human": {}, "done": {}, "failed": {}, "observing": {},
 }
@@ -271,14 +267,11 @@ func prepareTaskEvent(input TaskEventInput) (*domain.TaskEvent, error) {
 	input.ToStatus = strings.TrimSpace(strings.ToLower(input.ToStatus))
 	input.FromStatus = normalizedOptional(input.FromStatus)
 	input.ActorRef = normalizedOptional(input.ActorRef)
-	if input.TaskID == 0 || input.TaskVersion < 0 || input.OccurredAt.IsZero() {
-		return nil, fmt.Errorf("%w: task_id, non-negative task_version and occurred_at are required", ErrInvalidInput)
+	if input.TaskID == 0 || input.TaskVersion < 0 || input.OccurredAt.IsZero() || input.ActorType == "" {
+		return nil, fmt.Errorf("%w: task_id, non-negative task_version, actor_type and occurred_at are required", ErrInvalidInput)
 	}
 	if _, ok := taskEventTypes[input.EventType]; !ok {
 		return nil, fmt.Errorf("%w: unsupported task event type %q", ErrInvalidInput, input.EventType)
-	}
-	if _, ok := actorTypes[input.ActorType]; !ok {
-		return nil, fmt.Errorf("%w: unsupported actor type %q", ErrInvalidInput, input.ActorType)
 	}
 	if _, ok := taskStatuses[input.ToStatus]; !ok {
 		return nil, fmt.Errorf("%w: unsupported to_status %q", ErrInvalidInput, input.ToStatus)

@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: normative module guide
-> Last verified: 2026-08-15
+> Last verified: 2026-09-11
 > Code source: `internal/capture/`, `internal/domain/capture.go`
 
 M2 把外部事实可靠写入 SQLite，并按 chat 唤醒 M3。它不分类、不下结论、不决定重试策略。
@@ -23,13 +23,13 @@ message -> factengine（旁路）-> fact
 
 Jarvis Bot 的事件连接由 CC Connect 独占；`jarvis-server` 不启动 `lark-cli event consume`。M2 依赖会话发现与增量轮询，按 checkpoint 推进恢复水位；未来若需要实时事件，只能由 CC Connect 通过明确的本机 fan-out 接口转发。
 
-CC Connect 自己接受的交互消息不进入 Todo 流水线。它在原生 Agent 执行前同步调用 `/internal/message-routing/claim`，按飞书 `message_id` 幂等保存当前消息并设置 `extraction_skipped=true`。该机器边界不携带历史、不创建 Task、不唤醒 M3，也不把会话自动改成 `related_group`；消息仍可作为后续普通线索的会话背景。CC 原生 Agent 所需的群聊历史直接从飞书实时读取，不从 Jarvis `message` 表重建：普通群按 chat，话题/回复按 thread，最多取当前消息之前 14 条。当前 `chat_id` 还用于读取群绑定的 Jarvis 世界上下文。
+CC Connect 自己接受的交互消息不进入 Todo 流水线。它在原生 Agent 执行前同步调用 `/internal/message-routing/claim`，按飞书 `message_id` 幂等保存当前消息并设置 `extraction_skipped=true`。该机器边界不携带历史、不创建 Task、不唤醒 M3，也不把会话自动改成 `related_group`；消息仍可作为后续普通线索的会话背景。CC 原生 Agent 所需的有限群聊历史直接从飞书实时读取，不从 Jarvis `message` 表重建：普通群按 chat，话题/回复按 thread。当前 `chat_id` 还用于读取群绑定的 Jarvis 世界上下文。
 
 ## 2. 机械职责
 
-- 全量发现会话；普通群首次从当前时刻建立 checkpoint，新激活的 P2P 只回看 `capture.p2p_activation_window_minutes`（默认 15 分钟），用来捕获让它进入活跃 Top-N 的消息，不做无界历史回灌。
+- 全量发现会话；普通群首次从当前时刻建立 checkpoint，新激活的 P2P 只按 `capture.p2p_activation_window_minutes` 回看有限窗口，用来捕获让它进入活跃 Top-N 的消息，不做无界历史回灌。
 - 扫描 `related_group=1` 会话并在新增消息后唤醒 M3；tier 只用于展示。
-- 每次成功扫描后，连续 5 天没有新消息且未固定的会话退出监听；扫描失败时保留监听状态。
+- 每次成功扫描后，超过配置保留期且未固定的会话退出监听；扫描失败时保留监听状态。
 - 后台手工开启任一会话时同时设为 `pinned`，把 principal 的明确监听选择固定下来；关闭监听时同步取消固定。需要交回自动管理时，可以在保持监听的情况下单独取消固定。
 - 每次完整 discover 后，把未固定的内部真人 P2P 自动监听集合轮换为当前活跃度 Top-N；服务号 P2P 排除，`pinned` 会话作为人工固定项额外保留。
 - 搜索 principal activity，发现本人发言的群聊/话题并维护独立 checkpoint。

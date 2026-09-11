@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: reference; `internal/api/router.go` is source of truth
-> Last verified: 2026-08-02 @ `89fa24b`
+> Last verified: 2026-09-11
 
 本文只按能力分组，不复制 handler 的完整请求/响应结构。新增或删除接口时先改 `internal/api/router.go`，再更新本页。
 
@@ -39,9 +39,10 @@ CLI 与已有 CC Connect 配置，随后请求服务重启；不改变 App ID，
 
 - `GET /healthz`：存活探针，只 ping SQLite。`scripts/rebuild-server.sh` 靠它判断重启成功，所以外部依赖不进它的状态码。
 - `GET /readyz`：依赖全景，逐项报告 SQLite、Qdrant、`lark-cli`、agent CLI。只有 SQLite 不通才返 503；外部依赖不通返 200 且 `status=degraded`，主动关掉的报 `disabled`。
+- 本地材料：`GET /api/messages/:message_id`、`GET /api/todo-events/:event_id`、`GET /api/task-events/:event_id`、`GET /api/captured-resources/:resource_id`
 - Todo：`GET /api/todos`、`GET /api/todos/:todo_id`、`PATCH /api/todos/:todo_id/status`
 - Task：`GET/POST /api/tasks`、`GET /api/tasks/:task_id/runs|events|output`
-- Task 控制：`finish`、`supplement`、`execute`、`interrupt`、`rerun`、`resume`
+- Task 控制：`close`、`finish`、`supplement`、`execute`、`interrupt`、`rerun`、`resume`
 - 外部效果：`POST /api/tasks/:task_id/effects/recall-message`
 
 `GET /api/tasks` 支持开放字符串 `action_type` 和 `exclude_action_type` 过滤。
@@ -52,13 +53,12 @@ CLI 与已有 CC Connect 配置，随后请求服务重启；不改变 App ID，
 - `GET /api/delegations/:todo_id`：原始 source_payload、当前 content、closed_at、version。
 - `PATCH /api/delegations/:todo_id`：expected_version、开放 JSON content、actor、可选 closed；只更新核验结果，不改变 Todo/Task 流转状态，冲突返回 409。
 - `GET /api/delegations/:todo_id/tasks?page=1&page_size=20`：首次检查及通过 delegation_id 关联的后续普通 Task，覆盖所有状态。
-- `GET /api/plugin-installations`：本地插件开关和导航元信息，不探测外部授权。
-
 `output` 和执行控制接口只有在 Executor 注入时注册。
 
 ## 背景与世界状态
 
 - Projects：`GET/POST /api/projects`、`GET/PUT/DELETE /api/projects/:project_id`
+- Key matters：`GET/POST /api/key-matters`、`GET/PUT/DELETE /api/key-matters/:key_matter_id`、`POST .../touch`
 - Persons：`GET/POST /api/persons`、`POST /api/persons/resolve`、`GET/PUT/DELETE /api/persons/:person_id`
 - Groups：`GET /api/groups`、`PUT /api/groups/:group_id`
 - Principal：`GET/PUT /api/profile`
@@ -72,8 +72,11 @@ CLI 与已有 CC Connect 配置，随后请求服务重启；不改变 App ID，
 
 - Shared memory：`GET/PUT /api/shared-memory`、`POST /api/shared-memory/append`；整段内容最多 2000 字
 - Runtime settings：`GET/PUT /api/runtime-settings`
+- Security settings：`GET/PUT /api/security-settings`
+- Security audit：`GET /api/security-audit-events`
 - Work rules：`GET /api/work-rules`、`GET/PUT /api/work-rules/:work_rule_key`
 - Text files：`GET /api/text-files`、`GET/PUT /api/text-files/:text_file_key`
+- Effective preview：`GET /api/agent-config/stages/:agent_stage/preview`
 - Skills：`GET /api/skills`、`POST /api/skills/scan`、`PUT /api/skills/:skill_name`、`GET /api/skills/:skill_name/content`
 
 Runtime settings 写入后需要重启进程生效；prompts/rules/Skills 按各自 reader 的行为读取。
@@ -88,6 +91,8 @@ Runtime settings 写入后需要重启进程生效；prompts/rules/Skills 按各
 - 通用线索：`POST /api/clues`
 - Overview / digests：`GET /api/overview`、`GET /api/digests`、`POST /api/digests/summarize`
 - Daily digests：`GET /api/daily-digests`、`POST /api/daily-digests/generate`
+- Morning briefs：`GET /api/morning-briefs`
+- Meeting review：`GET /api/review/meetings`
 - Worklog：`GET /api/worklog/commits`、`GET /api/worklog/documents`
 
 会议回顾页只投影以 meeting_id 为外部幂等键的原始会议线索，按配置时区归属日期。回顾仍是普通 M5 Task 的 `meeting_summary` 产物；页面同时展示已有 Todo/Task 状态和处理说明，派生行动线索不单独生成会议条目。关闭 Task 会清理其未来恢复调度；已被领取的陈旧触发核验终态后留下未执行记录。
@@ -96,6 +101,7 @@ Runtime settings 写入后需要重启进程生效；prompts/rules/Skills 按各
 
 ## 调试与对话
 
+- Plugins：`GET /api/plugin-installations`、`GET/PATCH /api/plugins/:plugin_id`、`POST .../authorize|authorize/complete|trigger`
 - Debug：`modules`、`agent-processes`、`failures`、`scans`、`watermarks`、`logs`
 - System task runs：`GET /api/system-tasks/runs`
 - 主动巡视运行记录：`GET /api/debug/proactive-runs`、`GET /api/debug/proactive-runs/:run_id`
@@ -106,4 +112,4 @@ Runtime settings 写入后需要重启进程生效；prompts/rules/Skills 按各
 
 ### Principal 通知卡片
 
-`POST /api/notices/principal`：由 Agent 显式调用，给当前 Principal 发 Bot 卡片。请求包含 `content`、`idempotency_key`，可选 `type`（默认 Notice，开放字符串）、`links`、`details`、`extra`、`task_id`。返回消息凭据和 effect，错误响应也保留部分发送凭据；不改变 Task 状态。CLI：`jarvis-tools notice-principal --payload-file FILE`。详见 [通知卡片说明](../summery/notice-principal-proposal.md)。
+`POST /api/notices/principal`：由 Agent 显式调用，给当前 Principal 发 Bot 卡片。请求包含 `content`、`idempotency_key`，可选 `type`（默认 Notice，开放字符串）、`links`、`details`、`extra`、`task_id`。返回消息凭据和 effect，错误响应也保留部分发送凭据；不改变 Task 状态。CLI：`jarvis-tools notice-principal --payload-file FILE`。

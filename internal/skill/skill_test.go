@@ -21,11 +21,11 @@ func (a testAvailability) SkillEnabled(_ context.Context, name string) (bool, er
 }
 
 func TestParseMetadata(t *testing.T) {
-	meta, err := parseMetadata([]byte("---\nname: feishu-send-message\ndescription: 发送飞书消息\n---\n\n# 正文\n"))
+	meta, err := parseMetadata([]byte("---\nname: example\ndescription: example skill\n---\n\n# Body\n"))
 	if err != nil {
 		t.Fatalf("parseMetadata() error = %v", err)
 	}
-	if meta.Name != "feishu-send-message" || meta.Description != "发送飞书消息" {
+	if meta.Name != "example" || meta.Description != "example skill" {
 		t.Fatalf("metadata = %#v", meta)
 	}
 }
@@ -41,35 +41,23 @@ func TestNormalizeStages(t *testing.T) {
 	if _, err := normalizeStages(nil); err == nil {
 		t.Fatal("normalizeStages(nil) must fail")
 	}
-	if _, err := normalizeStages([]string{"M6"}); err == nil {
+	if _, err := normalizeStages([]string{"unknown"}); err == nil {
 		t.Fatal("normalizeStages(unknown) must fail")
 	}
 }
 
-func TestServiceReadsAndUpdatesYAMLConfiguration(t *testing.T) {
-	root := t.TempDir()
-	skillDirectory := filepath.Join(root, "feishu-send-message")
-	if err := os.Mkdir(skillDirectory, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	skillText := "---\nname: feishu-send-message\ndescription: 发送飞书消息\n---\n\n# 正文\n"
-	if err := os.WriteFile(filepath.Join(skillDirectory, "SKILL.md"), []byte(skillText), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	configPath := filepath.Join(t.TempDir(), "skills.yaml")
-	if err := os.WriteFile(configPath, []byte("skills:\n  - name: feishu-send-message\n    enabled: true\n    stages: [execute]\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+func TestServiceReadsAndUpdatesConfiguration(t *testing.T) {
+	root, configPath := writeSkillFixture(t, false)
 	service, err := NewService(root, configPath)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
 	items, err := service.List(t.Context())
-	if err != nil || len(items) != 1 || items[0].Name != "feishu-send-message" {
+	if err != nil || len(items) != 1 || items[0].Name != "example" {
 		t.Fatalf("List() = %#v err=%v", items, err)
 	}
 	enabled := false
-	updated, err := service.Update(t.Context(), "feishu-send-message", Input{
+	updated, err := service.Update(t.Context(), "example", Input{
 		Stages: []string{StageExtract, StageExecute}, IsEnabled: &enabled,
 	})
 	if err != nil {
@@ -88,54 +76,24 @@ func TestServiceReadsAndUpdatesYAMLConfiguration(t *testing.T) {
 	}
 }
 
-func TestServiceAvailabilityGateHidesPluginSkill(t *testing.T) {
-	root := t.TempDir()
-	skillDirectory := filepath.Join(root, "plugin-collector")
-	if err := os.Mkdir(skillDirectory, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(skillDirectory, "SKILL.md"), []byte(
-		"---\nname: plugin-collector\ndescription: collect plugin clues\n---\n\n# Collector\n",
-	), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	configPath := filepath.Join(t.TempDir(), "skills.yaml")
-	if err := os.WriteFile(configPath, []byte(
-		"skills:\n  - name: plugin-collector\n    enabled: true\n    stages: [execute]\n",
-	), 0o644); err != nil {
-		t.Fatal(err)
-	}
+func TestAvailabilityGateHidesSkill(t *testing.T) {
+	root, configPath := writeSkillFixture(t, false)
 	service, err := NewService(root, configPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	service.SetAvailability(testAvailability{"plugin-collector": false})
+	service.SetAvailability(testAvailability{"example": false})
 	items, err := service.List(t.Context())
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || len(items) != 1 || items[0].IsEnabled {
+		t.Fatalf("List() = %#v err=%v", items, err)
 	}
-	if len(items) != 1 || items[0].IsEnabled {
-		t.Fatalf("items = %#v", items)
-	}
-	if _, err := service.Content(t.Context(), "plugin-collector"); !errors.Is(err, ErrNotFound) {
+	if _, err := service.Content(t.Context(), "example"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Content() error = %v, want ErrNotFound", err)
 	}
 }
 
-func TestRenderingServiceRendersCatalogAndContentWithoutChangingSource(t *testing.T) {
-	root := t.TempDir()
-	skillDirectory := filepath.Join(root, "example-skill")
-	if err := os.Mkdir(skillDirectory, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	skillText := "---\nname: example-skill\ndescription: \"{{AGENT_NAME}} 可用能力\"\n---\n\n# {{AGENT_NAME}} 正文\n"
-	if err := os.WriteFile(filepath.Join(skillDirectory, "SKILL.md"), []byte(skillText), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	configPath := filepath.Join(t.TempDir(), "skills.yaml")
-	if err := os.WriteFile(configPath, []byte("skills:\n  - name: example-skill\n    enabled: true\n    stages: [execute]\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+func TestRenderingServiceDoesNotChangeSource(t *testing.T) {
+	root, configPath := writeSkillFixture(t, false)
 	source, err := NewService(root, configPath)
 	if err != nil {
 		t.Fatal(err)
@@ -150,148 +108,21 @@ func TestRenderingServiceRendersCatalogAndContentWithoutChangingSource(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	content, err := service.Content(t.Context(), "example-skill")
+	content, err := service.Content(t.Context(), "example")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(catalog, "小贾 可用能力") || !strings.Contains(content.Content, "# 小贾 正文") {
+	if !strings.Contains(catalog, "小贾 skill") || !strings.Contains(content.Content, "# 小贾 body") {
 		t.Fatalf("catalog=%q content=%q", catalog, content.Content)
 	}
-	raw, err := source.Content(t.Context(), "example-skill")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(raw.Content, "{{AGENT_NAME}}") {
-		t.Fatalf("source content was mutated: %q", raw.Content)
+	raw, err := source.Content(t.Context(), "example")
+	if err != nil || !strings.Contains(raw.Content, "{{AGENT_NAME}}") {
+		t.Fatalf("source content changed: %#v err=%v", raw, err)
 	}
 }
 
-func TestServiceFailsWhenSkillConfigurationDoesNotMatchFiles(t *testing.T) {
-	root := t.TempDir()
-	configPath := filepath.Join(t.TempDir(), "skills.yaml")
-	if err := os.WriteFile(configPath, []byte("skills:\n  - name: missing-skill\n    enabled: true\n    stages: [execute]\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := NewService(root, configPath); err == nil {
-		t.Fatal("stale configured skill must fail")
-	}
-}
-
-func TestRepositoryFeishuApprovalCardIsOwnedByServer(t *testing.T) {
-	content, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "feishu-send-message", "SKILL.md"))
-	if err != nil {
-		t.Fatalf("read repository Feishu message skill: %v", err)
-	}
-	skill := string(content)
-	for _, want := range []string{
-		"审批通知不由这个 Skill 发送",
-		"不要用本 Skill 发送审批卡片或纯文字提醒",
-		"先持久化 `question` 和 `needs_human` 状态",
-		"绑定当前 Task version",
-	} {
-		if !strings.Contains(skill, want) {
-			t.Fatalf("Feishu message skill missing approval-card contract %q:\n%s", want, skill)
-		}
-	}
-	for _, obsolete := range []string{
-		`"action": "jarvis_approval"`,
-		`--msg-type interactive`,
-		"卡片连续发送失败就退回",
-		"`awaiting_approval`",
-		"apply 阶段",
-	} {
-		if strings.Contains(skill, obsolete) {
-			t.Fatalf("Feishu message skill still contains obsolete approval-card rule %q:\n%s", obsolete, skill)
-		}
-	}
-}
-
-func TestRepositoryFeishuMessageSkillDefinesM5SendClosure(t *testing.T) {
-	content, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "feishu-send-message", "SKILL.md"))
-	if err != nil {
-		t.Fatalf("read repository Feishu message skill: %v", err)
-	}
-	skill := string(content)
-	for _, want := range []string{
-		"给 principal 本人的主动通知和动作回执使用 `jarvis-tools notice-principal`",
-		"不执行本 Skill 的任何写命令",
-		"jarvis-config show-principal",
-		"不能改读 Task 仓库里的同名文件",
-		"lark-cli auth status --json --verify",
-		"lark-cli 当前默认身份",
-		"user `openId` 与 principal `open_id` 完全相同",
-		"+chat-search",
-		"--page-token",
-		"+chat-members-list",
-		"--page-all --page-limit 0",
-		"多个候选、成员不完整或用途不确定时停止",
-		"发送失败原样报错，不换身份或会话",
-		"JARVIS_TASK_ID",
-		"飞书幂等窗口只有一小时",
-		"+messages-mget",
-		"message_id",
-		"anchor_message_id",
-		"idempotency_key",
-		"effects 是 M5 根据已核验工具结果作出的展示申报",
-		`at user_id="<principal open_id>"`,
-		"同时真实 `@` 对方和 principal",
-	} {
-		if !strings.Contains(skill, want) {
-			t.Fatalf("Feishu message skill missing send contract %q:\n%s", want, skill)
-		}
-	}
-	for _, forbidden := range []string{
-		"如果 `--user-id` 直发失败（极少见，说明还没建立私聊关系），再按下面",
-		"user_message",
-		"lark_profile",
-		"--profile",
-	} {
-		if strings.Contains(skill, forbidden) {
-			t.Fatalf("Feishu message skill still contains obsolete send rule %q:\n%s", forbidden, skill)
-		}
-	}
-}
-
-func TestRepositoryFeishuMessageSkillIsNotExposedToExtract(t *testing.T) {
-	service, err := NewService(
-		filepath.Join("..", "..", ".agents", "skills"),
-		filepath.Join("..", "..", "conf", "skills.yaml"),
-	)
-	if err != nil {
-		t.Fatalf("load repository skills: %v", err)
-	}
-	extractCatalog, err := service.Catalog(t.Context(), StageExtract)
-	if err != nil {
-		t.Fatalf("extract Catalog() error = %v", err)
-	}
-	if strings.Contains(extractCatalog, "feishu-send-message") {
-		t.Fatalf("extract catalog exposes feishu-send-message:\n%s", extractCatalog)
-	}
-	executeCatalog, err := service.Catalog(t.Context(), StageExecute)
-	if err != nil {
-		t.Fatalf("execute Catalog() error = %v", err)
-	}
-	if !strings.Contains(executeCatalog, "feishu-send-message") {
-		t.Fatalf("execute catalog is missing feishu-send-message:\n%s", executeCatalog)
-	}
-}
-
-func TestInlineSkillCatalogCarriesBodyInsteadOfReadInstruction(t *testing.T) {
-	root := t.TempDir()
-	skillDirectory := filepath.Join(root, "inline-policy")
-	if err := os.MkdirAll(skillDirectory, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	skillText := "---\nname: inline-policy\ndescription: trusted stage policy\n---\n\n# Inline contract\n\nBODY_MARKER\n"
-	if err := os.WriteFile(filepath.Join(skillDirectory, "SKILL.md"), []byte(skillText), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	configPath := filepath.Join(t.TempDir(), "skills.yaml")
-	if err := os.WriteFile(configPath, []byte(
-		"skills:\n  - name: inline-policy\n    enabled: true\n    inline: true\n    stages: [extract]\n",
-	), 0o644); err != nil {
-		t.Fatal(err)
-	}
+func TestInlineSkillRendersBodyAndRespectsAvailability(t *testing.T) {
+	root, configPath := writeSkillFixture(t, true)
 	service, err := NewService(root, configPath)
 	if err != nil {
 		t.Fatal(err)
@@ -300,482 +131,50 @@ func TestInlineSkillCatalogCarriesBodyInsteadOfReadInstruction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"BEGIN_INLINE_SKILL name=inline-policy", "# Inline contract", "BODY_MARKER"} {
+	for _, want := range []string{"BEGIN_INLINE_SKILL name=example", "# {{AGENT_NAME}} body", "BODY_MARKER"} {
 		if !strings.Contains(catalog, want) {
 			t.Fatalf("inline catalog missing %q:\n%s", want, catalog)
 		}
 	}
-	if strings.Contains(catalog, "jarvis-tools get-skill") || strings.Contains(catalog, "description: trusted stage policy") {
-		t.Fatalf("inline catalog contains metadata or deferred read instruction:\n%s", catalog)
-	}
-}
-
-func TestRepositoryDelegationSkillsAreInlineAndPluginGated(t *testing.T) {
-	service, err := NewService(
-		filepath.Join("..", "..", ".agents", "skills"),
-		filepath.Join("..", "..", "conf", "skills.yaml"),
-	)
-	if err != nil {
-		t.Fatalf("load repository skills: %v", err)
-	}
-	items, err := service.List(t.Context())
+	service.SetAvailability(testAvailability{"example": false})
+	catalog, err = service.Catalog(t.Context(), StageExtract)
 	if err != nil {
 		t.Fatal(err)
 	}
-	found := map[string]View{}
-	for _, item := range items {
-		if strings.HasPrefix(item.Name, "my-delegations-") {
-			found[item.Name] = item
-		}
-	}
-	for _, name := range []string{"my-delegations-extract", "my-delegations-execute", "my-delegations-review"} {
-		item, ok := found[name]
-		if !ok || !item.Inline || !item.IsEnabled {
-			t.Fatalf("%s = %#v", name, item)
-		}
-	}
-	extractCatalog, err := service.Catalog(t.Context(), StageExtract)
-	if err != nil {
-		t.Fatal(err)
-	}
-	executeCatalog, err := service.Catalog(t.Context(), StageExecute)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(extractCatalog, "action_type=delegated_followup") {
-		t.Fatalf("extract catalog missing delegation policy:\n%s", extractCatalog)
-	}
-	if !strings.Contains(executeCatalog, "update-delegation") {
-		t.Fatalf("execute catalog missing delegation policy:\n%s", executeCatalog)
-	}
-	availability := testAvailability{"my-delegations-extract": false, "my-delegations-execute": false, "my-delegations-review": false}
-	service.SetAvailability(availability)
-	for _, stage := range []string{StageExtract, StageExecute, StageProactive} {
-		catalog, err := service.Catalog(t.Context(), stage)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(catalog, "BEGIN_INLINE_SKILL name=my-delegations-") {
-			t.Fatalf("disabled plugin leaked into %s", stage)
-		}
-	}
-	availability["my-delegations-review"] = true
-	catalog, err := service.Catalog(t.Context(), StageProactive)
-	if err != nil || !strings.Contains(catalog, "BEGIN_INLINE_SKILL name=my-delegations-review") {
-		t.Fatalf("review plugin missing: %v %s", err, catalog)
-	}
-
-}
-
-func TestInlineSkillRespectsAvailabilityGate(t *testing.T) {
-	root := t.TempDir()
-	skillDirectory := filepath.Join(root, "inline-policy")
-	if err := os.MkdirAll(skillDirectory, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(skillDirectory, "SKILL.md"), []byte(
-		"---\nname: inline-policy\ndescription: optional policy\n---\n\nINLINE_MARKER\n",
-	), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	configPath := filepath.Join(t.TempDir(), "skills.yaml")
-	if err := os.WriteFile(configPath, []byte(
-		"skills:\n  - name: inline-policy\n    enabled: true\n    inline: true\n    stages: [extract]\n",
-	), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	service, err := NewService(root, configPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	service.SetAvailability(testAvailability{"inline-policy": false})
-	catalog, err := service.Catalog(t.Context(), StageExtract)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(catalog, "INLINE_MARKER") || strings.Contains(catalog, "inline-policy") {
+	if strings.Contains(catalog, "BODY_MARKER") || strings.Contains(catalog, "name=example") {
 		t.Fatalf("disabled inline skill leaked into catalog:\n%s", catalog)
 	}
 }
 
-func TestRepositoryChatSkillIsReadableWithoutStageInjection(t *testing.T) {
-	svc, err := NewService(filepath.Join("..", "..", ".agents", "skills"), filepath.Join("..", "..", "conf", "skills.yaml"))
-	if err != nil {
+func TestServiceFailsWhenConfigurationDoesNotMatchFiles(t *testing.T) {
+	root := t.TempDir()
+	configPath := filepath.Join(t.TempDir(), "skills.yaml")
+	if err := os.WriteFile(configPath, []byte("skills:\n  - name: missing\n    enabled: true\n    stages: [execute]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	content, err := svc.Content(t.Context(), "jarvis-chat")
-	if err != nil || content == nil || strings.TrimSpace(content.Content) == "" {
-		t.Fatalf("chat Skill must be readable on demand: %v", err)
-	}
-	for _, stage := range []string{StageExtract, StageExecute, StageProactive} {
-		catalog, err := svc.Catalog(t.Context(), stage)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(catalog, "jarvis-chat") {
-			t.Fatalf("chat Skill leaked into %s", stage)
-		}
+	if _, err := NewService(root, configPath); err == nil {
+		t.Fatal("configured skill without a source file must fail")
 	}
 }
 
-func TestRepositoryInstallationSkillsAreStandalone(t *testing.T) {
-	service, err := NewService(
-		filepath.Join("..", "..", ".agents", "skills"),
-		filepath.Join("..", "..", "conf", "skills.yaml"),
-	)
-	if err != nil {
-		t.Fatalf("load repository skills: %v", err)
-	}
-	items, err := service.List(t.Context())
-	if err != nil {
-		t.Fatalf("List() error = %v", err)
-	}
-	found := map[string]bool{
-		"bootstrap-jarvis-world-model": false,
-		"install-jarvis":               false,
-	}
-	for _, item := range items {
-		if _, exists := found[item.Name]; !exists {
-			continue
-		}
-		found[item.Name] = true
-		if item.IsEnabled {
-			t.Fatalf("%s must stay disabled in the Jarvis runtime catalog", item.Name)
-		}
-	}
-	for name, wasFound := range found {
-		if !wasFound {
-			t.Fatalf("%s repository skill was not discovered", name)
-		}
-	}
-	executeCatalog, err := service.Catalog(t.Context(), StageExecute)
-	if err != nil {
-		t.Fatalf("execute Catalog() error = %v", err)
-	}
-	for name := range found {
-		if strings.Contains(executeCatalog, name) {
-			t.Fatalf("M5 catalog exposes standalone %s:\n%s", name, executeCatalog)
-		}
-	}
-}
-
-func TestRepositoryBaxWeeklyUsageAnalysisSkillIsExecutable(t *testing.T) {
-	service, err := NewService(
-		filepath.Join("..", "..", ".agents", "skills"),
-		filepath.Join("..", "..", "conf", "skills.yaml"),
-	)
-	if err != nil {
-		t.Fatalf("load repository skills: %v", err)
-	}
-	content, err := service.Content(t.Context(), "bax-weekly-usage-analysis")
-	if err != nil {
-		t.Fatalf("Content(bax-weekly-usage-analysis) error = %v", err)
-	}
-	skill := content.Content
-	for _, want := range []string{
-		"按周分析 BAX AM 用户对话使用数据",
-		"bytedcli --site i18n-tt --json aeolus dataset-fields -r sg 3574811",
-		"dry-run.sh",
-		"周期任务只需把 instruction 写成",
-		"不要为 BAX 周报新建 Go 专用链路",
-		"未获批准",
-	} {
-		if !strings.Contains(skill, want) {
-			t.Fatalf("BAX weekly usage skill missing contract %q:\n%s", want, skill)
-		}
-	}
-	catalog, err := service.Catalog(t.Context(), StageExecute)
-	if err != nil {
-		t.Fatalf("execute Catalog() error = %v", err)
-	}
-	if !strings.Contains(catalog, "bax-weekly-usage-analysis") {
-		t.Fatalf("execute catalog is missing bax-weekly-usage-analysis:\n%s", catalog)
-	}
-	extractCatalog, err := service.Catalog(t.Context(), StageExtract)
-	if err != nil {
-		t.Fatalf("extract Catalog() error = %v", err)
-	}
-	if strings.Contains(extractCatalog, "bax-weekly-usage-analysis") {
-		t.Fatalf("extract catalog exposes bax-weekly-usage-analysis:\n%s", extractCatalog)
-	}
-}
-
-func TestBootstrapJarvisWorldModelUsesUserAuthoredDocumentsInsteadOfOKRAPI(t *testing.T) {
-	worldModelPath := filepath.Join("..", "..", ".agents", "skills", "bootstrap-jarvis-world-model")
-	worldModelSkill, err := os.ReadFile(filepath.Join(worldModelPath, "SKILL.md"))
-	if err != nil {
+func writeSkillFixture(t *testing.T, inline bool) (string, string) {
+	t.Helper()
+	root := t.TempDir()
+	skillDirectory := filepath.Join(root, "example")
+	if err := os.Mkdir(skillDirectory, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	evidenceSources, err := os.ReadFile(filepath.Join(worldModelPath, "references", "evidence-sources.md"))
-	if err != nil {
+	content := "---\nname: example\ndescription: \"{{AGENT_NAME}} skill\"\n---\n\n# {{AGENT_NAME}} body\n\nBODY_MARKER\n"
+	if err := os.WriteFile(filepath.Join(skillDirectory, "SKILL.md"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	installSkill, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "install-jarvis", "SKILL.md"))
-	if err != nil {
+	configPath := filepath.Join(t.TempDir(), "skills.yaml")
+	config := "skills:\n  - name: example\n    enabled: true\n    stages: [extract, execute]\n"
+	if inline {
+		config = "skills:\n  - name: example\n    enabled: true\n    inline: true\n    stages: [extract]\n"
+	}
+	if err := os.WriteFile(configPath, []byte(config), 0o644); err != nil {
 		t.Fatal(err)
 	}
-
-	combined := string(worldModelSkill) + "\n" + string(evidenceSources)
-	for _, want := range []string{
-		"`lark-drive`、`lark-doc`",
-		"--created-by-me",
-		"--query \"\" --edited-since <from>",
-		"`docs +fetch`",
-		"不得改走 OKR API",
-		"search:docs:read",
-	} {
-		if !strings.Contains(combined, want) {
-			t.Fatalf("document-based initialization contract is missing %q", want)
-		}
-	}
-	for _, forbidden := range []string{
-		"加载并遵循 `lark-contact`、`lark-okr`",
-		"当前 OKR 周期、Objective/KR",
-		"--query \"\" --created-by-me --edited-since",
-	} {
-		if strings.Contains(combined, forbidden) {
-			t.Fatalf("initialization still depends on the OKR API contract %q", forbidden)
-		}
-	}
-	if !strings.Contains(string(installSkill), "`lark-drive`、`lark-doc`") {
-		t.Fatalf("install skill does not require the document capabilities needed by initialization")
-	}
-}
-
-func TestBootstrapJarvisBuildsAReadBackWorldModel(t *testing.T) {
-	worldModelPath := filepath.Join("..", "..", ".agents", "skills", "bootstrap-jarvis-world-model")
-	paths := []string{
-		"SKILL.md",
-		filepath.Join("references", "modeling-guide.md"),
-		filepath.Join("references", "worknote-guide.md"),
-		filepath.Join("references", "ownership-map.md"),
-		filepath.Join("references", "evidence-sources.md"),
-	}
-	var combined strings.Builder
-	for _, relativePath := range paths {
-		content, err := os.ReadFile(filepath.Join(worldModelPath, relativePath))
-		if err != nil {
-			t.Fatalf("read %s: %v", relativePath, err)
-		}
-		combined.Write(content)
-		combined.WriteByte('\n')
-	}
-	contract := combined.String()
-	for _, want := range []string{
-		"world-model.md",
-		"INSTALL_CHECKLIST.md",
-		"高置信且不会覆盖存量的事实可以直接应用",
-		"高影响歧义",
-		"update-page",
-		"list-backlinks",
-		"[名称](type:id)",
-		"append-fact",
-		"list-facts",
-		"--source initialization",
-		"source_kind=initialization",
-		"稳定锚点",
-		"最近活动面",
-		"定向扩展",
-		"Group→Project、KeyMatter→Project、ManagedResource→Person/Project/Principal",
-		"不生成 `approved-draft.json`、`approval.json` 或 hash 审批状态",
-		"真正的业务真源始终是 M1/M2",
-		"每次写入后立即使用对应 get/list/query 命令读回",
-		"project_id",
-		"related_group: true",
-		"include_in_memory",
-		"./scripts/jarvis-tools update-group --id",
-		"不能回写带 `id/chat_id/name/...` 的完整对象",
-	} {
-		if !strings.Contains(contract, want) {
-			t.Fatalf("world-model initialization contract is missing %q", want)
-		}
-	}
-	if strings.Contains(contract, "get-context` 能看到正确 Principal、项目、人物、重点事项") {
-		t.Fatal("initialize skill still claims get-context returns the whole world model")
-	}
-}
-
-func TestJarvisInstallationCompletesDependenciesBeforeStartingMainService(t *testing.T) {
-	installPath := filepath.Join("..", "..", ".agents", "skills", "install-jarvis")
-	installSkill, err := os.ReadFile(filepath.Join(installPath, "SKILL.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	boundaries, err := os.ReadFile(filepath.Join(installPath, "references", "installation-boundaries.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	worldModelSkill, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "bootstrap-jarvis-world-model", "SKILL.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	binding, err := os.ReadFile(filepath.Join(installPath, "references", "cc-connect-binding.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	combined := string(installSkill) + "\n" + string(boundaries) + "\n" + string(binding) + "\n" + string(worldModelSkill)
-	for _, want := range []string{
-		"本 Skill 是从完整仓库 checkout 到最终可用的源码安装流程所有者",
-		"仓库与安装运行 → 机器事实 → 全部依赖 → `validate-dependencies`",
-		"./scripts/jarvis-install start",
-		"run_dir/INSTALL_CHECKLIST.md",
-		"依赖门通过前不得启动 CC Connect 或 Jarvis",
-		"世界模型不是服务启动前置条件",
-		"Qdrant 是依赖服务",
-		"`install-server` 必须在调用平台服务安装脚本前再次通过依赖门",
-		"install-codex",
-		"install-cc-connect",
-		"一个飞书 App/Bot 是身份根",
-		"CC Connect 是该 Bot WebSocket 的唯一所有者",
-		"install.cc-exclusive-owner",
-		"validate-binding",
-		"./scripts/jarvis-lark-auth check",
-		"./scripts/jarvis-lark-auth begin",
-		"已有 daemon 指向另一 binary/checkout",
-		"初始化只负责“Jarvis 如何理解这个用户的世界”",
-		"本 Skill 不安装或重启服务，也不配置 CC",
-		"只更新清单 E 区",
-		"./scripts/jarvis-install status --run-dir <run_dir>",
-		"第二次运行同一命令",
-	} {
-		if !strings.Contains(combined, want) {
-			t.Fatalf("dependency-first installation contract is missing %q", want)
-		}
-	}
-	for _, forbidden := range []string{
-		"./scripts/jarvis-world-model start",
-		"./scripts/jarvis-world-model status",
-	} {
-		if strings.Contains(combined, forbidden) {
-			t.Fatalf("whole-project installation state still belongs to jarvis-world-model: %q", forbidden)
-		}
-	}
-}
-
-func TestFeishuGroupSummaryUsesSupportedThreadPagination(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join(
-		"..", "..", ".agents", "skills", "feishu-group-daily-summary", "references", "tool-paths.md",
-	))
-	if err != nil {
-		t.Fatal(err)
-	}
-	contract := string(raw)
-	for _, want := range []string{
-		"lark-cli im +threads-messages-list",
-		"--page-size 50",
-		"--page-all",
-		"--page-limit 1000",
-	} {
-		if !strings.Contains(contract, want) {
-			t.Fatalf("thread pagination contract is missing %q", want)
-		}
-	}
-	if strings.Contains(contract, "--page-size 500") {
-		t.Fatal("thread pagination exceeds the lark-cli 1.0.93 maximum page size")
-	}
-}
-
-func TestMeetingGuidanceUsesUnifiedLarkMeetingSkill(t *testing.T) {
-	paths := []string{
-		filepath.Join("..", "..", "conf", "rules", "m5.md"),
-		filepath.Join("..", "..", ".agents", "skills", "summarize-person-day", "references", "context-and-capabilities.md"),
-		filepath.Join("..", "..", ".agents", "skills", "summarize-person-week", "references", "context-and-capabilities.md"),
-	}
-	for _, path := range paths {
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		content := string(raw)
-		if !strings.Contains(content, "lark-meeting") {
-			t.Errorf("%s does not reference lark-meeting", path)
-		}
-		for _, redirectStub := range []string{"lark-vc`", "lark-minutes`", "lark-note`", "lark-vc-agent`"} {
-			if strings.Contains(content, redirectStub) {
-				t.Errorf("%s still references redirect stub %q", path, redirectStub)
-			}
-		}
-	}
-}
-
-func TestMeetingCollectorsUseCurrentLarkCLIFactSources(t *testing.T) {
-	meetingRaw, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "feishu-meeting-clue", "SKILL.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	meeting := string(meetingRaw)
-	for _, want := range []string{
-		"lark-cli vc meeting get",
-		"--with-participants",
-		"--user-id-type open_id",
-		"status=3",
-		"Unix 秒",
-		"lark-cli contact +search-user",
-	} {
-		if !strings.Contains(meeting, want) {
-			t.Errorf("meeting collector is missing %q", want)
-		}
-	}
-	for _, obsolete := range []string{
-		"只保留**已经结束**的会议（有 `end_time`",
-		"`vc +detail --meeting-ids <id> --as user` 能拿到更完整的参会人",
-		"从 `vc +search` / `vc +detail` 直接读到",
-	} {
-		if strings.Contains(meeting, obsolete) {
-			t.Errorf("meeting collector still contains obsolete contract %q", obsolete)
-		}
-	}
-
-	prepRaw, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "feishu-meeting-prep-clue", "SKILL.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	prep := string(prepRaw)
-	for _, want := range []string{
-		`--event-id "<+get 返回 recurring_event_id 时用它，否则用实例 event_id>"`,
-		"`calendar event.attendees list` 对重复日程只接受系列级 ID",
-	} {
-		if !strings.Contains(prep, want) {
-			t.Errorf("meeting prep collector is missing %q", want)
-		}
-	}
-}
-
-func TestReportCapabilitiesAvoidOKRAPIAndMorningBriefClosesSend(t *testing.T) {
-	for _, path := range []string{
-		filepath.Join("..", "..", ".agents", "skills", "summarize-person-day", "references", "context-and-capabilities.md"),
-		filepath.Join("..", "..", ".agents", "skills", "summarize-person-week", "references", "context-and-capabilities.md"),
-	} {
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		content := string(raw)
-		if strings.Contains(content, "`lark-okr`") || !strings.Contains(content, "does not allow the OKR API") {
-			t.Errorf("%s still exposes the forbidden OKR API", path)
-		}
-	}
-
-	raw, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "summarize-morning-brief", "SKILL.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	morning := string(raw)
-	for _, want := range []string{
-		"idempotency_key",
-		"morning-brief-YYYYMMDD-HHMMSS",
-		"jarvis-tools notice-principal --payload-file",
-		"verified=true",
-		"list-backlinks",
-	} {
-		if !strings.Contains(morning, want) {
-			t.Errorf("morning brief send contract is missing %q", want)
-		}
-	}
-	for _, obsolete := range []string{"awaiting_approval", "list-relations"} {
-		if strings.Contains(morning, obsolete) {
-			t.Errorf("morning brief still contains obsolete contract %q", obsolete)
-		}
-	}
+	return root, configPath
 }

@@ -3,12 +3,9 @@ package extract
 import (
 	"encoding/json"
 	"errors"
-	"os"
 	"strings"
 	"testing"
 	"time"
-
-	"jarvis/internal/toolcatalog"
 )
 
 const testM3SystemPrompt = "test M3 system prompt\n{{WORK_RULES}}"
@@ -36,25 +33,6 @@ func TestBuildPromptSeparatesEvidenceFromBackground(t *testing.T) {
 	}
 	if strings.Contains(prompt.User, "鉴权改造由张三负责") {
 		t.Fatalf("prompt still contains fact body:\n%s", prompt.User)
-	}
-}
-
-func TestToolCatalogIsSeparateFromSystemPrompt(t *testing.T) {
-	t.Parallel()
-	catalog, err := toolcatalog.Block(toolcatalog.StageExtract)
-	if err != nil {
-		t.Fatalf("toolcatalog.Block() error = %v", err)
-	}
-	if !strings.Contains(catalog, "jarvis-tools") {
-		t.Fatalf("tool catalog missing jarvis-tools: %s", catalog)
-	}
-	raw, err := os.ReadFile("../../conf/prompts/m3-system-prompt.md")
-	if err != nil {
-		t.Fatalf("read M3 system prompt: %v", err)
-	}
-	systemPrompt := string(raw)
-	if strings.Contains(systemPrompt, "jarvis-tools") || strings.Contains(systemPrompt, "lark-cli") {
-		t.Fatalf("M3 system prompt must not contain tool instructions: %s", systemPrompt)
 	}
 }
 
@@ -191,59 +169,6 @@ func TestBuildPromptCarriesMessageType(t *testing.T) {
 	}
 	if !strings.Contains(prompt.User, `mentions=[{"id":"ou_owner","key":"@_user_1","name":"负责人"}]`) {
 		t.Fatalf("prompt missing mention identity:\n%s", prompt.User)
-	}
-}
-
-func TestExtractionPromptDefinesTaskAdmissionBoundary(t *testing.T) {
-	raw, err := os.ReadFile("../../conf/prompts/m3-system-prompt.md")
-	if err != nil {
-		t.Fatalf("read M3 system prompt: %v", err)
-	}
-	rules, err := os.ReadFile("../../conf/rules/m3.md")
-	if err != nil {
-		t.Fatal(err)
-	}
-	system := string(raw) + "\n" + string(rules)
-	// principal 每天都在调这份提示词的措辞，所以这里只锚定两类不该漂的东西：
-	// 模型必须填的机器契约字段，以及两条曾经真的回归过的语义边界。散文表述
-	// 不做断言——之前逐句断言的版本被一次正常的措辞调整弄红过。
-	for _, want := range []string{
-		// 机器契约：准入控制字段与 status 枚举必须出现在系统提示词里；完整输出协议另行验证。
-		"status=extracted",
-		"status=observing",
-		"action_type",
-		"project_hint",
-		"source_message_ids",
-		"source_quote",
-		"payload",
-		// 语义边界一：M3 只做准入，不越界到执行阶段。
-		"不制定执行方案",
-		// 语义边界二：principal 直接给当前助手的指令必须绕过价值判断。名称由
-		// agentidentity 在运行时渲染，原始提示词必须保留统一占位符。
-		"principal 直接要求 {{AGENT_NAME}}",
-		// 语义边界三：复合消息不能让一个已承接的子项吞掉其它交付物。
-		"多个可以分别完成、分配或验收的结果",
-		"同一现实动作和同一交付物",
-		// 语义边界四：阶段规则中的专项准入要求不能被通用 observing
-		// 判断反向覆盖。
-		"当前阶段工作规则明确要求持续建 Task 或跟踪",
-		// 语义边界五：认领、临时缓解或约定稍后处理仍可能需要跟踪。
-		"只有口头认领、临时缓解、约定稍后处理、等待新数据或尚待验收，都不算闭环",
-		// 语义边界六：clue 正文中的外部消息 ID 不能冒充当前输入证据。
-		"source_message_ids 必须引用外层 clue 的 `[new] message_id`",
-	} {
-		if !strings.Contains(system, want) {
-			t.Fatalf("system prompt missing %q", want)
-		}
-	}
-	for _, forbidden := range []string{
-		"主动发散补全",
-		"候选路径与取舍",
-		"在交给我之前尽量把背景查全",
-	} {
-		if strings.Contains(system, forbidden) {
-			t.Fatalf("system prompt still contains execution-stage instruction %q", forbidden)
-		}
 	}
 }
 

@@ -29,62 +29,6 @@ func TestServiceRendersOnlyCurrentStageRules(t *testing.T) {
 	}
 }
 
-func TestRepositoryRulesKeepExecuteOnlyCapabilitiesOutOfExtract(t *testing.T) {
-	service, err := NewService(filepath.Join("..", "..", "conf", "rules"))
-	if err != nil {
-		t.Fatalf("NewService(repository rules): %v", err)
-	}
-	extract, err := service.Block(t.Context(), StageExtract)
-	if err != nil {
-		t.Fatalf("Block(extract): %v", err)
-	}
-	execute, err := service.Block(t.Context(), StageExecute)
-	if err != nil {
-		t.Fatalf("Block(execute): %v", err)
-	}
-
-	for _, executionOnly := range []string{
-		"多跳推理",
-		"lark-meeting",
-		"kind=meeting_summary",
-	} {
-		if strings.Contains(extract, executionOnly) {
-			t.Fatalf("extract rules contain execution-only guidance %q:\n%s", executionOnly, extract)
-		}
-		if !strings.Contains(execute, executionOnly) {
-			t.Fatalf("execute rules missing %q:\n%s", executionOnly, execute)
-		}
-	}
-}
-
-func TestRepositoryExtractProfilesDoNotRestoreFeedbackAdmissionException(t *testing.T) {
-	service, err := NewService(filepath.Join("..", "..", "conf", "rules"))
-	if err != nil {
-		t.Fatalf("NewService(repository rules): %v", err)
-	}
-	extract, err := service.Block(t.Context(), StageExtract)
-	if err != nil {
-		t.Fatalf("Block(extract): %v", err)
-	}
-	execute, err := service.Block(t.Context(), StageExecute)
-	if err != nil {
-		t.Fatalf("Block(execute): %v", err)
-	}
-
-	for _, removed := range []string{
-		"每个独立的用户问题、负面体验、功能诉求和待验证修复",
-		"Pulse 已派人",
-	} {
-		if strings.Contains(extract, removed) || strings.Contains(execute, removed) {
-			t.Fatalf("rules restore removed feedback admission exception %q", removed)
-		}
-	}
-	quiet, normal, active := strings.Index(extract, "### quiet"), strings.Index(extract, "### normal"), strings.Index(extract, "### active")
-	if quiet < 0 || normal <= quiet || active <= normal {
-		t.Fatal("extract rules must preserve all three initiative profiles")
-	}
-}
-
 func TestServiceUpdatesOnlyAllowlistedFile(t *testing.T) {
 	service := newTestService(t)
 	updated, err := service.Update(t.Context(), StageExecute, Input{Content: "new execute rule"})

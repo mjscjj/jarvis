@@ -1,205 +1,127 @@
 # 运行与部署
 
 > Status: current
-> Authority: reference; scripts and plist files are source of truth
-> Last verified: 2026-09-01
+> Authority: operational reference; scripts and service templates are source of truth
+> Last verified: 2026-09-11
 
-## 服务
+## 1. 两种运行形态
 
-| Label | 端口 | 安装方式 | 日志 |
-|---|---:|---|---|
-| `com.bytedance.jarvis.server` | 18800 | `jarvis-install install-server` | launchd 文件或 `journalctl --user` |
-| `com.bytedance.jarvis.web` | 18801 | 手工 link + `launchctl bootstrap` | `var/log/vite.log`, `var/log/vite.error.log` |
-| `com.bytedance.jarvis.qdrant` | 6333/6334 | `./scripts/install-qdrant.sh` | launchd 文件或 `journalctl --user` |
-| `com.cc-connect.service`（macOS）/ `com.bytedance.jarvis.cc-connect`（Linux） | 9810/9820 | CC daemon / `install-cc-systemd.sh` | CC 日志或 `journalctl --user` |
+### 源码安装
 
-18800 同时托管生产 `web/dist`；18801 只用于 Vite 开发热更。
+源码安装使用 launchd（macOS）或 user systemd（Linux）管理 Jarvis Server、Qdrant 和 CC Connect。完整 checkout 的唯一安装入口是 `$install-jarvis`：
 
-服务定义由 `deploy/*.plist.template` 或 `deploy/*.service.template` 渲染，`conf/qdrant.yaml` 用相对 `WorkingDirectory` 的路径。移动仓库或换用户后重新安装服务即可，不必改仓库文件。
-
-macOS `.app` 不注册上述 launchd 服务。Tauri 启动
-`jarvis-app-service`，由它在应用生命周期内管理 Qdrant 和 Go Server；运行协议、
-Application Support 目录和打包入口见
-[`design-macos-app-runtime.md`](../design-macos-app-runtime.md)。
-
-`conf/config.yaml` 与 `conf/config.runtime.yaml` 都存明文密钥，权限保持 `600`。`config.yaml` 由 git 跟踪，而 git 只记录可执行位，重新 clone 后要再 `chmod 600`。
-
-## 首次安装
-
-推荐在完整仓库根目录让用户的 Agent 执行 `$install-jarvis`。这是用户唯一需要触发的安装 Skill；它内部调用可独立复用的 `$bootstrap-jarvis-world-model`。它拥有从 checkout 到最终可用的整体安装状态，先恢复或创建统一清单，再用 doctor 暴露事实，由 Agent 决定依赖安装方式和旧实例处置。所有依赖必须先安装并通过独立验收门，然后把 lark-cli 当前默认 App 绑定到 CC Connect、启动 CC Connect/Jarvis、完成世界模型和真实端到端验收。
-
-```bash
-./scripts/jarvis-install start --resume-latest
-./scripts/jarvis-install doctor
-./scripts/jarvis-install install-lark-cli
-./scripts/jarvis-install install-bytedcli
-./scripts/jarvis-install install-codex
-./scripts/jarvis-install install-traex
-./scripts/jarvis-install install-cc-connect
-./scripts/jarvis-install install-qdrant
-./scripts/jarvis-install validate-dependencies
-
-# 依赖门返回 ok=true 后，登录 lark-cli 当前默认身份，写 identity 并绑定 CC：
-./scripts/jarvis-install configure-identity --agent-name <name> --open-id <open_id> --git-author <author>
-printf '%s\n' '<App Secret>' | ./scripts/jarvis-install bind-cc
-./scripts/jarvis-install validate-binding
-
-# 先启动补丁版 CC Connect，再启动 Jarvis：
-./bin/cc-connect-jarvis daemon install --config "$HOME/.cc-connect/config.toml"
-# Linux 改用：./scripts/install-cc-systemd.sh "$HOME/.cc-connect/config.toml"
-./scripts/jarvis-install install-server
-./scripts/jarvis-install validate
-
-# 把同一个 run_dir 交给 $bootstrap-jarvis-world-model 完成 INSTALL_CHECKLIST.md 的世界模型 E 区
-# 完成监听群新消息和绑定 Bot 对话的真实端到端验收后读回总状态
-./scripts/jarvis-install status --run-dir <run_dir>
-
-curl --fail http://127.0.0.1:18800/healthz
-curl --fail http://127.0.0.1:6333/healthz
-
-# 逐项确认外部依赖；status=degraded 时看 dependencies 里哪一项是 error
-curl -s http://127.0.0.1:18800/readyz | jq
+```text
+使用 $install-jarvis 检查这台机器并完成 Jarvis 首次安装和验收。
 ```
 
-顺序是硬边界：创建整体安装清单 → 基础工具链、lark-cli/Lark Skills、Codex、traex 登录、补丁版 CC Connect binary 和 Qdrant → `validate-dependencies` → 完成 lark-cli 默认飞书用户登录 → 写 Jarvis runtime identity 与 CC Connect `jarvis-codex` → `validate-binding` → 启动补丁版 CC Connect → 主服务注册 → `$bootstrap-jarvis-world-model` → 真实端到端验收 → 两次 `status`（第一次用于填写最终项，第二次用于交付）。Qdrant 是依赖服务，可以在依赖阶段启动；CC Connect/Jarvis 不能在依赖门前启动。`install-server` 会再次强制通过依赖门和一体化绑定门。
+安装 Skill 负责依赖门、已有实例归属、飞书身份、CC 绑定、服务注册、世界模型和端到端验收。fresh clone 不直接运行底层服务脚本，也不使用日常 rebuild 代替首次安装。
 
-`bind-cc` 会立即验证 App ID/Secret。已有 CC Connect Feishu `allow_from` 不是 Principal 本人时命令会停止；用户确认替换后才可加 `--replace-allow-from`。`validate-binding` 会拒绝缺失或通配的访问白名单。需要临时开放给其他人时，应作为当前机器的显式运行决策处理。
+### macOS App
 
-内置安装器支持 macOS arm64 与 Linux x86_64。doctor 会按 `go.mod`、Vite engines、CGO/C 工具链、Lark Skills、已有数据库与实际服务 program 报告当前状态。若服务属于其他 checkout 或发现旧业务数据，Agent 必须先请用户决定复用、迁移或替换。
+DMG 安装不注册源码服务。Tauri 启动 `jarvis-app-service`，由它在应用生命周期内：
 
-launchd 不接受相对路径，所以 `deploy/` 里只有占位符模板；`scripts/render-launchd-plist.sh <label>` 按当前仓库位置和 `$HOME` 展开成 `~/Library/LaunchAgents/<label>.plist` 实体文件。改了模板要重新渲染才生效。
+- 同步包内配置、Skills、脚本和 Web 资源到 Application Support；
+- 启动和停止 Qdrant、Jarvis Server 与已配置的 CC Connect；
+- 等待健康检查并把本地 URL 交给桌面窗口；
+- 配置变化后按 `restart.requested` 重启本地服务；
+- 退出应用时清理子进程组。
 
-首次启用 18801：
+用户状态位于 `~/Library/Application Support/Jarvis`，不放在 `.app` 内。安装与升级见 [macOS 安装与更新](macos-install-and-update.md)，打包发布见 [packaging/macos/README.md](../../packaging/macos/README.md)。
 
-```bash
-uid=$(id -u)
-plist=$(./scripts/render-launchd-plist.sh com.bytedance.jarvis.web)
-launchctl bootstrap "gui/$uid" "$plist"
+## 2. 有效配置
+
+运行配置是：
+
+```text
+conf/config.yaml
+  + conf/config.runtime.yaml 按叶子 key 覆盖
 ```
 
-## 日常重建
+- 基线默认值只改 `conf/config.yaml`。
+- 本机身份、密钥、端口、模型和调度通过后台设置或 `conf/config.runtime.yaml` 修改。
+- 两份配置都拒绝未知字段。
+- runtime settings 保存后需要重启；prompts、rules 和大部分 Skills 按各自 reader 实时读取。
+- 文档中的示例值不代表当前进程值。实际监听地址和依赖状态读取有效配置与 `/readyz`。
+
+明文凭证只保存在本机配置，文件权限保持 `0600`。不要把 runtime overlay 提交到 Git。
+
+## 3. 日常重建
+
+后端、配置或生产前端变更后统一执行：
 
 ```bash
 ./scripts/rebuild-server.sh
 ```
 
-该脚本会：
+脚本会：
 
-1. 主服务已注册时，先查询 `/api/tasks?status=executing`，有活跃 Task 就停止；
-2. 构建临时二进制；macOS 用固定 identity 签名并校验；
-3. 替换二进制并通过 launchd 或 systemd 重启；
-4. 既有 checkout 的服务注册丢失时，按当前平台重建生产前端和后端并恢复注册，不重新执行完整安装；
-5. 等待 `/healthz` 返回 200。
+1. 从当前 API 查询执行中的 Task；
+2. 有 Task 执行时拒绝重启；
+3. 构建生产前端和临时后端 binary；
+4. macOS 使用稳定签名，Linux 替换 binary；
+5. 重启现有服务，服务定义丢失时恢复当前 checkout 的注册；
+6. 等待 `/healthz` 成功。
 
-服务已注册但 18800 API 不可达时，脚本会拒绝重启。`--force-interrupt-running-tasks` 只允许明确中断已查到的执行任务，不能绕过 API 查询失败。
+只有明确接受中断当前 Task 时使用：
 
-不要裸 `go build` 覆盖 `bin/jarvis-server`；否则会改变签名身份，导致完全磁盘访问权限不稳定。
+```bash
+./scripts/rebuild-server.sh --force-interrupt-running-tasks
+```
 
-## 自动更新文件托管
+不要裸 `go build` 覆盖运行中的 `bin/jarvis-server`。macOS 会破坏稳定签名，所有平台都会绕过执行中 Task 检查和健康验收。
 
-Jarvis 主服务通过可选环境变量 `JARVIS_UPDATE_ROOT` 托管桌面端更新文件。未配置或为空
-时不注册 `/jarvis-updates/:filename`；配置后目录必须已存在且是目录，否则 API 路由
-注册失败，主服务直接停止启动。
+仅修改前端且当前 Server 直接从 checkout 的 `web/dist` 提供静态资源时，可先执行：
 
-DEV2 当前通过 `com.bytedance.jarvis.server.service.d/update-root.conf` 设置该变量，
-目录与 `packaging/macos/publish-update.sh` 的远端发布目录保持一致。外部网关路由由
-AMZ 仓库 `product-demo/DEPLOY.md` 维护，本仓库不复制该配置。生产 Jarvis 端口是
-18800；18801 仅用于 Vite 开发服务，不能作为更新托管端口。
+```bash
+npm --prefix web ci
+npm --prefix web run build
+```
 
-构建、签名、上传顺序和发布验收见
-[macOS 打包与发布指引](../../packaging/macos/README.md)。
+是否需要重启取决于部署形态；完整重建仍以标准脚本为准。
 
-## 完整退出
+## 4. 健康与日志
 
-后台“退出”会先返回确认结果，再调用固定脚本停止本 checkout 的全部运行组件：
+- `/healthz` 只验证服务和 SQLite，供重启脚本判断进程可用。
+- `/readyz` 展示 SQLite、Qdrant、lark-cli、Agent CLI 等依赖；外部依赖失败可以返回 HTTP 200 和 `degraded`。
+- launchd 使用 `launchctl print` 查看状态；Linux 使用 `systemctl --user status` 和 `journalctl --user`。
+- 源码运行日志默认在 `var/log/` 或服务管理器日志中。
+- macOS App 日志位于 `~/Library/Application Support/Jarvis/logs`。
+
+服务 label、模板和日志路径以 `deploy/`、`scripts/install-*.sh` 及当前服务定义为准。
+
+## 5. 完整退出
+
+源码安装使用：
 
 ```bash
 ./scripts/stop-jarvis.sh
 ```
 
-脚本会停止 Jarvis Server、Qdrant 和 CC Connect 的 launchd/systemd
-服务；macOS 还停止可选 Vite Web、同名 `screen` 会话及对应端口残留进程。退出不会删除
-配置、数据库、日志或任何业务数据；下次按正常安装/启动流程重新注册服务即可。
+脚本停止当前 checkout 的 Jarvis Server、Qdrant、CC Connect 和可选开发 Web 服务，不删除配置、数据库、日志或业务数据。
 
-## 状态与日志
+macOS App 退出时由桌面 supervisor 停止它管理的本地子进程，同样不删除用户数据。
 
-```bash
-uid=$(id -u)
-launchctl print "gui/$uid/com.bytedance.jarvis.server"
-launchctl print "gui/$uid/com.bytedance.jarvis.web"
-launchctl print "gui/$uid/com.bytedance.jarvis.qdrant"
+## 6. 自动更新托管
 
-tail -f var/log/jarvis-server.log var/log/jarvis-server.error.log
-```
+发布机可以通过 `JARVIS_UPDATE_ROOT` 让 Jarvis Server 托管 `latest.json`、更新包和 DMG：
 
-## 配置
+- 未配置时不注册更新路由；
+- 目录不存在时服务启动失败；
+- `latest.json` 禁止长期缓存；
+- 版本化产物使用 immutable cache；
+- 大文件按流传输，不经过全量 gzip 缓冲；
+- symlink 产物拒绝提供。
 
-有效配置为：
+构建、签名、版本同步和上传顺序见 [macOS 打包与发布指引](../../packaging/macos/README.md)。外部网关配置由部署环境维护，不复制进本仓库文档。
 
-```text
-conf/config.yaml
-  + conf/config.runtime.yaml 覆盖
-```
+## 7. 故障恢复
 
-`config.runtime.yaml` 由后台运行配置写入且被 Git 忽略。保存后需要重启；不要把其中数值写进 current 文档当成所有机器的默认值。
+服务已注册但 API 不可达时：
 
-### 卡片详情访问地址
+1. 查看服务状态、当前子进程和错误日志；
+2. 确认是否仍有 Agent 子进程或执行中 Task；
+3. 修正配置、迁移、依赖或签名问题；
+4. 使用 `./scripts/rebuild-server.sh` 恢复当前 checkout；
+5. 验证 `/healthz`、`/readyz`、首页和关键 API。
 
-`server.addr` 控制服务监听，`server.public_url` 指定通知、提问及回答后的卡片
-使用的浏览器访问入口。Mac 固定生成本地地址，不使用域名覆盖；Linux 默认使用
-局域网地址和实际服务端口，配置 `public_url` 时优先使用域名或代理入口。
-在 `conf/config.runtime.yaml` 配置，例如：
-
-```yaml
-server:
-  public_url: "https://jarvis.example.com"
-```
-
-没有域名时也可填写 `http://服务器IP:18800`。示例地址需替换成自己的入口。支持 HTTP/HTTPS、自定义端口与代理路径；地址应指向
-Jarvis 首页，不带查询参数或 `#/...` 路由。这个字段只生成链接，不创建代理、
-隧道或修改监听范围。使用路径前缀时，代理需同时支持前端资源与 API 路由。
-保存后重启生效，后台保存运行设置会保留此配置。
-
-Mac 安装包和源码安装固定使用 `127.0.0.1`（IPv6 监听使用 `::1`），保留实际服务端口，
-即使配置了域名也不覆盖。本机链接标注“本机访问”，只能在运行 Jarvis 的机器上打开。
-Linux 未配置入口时，明确的非回环监听地址直接用于链接；回环或通配监听则使用默认路由的本机 IPv4。
-局域网直连需将 `server.addr` 配为 `0.0.0.0:18800` 或实际局域网地址，链接生成不修改监听范围。
-已有反向代理时可以继续监听回环地址，但必须配置代理对外入口，不能把后端内部端口当成用户入口。
-跨网络或 NAT 后的访问同样应显式配置入口。已发出的卡片不会因重启自动更新旧链接。
-
-Jarvis Bot 的飞书长连接由 CC Connect 独占。`jarvis-server` 不启动 Feishu event consumer，M2 按 `capture.scan_schedule` 增量轮询工作消息；不要为同一个 app 恢复第二条连接。Jarvis 的飞书读写直接使用 lark-cli 当前默认身份，CC Connect `jarvis-codex` 绑定该默认 App，Feishu `allow_from` 默认只允许 Principal 本人；机器校验入口是 `./scripts/jarvis-install validate-binding`。
-
-飞书卡片内回答 M5 的提问（含请示副作用）使用独立配置，不复用消息采集的事件开关。推荐让 CC Connect 继续持有当前 Jarvis Bot 的唯一长连接：
-
-```yaml
-card_approval:
-  enabled: true
-  principal_open_id: "ou_xxx"
-  relay_secret: "<与 CC Connect 相同的本机共享密钥>"
-```
-
-对应的 `jarvis-codex` Feishu platform 配置：
-
-```toml
-jarvis_approval_url = "http://127.0.0.1:18800/internal/card-approval/callback"
-jarvis_approval_secret = "<同一个本机共享密钥>"
-jarvis_approval_timeout_ms = 2500
-```
-
-M5 返回 `question` 后，Jarvis 先持久化 `needs_human`，再由当前 Jarvis Bot 立即发送问题卡；按钮值沿用 `action=jarvis_approval` 命名空间（这是与已安装 CC Connect 的线上契约，改名要重打补丁重装，收益为零），并携带 `task_id`、已持久化的 Task `version` 和被点按钮的名字。CC Connect 的现有 `OnP2CardActionTrigger` 收到点击后，通过带共享密钥的 localhost HTTP 请求转给 Jarvis；Jarvis 认领并异步续跑原 Session 后立即返回，CC Connect 随即结束按钮回调，再在卡片动作锁释放后把 Jarvis 返回的整张“已回答”卡替换上去。Jarvis 不启动 `card.action.trigger` 连接，因此普通消息、文档评论和既有 CC Connect 卡片链路不会被抢占。
-
-Jarvis 端校验 Principal open_id，并用卡片携带的 Task version 认领当前 `needs_human` Task；旧卡片或重复点击会因 version/status 冲突被拒绝。CC Connect 只负责机械传输和替换卡片展示，不持有任何状态。URL 必须是 loopback，密钥只写进 Git 忽略的 `conf/config.runtime.yaml` 和本机 `~/.cc-connect/config.toml`。
-
-当前 Jarvis Bot 对应的飞书 app 必须在开发者后台开启机器人、授予消息权限，并在「事件与回调 → 回调配置」中启用 callback。回调落地日志前缀为 `job=card-ask`；只有 Principal 本人的按钮点击会被接受，版本冲突/状态已变会记为 `skipped=already-answered`，不会重复执行。
-
-## 故障恢复
-
-若主服务已注册但 API 不可达：
-
-1. 先用进程、日志和 `launchctl` 确认没有仍在执行的 Agent 子进程；
-2. 查看 `var/log/jarvis-server.error.log`，确认配置/迁移/签名失败原因；
-3. 必要时 `launchctl bootout` 旧服务；
-4. 运行 `./scripts/rebuild-server.sh`；服务未注册时脚本会重建生产前端和后端、签名并恢复 launchd 注册；
-5. 验证 `/healthz`、任务 API 和首页。
-
-不要在不知道是否有活跃执行时强制重启；它会终止 Agent 子进程。
+数据库迁移 fail-fast 时保留原数据和错误，不自动清库。无法安全推断的旧 schema 由人工决定迁移或重建。

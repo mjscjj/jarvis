@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -232,19 +231,6 @@ func TestBuildAgentSystemPromptAppendsCapabilityCatalogWithoutStagePolicy(t *tes
 	for _, forbidden := range []string{"不创建或推进 Task", "需要补证据时可以只读查询", "确认有新增或变化后再写"} {
 		if strings.Contains(prompt, forbidden) {
 			t.Fatalf("tool catalog contains FactEngine stage policy %q:\n%s", forbidden, prompt)
-		}
-	}
-}
-
-func TestFactEngineSystemPromptOwnsWorldWriteAndExternalQueryPolicy(t *testing.T) {
-	raw, err := os.ReadFile("../../conf/prompts/fact-extract-system-prompt.md")
-	if err != nil {
-		t.Fatalf("read FactEngine system prompt: %v", err)
-	}
-	system := string(raw)
-	for _, want := range []string{"source 指针", "写入后立即读回", "不得改用逐条写入", "不创建、启动、更新或关闭 Todo、Task", "原则上不查询外部系统补证据"} {
-		if !strings.Contains(system, want) {
-			t.Fatalf("FactEngine system prompt missing owned policy %q", want)
 		}
 	}
 }

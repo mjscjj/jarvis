@@ -2,242 +2,152 @@
 
 > Status: current
 > Authority: normative architecture
-> Last verified: 2026-08-29
+> Last verified: 2026-09-11
 
-本文只描述当前实现的稳定边界，不复制字段级 DDL、完整路由或本机运行值。文档入口与提案/历史分类见 [docs/README.md](README.md)。
+本文只定义跨模块稳定边界。字段、路由、默认值、CLI 参数和本机状态以代码、配置及命令帮助为准。
 
 ## 1. 系统定位
 
-Jarvis 是单用户、本地、低频运行的主动式任务数字分身。它不是规则引擎，也不是通用 Agent 平台：Go 负责持久化、幂等、调度、权限载体和硬状态；模型结合上下文、Skills 和工具完成语义判断。
+Jarvis 是单用户、本地可信环境中的主动式任务数字分身。系统由一份世界状态和一个统一执行内核组成：
 
-全局原则以 [`goal.md`](../goal.md) 和 [`AGENTS.md`](../AGENTS.md) 为准：
+- **状态**：原始证据、当前实体页、事实索引、Todo、Task 与执行历史。
+- **决策**：Agent 根据当前目标和上下文调查现实、选择动作、验证结果并更新状态。
 
-- fail-fast，不静默 fallback；
-- 新来源不新增专用 Go 流水线；
-- 模型语义使用完整原文或宽松 JSON；
-- 上下文一次冻结、全程复用；
-- M5 对任务理解可演进，请示针对具体副作用；
-- 文件化 prompt/rule 是唯一正文真源。
+Go 保证持久化、幂等、调度、参数校验和执行留痕；语义判断由 prompts、rules、Skills 和 Agent 完成。阶段职责控制注意力与停止条件，不构成内部权限边界。
 
-## 2. 进程与依赖
+## 2. 运行组件
 
 ```mermaid
 flowchart LR
-    UI["React 管理后台"] --> API["jarvis-server\nGo / Hertz"]
-    API --> SQLITE[("SQLite")]
-    API --> QDRANT[("Qdrant\nTodo 去重")]
+    UI["React Web / Tauri"] --> API["jarvis-server"]
+    API --> DB[("SQLite")]
+    API --> VECTOR[("Qdrant")]
     API --> LARK["lark-cli"]
-    API --> AGENT["traex Agent CLI"]
-    API --> MODEL["OpenAI-compatible API\n备用 M3 + embedding"]
+    API --> AGENT["Agent CLI"]
+    CC["CC Connect"] --> API
+    CC --> LARK
 ```
 
-- `jarvis-server` 是主进程：HTTP、静态前端、M2/M3/M5、实时协调和补偿 cron 都在同一进程。
-- SQLite 是结构化状态真源，服务使用单连接串行化数据库操作。
-- Qdrant 当前只服务 Todo 语义去重，不是长期事实真源。
-- `traex` 运行 M3 默认引擎、M5 执行、对话、持续世界建模和主动巡视；各阶段的模型和超时独立读取有效配置。
-- `lark-cli` 负责飞书读写；`bytedcli`、`git` 和 `jarvis-tools` 由 Agent 按需调用。
-- 生产前端由 18800 托管 `web/dist`；18801 是独立 Vite 开发服务。
+- `jarvis-server` 承载 HTTP、生产前端、M2/M3/M5、调度和后台 Agent。
+- SQLite 是结构化状态真源，单进程内使用单连接串行短事务。
+- Qdrant 只服务 Todo 语义去重，不是世界模型真源。
+- `lark-cli` 负责飞书读写；Agent CLI 负责 M3、M5、对话、世界维护和主动巡视。
+- CC Connect 独占 Jarvis Bot 的飞书长连接，处理即时对话、卡片回调、文档评论和事件转发。
+- macOS App 由 Tauri 启动 `jarvis-app-service` 管理本地子进程；源码安装使用 launchd 或 systemd。
 
-技术依赖版本以 `go.mod`、`web/package.json` 和本机 CLI help 为准，不在本总纲固化补丁版本。
+监听地址、二进制、模型和调度均来自有效配置，不在架构文档固定本机值。
 
-## 3. 端到端数据流
+## 3. 主流水线
 
 ```mermaid
 flowchart TD
-    EVENT["飞书 Bot WebSocket"] --> CC["CC Connect 路由"]
-    CC -->|"接受私聊 / @消息"| CLAIM["route claim\nextraction_skipped"]
-    CLAIM --> CCA["CC 前台 Agent / session"]
-    CCA -->|"即时完成"| REPLY["原会话回复"]
-    CCA -->|"长期 / 多步 / 有副作用"| CTASK["manual Task pending"] --> EXEC
-    CC -->|"不接受普通群消息"| POLL
-    POLL["飞书 IM 轮询补偿"] --> M2
+    BOT["飞书消息"] --> CC["CC Connect"]
+    CC -->|"当前会话可完成"| REPLY["即时回复"]
+    CC -->|"长期/多步/有副作用"| MANUAL["manual Task"]
+    POLL["飞书轮询"] --> M2
     EXT["外部 Skill / 定时任务"] --> CLUE["POST /api/clues"] --> M2
-    M2 --> MSG[("message")]
-    MSG --> FACT["持续世界建模 factengine"] --> F[("fact")]
-    MSG --> M3["M3 extract"]
-    F --> M3
-    M3 --> OBS0["Todo observing"]
-    M3 --> EXT0["Todo extracted"]
-    M3 --> FACT
-    EXT0 --> MATERIALIZED["机械固化\nTodo materialized + Task pending"]
-    MATERIALIZED --> EXEC["M5 执行 Agent"]
-    MATERIALIZED --> FACT
-    EXEC --> FACT
-    EXEC --> DONE["done"]
-    EXEC --> OBS2["observing"]
-    EXEC --> WAIT["waiting / needs_human"]
-    EXEC --> FAIL["failed"]
-    WAIT --> EXEC
-    CRON["启动延迟 + 每小时 cron"] --> PROACTIVE["主动巡视 Agent"]
-    FACT --> WORLD["Person / Project / Group / Resource / Relation"]
-    WORLD --> PROACTIVE
-    PROACTIVE -->|"外部行动"| PTASK["Task pending"] --> EXEC
+    M2["M2 机械采集"] --> MSG[("Message")]
+    MSG --> M3["M3 最短准入"]
+    M3 --> OBS["Todo observing"]
+    M3 --> EXTDO["Todo extracted"]
+    EXTDO --> MAT["机械固化"] --> TASK["Task pending"]
+    MANUAL --> TASK
+    TASK --> M5["M5 调查、执行、验证"]
+    M5 --> DONE["done / observing / failed"]
+    M5 --> PARK["waiting / needs_human"]
+    PARK --> M5
+    MSG --> FACT["FactEngine"]
+    TASK --> FACT
+    FACT --> WORLD["实体页 + Fact"]
+    WORLD --> PRO["主动巡视"]
+    PRO -->|"需要外部行动"| TASK
 ```
 
-### 3.1 M2：机械采集
+### M2：机械采集
 
-M2 有两个事实入口：
+M2 保存完整原始事实、来源和外部幂等键，成功后唤醒 M3。它不解释错误、不判断是否值得做，也不为会议、邮件或插件增加专用业务状态。
 
-1. 飞书会话发现、principal activity 和 related chat 增量轮询；
-2. 外部定时任务/Skill 通过 `/api/clues` 投递原始事实。
+新来源通过 `source + Skill/定时任务 + POST /api/clues` 接入。来源差异留在外围采集 Skill，不进入核心流水线。
 
-M2 保存原文、来源、外部幂等键和资源引用，成功后唤醒 M3。它不解释错误语义、不决定是否值得做、不创建 Todo、不为会议/邮件等来源增加专用状态机。
+### M3：最短准入
 
-Jarvis Bot 的飞书长连接由 CC Connect 独占；`jarvis-server` 不启动事件 consumer。CC Connect 完成发送者、会话和 @ 过滤后，对自己接受的消息先同步调用 `/internal/message-routing/claim`：只把当前 `message_id` 标记为 `extraction_skipped`，再继续由 CC 前台 Agent/session 处理。claim 本身不携带历史、不创建 Task、不唤醒 M3，也不修改 `related_group`。CC 前台行为的安装模板是 `conf/prompts/cc-system-prompt.md`，安装/绑定时写入 CC 配置；后台仅只读展示模板，当前不支持在线编辑生效：简单、可当轮闭环的请求即时回复；长期、多步、需要等待或会产生副作用的请求停止前台执行，通过通用 `create-task` 创建 `source_type=manual` 的普通 Task，由同一个 Submitter 唤醒 M5。来源中冻结原始用户表达和原会话 `reply_target`，明确要求交付时，M5 只有把结果送回该会话才算完成。这条显式交办不再重复经过 M2/M3 准入。
+M3 只调查到足以决定：
 
-群聊 Agent turn 的会话证据在传输层从飞书实时读取：普通群取 chat 中截至当前消息的最近记录，话题/回复取对应 thread，最多 14 条前序消息；这些历史不会写进 Jarvis `message` 表。传输上下文同时提供 `chat_id`，供 Agent 用 `get-context --chat-id` 读取当前群绑定的世界上下文。因为这条连接独占，会议结束这类不产生聊天消息的事件也只能由 CC Connect 转交：命中配置事件类型时它把原始信封 POST 到 `/internal/meeting-sweep/wake`，Jarvis 只把会议巡扫提前触发一次，采集与判断仍归巡扫和 M3/M5。
+- `extracted`：存在值得交给 M5 调查和推进的动作线索；
+- `observing`：值得保留，但当前不启动 M5。
 
-M2 按 `scan_schedule` 增量轮询已关联会话并按飞书 `message_id` 幂等落库；普通群和私聊按会话消息流增量读取，话题群按消息自身时间搜索，因此旧话题中的新回复不会受话题根消息水位影响。CC 未接受的普通群消息继续通过这条通用流水线；需要进入 M2 的其它实时外部事实仍只能经明确的本机 fan-out 接口转发，不能恢复第二条同 app 长连接。资源链路只稳定采集引用元数据；通用下载、正文回填和内容哈希复用尚未形成完整生产链路。
+创建 Todo 时冻结 `source + capture + annotation`。`source` 保留原始语义，`capture` 保存创建时事实，`annotation` 是开放的模型说明。M3 不提前完成 M5 的深入调查。
 
-### 3.2 M3：Task 准入与快照
+### Todo 固化
 
-M3 默认使用 Agent CLI，model API 是可选引擎。它只调查到足以决定是否值得启动一次 M5：判断线索与 principal 的相关性、是否存在未闭环结果、是否需要 principal/Jarvis 介入，以及是否已经完成或重复。它负责：
+`extracted` Todo 由无模型步骤按 Todo ID/version 幂等创建一个 Task，并把完整 `Todo.content` 复制到 `Task.source_payload`。该步骤不重新判断价值，不重建背景。
 
-- 判断新证据是否形成或更新 Todo，以及应为 `extracted` 还是 `observing`；
-- 校验 source message / quote；
-- 对尚未生成 Task 的 Todo 做精确、向量和模型辅助去重；
-- 在群绑定、原文或短查询能够确认时推算项目归属和仓库提示，保存 `resolution`；
-- 输出宽松 `annotation`，由程序冻结 `Todo.content`：完整 `source`、创建时 `capture` 和模型说明。
+### M5：执行内核
 
-M3 可以产出：
+M5 接管 `pending` Task，主动查证真实状态，调整当前目标和范围，选择工具完成动作并验证。上游内容是冻结证据，不是不可修改的执行合同。
 
-- `extracted`：存在需要交给 M5 执行 Agent 调查和判断的动作线索；
-- `observing`：值得保留，但按当前证据与主动程度暂不启动 M5；不表示事项已完成。
-
-M3 可以查询责任归属、当前状态、已有 Todo/Task 和明确项目归属，但证据足够作出准入结论后立即停止。它不制定执行方案、不选择具体副作用、不判断要不要请示，也不为丰富 payload 展开代码、commit、MR 或长文档调查。`payload` 是开放的准入简报，只说明相关性、未闭环状态、责任、已核验证据、准入依据和不确定性。
-
-`Todo.content` 保存创建时证据。消息只保存在 `capture.messages` 一次，不依照提示词长度截断。M5 默认只读经过校验的 `source_message_ids` 对应原文与简短说明，其余按会话、背景或原始消息 ID 读取；实体当前状态仍通过事实页和 fact 查询，不能替代冻结证据。
-
-已结束会议的准入口径由 M3 工作规则维护：普通档、活跃档以及明确回顾订阅中，Principal 实际参加且尚缺回顾时，整理回顾本身就是可交给 M5 的目标，不以存在行动项为前提；安静档默认要求明确回顾需求或具体决策、承诺价值。采集 Skill 先按原始线索 ID 查重，只为未知会议补取详情；会议结束事件和既有周期巡扫的调度方式不变。
-
-### 3.3 Todo 固化
-
-`extracted` Todo 一律通过无模型的固化步骤创建一个 `pending` Task，并把 Todo 置为 `materialized`。固化继续使用 Todo ID/version 乐观锁、`task.todo_id` 唯一键和同一事务；重复通知返回同一个 Task，陈旧版本 fail-fast。Task 只记录自己的来源与创建时间，不把这一机械步骤包装成判断或确认闸门。
-
-Task 用一个宽松 `source_payload` 保存来源、冻结事实与模型说明，Todo 来源原样复制 `Todo.content`；定时、手工和主动来源在创建时将原始指令与捕获背景放进同一 `source + capture + annotation` 结构。Task 不再保存独立 `background`，也不在 M5 重新拼背景。
-
-### 3.4 M5 执行：调查、动作与恢复
-
-Task 可以来自 Todo、手工 API、ScheduledTask 或主动巡视 Agent。初次执行默认读取当前 Task 状态、触发原文、简报、现场说明和可读区块目录、人工 supplements、运行历史数量与最新状态。相关 Todo / Task 通过搜索、来源消息 ID、原文关键词、项目和分页查询；历史结果与 effects 按 run 读取，包括失败尝试。不再默认注入全局最近 20 条线索 / 任务和全部历史输出。同会话恢复补充当前 Task 状态与人工指示。Todo 来源已经经过 M3 准入，M5 不从头重复泛化价值筛选；它先核验线索是否因新事实完成、失效或重复，准入仍成立时直接调查真实目标并执行。上游内容是线索，不是不可修改的最终计划。
-
-执行 outcome 与状态映射：
-
-| Agent outcome         | Task 状态/动作                                           |
-| --------------------- | -------------------------------------------------------- |
-| `completed`           | `done`                                                   |
-| `observing`           | `observing`；Todo 来源存在时同步回 observing             |
-| `waiting`             | `waiting`，绑定 ScheduledTask 和 Codex Session，到期续跑 |
-| `needs_human`         | `needs_human` + 一份 `question`，回答后续跑同一 Session   |
-| `failed`              | `failed`                                                 |
-
-要不要问 principal 由模型根据具体副作用判断，不按 `action_type` 分流。请示副作用和补充信息共用 `needs_human` 这一个出口：代码提供可停下的状态、渲染问题卡的通道、一个回答入口和审计载体，不解释答案，也没有单独的批准/驳回接口。`effects` 的 `kind` 是开放字符串，外部后果按 Agent 声明留痕；当前不是独立 receipt verifier。
-
-Task 的 `summary` 表示事项总进展，ExecutionRun 的 `summary` 只表示本次运行。当前 Store 能更新 supplements、状态、结果和 summary。
-
-M5 每轮开始时给可达的来源飞书消息添加 `OnIt`，只表示该轮正在执行；本轮离开
-`executing` 后统一 best-effort 删除。`message_id` 与 `reaction_id` 复用当前
-ExecutionRun 的开放 effects 留痕，不新增状态字段；删除失败只告警，不反向改变 Task 结果。
-
-## 4. 实时推进与恢复
-
-`internal/pipeline.Coordinator` 接收持久化提交后的轻量通知，按 chat/todo/task ID 和 version 推进工作。内存队列只加速，不承担真源：
-
-- M2 新消息唤醒 M3；
-- M3 新 `extracted` Todo 唤醒机械固化；
-- 固化创建 Task 后唤醒 M5 执行；
-- 各阶段 cron 扫描持久化状态，恢复漏通知和崩溃后的工作。
-
-队列按实体 ID/version 合并等待通知，数据库状态和乐观锁拒绝陈旧执行。M3 以 `chat_id` 为并发隔离键：不同人的单聊和不同群聊受 `extract.concurrency` 控制并行，同一 chat 串行；补偿扫描与实时 M3 互斥，补偿内部再并发不同 chat。SQLite 仍保持单连接串行短读写，耗时的 Agent/工具调查在数据库操作之外并行。
-
-`internal/proactive` 使用独立低成本模型。主进程启动后先等待配置的启动延迟（基线 120 秒），运行第一轮，再按独立 cron 周期运行；同一时刻最多一轮。它以读取世界模型、看护和推进未闭环事项为主要任务；factengine 负责持续建模，但巡视调查中发现明确、有用的内部状态变化时，也可直接使用通用 CRUD 维护并读回，或按判断把原始证据送入统一线索入口。任何外部行动必须创建 `source_type=proactive` 的普通 Task，由同一个 Task Submitter 唤醒强 M5。巡视失败会明确记录，不切换模型，也不阻塞 M2→M3→M5 主链路。每次实际 Agent 调用都在 `proactive_run` 中持久化完整输入 Prompt、最终输出、错误、模型和耗时；运行状态页列表只读摘要，选中一轮后才加载完整正文。
-
-## 5. 世界状态与长期事实
-
-当前世界状态分为：
-
-- 当前背景：PrincipalProfile、Project、KeyMatter、Person、Group、ManagedResource；
-- 原始证据：Message、Resource、ScanRecord；
-- 行动链路：Todo、Task、TodoEvent、TaskEvent、ExecutionRun；
-- 长期事实：各实体的 `summary` 页、Fact；
-- 时间触发和总结：ScheduledTask、DailyDigest。
-
-factengine 不新增第二套世界状态表：它通过既有通用 CRUD 工具持续维护上述载体。主动巡视主要消费这些持久状态，也可以在调查过程中维护已经确认的变化；跨轮记忆来自世界模型和事实历史，而不是续跑无限对话 Session。
-
-KeyMatter 承载需要长期记住和定期回看、但不构成项目也不是一次执行动作的事项。是否闭环只由 `closed_at` 表示；`status` 是模型和人维护的自由文本。关键事项本身不进入 Task 执行链路，需要行动时另建普通 Task，当前状态写在它的 `summary` 页，历史明细继续写入 Fact。
-
-`internal/domain/*.go` 和 `internal/store/sqlite.go` 是字段与迁移真源。不要在文档复制完整 DDL。
-
-持续 factengine 消费 `message`、`todo`、`task` 三种来源并保留独立游标。Message 提供原文，Todo/Task 只投影状态与最终产物，不重复携带已经持久化的背景、快照、来源 payload、计划和执行 prompt。每轮把各来源游标之后的材料合成一个世界变化批次，只启动一次 Agent；材料超过配置的粗粒度字符预算时减少候选行重新取批，降到每来源一行仍超限就把装不下的完整来源材料留到下轮，不截断单条材料；只有第一条完整材料自身超限时允许整条通过。Agent 在真实 Jarvis 工作区运行，使用同一套通用工具按需查询并直接维护当前实体、关系、资料和 Fact，最终自然语言只作审计，不承担机器协议。整次 Agent 会话成功后才推进本批来源游标，失败则保留游标供下次重放；Go 不按来源或实体类型编排语义写入。首次接入 Todo/Task 从事件 0 开始消费已有材料，Message 保留从当前时刻起步的历史边界。
-
-每个世界实体有一个 `summary` 页承载它的长期事实，整体读写、有字符上限、写入时 CAS 防覆盖。实体之间的关系用页内 Markdown 引用（形如 `[名字](person:12)`）表达，写入时校验目标存在，反查用 `list-backlinks`；不另建关系表。summary 答「现在是什么」，Fact 答「发生了什么」，详见 `docs/design-entity-summary.md`。
-
-## 6. 文件化 Agent 配置
-
-| 类型             | 真源                                                          | 读取语义                        |
-| ---------------- | ------------------------------------------------------------- | ------------------------------- |
-| 主动程度 | `conf/prompts/initiative-level.md`（textstore key `initiative_level`） | quiet / normal / active，默认 normal；每批/每轮实时读取，非法或缺失 fail-fast |
-| 系统 prompts     | `conf/prompts/*.md`，在 `internal/textstore/defaults.go` 注册 | 缺失/空正文 fail-fast           |
-| 工作 rules       | `conf/rules/m3.md`、`conf/rules/m5.md`                        | M3、M5 分阶段读取；正文缺失或为空时报错 |
-| Skills           | `.agents/skills/*/SKILL.md` + `conf/skills.yaml`              | 正文与启用阶段分离              |
-| Shared memory    | `data/shared-memory.md`                                       | Principal 明确要求长期记住的行为偏好；最多 2000 字 |
-| Runtime settings | `conf/config.runtime.yaml`                                    | 覆盖基线配置；重启后生效        |
-
-主动程度由 `prompttemplate.Render` 注入当前选择，三档行为分别归 M3/M5 rules 与 proactive 系统提示词维护。M3 每次组装批次读取选择，批次内各 unit 及输出重试保持一致；M5 初次执行、等待恢复、人工回答恢复和 proactive 每轮都读取当前值。选择不冻结到 Task 来源，不驱动固化或消息拦截，也不撤销已有目标、授权和问题卡。M3/M5/proactive 的后台生效预览使用同一组装函数；共享记忆、Skills、工具和业务上下文仍列为动态块。
-
-工具说明由 `internal/toolcatalog` 和 Skills 维护，不复制到每个 prompt。
-
-Skills 默认只把目录摘要注入对应阶段，由 Agent 按需读取正文；标记 `inline: true` 的
-阶段规则型 Skill 会把正文直接拼入最终 prompt。插件仍通过同一个 availability gate
-控制两种形态。“我的交办”使用 M3/M5/proactive 内联 Skill：M3 Todo 是交办主体，
-`delegation_progress` 只保存独立的宽松核验进展，Task 是一次 check。首次 M5 和恢复路径
-均读取当前 Skills；Task 完成不等于对方交付，关闭插件也不自动关闭既有交办。
-交办原文和背景继续冻结在 Todo.content，每次复查携带原始包，不重建替代。
-
-Shared memory 是 Principal 在运行中明确教给 Jarvis 的个性化行为覆盖层，不保存业务事实或机器控制状态。M3、M5、主动巡视和 CC Connect 读取同一份内容，并只在各自阶段职责内执行；后台对话不自动注入共享记忆，需要时通过工具读取。主动巡视结合原本就在检查的证据合并明确的新要求、撤回和冲突，不为维护记忆扩大调查。
-
-后台交互对话首轮只注入对话系统指引与工具入口，后续通过原生 Session 续聊，仅追加用户消息、显式选择的数据来源和附件引用；跨 Agent 时继续保留可见会话历史。不自动组装世界模型、资源正文或页面状态，需要工作事实时按 `jarvis-chat` Skill 查询。此约定只属于交互对话，不改变 M3/M5 冻结快照、CC Connect 或定时任务的上下文协议。旧原生 Session 中已存在的背景不会被清除，可新建会话使用轻量输入。
-
-`identity.display_name` 是本机助手名称的唯一真源。初始化必须把用户选择显式写入 runtime overlay；设置页改名同样写该字段并在重启后生效。系统 Prompt、rules 和运行时 Skills 只保留 `{{AGENT_NAME}}`，由 `internal/agentidentity` 的只读装饰器在可信指令进入各 Agent 前统一渲染。事件、Task、Fact 和历史产物不保存或回写名称。`jarvis-tools`、API header、进程 label、路径和数据库键仍是稳定技术标识，不参与改名。
-
-## 7. 状态真源
-
-### Todo
+结果映射：
 
 ```text
-M3 -> extracted -> materialize -> materialized -> Task -> M5 execution
- └-> observing                              └-> observing（可同步来源 Todo）
-
-fresh evidence 可使 observing 回到 extracted；materialized 不由 M3 随意重开。
+completed   -> done
+observing   -> observing
+waiting     -> waiting -> 同 Session 恢复
+needs_human -> needs_human -> 回答后同 Session 恢复
+failed      -> failed
 ```
 
-### Task
+是否询问 principal 由 M5 根据具体副作用判断，不按 `action_type` 分流。询问副作用和补充信息统一使用 `needs_human + question`；runtime 只负责持久化、卡片渲染、回答传递和版本保护。
 
-```text
-pending -> executing -> done | observing | failed
-                    ├-> waiting -> executing
-                    └-> needs_human -> executing
-```
+## 4. 上下文与恢复
 
-完整状态守卫以 `internal/execute/store.go` 为准。
+冻结上下文只组装一次，下游按需展开，不从数据库重新拼一份“等价背景”。实体最新状态通过页面和 Fact 查询，不能替代创建时证据。
 
-## 8. API、页面与运维
+执行默认只提供直接来源、简报、可展开区块、当前 Task 状态和运行概要。会话历史、完整 capture、相关工作和旧 Run 正文按需读取。
 
-- 路由分组：[reference/http-api.md](reference/http-api.md)
-- 运行部署：[reference/operations.md](reference/operations.md)
-- 页面真源：`web/src/App.tsx`
-- 当前主导航：Overview、任务、定时任务、待办、背景、设置、进度、运行状态
-- 飞书提问、审批及关联任务的 Notice 卡片统一通过 `internal/uilink` 优先按 `server.public_url` 生成“查看详情”链接，支持远端域名、反向代理和端口转发的浏览器访问入口。未配置时使用实际监听地址（包含安装包的 `-addr` 覆盖）；具体绑定地址直接使用，通配监听实时解析默认路由对应的本机 IPv4（内网或公网）。回环链接标注“本机访问”，需在打开链接的设备上有本地服务或端口转发。
+`ExecutionRun` 表示一次进程执行，Agent Session 表示跨 Run 的连续上下文。长等待通过绑定的 `resume_task` ScheduledTask 唤醒；人工回答按 Task version 认领。恢复失败时明确报错，不新建 Session 掩盖上下文丢失。
 
-## 9. 当前已知实现缺口
+## 5. 世界状态
 
-这些是代码事实，不是自动授权的实施计划：
+世界状态分为：
 
-- 尚无独立 Goal Store / Supervisor / Verifier；长任务控制仍是提案。
-- `Todo.content` / `Task.source_payload` 是冻结证据，不是版本化 live world state。
-- factengine 已消费 message、Todo 和 Task lifecycle event；其它原料来源尚需按同一投影协议接入。
-- effects 是 Agent 声明，不是外部系统 receipt 的独立验证。
-- Task 的背景和可选计划缺通用更新 API/tool 与审计写入。
-- 编辑既有消息目前不会重新唤醒 M3。
-- Resource 通用下载、解析和内容哈希复用未闭环。
+- 当前实体：Principal、Project、KeyMatter、Person、Group、ManagedResource；
+- 原始证据：Message、Resource、TodoEvent、TaskEvent、ExecutionRun；
+- 行动状态：Todo、Task、ScheduledTask；
+- 长期认知：实体 `summary` 页、Fact、PageRevision；
+- 只读产物：DailyDigest、晨报和本地 Markdown 报告。
 
-未来方案见 [文档导航中的提案区](README.md#提案与实现中设计)，不得把提案内容直接当成当前能力。
+实体页回答“现在是什么”；Fact 是带主体和原始材料指针的证据索引；PageRevision 保存旧版认知页。实体关系使用页内引用与 backlinks，不维护通用关系表。
+
+FactEngine 在主链路外消费 Message、TodoEvent 和 TaskEvent，使用同一 Agent 协议维护实体页、资料和 Fact。整轮成功后才推进来源游标。
+
+主动巡视读取世界模型并看护未闭环工作。内部认知可直接维护；任何外部行动统一创建普通 Task 交给 M5。
+
+## 6. Agent 配置
+
+| 内容 | 真源 | 生效方式 |
+|---|---|---|
+| 主动程度 | `conf/prompts/initiative-level.md` | M3/M5/proactive 新一轮实时读取 |
+| 系统角色与输出协议 | `conf/prompts/` | textstore 固定 key 读取 |
+| 阶段工作规则 | `conf/rules/m3.md`, `conf/rules/m5.md` | 只注入所属阶段 |
+| Skills | `.agents/skills/`, `conf/skills.yaml` | 正文与启用范围分离 |
+| 工具说明 | `internal/toolcatalog/` | 运行时组装 |
+| 共享记忆 | `data/shared-memory.md` | 只保存 principal 明确要求的稳定偏好 |
+| 运行参数 | `conf/config.runtime.yaml` | 覆盖基线，重启后生效 |
+
+对话工作区拥有独立的会话、Agent、模型和推理参数，不是 M3/M5 阶段。需要工作事实时按 `jarvis-chat` Skill 查询，不自动灌入完整世界模型。
+
+## 7. 协调与可靠性
+
+`pipeline.Coordinator` 在持久化提交后按实体 ID/version 推进阶段；内存通知只加速，cron 负责恢复漏通知和崩溃后的工作。
+
+所有耗时 Agent/外部工具调用都在数据库短写之外执行。实体状态、版本和唯一键拒绝重复抢占；未知模型字段保留，机器必须消费的控制字段才做严格校验。
+
+当前限制：
+
+- 没有独立 Goal Store、Supervisor 或结果 Verifier；
+- effects 是 Agent 申报，不是外部系统 receipt；
+- 外部动作完成到 effects 落盘之间仍可能有崩溃窗口；
+- 编辑既有消息不会自动重新唤醒 M3；
+- 通用 Resource 下载、解析和内容哈希链路尚未闭环。
+
+模块细节见 [文档导航](README.md#当前实现)。

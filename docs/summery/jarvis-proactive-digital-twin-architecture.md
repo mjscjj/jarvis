@@ -1,5 +1,9 @@
 # Jarvis 主动式数字分身架构图绘制说明
 
+> Status: deliverable
+> Authority: non-normative
+> Last reviewed: 2026-09-11
+
 ## 成图
 
 ![Jarvis 主动式数字分身架构图](jarvis-proactive-digital-twin-architecture.png)

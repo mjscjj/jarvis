@@ -7,7 +7,7 @@ import (
 )
 
 // resolveProject decides which project a candidate belongs to and produces the
-// resolution trace (docs/design-context-pipeline.md §2.1/§2.2).
+// resolution trace (docs/decisions/context-snapshot.md).
 //
 // Priority:
 //  1. group-bound project — highest priority signal (MethodGroupBound)

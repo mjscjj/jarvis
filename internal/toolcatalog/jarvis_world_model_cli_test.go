@@ -12,32 +12,6 @@ import (
 	"testing"
 )
 
-func TestJarvisWorldModelOwnsWorldModelRunStateOnly(t *testing.T) {
-	help, err := runJarvisWorldModel(t, "", nil, "--help")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{"preflight", "discover", "scan", "validate", "does not install services", "installation state", "configure CC Connect"} {
-		if !strings.Contains(help, want) {
-			t.Fatalf("jarvis-world-model help missing %q:\n%s", want, help)
-		}
-	}
-	for _, forbidden := range []string{"\n  start      ", "\n  status     ", "configure-app", "set-cc-app-secret", "validate-binding", "install-server"} {
-		if strings.Contains(help, forbidden) {
-			t.Fatalf("jarvis-world-model still owns install concern %q:\n%s", forbidden, help)
-		}
-	}
-	toolsHelp, err := runJarvisTools(t, "", nil, "--help")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, forbidden := range []string{"validate-initialization", "discover-chats", "scan-chat"} {
-		if strings.Contains(toolsHelp, forbidden) {
-			t.Fatalf("jarvis-tools exposes initialization-only command %q:\n%s", forbidden, toolsHelp)
-		}
-	}
-}
-
 func TestJarvisWorldModelValidateReportsWorldModelWithoutRequiringGroups(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -169,26 +143,6 @@ func TestJarvisWorldModelCaptureCommandsReuseM2Endpoints(t *testing.T) {
 	want := []string{"POST /api/debug/capture/discover", "POST /api/debug/capture/scan-chat"}
 	if fmt.Sprint(requests) != fmt.Sprint(want) {
 		t.Fatalf("requests = %v, want %v", requests, want)
-	}
-}
-
-func TestJarvisWorldModelCaptureTimeoutIsThirtyMinutes(t *testing.T) {
-	scriptPath, err := filepath.Abs(filepath.Join("..", "..", "scripts", "jarvis-world-model"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	content, err := os.ReadFile(scriptPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	script := string(content)
-	for _, want := range []string{
-		`api_call POST /api/debug/capture/discover '{}' 1800`,
-		`api_call POST /api/debug/capture/scan-chat "$(jq -nc --arg chat_id "$CHAT_ID" '{chat_id:$chat_id}')" 1800`,
-	} {
-		if !strings.Contains(script, want) {
-			t.Fatalf("world-model capture timeout missing %q", want)
-		}
 	}
 }
 

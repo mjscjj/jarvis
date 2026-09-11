@@ -7,8 +7,8 @@ import (
 	"time"
 )
 
-// ExecutionSupplement is one execution-time clarification/instruction from a
-// human or the proactive Agent. It is isolated from frozen Todo.content.
+// ExecutionSupplement is one execution-time clarification/instruction. It is
+// isolated from frozen Todo.content.
 type ExecutionSupplement struct {
 	Note    string `json:"note"`
 	At      string `json:"at"` // RFC3339 UTC
@@ -62,6 +62,8 @@ func formatExecutionSupplementDirective(items []ExecutionSupplement) string {
 		source := "委托人"
 		if item.Channel == "proactive_agent" {
 			source = "主动巡视"
+		} else if stage, ok := strings.CutPrefix(item.Channel, "agent:"); ok {
+			source = "Agent (" + stage + ")"
 		}
 		b.WriteString(fmt.Sprintf("\n%d. 【%s】%s", i+1, source, note))
 		if at := strings.TrimSpace(item.At); at != "" {

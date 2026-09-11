@@ -12,7 +12,7 @@ import (
 )
 
 // buildContextSnapshot freezes the background for one candidate at extraction
-// time (docs/design-context-pipeline.md §2.2). It assembles from the already
+// time (docs/decisions/context-snapshot.md). It assembles from the already
 // loaded ChatBatch/unit data; the only DB read is the full project detail when
 // the project was resolved from a hint (the bound project detail is already in
 // the batch).
