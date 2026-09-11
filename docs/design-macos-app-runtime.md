@@ -115,7 +115,9 @@ The app service creates a bootstrap runtime overlay only when one does not
 exist. Expensive or externally acting schedulers start disabled, which lets the
 HTTP server and Web UI open before identity and provider setup is complete.
 
-After ByteDance SSO, the Web onboarding gate drives the following API sequence:
+The Web onboarding gate drives the following API sequence. Browser visitor
+authentication is described separately in [Web SSO integration](summery/sso-web-login.md);
+the proposed personal-JWT integration has not yet been implemented:
 
 1. `GET /api/setup/status` checks existing Lark and Agent logins concurrently.
    Only missing connections need action. `POST /api/setup/lark/connect` starts

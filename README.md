@@ -88,6 +88,8 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 | Agent 工具 | `internal/toolcatalog/`, `scripts/jarvis-tools` |
 | 飞书应用与登录身份 | [docs/design-dual-app-identity.md](docs/design-dual-app-identity.md)，配置真源是 `conf/okr-module.yaml` 与 `conf/okr-feishu-scopes.txt` |
 
+网页登录与白名单接入见 [网页 SSO 登录接入](docs/summery/sso-web-login.md)。采用字节云官方个人 JWT SDK；当前仍待域名接入确认、代码实现与真实登录验收。
+
 有效配置是 `conf/config.yaml` 与同目录 `conf/config.runtime.yaml` 的合并结果：runtime 文件按叶子 key 覆盖基线，未出现的 key 保留基线值，两个文件都拒绝未知字段。
 
 **改本机运行参数改 `conf/config.runtime.yaml`，不要改 `conf/config.yaml`。** 后台设置页保存时会把整份可调参数快照写进 runtime 文件，此后基线里的同名 key 永久失效——这是「改了 `conf/config.yaml` 没有任何效果」的典型原因。基线只负责仓库默认值和 runtime 未覆盖的键（`sqlite.path`、`server.*`、`capture.hot_age_hours` 等）；身份与密钥（`extract.principal_open_id`、`card_approval.relay_secret`）只写 runtime 文件，它不进 Git、权限保持 `600`。Jarvis 本体的飞书身份直接使用 lark-cli 当前默认身份，也就是权限最大、只服务 principal 一人的主应用。OKR 模块的页面登录是**另一个**低敏应用，见 [双飞书应用身份设计](docs/design-dual-app-identity.md)。

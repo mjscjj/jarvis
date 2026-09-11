@@ -65,6 +65,7 @@
 
 | 文档 | 状态 | 已实现 / 未实现边界 |
 |---|---|---|
+| [网页 SSO 登录接入](summery/sso-web-login.md) | proposal，官方方法已查证 | 个人 JWT SDK 与白名单；域名确认、代码接入和真实登录验收未完成 |
 | [长任务 Goal Control](design-long-horizon-agent-goal-control.md) | proposal / partial | 目标线索保真已改善；Goal Store、Supervisor、独立 Verifier 未实现 |
 | [插件扩展与解耦规范](summery/plugin-extension-spec.md) | proposal | 当前接入步骤、耦合点与职责约定；声明文件加载、通用插件表单、授权适配器拆分和任务展示解耦未实现 |
 | [代码提交与评审方案](summery/code-submission-plan.md) | proposal | 待对齐的分支、commit、MR 与验证约定；以插件解耦分批交付为例，未执行提交 |

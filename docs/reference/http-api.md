@@ -19,17 +19,18 @@
 ## 字节身份
 
 - `GET /api/auth/status`：读取当前 Jarvis 浏览器会话。
-- `POST /api/auth/login`：复用本机 BytedCLI 字节身份；未登录时启动非阻塞 SSO Device Flow。
-- `POST /api/auth/login/complete`：轮询并完成 SSO 登录。
+- `POST /api/auth/login`：现有实现启动独立 bytedcli profile 的 CLI 授权流程。
+- `POST /api/auth/login/complete`：轮询现有 CLI 授权流程。
 - `POST /api/auth/logout`：只清除 Jarvis 浏览器会话，不清除全机 BytedCLI 授权。
 
-前端由 AuthProvider 统一处理首次登录与会话失效恢复。并发 401 共用一次恢复，
-优先复用 BytedCLI 身份；失败的写请求不自动重放。主动退出后须点击登录才能恢复。
+上述 CLI 授权入口不是已验收的网页个人 SSO。新的 [网页 SSO 登录接入](../summery/sso-web-login.md) 采用个人 JWT SDK，尚未完成代码接入，不能按现有接口说明推断它已经可用。
+
+前端由 AuthProvider 统一处理首次登录与会话失效恢复。并发 401 共用一次恢复；失败的写请求不自动重放。主动退出后须点击登录才能恢复。
 
 `POST /api/setup/lark/credentials` 接收 `app_secret`，验证并更新当前飞书应用的
 CLI 与已有 CC Connect 配置，随后请求服务重启；不改变 App ID，也不重做首次初始化。
 
-浏览器发起的管理 API 请求需要 Jarvis 会话；健康检查、认证接口、`POST /api/clues`、`GET|HEAD /jarvis-updates/*`、卡片回调和无浏览器 Fetch Metadata 的本机 Agent/CLI 请求不经过该门禁。
+启用 `auth.enabled` 时，浏览器发起的管理 API 请求需要 Jarvis 会话；健康检查、认证接口、`POST /api/clues`、`GET|HEAD /jarvis-updates/*`、卡片回调和无浏览器 Fetch Metadata 的本机 Agent/CLI 请求不经过该门禁。
 
 `/jarvis-updates/*` 只在配置了更新目录时注册，按文件名直读该目录下的常规文件，供桌面端 updater 匿名取 `latest.json` 与安装包。它必须排除在 gzip 中间件之外：中间件会把整个响应体读进内存再压缩，几百 MB 的安装包会因此在每次请求时被完整缓冲。
 
