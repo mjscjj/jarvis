@@ -17,8 +17,7 @@
 
 ## 首次安装
 
-当前首个支持自动更新的版本是
-[Jarvis 0.1.1 DMG](https://jarvisx.bytedance.net/jarvis-updates/Jarvis_0.1.1_aarch64.dmg)。
+当前版本：[Jarvis 0.1.2 DMG](https://jarvisx.bytedance.net/jarvis-updates/Jarvis_0.1.2_aarch64.dmg)。
 
 1. 下载并打开 DMG。
 2. 将 `Jarvis.app` 拖入 `Applications`。
