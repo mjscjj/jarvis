@@ -220,6 +220,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 		h.GET("/api/setup/status", GetOnboardingStatus(deps.Onboarding))
 		h.POST("/api/setup/lark/connect", BeginOnboardingLarkSetup(deps.Onboarding))
 		h.POST("/api/setup/lark/login", BeginOnboardingLarkLogin(deps.Onboarding))
+		h.POST("/api/setup/lark/credentials", RepairOnboardingLarkCredentials(deps.Onboarding))
 		h.POST("/api/setup/agent/login", BeginOnboardingAgentLogin(deps.Onboarding))
 		h.GET("/api/setup/flows/:flow_id", GetOnboardingFlow(deps.Onboarding))
 		h.POST("/api/setup/flows/:flow_id/cancel", CancelOnboardingFlow(deps.Onboarding))

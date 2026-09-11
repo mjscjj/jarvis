@@ -4,7 +4,7 @@ import { Alert, Button, Input, QRCode, Spin, Typography } from 'antd'
 import { LinkOutlined, LoadingOutlined } from '@ant-design/icons'
 import {
   beginSetupAgentLogin, beginSetupLarkConnection, beginSetupLarkLogin,
-  cancelSetupFlow, finalizeSetup, getSetupFlow, getSetupStatus, loginWithByteDance,
+  cancelSetupFlow, finalizeSetup, getSetupFlow, getSetupStatus, repairSetupLarkCredentials,
 } from './api'
 import type { SetupFlow, SetupStatus } from './types'
 import { setupAction, setupCanEnter } from './onboardingState'
@@ -97,7 +97,6 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
         let resumed = false
         for (let attempt = 0; attempt < 30; attempt += 1) {
           try {
-            await loginWithByteDance()
             current = await load()
             if (setupCanEnter(current, previousRuntime)) { resumed = true; break }
           } catch { /* The runtime restart temporarily interrupts HTTP. */ }
@@ -127,6 +126,17 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
     finally { setBusy('') }
   }
 
+  const repairCredentials = async () => {
+    setError(''); setBusy('正在验证并更新当前应用密钥…')
+    try {
+      await repairSetupLarkCredentials(appSecret)
+      // Keep the draft for first-run Finalize when no chat config exists yet.
+      setEditingSecret(false)
+      await load()
+    } catch (cause) { setError(errorText(cause)) }
+    finally { setBusy('') }
+  }
+
   const cancelFlow = async () => {
     if (!flow?.id) return
     try { await cancelSetupFlow(flow.id); setFlow(null); await load() }
@@ -139,7 +149,7 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
 
   const action = setupAction(status)
   const locked = Boolean(busy || flow)
-  const secretEditorVisible = editingSecret || (!status.configuration.machine_configuration_ready && !status.lark.credential_available)
+  const secretEditorVisible = action === 'repair' || editingSecret || (!status.configuration.machine_configuration_ready && !status.lark.credential_available)
   const flowURL = flow?.verification_url || flow?.output?.match(/https?:\/\/\S+/)?.[0]
   const appLabel = status.lark.app_name || status.lark.app_id
 
@@ -152,13 +162,15 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
         {action === 'repair' && <Alert type="warning" showIcon message="当前飞书应用尚未就绪" description="请检查当前应用的凭据、机器人能力及发布状态，再点击重新检查；无需创建另一个 Bot。" />}
         {action === 'authorize' && <Button type="primary" disabled={locked} onClick={() => void beginFlow('authorize')}>授权飞书账号</Button>}
         {action === 'agent' && <Button type="primary" disabled={locked} onClick={() => void beginFlow('agent')}>登录 Agent</Button>}
-        {action === 'start' && <>
+        {(action === 'start' || action === 'repair') && <>
           {secretEditorVisible && <div className="setup-field">
             <label htmlFor="setup-secret">App Secret</label>
             <Input.Password id="setup-secret" value={appSecret} disabled={locked} autoComplete="off" placeholder="补填当前飞书应用的密钥" onChange={(event) => { setAppSecret(event.target.value); setEditingSecret(true) }} />
             <details className="setup-help"><summary>在哪里找？</summary><p>打开<a href="https://open.feishu.cn/app" target="_blank" rel="noreferrer">飞书开发者后台</a>，进入当前应用「{appLabel}」（{status.lark.app_id}）的「凭证与基础信息」，复制 App Secret。不是个人密码，也不是 Webhook。</p><p>只需填写一次，不要另建应用；验证失败会保留输入。</p></details>
           </div>}
-          <Button type="primary" disabled={locked || (secretEditorVisible && !appSecret.trim())} onClick={() => void start()}>{error ? '重试并继续' : '开始使用'}</Button>
+          {action === 'repair'
+            ? <Button type="primary" disabled={locked || !appSecret.trim()} onClick={() => void repairCredentials()}>验证并更新密钥</Button>
+            : <Button type="primary" disabled={locked || (secretEditorVisible && !appSecret.trim())} onClick={() => void start()}>{error ? '重试并继续' : '开始使用'}</Button>}
         </>}
       </>}
       {busy && <span className="setup-running"><LoadingOutlined /> {busy}</span>}

@@ -282,6 +282,8 @@ func (s *Service) BeginLarkSetup(ctx context.Context) (*Flow, error) {
 }
 
 func (s *Service) BeginLarkLogin(ctx context.Context) (*Flow, error) {
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
 	output, err := s.runner.Run(ctx, s.options.LarkCLIBin, []string{
 		"auth", "login",
 		"--recommend", "--scope", "im:message:readonly",
@@ -467,6 +469,8 @@ func (s *Service) BootstrapWorldModel(ctx context.Context) (*domain.Task, error)
 }
 
 func (s *Service) checkBotEvents(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, 40*time.Second)
+	defer cancel()
 	for _, event := range []string{"im.message.receive_v1", "card.action.trigger"} {
 		output, err := s.runner.Run(ctx, s.options.LarkCLIBin, []string{"event", "consume", event, "--as", "bot", "--dry-run"}, "")
 		if err != nil {
@@ -688,7 +692,15 @@ func (s *Service) larkStatus(ctx context.Context) LarkStatus {
 			// No app yet is a normal first-run state; an invalid selected profile is not.
 			return LarkStatus{Available: true}
 		}
-		return LarkStatus{Available: !errors.Is(err, exec.ErrNotFound), Error: commandError("检查飞书授权", output, err).Error()}
+		status := LarkStatus{Available: !errors.Is(err, exec.ErrNotFound), Error: commandError("检查飞书授权", output, err).Error()}
+		// Read the configured App ID even if remote credential verification failed.
+		// Keep the verification error; knowing the app is not proof it is ready.
+		if ctx.Err() == nil && status.Available {
+			if current, configErr := s.currentLarkConfig(ctx); configErr == nil {
+				status.AppID = current.AppID
+			}
+		}
+		return status
 	}
 	var payload larkAuthPayload
 	if err := json.Unmarshal(output, &payload); err != nil {

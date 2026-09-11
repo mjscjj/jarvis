@@ -117,7 +117,10 @@ HTTP server and Web UI open before identity and provider setup is complete.
 
 After ByteDance SSO, the Web onboarding gate drives the following API sequence:
 
-1. `POST /api/setup/lark/bind` validates and stores the Lark app in `lark-cli`.
+1. `GET /api/setup/status` checks existing Lark and Agent logins concurrently.
+   Only missing connections need action. `POST /api/setup/lark/connect` starts
+   Lark's connection flow; `/api/setup/lark/credentials` repairs the current
+   app secret without changing the app or repeating initialization.
 2. `POST /api/setup/lark/login` starts user device authorization.
 3. `POST /api/setup/agent/login` starts Trae CLI device authorization.
 4. `GET /api/setup/flows/:flow_id` exposes authorization URLs, codes, live
@@ -126,9 +129,10 @@ After ByteDance SSO, the Web onboarding gate drives the following API sequence:
    enables runtime services, writes the CC Connect config, and requests a
    `jarvis-server` restart.
 6. The app service observes the CC config and starts CC Connect. It consumes the
-   restart marker and restarts the server without restarting Qdrant or Tauri.
+   restart marker and reloads the server and CC Connect without restarting
+   Qdrant or Tauri. AuthProvider restores the browser session using BytedCLI.
 7. `POST /api/setup/world-model` creates the normal M5 bootstrap task. The gate
-   opens only after that task has produced a principal profile.
+   opens when the runtime is usable; world modeling continues in the background.
 
 The semantic setup sequence belongs to `internal/onboarding` and the bootstrap
 Skill. The Go app service remains a process supervisor and only enforces process,
