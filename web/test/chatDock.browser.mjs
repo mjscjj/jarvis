@@ -219,6 +219,7 @@ try {
   await page.waitForFunction(() => document.querySelector('[aria-label="底部对话输入"]').disabled)
   assert.equal(await input.inputValue(), '冲突时保留输入')
   assert.equal(sessions.get('s4').draft.text, '冲突时保留输入')
+  await page.waitForFunction(() => window.__chatSends.at(-1)?.message === '冲突时保留输入')
   sessions.get('s4').running = true
   await page.evaluate(() => window.__chatReject())
   await page.getByText('chat state conflict: this chat session is already generating a reply', { exact: true }).waitFor()
