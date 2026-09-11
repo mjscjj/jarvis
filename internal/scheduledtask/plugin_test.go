@@ -32,7 +32,7 @@ func TestPluginSchedulesReuseTaskDispatchAndPauseWithoutDeletingHistory(t *testi
 	pluginEnabled := true
 	skillEnabled := true
 	svc.SetSkillGate(func(_ context.Context, name string) (bool, error) {
-		if name != "product-doc-review" {
+		if name != "product-prd-review" {
 			return false, errors.New("unknown skill")
 		}
 		return skillEnabled, nil
@@ -46,7 +46,7 @@ func TestPluginSchedulesReuseTaskDispatchAndPauseWithoutDeletingHistory(t *testi
 	interval := 10
 	owned, err := svc.Create(t.Context(), Input{
 		Title: "Review PRD", Instruction: "使用背景指定的 Skill 阅读指定文档", ActionType: "agent_task",
-		ContextSnapshot: json.RawMessage(`{"plugin":"product-management","skill":"product-doc-review","document":"https://example.com/prd"}`),
+		ContextSnapshot: json.RawMessage(`{"plugin":"product-management","skill":"product-prd-review","document":"https://example.com/prd"}`),
 		ScheduleType:    "interval", IntervalMinutes: &interval,
 	})
 	if err != nil {
@@ -78,7 +78,7 @@ func TestPluginSchedulesReuseTaskDispatchAndPauseWithoutDeletingHistory(t *testi
 	if err := json.Unmarshal(submitter.inputs[0].Background, &background); err != nil {
 		t.Fatal(err)
 	}
-	if background["skill"] != "product-doc-review" || background["document"] != "https://example.com/prd" {
+	if background["skill"] != "product-prd-review" || background["document"] != "https://example.com/prd" {
 		t.Fatalf("lost scope: %+v", background)
 	}
 	pluginEnabled = false

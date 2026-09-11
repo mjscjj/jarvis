@@ -17,16 +17,16 @@ import (
 
 func TestSkillContentAPIReadsAndUpdatesRawMarkdown(t *testing.T) {
 	root := t.TempDir()
-	directory := filepath.Join(root, "product-doc-review")
+	directory := filepath.Join(root, "product-prd-review")
 	if err := os.Mkdir(directory, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	original := "---\nname: product-doc-review\ndescription: '{{AGENT_NAME}} reviews docs'\nmodule: product-management\n---\n\n# {{AGENT_NAME}} instructions\n"
+	original := "---\nname: product-prd-review\ndescription: '{{AGENT_NAME}} reviews docs'\nmodule: product-management\n---\n\n# {{AGENT_NAME}} instructions\n"
 	if err := os.WriteFile(filepath.Join(directory, "SKILL.md"), []byte(original), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	configPath := filepath.Join(t.TempDir(), "skills.yaml")
-	if err := os.WriteFile(configPath, []byte("skills:\n  - name: product-doc-review\n    enabled: true\n    stages: [execute]\n"), 0o644); err != nil {
+	if err := os.WriteFile(configPath, []byte("skills:\n  - name: product-prd-review\n    enabled: true\n    stages: [execute]\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	source, err := skill.NewService(root, configPath)
@@ -44,11 +44,11 @@ func TestSkillContentAPIReadsAndUpdatesRawMarkdown(t *testing.T) {
 	h.GET("/api/skills/:skill_name/content", GetSkillContent(service))
 	h.GET("/api/skills/:skill_name/source", GetSkillSource(service))
 	h.PUT("/api/skills/:skill_name/source", UpdateSkillSource(service))
-	rendered := ut.PerformRequest(h.Engine, "GET", "/api/skills/product-doc-review/content", nil).Result()
+	rendered := ut.PerformRequest(h.Engine, "GET", "/api/skills/product-prd-review/content", nil).Result()
 	if rendered.StatusCode() != consts.StatusOK || !strings.Contains(string(rendered.Body()), "小贾") {
 		t.Fatalf("rendered GET status=%d body=%s", rendered.StatusCode(), rendered.Body())
 	}
-	response := ut.PerformRequest(h.Engine, "GET", "/api/skills/product-doc-review/source", nil).Result()
+	response := ut.PerformRequest(h.Engine, "GET", "/api/skills/product-prd-review/source", nil).Result()
 	if response.StatusCode() != consts.StatusOK {
 		t.Fatalf("GET status=%d body=%s", response.StatusCode(), response.Body())
 	}
@@ -67,11 +67,11 @@ func TestSkillContentAPIReadsAndUpdatesRawMarkdown(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	updated := ut.PerformRequest(h.Engine, "PUT", "/api/skills/product-doc-review/source", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
+	updated := ut.PerformRequest(h.Engine, "PUT", "/api/skills/product-prd-review/source", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
 	if updated.StatusCode() != consts.StatusOK {
 		t.Fatalf("PUT status=%d body=%s", updated.StatusCode(), updated.Body())
 	}
-	stale := ut.PerformRequest(h.Engine, "PUT", "/api/skills/product-doc-review/source", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
+	stale := ut.PerformRequest(h.Engine, "PUT", "/api/skills/product-prd-review/source", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
 	if stale.StatusCode() != consts.StatusConflict {
 		t.Fatalf("stale PUT status=%d body=%s", stale.StatusCode(), stale.Body())
 	}

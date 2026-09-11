@@ -8,11 +8,11 @@ const input: ScheduledTaskInput = {
   context_snapshot: { document: 'https://example.com/prd', attention: ['指标'], plugin: 'old' },
   schedule_type: 'weekly', daily_time: '09:00', weekday: 1, interval_minutes: null, run_at: null, enabled: false,
 }
-const scope = { pluginID: 'product-management', skills: [{ name: 'product-doc-review', description: 'Review', available: true }] }
+const scope = { pluginID: 'product-management', skills: [{ name: 'product-prd-review', description: 'Review', available: true }] }
 
 test('plugin schedules use common inputs and preserve context and timing on edit', () => {
-  const result = bindScheduleScope(input, scope, 'product-doc-review')
-  assert.deepEqual(result.context_snapshot, { document: 'https://example.com/prd', attention: ['指标'], plugin: 'product-management', skill: 'product-doc-review' })
+  const result = bindScheduleScope(input, scope, 'product-prd-review')
+  assert.deepEqual(result.context_snapshot, { document: 'https://example.com/prd', attention: ['指标'], plugin: 'product-management', skill: 'product-prd-review' })
   assert.equal(result.enabled, false)
   assert.equal(result.weekday, 1)
   assert.equal(result.instruction, input.instruction)
@@ -21,5 +21,5 @@ test('plugin schedules use common inputs and preserve context and timing on edit
 
 test('unknown or disabled Skills cannot be selected for plugin schedules', () => {
   assert.throws(() => bindScheduleScope(input, scope, 'missing'), /Skill/)
-  assert.throws(() => bindScheduleScope(input, { ...scope, skills: [{ ...scope.skills[0], available: false }] }, 'product-doc-review'), /Skill/)
+  assert.throws(() => bindScheduleScope(input, { ...scope, skills: [{ ...scope.skills[0], available: false }] }, 'product-prd-review'), /Skill/)
 })
