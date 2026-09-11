@@ -29,7 +29,9 @@
 `POST /api/setup/lark/credentials` 接收 `app_secret`，验证并更新当前飞书应用的
 CLI 与已有 CC Connect 配置，随后请求服务重启；不改变 App ID，也不重做首次初始化。
 
-浏览器发起的管理 API 请求需要 Jarvis 会话；健康检查、认证接口、`POST /api/clues`、卡片回调和无浏览器 Fetch Metadata 的本机 Agent/CLI 请求不经过该门禁。
+浏览器发起的管理 API 请求需要 Jarvis 会话；健康检查、认证接口、`POST /api/clues`、`GET|HEAD /jarvis-updates/*`、卡片回调和无浏览器 Fetch Metadata 的本机 Agent/CLI 请求不经过该门禁。
+
+`/jarvis-updates/*` 只在配置了更新目录时注册，按文件名直读该目录下的常规文件，供桌面端 updater 匿名取 `latest.json` 与安装包。它必须排除在 gzip 中间件之外：中间件会把整个响应体读进内存再压缩，几百 MB 的安装包会因此在每次请求时被完整缓冲。
 
 ## 健康与工作项
 

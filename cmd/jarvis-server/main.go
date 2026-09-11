@@ -59,7 +59,6 @@ import (
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/common/hlog"
-	hertzgzip "github.com/hertz-contrib/gzip"
 )
 
 func main() {
@@ -921,7 +920,7 @@ func main() {
 	h := server.Default(
 		server.WithHostPorts(cfg.Server.Addr),
 	)
-	h.Use(hertzgzip.Gzip(hertzgzip.BestSpeed, hertzgzip.WithExcludedPaths([]string{"/api/chat"})))
+	h.Use(api.Compression())
 	h.Use(observability.Middleware())
 	authService, err := authn.NewService("bytedcli", 12*time.Hour)
 	if err != nil {

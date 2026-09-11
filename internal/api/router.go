@@ -209,8 +209,8 @@ func Register(h *server.Hertz, deps Dependencies) error {
 		if err != nil {
 			return fmt.Errorf("create update file handler: %w", err)
 		}
-		h.GET("/jarvis-updates/:filename", updateFiles)
-		h.HEAD("/jarvis-updates/:filename", updateFiles)
+		h.GET(UpdateFilePrefix+"/:filename", updateFiles)
+		h.HEAD(UpdateFilePrefix+"/:filename", updateFiles)
 	}
 	h.GET("/api/auth/status", GetAuthStatus(deps.Auth))
 	h.POST("/api/auth/login", LoginWithByteDance(deps.Auth))
