@@ -119,6 +119,9 @@ func (s *Service) Get(ctx context.Context, key string) (*View, error) {
 }
 
 func (s *Service) Update(ctx context.Context, key string, input Input) (*View, error) {
+	if key == SystemPromptCCKey {
+		return nil, fmt.Errorf("%w: CC prompt is an installation template; edit the file and rebind CC to apply it", ErrInvalidInput)
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

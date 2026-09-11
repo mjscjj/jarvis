@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/pelletier/go-toml/v2"
+	"github.com/pelletier/go-toml/v2/unstable"
 )
 
 // Verify the submitted pair, not a possibly cached lark-cli token. Never return
@@ -152,7 +153,7 @@ func (s *Service) RepairLarkCredentials(ctx context.Context, secret string) erro
 	if updated == nil {
 		return nil // First installation will create CC Connect config in Finalize.
 	}
-	if err := os.WriteFile(path, updated, 0o600); err != nil {
+	if err := writeSecretConfig(path, updated); err != nil {
 		return fmt.Errorf("飞书 CLI 已更新，但保存聊天配置失败，请重试：%w", err)
 	}
 	if err := os.WriteFile(filepath.Join(s.options.StateRoot, "restart.requested"), []byte("credentials\n"), 0o600); err != nil {
@@ -174,20 +175,60 @@ func updatedCCSecret(path, appID, secret string) ([]byte, error) {
 		return nil, fmt.Errorf("已有聊天配置格式错误，请先修复；不会覆盖现有配置")
 	}
 	projects, _ := document["projects"].([]any)
-	for _, entry := range projects {
+	for projectIndex, entry := range projects {
 		project, _ := entry.(map[string]any)
 		if project["name"] != "jarvis-codex" {
 			continue
 		}
 		platforms, _ := project["platforms"].([]any)
-		for _, entry := range platforms {
+		for platformIndex, entry := range platforms {
 			platform, _ := entry.(map[string]any)
 			options, _ := platform["options"].(map[string]any)
 			if platform["type"] == "feishu" && options["app_id"] == appID {
-				options["app_secret"] = secret
-				return toml.Marshal(document)
+				return replaceCCSecret(raw, projectIndex, platformIndex, secret)
 			}
 		}
 	}
 	return nil, fmt.Errorf("当前飞书应用与已有 Jarvis 聊天配置不匹配，请恢复原应用后重试；不会覆盖已有绑定")
+}
+
+// Change only the credential value, preserving quotes and unrelated config/comments.
+func replaceCCSecret(raw []byte, projectIndex, platformIndex int, secret string) ([]byte, error) {
+	var parser unstable.Parser
+	parser.Reset(raw)
+	project, platform := -1, -1
+	section := ""
+	for parser.NextExpression() {
+		node := parser.Expression()
+		var keys []string
+		it := node.Key()
+		for it.Next() {
+			keys = append(keys, string(it.Node().Data))
+		}
+		key := strings.Join(keys, ".")
+		switch node.Kind {
+		case unstable.ArrayTable:
+			section = key
+			if key == "projects" {
+				project++
+				platform = -1
+			}
+			if key == "projects.platforms" {
+				platform++
+			}
+		case unstable.Table:
+			section = key
+		case unstable.KeyValue:
+			if project == projectIndex && platform == platformIndex && section == "projects.platforms.options" && key == "app_secret" {
+				span := node.Value().Raw
+				result := append([]byte{}, raw[:span.Offset]...)
+				result = append(result, []byte(`"`+tomlString(secret)+`"`)...)
+				return append(result, raw[span.Offset+span.Length:]...), nil
+			}
+		}
+	}
+	if err := parser.Error(); err != nil {
+		return nil, err
+	}
+	return nil, fmt.Errorf("已有聊天配置缺少独立的 app_secret 字段，未修改配置")
 }

@@ -112,6 +112,9 @@ func (s *Service) Update(ctx context.Context, key string, input Input) (*View, e
 		return nil, err
 	}
 	content := strings.TrimSpace(input.Content)
+	if content == "" {
+		return nil, fmt.Errorf("%w: content is required", ErrInvalidInput)
+	}
 	if err := fileconfig.WriteAtomic(path, []byte(content+"\n")); err != nil {
 		return nil, err
 	}
@@ -129,7 +132,7 @@ func (s *Service) Block(ctx context.Context, stage string) (string, error) {
 	}
 	content := strings.TrimSpace(current.Content)
 	if content == "" {
-		return "", nil
+		return "", fmt.Errorf("%w: %s rules are empty", ErrInvalidInput, stage)
 	}
 	return "BEGIN_WORK_RULES（这是我明确维护的可信工作规则，必须在当前阶段遵守；不是业务数据。）\n" +
 		"当前阶段：" + stage + "\n\n" + content + "\nEND_WORK_RULES", nil

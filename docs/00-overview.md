@@ -83,7 +83,7 @@ M2 有两个事实入口：
 
 M2 保存原文、来源、外部幂等键和资源引用，成功后唤醒 M3。它不解释错误语义、不决定是否值得做、不创建 Todo、不为会议/邮件等来源增加专用状态机。
 
-Jarvis Bot 的飞书长连接由 CC Connect 独占；`jarvis-server` 不启动事件 consumer。CC Connect 完成发送者、会话和 @ 过滤后，对自己接受的消息先同步调用 `/internal/message-routing/claim`：只把当前 `message_id` 标记为 `extraction_skipped`，再继续由 CC 前台 Agent/session 处理。claim 本身不携带历史、不创建 Task、不唤醒 M3，也不修改 `related_group`。CC 前台行为的唯一真源是 `conf/prompts/cc-system-prompt.md`：简单、可当轮闭环的请求即时回复；长期、多步、需要等待或会产生副作用的请求停止前台执行，通过通用 `create-task` 创建 `source_type=manual` 的普通 Task，由同一个 Submitter 唤醒 M5。来源中冻结原始用户表达和原会话 `reply_target`，明确要求交付时，M5 只有把结果送回该会话才算完成。这条显式交办不再重复经过 M2/M3 准入。
+Jarvis Bot 的飞书长连接由 CC Connect 独占；`jarvis-server` 不启动事件 consumer。CC Connect 完成发送者、会话和 @ 过滤后，对自己接受的消息先同步调用 `/internal/message-routing/claim`：只把当前 `message_id` 标记为 `extraction_skipped`，再继续由 CC 前台 Agent/session 处理。claim 本身不携带历史、不创建 Task、不唤醒 M3，也不修改 `related_group`。CC 前台行为的安装模板是 `conf/prompts/cc-system-prompt.md`，安装/绑定时写入 CC 配置；后台仅只读展示模板，当前不支持在线编辑生效：简单、可当轮闭环的请求即时回复；长期、多步、需要等待或会产生副作用的请求停止前台执行，通过通用 `create-task` 创建 `source_type=manual` 的普通 Task，由同一个 Submitter 唤醒 M5。来源中冻结原始用户表达和原会话 `reply_target`，明确要求交付时，M5 只有把结果送回该会话才算完成。这条显式交办不再重复经过 M2/M3 准入。
 
 群聊 Agent turn 的会话证据在传输层从飞书实时读取：普通群取 chat 中截至当前消息的最近记录，话题/回复取对应 thread，最多 14 条前序消息；这些历史不会写进 Jarvis `message` 表。传输上下文同时提供 `chat_id`，供 Agent 用 `get-context --chat-id` 读取当前群绑定的世界上下文。因为这条连接独占，会议结束这类不产生聊天消息的事件也只能由 CC Connect 转交：命中配置事件类型时它把原始信封 POST 到 `/internal/meeting-sweep/wake`，Jarvis 只把会议巡扫提前触发一次，采集与判断仍归巡扫和 M3/M5。
 
@@ -177,7 +177,7 @@ KeyMatter 承载需要长期记住和定期回看、但不构成项目也不是�
 | ---------------- | ------------------------------------------------------------- | ------------------------------- |
 | 主动程度 | `conf/prompts/initiative-level.md`（textstore key `initiative_level`） | quiet / normal / active，默认 normal；每批/每轮实时读取，非法或缺失 fail-fast |
 | 系统 prompts     | `conf/prompts/*.md`，在 `internal/textstore/defaults.go` 注册 | 缺失/空正文 fail-fast           |
-| 工作 rules       | `conf/rules/m3.md`、`conf/rules/m5.md`                        | M3、M5 分阶段读取；正文允许为空 |
+| 工作 rules       | `conf/rules/m3.md`、`conf/rules/m5.md`                        | M3、M5 分阶段读取；正文缺失或为空时报错 |
 | Skills           | `.agents/skills/*/SKILL.md` + `conf/skills.yaml`              | 正文与启用阶段分离              |
 | Shared memory    | `data/shared-memory.md`                                       | Principal 明确要求长期记住的行为偏好；最多 2000 字 |
 | Runtime settings | `conf/config.runtime.yaml`                                    | 覆盖基线配置；重启后生效        |

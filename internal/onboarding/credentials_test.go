@@ -210,6 +210,9 @@ jarvis_route_claim_secret = "relay-keep"
 	if !reflect.DeepEqual(expected, actual) {
 		t.Fatal("credential repair changed unrelated config values")
 	}
+	if !strings.Contains(string(raw), `app_secret = "new-secret"`) || !strings.Contains(string(raw), `name = "jarvis-codex"`) {
+		t.Fatal("credential repair must preserve the double-quoted strings consumed by CC shell tools")
+	}
 	if calls != 2 {
 		t.Fatalf("commands=%d", calls)
 	}
@@ -272,5 +275,22 @@ func TestFailedLarkVerificationStillIdentifiesConfiguredApp(t *testing.T) {
 	status := s.larkStatus(t.Context())
 	if status.AppID != "cli_test" || status.Error == "" || status.Bot.Verified {
 		t.Fatalf("status=%+v", status)
+	}
+	if flow, err := s.BeginLarkSetup(t.Context()); err == nil || flow != nil {
+		t.Fatalf("invalid configured credentials reported setup success: %v, %v", flow, err)
+	}
+}
+
+func TestConfigShowUsesOnlyStdout(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "lark-cli")
+	// Captured CLI 1.0.93 contract: JSON on stdout, config path on stderr.
+	script := "#!/bin/sh\nprintf '%s\\n' '{\"appId\":\"cli_test\",\"profile\":\"default\",\"brand\":\"feishu\"}'\nprintf '\\nConfig file path: /tmp/config.json\\n' >&2\n"
+	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	s := &Service{options: Options{LarkCLIBin: bin}, runner: execRunner{}}
+	current, err := s.currentLarkConfig(t.Context())
+	if err != nil || current.AppID != "cli_test" || current.Profile != "default" {
+		t.Fatalf("read CLI config: %v, %v", current, err)
 	}
 }

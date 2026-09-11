@@ -102,17 +102,16 @@ func TestServiceUpdatesOnlyAllowlistedFile(t *testing.T) {
 	}
 }
 
-func TestServiceAllowsEmptyRuleFile(t *testing.T) {
+func TestServiceRejectsEmptyRuleFile(t *testing.T) {
 	service := newTestService(t)
-	if _, err := service.Update(t.Context(), StageExtract, Input{Content: ""}); err != nil {
-		t.Fatalf("clear extract rules: %v", err)
+	if _, err := service.Update(t.Context(), StageExtract, Input{Content: "  "}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("empty update error = %v", err)
 	}
-	block, err := service.Block(t.Context(), StageExtract)
-	if err != nil {
-		t.Fatalf("Block() error = %v", err)
+	if err := os.WriteFile(filepath.Join(service.directory, "m3.md"), []byte("\n"), 0o644); err != nil {
+		t.Fatal(err)
 	}
-	if block != "" {
-		t.Fatalf("empty rules block = %q", block)
+	if _, err := service.Block(t.Context(), StageExtract); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("empty rules error = %v", err)
 	}
 }
 
