@@ -1,21 +1,14 @@
 .agent-activity-icon {
   position: relative;
   display: inline-flex;
-  width: 60px;
-  height: 60px;
-  flex: 0 0 60px;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
   border: 0;
   padding: 0;
-  border-radius: 18px;
+  border-radius: 13px;
   background: none;
   cursor: pointer;
-}
-
-.sider-brand.is-collapsed .agent-activity-icon {
-  width: 48px;
-  height: 48px;
-  flex-basis: 48px;
-  border-radius: 15px;
 }
 
 .agent-activity-icon:focus-visible {
@@ -23,60 +16,12 @@
   outline-offset: 4px;
 }
 
-.agent-activity-filter {
-  position: absolute;
-  pointer-events: none;
-}
-
-.agent-activity-core {
-  position: relative;
-  display: block;
-  width: 100%;
-  height: 100%;
-  border-radius: inherit;
-  transition: transform 500ms ease-out;
-}
-
-.agent-activity-core > img {
+.agent-activity-icon > img {
   display: block;
   width: 100%;
   height: 100%;
   border-radius: inherit;
 }
-
-.agent-activity-halo {
-  position: absolute;
-  inset: -7px;
-  overflow: hidden;
-  border-radius: 24px;
-  pointer-events: none;
-}
-
-.agent-activity-halo > span {
-  display: block;
-  width: 100%;
-  height: 100%;
-  background: radial-gradient(ellipse at 30% 35%, rgb(38 213 255 / 90%) 12%, transparent 68%),
-    radial-gradient(ellipse at 75% 70%, rgb(147 102 255 / 80%) 10%, transparent 68%);
-  animation: agent-core-breathe 2s ease-in-out infinite;
-}
-
-.agent-activity-flow {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-}
-
-.agent-activity-halo,
-.agent-activity-flow,
-.agent-activity-particles {
-  opacity: 0;
-  transition: opacity 500ms ease-out;
-}
-
-.agent-activity-ring { opacity: .65; }
 
 .agent-activity-particles {
   position: absolute;
@@ -84,6 +29,8 @@
   width: calc(100% + 14px);
   height: calc(100% + 14px);
   pointer-events: none;
+  opacity: 0;
+  transition: opacity 500ms ease-out;
 }
 
 .agent-activity-swarm {
@@ -101,27 +48,13 @@
   animation-delay: var(--spark-delay);
 }
 
-.agent-activity-orbit {
-  transform-origin: 128px 124px;
-  animation: agent-core-orbit 1.8s linear infinite;
-}
-
-.agent-activity-icon[data-state='running'] .agent-activity-core {
-  transform: scale(1.04);
-  transition-duration: 300ms;
-}
-
-.agent-activity-icon[data-state='running'] .agent-activity-halo,
-.agent-activity-icon[data-state='running'] .agent-activity-flow,
 .agent-activity-icon[data-state='running'] .agent-activity-particles {
   opacity: 1;
   transition-duration: 300ms;
 }
 
-.agent-activity-icon:not([data-state='running']) .agent-activity-orbit,
 .agent-activity-icon:not([data-state='running']) .agent-activity-swarm,
-.agent-activity-icon:not([data-state='running']) .agent-activity-spark,
-.agent-activity-icon:not([data-state='running']) .agent-activity-halo > span {
+.agent-activity-icon:not([data-state='running']) .agent-activity-spark {
   animation-play-state: paused;
 }
 
@@ -143,20 +76,12 @@
 }
 
 @keyframes agent-core-orbit { to { transform: rotate(360deg); } }
-@keyframes agent-core-breathe {
-  0%, 100% { opacity: .65; transform: scale(.94); }
-  50% { opacity: 1; transform: scale(1); }
-}
 @keyframes agent-particle-shimmer {
   0%, 100% { opacity: .35; }
   50% { opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .agent-activity-icon[data-state] .agent-activity-core { transform: none; transition: none; }
-  .agent-activity-halo, .agent-activity-flow, .agent-activity-particles { transition: none; }
-  .agent-activity-orbit { display: none; animation: none; }
+  .agent-activity-particles { transition: none; }
   .agent-activity-swarm, .agent-activity-spark { animation: none; }
-  .agent-activity-halo > span { animation: none; }
-  .agent-activity-ring { opacity: .85; }
 }

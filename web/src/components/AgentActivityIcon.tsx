@@ -1,5 +1,4 @@
 import { Tooltip } from 'antd'
-import { useId } from 'react'
 import type { CSSProperties } from 'react'
 import jarvisIcon from '../assets/jarvis-icon.png'
 import type { ExecutingTaskState } from '../hooks/useExecutingTaskCount'
@@ -13,7 +12,6 @@ const particles = Array.from({ length: 18 }, (_, index) => {
 })
 
 export function AgentActivityIcon({ name, count, error, onActivate }: ExecutingTaskState & { name: string; onActivate: () => void }) {
-  const emblemFilterID = useId()
   const running = !error && count !== undefined && count > 0
   const status = error ? 'error' : count === undefined ? 'loading' : running ? 'running' : 'idle'
   const label = error
@@ -24,32 +22,7 @@ export function AgentActivityIcon({ name, count, error, onActivate }: ExecutingT
   return (
     <Tooltip title={`${error ? `${label}：${error}` : label} · ${activateHint}`}>
       <button type="button" className="agent-activity-icon" data-state={status} aria-label={`${name}：${label}，${activateHint}`} onClick={onActivate}>
-        <svg className="agent-activity-filter" width="0" height="0" aria-hidden="true" focusable="false">
-          <defs>
-            {/* The PNG has a baked-in neutral tile. Keep the blue emblem and warm
-                spark by chroma, without rendering its gray square or center. */}
-            <filter id={emblemFilterID} colorInterpolationFilters="sRGB">
-              <feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -3 -3 6 0 -0.5" result="blue" />
-              <feColorMatrix in="SourceGraphic" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  6 -3 -3 0 -0.5" result="warm" />
-              <feComposite in="blue" in2="warm" operator="arithmetic" k2="1" k3="1" result="emblem" />
-              <feMorphology in="emblem" operator="dilate" radius="0.4" result="edges" />
-              <feComposite in="SourceGraphic" in2="edges" operator="in" />
-            </filter>
-          </defs>
-        </svg>
-        <span className="agent-activity-halo" aria-hidden="true"><span /></span>
-        <span className="agent-activity-core" aria-hidden="true">
-          <img className="sider-brand-icon" src={jarvisIcon} alt="" style={{ filter: `url(#${emblemFilterID})` }} />
-          <svg className="agent-activity-flow" viewBox="0 0 256 256" fill="none">
-            <circle className="agent-activity-ring" cx="128" cy="124" r="64" stroke="#65e5ff" strokeWidth="5" />
-            <g className="agent-activity-orbit">
-              <path d="M 173.25 78.75 A 64 64 0 0 1 192 124" stroke="#2acbff" strokeWidth="10" strokeLinecap="round" opacity=".35" />
-              <path d="M 187.13 99.51 A 64 64 0 0 1 192 124" stroke="#8af1ff" strokeWidth="6" strokeLinecap="round" />
-              <circle cx="192" cy="124" r="9" fill="#4addff" opacity=".3" />
-              <circle cx="192" cy="124" r="4.5" fill="#ecfdff" />
-            </g>
-          </svg>
-        </span>
+        <img className="sider-brand-icon" src={jarvisIcon} alt="" />
         <svg className="agent-activity-particles" viewBox="0 0 100 100" fill="none" aria-hidden="true">
           <g className="agent-activity-swarm">
             <circle cx="50" cy="50" r="42" stroke="#60dcff" strokeWidth=".6" strokeDasharray="16 28 3 35" opacity=".7" />

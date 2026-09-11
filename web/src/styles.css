@@ -250,7 +250,7 @@ body {
 }
 
 .sider-brand {
-  min-height: 100px;
+  min-height: 88px;
   display: flex;
   align-items: center;
   gap: var(--space-2);

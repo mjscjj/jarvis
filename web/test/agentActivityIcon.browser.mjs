@@ -68,16 +68,17 @@ try {
   const setTasks = async next => { tasks = next; await refresh() }
   await waitState('idle')
   const idleBox = await icon.boundingBox()
-  assert.equal(idleBox.width, 60)
-  assert.equal(idleBox.height, 60)
+  assert.equal(idleBox.width, 44)
+  assert.equal(idleBox.height, 44)
+  assert.equal(await icon.locator('img').evaluate(el => getComputedStyle(el).filter), 'none')
 
   // Poll discovers execution without visiting the task page.
   tasks = [{ id: 1, status: 'executing', source_type: 'manual' }]
   await waitState('running')
   assert.match(await icon.getAttribute('aria-label'), /正在执行 1 个任务/)
-  await page.waitForFunction(() => getComputedStyle(document.querySelector('.agent-activity-flow')).opacity === '1')
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('.agent-activity-particles')).opacity === '1')
   assert.deepEqual(await icon.boundingBox(), idleBox, 'Animation must not shift layout')
-  const orbit = page.locator('.agent-activity-orbit')
+  const orbit = page.locator('.agent-activity-swarm').first()
   const transform = await orbit.evaluate(el => getComputedStyle(el).transform)
   await page.waitForTimeout(250)
   assert.notEqual(await orbit.evaluate(el => getComputedStyle(el).transform), transform)
@@ -85,7 +86,7 @@ try {
 
   await setTasks([{ id: 1, status: 'executing' }, { id: 2, status: 'executing', source_type: 'scheduled_task' }, { id: 3, status: 'pending' }])
   await page.getByRole('button', { name: 'Jarvis：正在执行 2 个任务，点击查看版本与更新' }).waitFor()
-  assert.equal(await orbit.evaluate(el => getComputedStyle(el).animationDuration), '1.8s')
+  assert.equal(await orbit.evaluate(el => getComputedStyle(el).animationDuration), '8s')
   await icon.hover()
   // Becoming interactive must not drop the execution state the icon reports.
   await page.getByRole('tooltip', { name: '正在执行 2 个任务 · 点击查看版本与更新' }).waitFor()
@@ -96,15 +97,15 @@ try {
   await page.locator('.sider-collapse-btn').click()
   await page.waitForTimeout(400)
   const collapsed = await icon.boundingBox()
-  assert.equal(collapsed.width, 48)
+  assert.equal(collapsed.width, 44)
   const sider = await page.locator('.app-sider').boundingBox()
-  assert.ok(collapsed.x - 7 >= sider.x && collapsed.x + 55 <= sider.x + sider.width, 'Glow fits collapsed sidebar')
+  assert.ok(collapsed.x - 7 >= sider.x && collapsed.x + 51 <= sider.x + sider.width, 'Particles fit collapsed sidebar')
   await page.locator('.sider-collapse-btn').click()
 
   await page.emulateMedia({ reducedMotion: 'reduce' })
-  assert.equal(await orbit.evaluate(el => getComputedStyle(el).display), 'none')
-  assert.equal(await page.locator('.agent-activity-halo > span').evaluate(el => getComputedStyle(el).animationName), 'none')
-  assert.equal(await page.locator('.agent-activity-core').evaluate(el => getComputedStyle(el).transform), 'none')
+  assert.equal(await orbit.evaluate(el => getComputedStyle(el).animationName), 'none')
+  assert.equal(await page.locator('.agent-activity-spark').first().evaluate(el => getComputedStyle(el).animationName), 'none')
+  assert.equal(await icon.locator('img').evaluate(el => getComputedStyle(el).transform), 'none')
   await page.emulateMedia({ reducedMotion: 'no-preference' })
 
   for (const status of ['done', 'failed', 'waiting', 'needs_human', 'pending']) {
@@ -112,7 +113,7 @@ try {
     await waitState('idle')
     assert.match(await icon.getAttribute('aria-label'), /暂无执行中的任务/)
   }
-  await page.waitForFunction(() => getComputedStyle(document.querySelector('.agent-activity-flow')).opacity === '0')
+  await page.waitForFunction(() => getComputedStyle(document.querySelector('.agent-activity-particles')).opacity === '0')
   await setTasks([{ id: 1, status: 'executing', source_type: 'scheduled_task' }])
   await waitState('running')
   fail = true
