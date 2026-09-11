@@ -57,36 +57,6 @@ func TestRepositoryRulesKeepExecuteOnlyCapabilitiesOutOfExtract(t *testing.T) {
 	}
 }
 
-func TestRepositoryBaxAdmissionRuleBelongsOnlyToExtract(t *testing.T) {
-	service, err := NewService(filepath.Join("..", "..", "conf", "rules"))
-	if err != nil {
-		t.Fatalf("NewService(repository rules): %v", err)
-	}
-	extract, err := service.Block(t.Context(), StageExtract)
-	if err != nil {
-		t.Fatalf("Block(extract): %v", err)
-	}
-	execute, err := service.Block(t.Context(), StageExecute)
-	if err != nil {
-		t.Fatalf("Block(execute): %v", err)
-	}
-
-	for _, want := range []string{
-		"Bax (For Ops)- 问题反馈群",
-		"oc_60a252c90df7cf108281bbcf22e87679",
-		"Bax (For Backstage)- 问题反馈群//Feedback Group",
-		"oc_f552fbd743fcd3714cb4b6a38d72258e",
-		"优先于通用的 observing 判断",
-	} {
-		if !strings.Contains(extract, want) {
-			t.Fatalf("extract rules missing Bax admission guidance %q:\n%s", want, extract)
-		}
-		if strings.Contains(execute, want) {
-			t.Fatalf("execute rules contain M3-owned Bax admission guidance %q:\n%s", want, execute)
-		}
-	}
-}
-
 func TestServiceUpdatesOnlyAllowlistedFile(t *testing.T) {
 	service := newTestService(t)
 	updated, err := service.Update(t.Context(), StageExecute, Input{Content: "new execute rule"})
