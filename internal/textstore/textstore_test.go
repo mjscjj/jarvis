@@ -123,6 +123,29 @@ func TestRepositoryPromptsDoNotEmbedToolManuals(t *testing.T) {
 	}
 }
 
+func TestRepositoryCCPromptOwnsTheForegroundHandoffContract(t *testing.T) {
+	service, err := NewService(filepath.Join("..", "..", "conf", "prompts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := service.Content(t.Context(), SystemPromptCCKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		"{{REPO_ROOT}}", "get-context --chat-id", "get-shared-memory",
+		"create-task", "source_type=manual", "delivery_required", "reply_target",
+		"supplement-task", "resume-task",
+	} {
+		if !strings.Contains(content, required) {
+			t.Fatalf("CC prompt missing handoff contract %q", required)
+		}
+	}
+	if strings.Contains(content, "m5-system-prompt.md") {
+		t.Fatal("CC prompt must not depend on the M5 prompt file")
+	}
+}
+
 func newTestService(t *testing.T) *Service {
 	t.Helper()
 	directory := t.TempDir()

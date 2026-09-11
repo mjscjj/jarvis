@@ -584,7 +584,8 @@ func TestJarvisToolsTodoActorComesFromAgentStage(t *testing.T) {
 	}
 }
 
-func TestJarvisToolsCreateTaskIsProactiveOnlyAndForcesStrongTaskContract(t *testing.T) {
+func TestJarvisToolsCreateTaskAcceptsExplicitManualAndProactiveSources(t *testing.T) {
+	var sources []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/api/tasks" {
 			t.Fatalf("request = %s %s", r.Method, r.URL.Path)
@@ -593,24 +594,60 @@ func TestJarvisToolsCreateTaskIsProactiveOnlyAndForcesStrongTaskContract(t *test
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatal(err)
 		}
-		if payload["source_type"] != "proactive" {
+		source, _ := payload["source_type"].(string)
+		if source != "manual" && source != "proactive" {
 			t.Fatalf("payload = %#v", payload)
 		}
+		sources = append(sources, source)
 		if _, exists := payload["execution_mode"]; exists {
 			t.Fatalf("payload still contains execution_mode: %#v", payload)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		fmt.Fprint(w, `{"code":0,"data":{"id":19,"source_type":"proactive","status":"pending"}}`)
+		fmt.Fprintf(w, `{"code":0,"data":{"id":19,"source_type":%q,"status":"pending"}}`, source)
 	}))
 	defer server.Close()
-	payload := `{"title":"推进阻塞","action_type":"agent_task","target":"完成目标","background":{"why_now":"条件已满足"},"source_payload":{"instruction":"完成目标"}}`
+	payload := `{"title":"推进阻塞","action_type":"agent_task","target":"完成目标","background":{"why_now":"条件已满足"},"source_payload":{"instruction":"完成目标"},"source_type":"proactive"}`
 	out, err := runJarvisTools(t, server.URL, []string{"JARVIS_AGENT_STAGE=proactive"}, "create-task", "--payload", payload)
 	if err != nil || !strings.Contains(out, `"id":19`) {
 		t.Fatalf("output = %s, error = %v", out, err)
 	}
-	if _, err := runJarvisTools(t, server.URL, []string{"JARVIS_AGENT_STAGE=execute"}, "create-task", "--payload", payload); err == nil {
-		t.Fatal("create-task succeeded outside proactive stage")
+	manual := strings.Replace(payload, `"source_type":"proactive"`, `"source_type":"manual"`, 1)
+	if _, err := runJarvisTools(t, server.URL, []string{"JARVIS_AGENT_STAGE=cc"}, "create-task", "--payload", manual); err != nil {
+		t.Fatalf("manual create-task failed from CC stage: %v", err)
+	}
+	if got := strings.Join(sources, ","); got != "proactive,manual" {
+		t.Fatalf("sources = %q", got)
+	}
+	missingSource := strings.Replace(payload, `,"source_type":"proactive"`, "", 1)
+	if _, err := runJarvisTools(t, server.URL, nil, "create-task", "--payload", missingSource); err == nil {
+		t.Fatal("create-task accepted an implicit source_type")
+	}
+}
+
+func TestJarvisToolsSupplementsAndResumesExistingTask(t *testing.T) {
+	var paths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.Method+" "+r.URL.Path)
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		if payload["expected_version"] != float64(7) {
+			t.Fatalf("payload = %#v", payload)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"code":0,"data":{"task_id":19,"version":8}}`)
+	}))
+	defer server.Close()
+	if _, err := runJarvisTools(t, server.URL, []string{"JARVIS_AGENT_STAGE=cc"}, "supplement-task", "--id", "19", "--payload", `{"expected_version":7,"note":"补充约束"}`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runJarvisTools(t, server.URL, []string{"JARVIS_AGENT_STAGE=cc"}, "resume-task", "--id", "19", "--payload", `{"expected_version":7,"response":"批准"}`); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(paths, ","); got != "POST /api/tasks/19/supplement,POST /api/tasks/19/resume" {
+		t.Fatalf("paths = %q", got)
 	}
 }
 

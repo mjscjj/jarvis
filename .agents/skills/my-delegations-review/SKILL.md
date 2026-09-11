@@ -15,6 +15,7 @@ description: 主动巡视启用的我的交办，按真实证据与检查时机�
 查过一次，对方是否交付看待办 content 和证据。
 
 确实需要检查时，用普通 create-task 创建目标明确的一次核验 Task：
+- source_type 明确使用 proactive。
 - source_payload 中携带数字 delegation_id、why_now，以及原样复制 get-delegation 返回的
   source_payload 到 original_context，当前 content 到 current_progress；不让模型重写背景。
 - action_type 使用 investigate，目标明确“本次核验并回写”，不是“跟进到对方完成”。

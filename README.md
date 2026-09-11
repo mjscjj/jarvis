@@ -15,7 +15,9 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 
 ```text
 飞书 Bot WebSocket ─> CC Connect
-                       ├─ 接受的私聊/@消息 ─> route claim ─> CC 原生 Agent/session
+                       ├─ 接受的私聊/@消息 ─> route claim ─> CC 前台 Agent/session
+                       │                                  ├─ 即时答复
+                       │                                  └─ manual Task ─> M5
                        └─ 未接受的普通群消息（等待 M2 轮询）
 
 飞书 IM 轮询补偿 ───────────┐
@@ -47,6 +49,7 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 | M1 背景 | principal、项目、关键事项、人物、会话背景、人工资源 | `internal/background/` |
 | M2 采集 | 飞书消息事件、会话发现、增量轮询补偿、principal activity、通用 clue 落库 | `internal/capture/` |
 | M3 提取 | 证据校验、Todo 抽取/合并、上下文快照、语义去重 | `internal/extract/` |
+| CC 前台 | 当前会话即时处理；长期、多步或有副作用的工作创建 manual Task 交给 M5 | `conf/prompts/cc-system-prompt.md`, `integrations/cc-connect/` |
 | Todo 固化 | extracted Todo 按 ID/version 幂等创建 Task，不调用模型 | `internal/execute/materializer.go` |
 | M5 执行 | 调查、执行、提问、等待/续跑、人工回答、结果留痕 | `internal/execute/`, `internal/cardask/` |
 | 事实引擎 | 在关键路径外从 `message`、Todo、Task 通用蒸馏长期事实，并通过通用工具按需维护当前实体、关系和资料 | `internal/factengine/` |
@@ -94,6 +97,7 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 
 - 改 M3 抽取口径：`conf/prompts/m3-system-prompt.md`；改上下文组装：`internal/extract/prompt.go`、`internal/extract/snapshot.go`
 - 改 M5 执行行为：`conf/prompts/m5-system-prompt.md`、`conf/rules/m5.md`
+- 改飞书前台即时处理/转 Task 边界：`conf/prompts/cc-system-prompt.md`
 - 改主动巡视行为：`conf/prompts/proactive-system-prompt.md`；改调度与调用：`internal/proactive/`
 - 改审批尺度：`conf/prompts/m5-approval-policy.md`
 - 改严格输出协议/状态路由：`internal/execute/prompt.go`、`internal/execute/store.go`

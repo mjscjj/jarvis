@@ -7,6 +7,9 @@ const (
 	SystemPromptM3Key   = "m3_system_prompt"
 	SystemPromptM5Key   = "m5_system_prompt"
 	SystemPromptChatKey = "chat_system_prompt"
+	// SystemPromptCCKey drives the Feishu foreground Agent. It decides whether
+	// to answer in the current turn or create a durable manual Task for M5.
+	SystemPromptCCKey = "cc_system_prompt"
 	// SystemPromptProactiveKey drives the low-cost heartbeat agent that curates
 	// Jarvis's internal world model and creates Tasks for M5 without performing
 	// external business effects itself.
@@ -58,6 +61,11 @@ func definitions() []definition {
 			key: SystemPromptChatKey, name: "对话系统提示词", filename: "chat-system-prompt.md",
 			description: "定义交互对话 Agent 的角色、回答风格、工具使用与停止边界。",
 			kind:        "system_prompt", stage: "chat",
+		},
+		{
+			key: SystemPromptCCKey, name: "飞书前台系统提示词", filename: "cc-system-prompt.md",
+			description: "定义 CC 前台即时处理、用户约束和正式创建 Task 交给 M5 的边界。",
+			kind:        "system_prompt", stage: "cc",
 		},
 		{
 			key: SystemPromptProactiveKey, name: "主动巡视系统提示词", filename: "proactive-system-prompt.md",

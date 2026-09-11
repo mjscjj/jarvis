@@ -134,6 +134,17 @@ func newFinalizeTestService(t *testing.T) *Service {
 	if err := os.WriteFile(config.RuntimeOverridePath(path), []byte("extract:\n  enabled: false\n  principal_open_id: ou_desktop_onboarding_pending\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	prompt, err := os.ReadFile("../../conf/prompts/cc-system-prompt.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	promptPath := filepath.Join(root, "conf", "prompts", "cc-system-prompt.md")
+	if err := os.MkdirAll(filepath.Dir(promptPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(promptPath, prompt, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	db, err := gorm.Open(sqlite.Open(filepath.Join(root, "test.db")), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)

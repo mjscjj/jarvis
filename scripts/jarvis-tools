@@ -94,7 +94,9 @@ subcommands:
   get-task               Read task overview or a frozen context section
   list-task-runs         Page through a task’s execution history
   get-task-run           Read one run’s output and effects
-  create-task            Create a normal Task for strong M5 (proactive agent only)
+  create-task            Create a normal manual or proactive Task for strong M5
+  supplement-task        Add context to an existing Task without starting it
+  resume-task            Answer a needs_human Task and resume its M5 session
   start-task             Start one pending Task with strong M5 (proactive agent only)
   update-task            Update one non-terminal Task (proactive agent only)
   close-task             Close one non-terminal Task (proactive agent only)
@@ -434,10 +436,27 @@ EOF
     create-task) cat <<'EOF'
 usage: jarvis-tools create-task [--payload JSON|-] [--config PATH]
 
-Create one ordinary Task and hand it to the strong M5 executor. This command is
-only available when JARVIS_AGENT_STAGE=proactive. The payload uses the existing
-POST /api/tasks contract: title, action_type, target, background, source_payload
-and optional project_id. source_type=proactive is enforced.
+Create one ordinary Task and hand it to the strong M5 executor. The payload uses
+the existing POST /api/tasks contract and requires title, action_type, target,
+background, source_payload and source_type. source_type must be manual for an
+explicit foreground request or proactive for a background initiative; project_id
+is optional. The Task is pending only until the common submitter wakes M5.
+EOF
+      ;;
+    supplement-task) cat <<'EOF'
+usage: jarvis-tools supplement-task --id ID [--payload JSON|-] [--config PATH]
+
+Append trusted user context to an existing Task without starting a new run. The
+payload requires expected_version and note. Read the current version with
+get-task immediately before writing.
+EOF
+      ;;
+    resume-task) cat <<'EOF'
+usage: jarvis-tools resume-task --id ID [--payload JSON|-] [--config PATH]
+
+Answer the pending question on a needs_human Task and resume its existing M5
+session. The payload requires expected_version and response. Read the current
+version with get-task immediately before writing.
 EOF
       ;;
     start-task) cat <<'EOF'
@@ -934,6 +953,7 @@ require_command_flag() {
     get-project) allowed+=" --id --code" ;;
     get-key-matter | touch-key-matter | touch-resource) allowed+=" --id" ;;
     create-project | create-key-matter | update-principal | create-person | create-resource | create-task) allowed+=" --payload" ;;
+    supplement-task | resume-task) allowed+=" --id --payload" ;;
     notice-principal) allowed+=" --payload --payload-file" ;;
     update-project | update-key-matter | update-group | update-person | update-resource) allowed+=" --id --payload" ;;
     archive-project | close-key-matter | delete-person | delete-resource) allowed+=" --id" ;;
@@ -2412,7 +2432,6 @@ cmd_get_scheduled_task() {
 cmd_create_task() {
   reset_flags
   consume_flags "$@"
-  [[ "${JARVIS_AGENT_STAGE:-}" == "proactive" ]] || fail "create-task is only available to the proactive Agent"
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
   local payload body
   if [[ "$PAYLOAD" == "-" ]]; then
@@ -2421,8 +2440,43 @@ cmd_create_task() {
     payload="$PAYLOAD"
   fi
   printf '%s' "$payload" | jq -e 'type == "object"' >/dev/null 2>&1 || fail "create-task payload must be a JSON object"
-  payload="$(printf '%s' "$payload" | jq -c '. + {source_type:"proactive"}')"
+  printf '%s' "$payload" | jq -e '.source_type == "manual" or .source_type == "proactive"' >/dev/null 2>&1 || \
+    fail "create-task payload source_type must be manual or proactive"
   body="$(api_write POST /api/tasks "$payload")"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
+cmd_supplement_task() {
+  reset_flags
+  consume_flags "$@"
+  [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "supplement-task requires positive --id"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local payload body
+  if [[ "$PAYLOAD" == "-" ]]; then
+    payload="$(cat)"
+  else
+    payload="$PAYLOAD"
+  fi
+  printf '%s' "$payload" | jq -e 'type == "object" and (.expected_version | type == "number") and (.note | type == "string" and length > 0)' >/dev/null 2>&1 || \
+    fail "supplement-task payload requires numeric expected_version and non-empty note"
+  body="$(api_write POST "/api/tasks/${ID}/supplement" "$payload")"
+  emit "$(printf '%s' "$body" | jq -c '.data')"
+}
+
+cmd_resume_task() {
+  reset_flags
+  consume_flags "$@"
+  [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "resume-task requires positive --id"
+  API_BASE="$(resolve_api_base "$CONFIG_PATH")"
+  local payload body
+  if [[ "$PAYLOAD" == "-" ]]; then
+    payload="$(cat)"
+  else
+    payload="$PAYLOAD"
+  fi
+  printf '%s' "$payload" | jq -e 'type == "object" and (.expected_version | type == "number") and (.response | type == "string" and length > 0)' >/dev/null 2>&1 || \
+    fail "resume-task payload requires numeric expected_version and non-empty response"
+  body="$(api_write POST "/api/tasks/${ID}/resume" "$payload")"
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
 
@@ -2662,6 +2716,8 @@ case "$SUBCOMMAND" in
   list-task-runs) cmd_list_task_runs "$@" ;;
   get-task-run) cmd_get_task_run "$@" ;;
   create-task)          cmd_create_task "$@" ;;
+  supplement-task)      cmd_supplement_task "$@" ;;
+  resume-task)          cmd_resume_task "$@" ;;
   start-task)           cmd_start_task "$@" ;;
   update-task)          cmd_update_task "$@" ;;
   close-task)           cmd_close_task "$@" ;;
