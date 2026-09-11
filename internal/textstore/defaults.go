@@ -3,8 +3,10 @@ package textstore
 import "jarvis/internal/prompttemplate"
 
 const (
-	SystemPromptM3Key = "m3_system_prompt"
-	SystemPromptM5Key = "m5_system_prompt"
+	InitiativeLevelKey  = "initiative_level"
+	SystemPromptM3Key   = "m3_system_prompt"
+	SystemPromptM5Key   = "m5_system_prompt"
+	SystemPromptChatKey = "chat_system_prompt"
 	// SystemPromptProactiveKey drives the low-cost heartbeat agent that curates
 	// Jarvis's internal world model and creates Tasks for M5 without performing
 	// external business effects itself.
@@ -38,14 +40,24 @@ type definition struct {
 func definitions() []definition {
 	return []definition{
 		{
+			key: InitiativeLevelKey, name: "主动程度", filename: "initiative-level.md",
+			description: "后台主动发现、执行扩展与通知的档位：quiet（安静）、normal（普通）、active（活跃）；后续运行实时读取。",
+			kind:        "initiative_level", stage: "shared",
+		},
+		{
 			key: SystemPromptM3Key, name: "线索发现系统提示词", filename: "m3-system-prompt.md",
 			description: "定义线索发现 Agent 的角色、准入判断原则和输出要求。",
 			kind:        "system_prompt", stage: prompttemplate.StageM3,
 		},
 		{
 			key: SystemPromptM5Key, name: "任务执行系统提示词", filename: "m5-system-prompt.md",
-			description: "execute、apply 和 Session 恢复共用；具体阶段、审批产物及输出 Schema 由运行时动态追加。",
+			description: "任务执行及等待、人工回答恢复共用；主动程度、具体阶段和输出 Schema 由运行时动态追加。",
 			kind:        "system_prompt", stage: prompttemplate.StageM5,
+		},
+		{
+			key: SystemPromptChatKey, name: "对话系统提示词", filename: "chat-system-prompt.md",
+			description: "定义交互对话 Agent 的角色、回答风格、工具使用与停止边界。",
+			kind:        "system_prompt", stage: "chat",
 		},
 		{
 			key: SystemPromptProactiveKey, name: "主动巡视系统提示词", filename: "proactive-system-prompt.md",

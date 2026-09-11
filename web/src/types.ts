@@ -996,7 +996,7 @@ export interface TextFile {
   key: string
   name: string
   description: string
-  kind: 'system_prompt' | 'approval_policy'
+  kind: 'system_prompt' | 'approval_policy' | 'initiative_level'
   stage: string
   path: string
   content: string
@@ -1006,9 +1006,12 @@ export interface TextFileInput {
   content: string
 }
 
-export type AgentConfigStage = 'm3' | 'm5'
+export type AgentConfigStage = 'm3' | 'm5' | 'proactive'
+
+export type InitiativeLevel = 'quiet' | 'normal' | 'active'
 
 export interface AgentConfigPreview {
+  initiative_level: InitiativeLevel
   stage: AgentConfigStage
   name: string
   content: string
@@ -1290,30 +1293,62 @@ export interface PageSelection {
   label: string
 }
 
-// POST /api/chat 请求体。thread_id 为空表示新会话；非空表示 codex resume 多轮。
-export interface ChatRequest {
-  message: string
-  thread_id?: string | null
-  page_context?: PageContext | null
+export interface ChatSource {
+  kind: string
+  id?: string
+  label: string
 }
 
-// SSE 事件类型（event 字段）：
-//   'thread'  data={thread_id}         —— 会话建立/恢复，前端记住以便多轮 resume
-//   'delta'   data={text}              —— codex 增量输出，前端追加渲染
-//   'done'    data={}                  —— 本轮结束，可关闭流
-//   'error'   data={message}           —— 出错（fail-fast，前端直接展示）
-export type ChatEventType = 'thread' | 'delta' | 'done' | 'error'
-
-export interface ChatThreadEvent {
-  thread_id: string
+export interface ChatAttachment {
+  id: string
+  name: string
+  mime_type: string
+  size_bytes: number
+  created_at: string
 }
 
-export interface ChatDeltaEvent {
+export interface ChatHistoryMessage {
+  id: string
+  role: 'user' | 'assistant'
   text: string
+  agent?: string
+  model?: string
+  attachments?: ChatAttachment[]
+  created_at: string
 }
 
-export interface ChatErrorEvent {
-  message: string
+export interface ChatSession {
+  id: string
+  title: string
+  agent: string
+  model: string
+  reasoning_effort: string
+  sources: ChatSource[]
+  draft?: { text?: string; attachment_ids?: string[] }
+  archived: boolean
+  created_at: string
+  updated_at: string
+  messages?: ChatHistoryMessage[]
+  pending_attachments?: ChatAttachment[]
+}
+
+export interface ChatAgent {
+  id: 'codex' | 'trae' | 'cursor'
+  name: string
+  available: boolean
+  version?: string
+  error?: string
+  default: boolean
+}
+
+export interface ChatModel {
+  id: string
+  name: string
+  description?: string
+  input_modalities?: string[]
+  reasoning_efforts?: string[]
+  default_reasoning_effort?: string
+  default: boolean
 }
 
 export interface Delegation {

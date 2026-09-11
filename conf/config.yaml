@@ -163,8 +163,8 @@ execute:
   timeout_second: 1800                             # 单次执行超时：30 分钟（长任务需要查资料并调用外部工具）
   stale_executing_minute: 45                       # executing 超过此时长仍未结束 → 标 failed（防重启僵尸；须 > timeout）
 
-# 右侧流式对话（SSE /api/chat）。enabled=false 时不注册路由。
-# CLI 与模型与 M5 执行对齐（execute.bin/model）；本地可信环境固定 danger-full-access + 联网。
+# 首个 Tab 的持久流式对话。enabled=false 时不注册 /api/chat/* 路由。
+# 这里只提供新会话默认值；每个会话可选择 Codex、TRAE、Cursor 及其动态模型。
 chat:
   enabled: true
   model: "gpt-5.5"                     # 与 execute.model 一致

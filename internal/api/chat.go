@@ -3,108 +3,200 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
 	"jarvis/internal/chat"
 	"jarvis/internal/observability"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/common/hlog"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
 )
 
-// chatRequestBody 是 POST /api/chat 的请求体，字段严格对齐前端冻结契约
-// （web/src/types.ts 的 ChatRequest）。用指针区分「字段缺失」与「显式 null」。
-type chatRequestBody struct {
-	Message     string           `json:"message"`
-	ThreadID    *string          `json:"thread_id"`
-	PageContext *chatPageContext `json:"page_context"`
-}
-
-type chatPageContext struct {
-	ActiveKey string             `json:"active_key"`
-	Selection *chatPageSelection `json:"selection"`
-	ViewState json.RawMessage    `json:"view_state"`
-}
-
-type chatPageSelection struct {
-	Kind  string `json:"kind"`
-	ID    int64  `json:"id"`
-	Label string `json:"label"`
-}
-
-// Chat 是流式对话 SSE handler。它同步阻塞地边读 codex 边写 SSE——绝不起后台
-// goroutine 后立即 return（那样连接会被 Hertz 关掉）。事件类型：
-//
-//	thread  data={"thread_id":"..."}
-//	delta   data={"text":"..."}
-//	done    data={}
-//	error   data={"message":"..."}
-//
-// 一旦进入 SSE（响应头已发），出错只能通过 error 事件传达，不能再改 HTTP 状态码。
-func Chat(svc *chat.Service) app.HandlerFunc {
+func ListChatAgents(service *chat.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
-		ctx = observability.FromRequestContext(ctx, c)
-		var body chatRequestBody
-		if err := decodeStrictJSON(c.Request.Body(), &body); err != nil {
-			// 尚未进入 SSE，正常返回 HTTP 400。
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"items": service.ListAgents(ctx)}})
+	}
+}
+
+func ListChatModels(service *chat.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		items, err := service.ListModels(ctx, c.Param("agent_id"))
+		if err != nil {
+			if errors.Is(err, chat.ErrInvalidInput) {
+				writeAPIError(c, consts.StatusBadRequest, 40060, err)
+				return
+			}
+			writeAPIError(c, consts.StatusBadGateway, 50260, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"items": items}})
+	}
+}
+
+func ListChatSessions(service *chat.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		archived, _ := strconv.ParseBool(strings.TrimSpace(c.Query("archived")))
+		items, err := service.ListSessions(ctx, c.Query("query"), archived)
+		if err != nil {
+			writeChatError(c, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"items": items}})
+	}
+}
+
+func CreateChatSession(service *chat.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		var input chat.CreateSessionInput
+		if err := decodeStrictJSON(c.Request.Body(), &input); err != nil {
 			writeAPIError(c, 400, 40060, err)
 			return
 		}
+		view, err := service.CreateSession(ctx, input)
+		if err != nil {
+			writeChatError(c, err)
+			return
+		}
+		c.JSON(consts.StatusCreated, map[string]any{"code": 0, "data": view})
+	}
+}
 
+func GetChatSession(service *chat.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		view, err := service.GetSession(ctx, c.Param("session_id"))
+		if err != nil {
+			writeChatError(c, err)
+			return
+		}
+		c.JSON(200, map[string]any{"code": 0, "data": view})
+	}
+}
+
+func UpdateChatSession(service *chat.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		var input chat.UpdateSessionInput
+		if err := decodeStrictJSON(c.Request.Body(), &input); err != nil {
+			writeAPIError(c, 400, 40060, err)
+			return
+		}
+		view, err := service.UpdateSession(ctx, c.Param("session_id"), input)
+		if err != nil {
+			writeChatError(c, err)
+			return
+		}
+		c.JSON(200, map[string]any{"code": 0, "data": view})
+	}
+}
+
+func DeleteChatSession(service *chat.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		if err := service.DeleteSession(ctx, c.Param("session_id")); err != nil {
+			writeChatError(c, err)
+			return
+		}
+		c.JSON(200, map[string]any{"code": 0, "data": map[string]any{"deleted": true}})
+	}
+}
+
+func StreamChatSession(service *chat.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		ctx = observability.FromRequestContext(ctx, c)
+		var input chat.SendInput
+		if err := decodeStrictJSON(c.Request.Body(), &input); err != nil {
+			writeAPIError(c, 400, 40060, err)
+			return
+		}
 		w := newSSEWriter(c)
 		defer func() {
 			if err := w.Close(); err != nil {
-				hlog.CtxErrorf(ctx, "close chat stream failed error=%+v", err)
+				hlog.CtxErrorf(ctx, "close chat session stream failed error=%+v", err)
 			}
 		}()
-
-		req := chat.Request{Message: body.Message}
-		if body.ThreadID != nil {
-			req.ThreadID = *body.ThreadID
-		}
-		if body.PageContext != nil {
-			pc := &chat.PageContext{ActiveKey: body.PageContext.ActiveKey, ViewState: body.PageContext.ViewState}
-			if sel := body.PageContext.Selection; sel != nil {
-				pc.Selection = &chat.PageSelection{Kind: sel.Kind, ID: sel.ID, Label: sel.Label}
-			}
-			req.PageContext = pc
-		}
-
 		emit := func(ev chat.Event) error {
-			switch ev.Kind {
-			case chat.EventThread:
-				data, err := json.Marshal(map[string]string{"thread_id": ev.ThreadID})
-				if err != nil {
-					return fmt.Errorf("marshal thread event: %w", err)
-				}
-				return w.WriteEvent("thread", data)
-			case chat.EventDelta:
-				data, err := json.Marshal(map[string]string{"text": ev.Text})
-				if err != nil {
-					return fmt.Errorf("marshal delta event: %w", err)
-				}
-				return w.WriteEvent("delta", data)
-			default:
-				return fmt.Errorf("unknown chat event kind %q", ev.Kind)
+			if ev.Kind == chat.EventThread {
+				raw, _ := json.Marshal(map[string]string{"thread_id": ev.ThreadID})
+				return w.WriteEvent("thread", raw)
 			}
+			if ev.Kind == chat.EventDelta {
+				raw, _ := json.Marshal(map[string]string{"text": ev.Text})
+				return w.WriteEvent("delta", raw)
+			}
+			return fmt.Errorf("unknown chat event %s", ev.Kind)
 		}
-
-		if err := svc.Stream(ctx, req, emit); err != nil {
-			// fail-fast：把错误作为 error 事件发出（此时响应头已发，无法再改状态码）。
-			hlog.CtxErrorf(ctx, "chat stream failed error=%+v", err)
-			data, marshalErr := json.Marshal(map[string]string{"message": err.Error()})
-			if marshalErr != nil {
-				hlog.CtxErrorf(ctx, "marshal chat error event failed original_error=%+v marshal_error=%+v", err, marshalErr)
-				data = []byte(`{"message":"chat failed"}`)
+		err := service.StreamSession(ctx, c.Param("session_id"), input, emit)
+		if err != nil {
+			event := "error"
+			if errors.Is(err, context.Canceled) {
+				event = "stopped"
 			}
-			if writeErr := w.WriteEvent("error", data); writeErr != nil {
-				hlog.CtxErrorf(ctx, "write chat error event failed original_error=%+v write_error=%+v", err, writeErr)
-			}
+			raw, _ := json.Marshal(map[string]string{"message": err.Error()})
+			_ = w.WriteEvent(event, raw)
 			return
 		}
-		// 本轮正常结束：发 done。data 必须非空（SSE writer 会忽略零长 data），发 "{}"。
-		if err := w.WriteEvent("done", []byte("{}")); err != nil {
-			hlog.CtxErrorf(ctx, "write chat done event failed error=%+v", err)
-		}
+		_ = w.WriteEvent("done", []byte("{}"))
 	}
+}
+
+func CancelChatSession(service *chat.Service) app.HandlerFunc {
+	return func(_ context.Context, c *app.RequestContext) {
+		c.JSON(200, map[string]any{"code": 0, "data": map[string]any{"canceled": service.CancelSession(c.Param("session_id"))}})
+	}
+}
+
+func UploadChatAttachment(service *chat.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		file, err := c.FormFile("file")
+		if err != nil {
+			writeAPIError(c, 400, 40060, fmt.Errorf("file is required: %w", err))
+			return
+		}
+		view, err := service.SaveUpload(ctx, c.Param("session_id"), file.Filename, file.Header.Get("Content-Type"), file.Size, func(path string) error { return c.SaveUploadedFile(file, path) })
+		if err != nil {
+			writeChatError(c, err)
+			return
+		}
+		c.JSON(201, map[string]any{"code": 0, "data": view})
+	}
+}
+
+func DeleteChatAttachment(service *chat.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		if err := service.DeletePendingAttachment(ctx, c.Param("session_id"), c.Param("attachment_id")); err != nil {
+			writeChatError(c, err)
+			return
+		}
+		c.JSON(200, map[string]any{"code": 0, "data": map[string]any{"deleted": true}})
+	}
+}
+
+func DownloadChatAttachment(service *chat.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		record, err := service.GetAttachment(ctx, c.Param("attachment_id"))
+		if err != nil {
+			writeChatError(c, err)
+			return
+		}
+		c.Response.Header.SetContentType(record.View.MIMEType)
+		c.FileAttachment(record.LocalPath, record.View.Name)
+	}
+}
+
+func writeChatError(c *app.RequestContext, err error) {
+	if errors.Is(err, chat.ErrNotFound) {
+		writeAPIError(c, 404, 40460, err)
+		return
+	}
+	if errors.Is(err, chat.ErrInvalidInput) {
+		writeAPIError(c, 400, 40060, err)
+		return
+	}
+	if errors.Is(err, chat.ErrConflict) {
+		writeAPIError(c, consts.StatusConflict, 40960, err)
+		return
+	}
+	writeAPIError(c, 500, 50060, err)
 }

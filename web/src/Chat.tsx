@@ -1,79 +1,43 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { CloseOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
-import { Alert, Button, Input, Typography } from 'antd'
+import { DeleteOutlined, DownloadOutlined, EditOutlined, FileOutlined, HistoryOutlined, InboxOutlined, MenuOutlined, PaperClipOutlined, PlusOutlined, SearchOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
+import { Alert, Button, Checkbox, Drawer, Dropdown, Empty, Input, Modal, Popover, Select, Spin, Tooltip, Typography } from 'antd'
+import type { MenuProps } from 'antd'
 import type { TextAreaRef } from 'antd/es/input/TextArea'
 import { useAgentIdentity } from './agentIdentity'
 import { usePageContext } from './pageContext'
-import type { ChatDeltaEvent, ChatErrorEvent, ChatRequest, ChatThreadEvent } from './types'
+import MarkdownReport from './components/MarkdownReport'
+import type { ChatAgent, ChatAttachment, ChatHistoryMessage, ChatModel, ChatSession, ChatSource } from './types'
 import './styles/chat.css'
 
 const { Text } = Typography
-
-interface ChatMessage {
-  role: 'user' | 'assistant'
-  text: string
+interface APIEnvelope<T> {
+  code: number
+  data?: T
+  msg?: string
+}
+interface ListEnvelope<T> {
+  items: T[]
 }
 
-const PAGE_LABELS: Record<string, string> = {
-  today: '工作台',
-  overview: '工作台',
-  workbench: '工作台',
-  tasks: '任务',
-  review: '工作台',
-  progress: '工作台',
-  memory: '世界',
-  background: '世界',
-  automation: '任务',
-  'scheduled-tasks': '任务',
-  plugins: '插件',
-  clues: '线索',
-  todos: '线索',
-  management: '系统设置',
-  agents: '工作设定',
-  settings: '系统设置',
-  debug: '运行诊断',
-  'system-tasks': '系统任务',
+const SOURCE_OPTIONS: ChatSource[] = [
+  { kind: 'workspace', label: '自动参考工作上下文' },
+  { kind: 'tasks', label: '任务与当前进展' },
+  { kind: 'world', label: '世界模型' },
+  { kind: 'messages', label: '已采集消息与资料' },
+]
+const SUGGESTIONS = [
+  ['看清进展', '我现在最需要关注什么？'],
+  ['理解材料', '帮我阅读这份材料，提炼结论和疑问'],
+  ['推进事情', '帮我把这个想法整理成可执行的方案'],
+]
+
+async function api<T>(url: string, options?: RequestInit): Promise<T> {
+  const response = await fetch(url, options)
+  const payload = (await response.json()) as APIEnvelope<T>
+  if (!response.ok || payload.code !== 0 || payload.data === undefined) throw new Error(payload.msg || `请求失败：HTTP ${response.status}`)
+  return payload.data
 }
 
-const SELECTION_LABELS: Record<string, string> = {
-  task: '任务',
-  todo: '线索',
-  project: '项目',
-  person: '成员',
-  group: '群组',
-  resource: '资料',
-}
-
-function pageSuggestions(agentName: string): Record<string, string[]> {
-  return {
-    workbench: ['我现在最需要关注什么？', '总结今天真正完成的事', '有哪些风险会影响今天交付？'],
-    tasks: ['哪些任务最需要我处理？', '帮我梳理当前的阻塞', '检查进行中的任务是否偏离目标'],
-    review: ['总结今天真正完成的事', '哪些承诺还没有闭环？', '帮我找出值得复盘的问题'],
-    memory: [`${agentName} 目前是怎么理解我的工作的？`, '检查项目背景有没有过时信息', '帮我找到某个项目的关键上下文'],
-    automation: ['哪些自动化即将运行？', '检查自动化之间是否有冲突', '帮我设计一个新的自动化'],
-    clues: ['最近出现了哪些重要线索？', '哪些线索还在等待更多证据？', '帮我解释线索到任务的转换'],
-    system: [`检查 ${agentName} 当前的关键配置`, '有哪些系统异常会影响任务？', '帮我定位最近的运行问题'],
-  }
-}
-
-function errorText(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause)
-}
-
-function pageLabel(activeKey: string): string {
-  return PAGE_LABELS[activeKey] ?? '当前页面'
-}
-
-function pageGroup(activeKey: string): string {
-  if (['management', 'agents', 'settings', 'debug', 'system-tasks'].includes(activeKey)) return 'system'
-  if (['today', 'overview', 'review', 'progress', 'workbench'].includes(activeKey)) return 'workbench'
-  if (['tasks', 'automation', 'scheduled-tasks'].includes(activeKey)) return 'tasks'
-  const label = pageLabel(activeKey)
-  return ['memory', 'clues'].find((key) => pageLabel(key) === label) ?? 'workbench'
-}
-
-// parseSSEBlock turns one `event:\ndata:` block into {event, data}. SSE allows
-// multiple data: lines per event; we join them with \n per spec.
 function parseSSEBlock(block: string): { event: string; data: string } {
   let event = 'message'
   const dataLines: string[] = []
@@ -84,244 +48,795 @@ function parseSSEBlock(block: string): { event: string; data: string } {
   }
   return { event, data: dataLines.join('\n') }
 }
-
-function isAbortError(cause: unknown): boolean {
-  return (cause instanceof DOMException && cause.name === 'AbortError')
-    || (cause instanceof Error && cause.name === 'AbortError')
+function agentLabel(agent: string): string {
+  return ({ codex: 'Codex', trae: 'TRAE', cursor: 'Cursor' } as Record<string, string>)[agent] || agent
+}
+function dayGroup(value: string): string {
+  const date = new Date(value),
+    now = new Date()
+  if (date.toDateString() === now.toDateString()) return '今天'
+  const yesterday = new Date(now)
+  yesterday.setDate(now.getDate() - 1)
+  return date.toDateString() === yesterday.toDateString() ? '昨天' : '更早'
+}
+function formatBytes(size: number): string {
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`
+  return `${(size / 1024 / 1024).toFixed(1)} MB`
+}
+function defaultEffort(model?: ChatModel): string {
+  return model?.default_reasoning_effort || model?.reasoning_efforts?.find((value) => value === 'medium') || model?.reasoning_efforts?.[0] || 'medium'
 }
 
-export default function Chat({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { name: agentName, shortName: agentShortName } = useAgentIdentity()
-  const { context } = usePageContext()
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+export default function Chat() {
+  const { name: agentName, shortName } = useAgentIdentity()
+  const { context, setViewState } = usePageContext()
+  const [sessions, setSessions] = useState<ChatSession[]>([])
+  const [active, setActive] = useState<ChatSession | null>(null)
+  const [agents, setAgents] = useState<ChatAgent[]>([])
+  const [models, setModels] = useState<Record<string, ChatModel[]>>({})
+  const [loading, setLoading] = useState(true)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [archived, setArchived] = useState(false)
+  const [query, setQuery] = useState('')
   const [input, setInput] = useState('')
-  const [sending, setSending] = useState(false)
-  const [stopping, setStopping] = useState(false)
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [running, setRunning] = useState<Set<string>>(new Set())
+  const [streamText, setStreamText] = useState<Record<string, string>>({})
   const [error, setError] = useState<string>()
-  const threadId = useRef<string | null>(null)
-  const listRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<TextAreaRef>(null)
-  const abortRef = useRef<AbortController | null>(null)
+  const [editingTitle, setEditingTitle] = useState(false)
+  const inputRef = useRef<TextAreaRef>(null),
+    fileRef = useRef<HTMLInputElement>(null),
+    listRef = useRef<HTMLDivElement>(null)
+  const activeID = useRef('')
+  const draftTimer = useRef<number | undefined>(undefined)
 
-  useEffect(() => {
-    const el = listRef.current
-    if (el) el.scrollTop = el.scrollHeight
-  }, [messages])
-
-  useEffect(() => () => abortRef.current?.abort(), [])
-
-  useEffect(() => {
-    if (open) inputRef.current?.focus()
-  }, [open])
-
-  useEffect(() => {
-    if (!sending && messages.length > 0) inputRef.current?.focus()
-  }, [sending, messages.length])
-
-  const currentPageLabel = pageLabel(context.active_key)
-  const currentSelectionLabel = context.selection?.label
-  const currentSelectionType = context.selection
-    ? SELECTION_LABELS[context.selection.kind] ?? '对象'
-    : null
-
-  const suggestions = useMemo(() => {
-    if (context.selection) {
-      return [
-        `总结「${context.selection.label}」的当前情况`,
-        `这个${currentSelectionType}下一步最应该做什么？`,
-        `检查这个${currentSelectionType}有没有风险或遗漏`,
-      ]
-    }
-    const defaults = pageSuggestions(agentName)
-    return defaults[pageGroup(context.active_key)] ?? defaults.today
-  }, [agentName, context.active_key, context.selection, currentSelectionType])
-
-  const stop = useCallback(() => {
-    if (!abortRef.current || stopping) return
-    setStopping(true)
-    abortRef.current.abort()
-  }, [stopping])
-
-  const fillSuggestion = useCallback((suggestion: string) => {
-    setInput(suggestion)
-    requestAnimationFrame(() => inputRef.current?.focus())
-  }, [])
-
-  const send = useCallback(async () => {
-    const message = input.trim()
-    if (!message || sending) return
-    setInput('')
-    setError(undefined)
-    setStopping(false)
-    setSending(true)
-    // Append the user bubble and an empty assistant bubble that delta events grow.
-    setMessages((prev) => [...prev, { role: 'user', text: message }, { role: 'assistant', text: '' }])
-
-    const appendDelta = (text: string) => setMessages((prev) => {
-      const next = prev.slice()
-      const last = next[next.length - 1]
-      if (last && last.role === 'assistant') next[next.length - 1] = { role: 'assistant', text: last.text + text }
-      return next
-    })
-
-    const controller = new AbortController()
-    abortRef.current = controller
-    try {
-      const req: ChatRequest = { message, thread_id: threadId.current, page_context: context }
-      const response = await fetch('/api/chat', {
+  const loadModels = useCallback(
+    async (agent: string, force = false) => {
+      if (!force && models[agent]) return models[agent]
+      const result = await api<ListEnvelope<ChatModel>>(`/api/chat/agents/${agent}/models`)
+      setModels((current) => ({ ...current, [agent]: result.items }))
+      return result.items
+    },
+    [models],
+  )
+  const loadSessions = useCallback(
+    async (nextArchived = archived, nextQuery = query) => {
+      const result = await api<ListEnvelope<ChatSession>>(`/api/chat/sessions?archived=${nextArchived}&query=${encodeURIComponent(nextQuery)}`)
+      setSessions(result.items)
+      return result.items
+    },
+    [archived, query],
+  )
+  const openSession = useCallback(
+    async (id: string, closeDrawer = true) => {
+      const detail = await api<ChatSession>(`/api/chat/sessions/${id}`)
+      setActive(detail)
+      activeID.current = detail.id
+      setInput(detail.draft?.text || '')
+      setAttachments(detail.pending_attachments || [])
+      setError(undefined)
+      setViewState({ session: detail.id })
+      if (closeDrawer) setHistoryOpen(false)
+      void loadModels(detail.agent).catch(() => undefined)
+    },
+    [loadModels, setViewState],
+  )
+  const createSession = useCallback(
+    async (agent?: string, model?: string, fromSessionID?: string) => {
+      const chosenAgent = agent || agents.find((item) => item.default && item.available)?.id || agents.find((item) => item.available)?.id || 'codex'
+      let available = models[chosenAgent] || []
+      if (!available.length) available = await loadModels(chosenAgent)
+      const chosenModel = model || available.find((item) => item.default)?.id || available[0]?.id
+      if (!chosenModel) throw new Error(`${agentLabel(chosenAgent)} 没有可用模型`)
+      const chosen = available.find((item) => item.id === chosenModel)
+      const detail = await api<ChatSession>('/api/chat/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(req),
-        signal: controller.signal,
+        body: JSON.stringify({
+          title: fromSessionID && active ? `${active.title} · 继续` : '新对话',
+          agent: chosenAgent,
+          model: chosenModel,
+          reasoning_effort: defaultEffort(chosen),
+          sources: [{ kind: 'workspace', label: '自动参考工作上下文' }],
+          draft: {},
+          from_session_id: fromSessionID || '',
+        }),
       })
-      if (!response.ok) throw new Error(`对话请求失败：HTTP ${response.status}`)
-      if (!response.body) throw new Error('对话响应无数据流（response.body 为空）')
+      await loadSessions(false, '')
+      setArchived(false)
+      setQuery('')
+      await openSession(detail.id)
+      requestAnimationFrame(() => inputRef.current?.focus())
+      return detail
+    },
+    [active, agents, loadModels, loadSessions, models, openSession],
+  )
 
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let streamError: string | undefined
+  useEffect(() => {
+    let alive = true
+    void (async () => {
+      try {
+        const [agentData, sessionData] = await Promise.all([api<ListEnvelope<ChatAgent>>('/api/chat/agents'), api<ListEnvelope<ChatSession>>('/api/chat/sessions?archived=false')])
+        if (!alive) return
+        setAgents(agentData.items)
+        setSessions(sessionData.items)
+        const target = sessionData.items.find((item) => item.id === context.view_state.session) || sessionData.items[0]
+        if (target) await openSession(target.id, false)
+        else {
+          const available = agentData.items.find((item) => item.default && item.available) || agentData.items.find((item) => item.available)
+          if (!available) throw new Error('没有可用的底层 Agent，请先安装并登录 Codex、TRAE 或 Cursor')
+          const discovered = await api<ListEnvelope<ChatModel>>(`/api/chat/agents/${available.id}/models`)
+          if (!alive) return
+          setModels((current) => ({
+            ...current,
+            [available.id]: discovered.items,
+          }))
+          const selected = discovered.items.find((item) => item.default) || discovered.items[0]
+          if (!selected) throw new Error(`${available.name} 没有可用模型`)
+          const created = await api<ChatSession>('/api/chat/sessions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: '新对话',
+              agent: available.id,
+              model: selected.id,
+              reasoning_effort: defaultEffort(selected),
+              sources: [{ kind: 'workspace', label: '自动参考工作上下文' }],
+              draft: {},
+              from_session_id: '',
+            }),
+          })
+          await openSession(created.id, false)
+          setSessions([created])
+        }
+      } catch (cause) {
+        if (alive) setError(cause instanceof Error ? cause.message : String(cause))
+      } finally {
+        if (alive) setLoading(false)
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-      // Manual SSE parse: split the byte stream into `\n\n`-delimited blocks.
+  useEffect(() => {
+    if (!active) return
+    window.clearTimeout(draftTimer.current)
+    draftTimer.current = window.setTimeout(() => {
+      void api<ChatSession>(`/api/chat/sessions/${active.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          draft: {
+            text: input,
+            attachment_ids: attachments.map((item) => item.id),
+          },
+        }),
+      }).catch(() => undefined)
+    }, 500)
+    return () => window.clearTimeout(draftTimer.current)
+  }, [active?.id, attachments, input])
+  useEffect(() => {
+    const list = listRef.current
+    if (list) list.scrollTop = list.scrollHeight
+  }, [active?.messages, streamText, active?.id])
+
+  const refreshActive = useCallback(
+    async (sessionID: string) => {
+      const detail = await api<ChatSession>(`/api/chat/sessions/${sessionID}`)
+      if (activeID.current === sessionID) setActive(detail)
+      await loadSessions()
+    },
+    [loadSessions],
+  )
+  const send = useCallback(async () => {
+    if (!active || running.has(active.id)) return
+    const text = input.trim()
+    if (!text && !attachments.length) return
+    const selectedModel = models[active.agent]?.find((item) => item.id === active.model)
+    if (attachments.some((file) => file.mime_type.startsWith('image/')) && !selectedModel?.input_modalities?.includes('image')) {
+      setError(`${agentLabel(active.agent)} 的 ${active.model} 未声明图片输入能力，请换一个支持图片的模型`)
+      return
+    }
+    const sessionID = active.id
+    setInput('')
+    setAttachments([])
+    setError(undefined)
+    setRunning((current) => new Set(current).add(sessionID))
+    setStreamText((current) => ({ ...current, [sessionID]: '' }))
+    setActive((current) =>
+      current
+        ? {
+            ...current,
+            messages: [
+              ...(current.messages || []),
+              {
+                id: `local-${Date.now()}`,
+                role: 'user',
+                text,
+                attachments,
+                created_at: new Date().toISOString(),
+              },
+            ],
+          }
+        : current,
+    )
+    try {
+      const response = await fetch(`/api/chat/sessions/${sessionID}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          attachment_ids: attachments.map((item) => item.id),
+          sources: active.sources,
+          page_context: context,
+        }),
+      })
+      if (!response.ok || !response.body) throw new Error(`对话请求失败：HTTP ${response.status}`)
+      const reader = response.body.getReader(),
+        decoder = new TextDecoder()
+      let buffer = '',
+        streamError = ''
       for (;;) {
         const { done, value } = await reader.read()
         if (done) break
         buffer += decoder.decode(value, { stream: true })
-        let sep: number
-        while ((sep = buffer.indexOf('\n\n')) !== -1) {
-          const block = buffer.slice(0, sep)
-          buffer = buffer.slice(sep + 2)
-          if (!block.trim()) continue
-          const { event, data } = parseSSEBlock(block)
-          if (event === 'thread') {
-            const parsed = JSON.parse(data) as ChatThreadEvent
-            threadId.current = parsed.thread_id
-          } else if (event === 'delta') {
-            const parsed = JSON.parse(data) as ChatDeltaEvent
-            appendDelta(parsed.text)
-          } else if (event === 'error') {
-            const parsed = JSON.parse(data) as ChatErrorEvent
-            streamError = parsed.message
-          } else if (event === 'done') {
-            // Round finished; keep reading until the stream closes.
-          }
+        let separator: number
+        while ((separator = buffer.indexOf('\n\n')) !== -1) {
+          const block = buffer.slice(0, separator)
+          buffer = buffer.slice(separator + 2)
+          const parsed = parseSSEBlock(block)
+          if (!parsed.data) continue
+          if (parsed.event === 'delta') {
+            const delta = (JSON.parse(parsed.data) as { text: string }).text
+            setStreamText((current) => ({
+              ...current,
+              [sessionID]: (current[sessionID] || '') + delta,
+            }))
+          } else if (parsed.event === 'error') streamError = (JSON.parse(parsed.data) as { message: string }).message
         }
       }
       if (streamError) throw new Error(streamError)
-    } catch (cause: unknown) {
-      if (isAbortError(cause)) {
-        // Keep any partial reply; drop only a still-empty assistant bubble.
-        setMessages((prev) => {
-          const last = prev[prev.length - 1]
-          if (last && last.role === 'assistant' && last.text === '') return prev.slice(0, -1)
-          return prev
-        })
-        return
-      }
-      const text = errorText(cause)
-      setError(text)
-      setInput((current) => current.trim() ? current : message)
-      // Drop the trailing empty assistant bubble so a failed round leaves no blank.
-      setMessages((prev) => {
-        const last = prev[prev.length - 1]
-        if (last && last.role === 'assistant' && last.text === '') return prev.slice(0, -1)
-        return prev
-      })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
-      abortRef.current = null
-      setStopping(false)
-      setSending(false)
+      setRunning((current) => {
+        const next = new Set(current)
+        next.delete(sessionID)
+        return next
+      })
+      setStreamText((current) => {
+        const next = { ...current }
+        delete next[sessionID]
+        return next
+      })
+      await refreshActive(sessionID).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
     }
-  }, [input, sending, context])
-
-  const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault()
-      if (!sending) void send()
+  }, [active, attachments, context, input, models, refreshActive, running])
+  const stop = async () => {
+    if (active) await api<{ canceled: boolean }>(`/api/chat/sessions/${active.id}/cancel`, { method: 'POST' })
+  }
+  const uploadFiles = async (files: FileList | File[]) => {
+    if (!active) return
+    const items = Array.from(files)
+    if (attachments.length + items.length > 10) {
+      setError('每条消息最多添加 10 个文件')
+      return
+    }
+    if (items.some((file) => file.size > 25 * 1024 * 1024)) {
+      setError('单个文件不能超过 25 MiB')
+      return
+    }
+    setUploading(true)
+    setError(undefined)
+    try {
+      const uploaded: ChatAttachment[] = []
+      for (const file of items) {
+        const form = new FormData()
+        form.append('file', file)
+        uploaded.push(await api<ChatAttachment>(`/api/chat/sessions/${active.id}/attachments`, { method: 'POST', body: form }))
+      }
+      setAttachments((current) => [...current, ...uploaded])
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setUploading(false)
     }
   }
+  const removeAttachment = async (file: ChatAttachment) => {
+    if (!active) return
+    try {
+      await api<{ deleted: boolean }>(`/api/chat/sessions/${active.id}/attachments/${file.id}`, { method: 'DELETE' })
+      setAttachments((items) => items.filter((item) => item.id !== file.id))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+  const updateSession = async (patch: Record<string, unknown>) => {
+    if (!active) return
+    const detail = await api<ChatSession>(`/api/chat/sessions/${active.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(patch),
+    })
+    setActive(detail)
+    await loadSessions()
+  }
+  const changeAgent = async (agent: string) => {
+    if (!active || agent === active.agent) return
+    if (running.has(active.id)) {
+      setError('请先停止当前回复，再切换 Agent')
+      return
+    }
+    try {
+      const available = await loadModels(agent),
+        model = available.find((item) => item.default) || available[0]
+      if (!model) throw new Error(`${agentLabel(agent)} 没有可用模型`)
+      if ((active.messages || []).length > 0)
+        Modal.confirm({
+          title: `切换到 ${agentLabel(agent)}`,
+          content: '已有记录会复制到新会话，原会话保持不变。底层工具状态不会迁移。',
+          okText: '携带记录新建',
+          cancelText: '取消',
+          onOk: () => createSession(agent, model.id, active.id),
+        })
+      else
+        await updateSession({
+          agent,
+          model: model.id,
+          reasoning_effort: defaultEffort(model),
+        })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+  const changeModel = async (model: string) => {
+    if (!active) return
+    const item = models[active.agent]?.find((candidate) => candidate.id === model)
+    await updateSession({
+      model,
+      reasoning_effort: item ? defaultEffort(item) : active.reasoning_effort,
+    })
+  }
+  const doArchive = async () => {
+    if (!active) return
+    const showArchived = !active.archived
+    await updateSession({ archived: showArchived })
+    setArchived(showArchived)
+    await loadSessions(showArchived, '')
+  }
+  const removeSession = async () => {
+    if (!active) return
+    Modal.confirm({
+      title: '永久删除这个会话？',
+      content: '会话记录会从 Jarvis 中删除，已经产生的外部动作不会撤销。',
+      okText: '永久删除',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        await api<{ deleted: boolean }>(`/api/chat/sessions/${active.id}`, {
+          method: 'DELETE',
+        })
+        const items = await loadSessions()
+        if (items[0]) await openSession(items[0].id)
+        else await createSession()
+      },
+    })
+  }
+  const exportSession = () => {
+    if (!active) return
+    const content = [
+      `# ${active.title}`,
+      '',
+      `Agent: ${agentLabel(active.agent)} / ${active.model}`,
+      '',
+      ...(active.messages || []).flatMap((item) => [`## ${item.role === 'user' ? '用户' : agentName}`, '', item.text, '', ...(item.attachments || []).map((file) => `- 附件：${file.name}`), '']),
+    ].join('\n')
+    const url = URL.createObjectURL(new Blob([content], { type: 'text/markdown' })),
+      link = document.createElement('a')
+    link.href = url
+    link.download = `${active.title.replace(/[\\/:*?"<>|]/g, '-')}.md`
+    link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 30_000)
+  }
 
-  return <section className="chat-panel jarvis-chat" aria-label={`${agentName} 对话`}>
-    <header className="chat-header">
-      <div className="chat-title-row">
-        <Text strong className="chat-title">{agentName} 对话</Text>
-        <span className="chat-ready" aria-label="对话将使用当前页面上下文"><span aria-hidden="true" />随当前页面</span>
-        <Button type="text" size="small" className="chat-close" icon={<CloseOutlined />} aria-label={`关闭 ${agentName} 对话`} onClick={onClose} />
+  const activeRunning = active ? running.has(active.id) : false
+  const sourcePicker = active && (
+    <div className="chat-source-picker">
+      <Text type="secondary">优先参考这些资料，必要时补充查证</Text>
+      {SOURCE_OPTIONS.map((source) => (
+        <Checkbox
+          key={source.kind}
+          checked={active.sources.some((item) => item.kind === source.kind)}
+          onChange={(event) => {
+            const sources = event.target.checked ? [...active.sources.filter((item) => item.kind !== source.kind), source] : active.sources.filter((item) => item.kind !== source.kind)
+            void updateSession({ sources })
+          }}
+        >
+          {source.label}
+        </Checkbox>
+      ))}
+    </div>
+  )
+  const menuItems: MenuProps['items'] = [
+    { key: 'export', icon: <DownloadOutlined />, label: '导出 Markdown' },
+    {
+      key: 'archive',
+      icon: <InboxOutlined />,
+      label: active?.archived ? '恢复会话' : '归档会话',
+      disabled: activeRunning,
+    },
+    { type: 'divider' },
+    {
+      key: 'delete',
+      icon: <DeleteOutlined />,
+      danger: true,
+      label: '永久删除',
+      disabled: activeRunning,
+    },
+  ]
+  const grouped = useMemo(() => {
+    const result = new Map<string, ChatSession[]>()
+    for (const session of sessions) {
+      const group = dayGroup(session.updated_at)
+      result.set(group, [...(result.get(group) || []), session])
+    }
+    return result
+  }, [sessions])
+  const currentModels = active ? models[active.agent] || [] : []
+  const currentModel = currentModels.find((model) => model.id === active?.model)
+  const modelOptions = [
+    {
+      label: '推荐浏览',
+      options: currentModels.slice(0, 5).map((model) => ({ value: model.id, label: model.name })),
+    },
+    ...(currentModels.length > 5
+      ? [
+          {
+            label: '全部模型',
+            options: currentModels.slice(5).map((model) => ({ value: model.id, label: model.name })),
+          },
+        ]
+      : []),
+  ]
+  const displayMessages = active?.messages || [],
+    currentStream = active ? streamText[active.id] : ''
+  if (loading)
+    return (
+      <div className="chat-workspace-loading">
+        <Spin />
+        <span>正在加载对话…</span>
       </div>
-      <div className="chat-context" aria-label="当前对话上下文">
-        <span className="chat-context-page">正在查看「{currentPageLabel}」</span>
-        {currentSelectionLabel && <>
-          <span className="chat-context-separator" aria-hidden="true">·</span>
-          <span className="chat-context-selection">{currentSelectionType}：{currentSelectionLabel}</span>
-        </>}
+    )
+
+  return (
+    <section className="chat-workspace" aria-label={`${agentName} 对话工作区`}>
+      <aside className="chat-history-pane">
+        <div className="chat-history-heading">
+          <div>
+            <strong>对话</strong>
+            <span>你的思考与行动</span>
+          </div>
+        </div>
+        <Button className="chat-new-button" icon={<PlusOutlined />} onClick={() => void createSession()}>
+          新对话
+        </Button>
+        <Input
+          allowClear
+          prefix={<SearchOutlined />}
+          value={query}
+          placeholder="搜索会话和消息"
+          onChange={(event) => {
+            setQuery(event.target.value)
+            void loadSessions(archived, event.target.value)
+          }}
+        />
+        <div className="chat-session-list">
+          {Array.from(grouped.entries()).map(([group, items]) => (
+            <div key={group}>
+              <div className="chat-history-group">{group}</div>
+              {items.map((session) => (
+                <button key={session.id} type="button" className={`chat-session-item ${session.id === active?.id ? 'is-active' : ''}`} onClick={() => void openSession(session.id)}>
+                  <strong>{session.title}</strong>
+                  <span>
+                    {agentLabel(session.agent)} · {session.model}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ))}
+          {!sessions.length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有匹配的会话" />}
+        </div>
+        <Button
+          type="text"
+          className="chat-archive-toggle"
+          icon={<HistoryOutlined />}
+          onClick={() => {
+            const next = !archived
+            setArchived(next)
+            void loadSessions(next, query)
+          }}
+        >
+          {archived ? '返回最近会话' : '查看已归档会话'}
+        </Button>
+      </aside>
+      <div className="chat-main-pane">
+        <header className="chat-workspace-header">
+          <Button className="chat-mobile-history" type="text" icon={<MenuOutlined />} aria-label="打开会话历史" onClick={() => setHistoryOpen(true)} />
+          <div className="chat-session-heading">
+            {editingTitle && active ? (
+              <Input
+                autoFocus
+                value={active.title}
+                onChange={(event) => setActive({ ...active, title: event.target.value })}
+                onPressEnter={() => {
+                  setEditingTitle(false)
+                  void updateSession({ title: active.title })
+                }}
+                onBlur={() => {
+                  setEditingTitle(false)
+                  void updateSession({ title: active.title })
+                }}
+              />
+            ) : (
+              <button type="button" onClick={() => setEditingTitle(true)}>
+                <strong>{active?.title || '对话'}</strong>
+                <EditOutlined />
+              </button>
+            )}
+            <span>{active?.sources.length ? `优先参考 ${active.sources.map((item) => item.label).join('、')}` : '自动参考工作上下文'}</span>
+          </div>
+          <Tooltip title="导出 Markdown">
+            <Button type="text" icon={<DownloadOutlined />} onClick={exportSession} />
+          </Tooltip>
+          <Dropdown
+            menu={{
+              items: menuItems,
+              onClick: ({ key }) => {
+                if (key === 'export') exportSession()
+                if (key === 'archive') void doArchive()
+                if (key === 'delete') void removeSession()
+              },
+            }}
+          >
+            <Button type="text">•••</Button>
+          </Dropdown>
+        </header>
+        <div className="chat-message-list" ref={listRef} role="log" aria-live="polite">
+          {error && <Alert type="error" showIcon closable title="对话暂时遇到问题" description={error} onClose={() => setError(undefined)} />}
+          {!displayMessages.length && !currentStream && (
+            <div className="chat-welcome">
+              <div className="chat-welcome-mark">✳</div>
+              <h1>今天想一起推进什么？</h1>
+              <p>从一个问题、一份资料，或者一个想做成的结果开始。</p>
+              <div className="chat-welcome-suggestions">
+                {SUGGESTIONS.map(([label, text]) => (
+                  <button
+                    type="button"
+                    key={label}
+                    onClick={() => {
+                      setInput(text)
+                      inputRef.current?.focus()
+                    }}
+                  >
+                    <strong>{label}</strong>
+                    <span>{text}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {displayMessages.map((item) => (
+            <ChatMessageCard key={item.id} message={item} agentName={agentName} shortName={shortName} />
+          ))}
+              {activeRunning && active && (
+            <ChatMessageCard
+              message={{
+                id: 'stream',
+                role: 'assistant',
+                text: currentStream,
+                agent: active.agent,
+                model: active.model,
+                created_at: new Date().toISOString(),
+              }}
+              agentName={agentName}
+              shortName={shortName}
+              typing
+            />
+          )}
+        </div>
+        <div
+          className="chat-composer-area"
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => {
+            event.preventDefault()
+            void uploadFiles(event.dataTransfer.files)
+          }}
+        >
+          <div className="chat-composer-card">
+            {!!active?.sources.length && (
+              <div className="chat-source-chips">
+                {active.sources.map((source) => (
+                  <span key={source.kind}>
+                    {source.label}
+                    <button
+                      type="button"
+                      aria-label={`移除 ${source.label}`}
+                      onClick={() =>
+                        void updateSession({
+                          sources: active.sources.filter((item) => item.kind !== source.kind),
+                        })
+                      }
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            {!!attachments.length && (
+              <div className="chat-pending-files">
+                {attachments.map((file) => (
+                  <FileCard key={file.id} file={file} removable onRemove={() => void removeAttachment(file)} />
+                ))}
+              </div>
+            )}
+            <Input.TextArea
+              ref={inputRef}
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              autoSize={{ minRows: 2, maxRows: 8 }}
+              placeholder="问一个问题，或告诉我你想推进什么…"
+              onPaste={(event) => {
+                if (event.clipboardData.files.length) {
+                  event.preventDefault()
+                  void uploadFiles(event.clipboardData.files)
+                }
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                  event.preventDefault()
+                  void send()
+                }
+              }}
+            />
+            <div className="chat-composer-actions">
+              <div>
+                <input
+                  ref={fileRef}
+                  hidden
+                  multiple
+                  type="file"
+                  onChange={(event) => {
+                    if (event.target.files) void uploadFiles(event.target.files)
+                    event.target.value = ''
+                  }}
+                />
+                <Tooltip title="添加图片或文件">
+                  <Button loading={uploading} icon={<PaperClipOutlined />} onClick={() => fileRef.current?.click()} />
+                </Tooltip>
+                <Popover content={sourcePicker} trigger="click">
+                  <Button>数据来源</Button>
+                </Popover>
+                <Select
+                  value={active?.agent}
+                  className="chat-agent-select"
+                  disabled={activeRunning}
+                  onChange={(value) => void changeAgent(value)}
+                  options={agents.map((agent) => ({
+                    value: agent.id,
+                    label: agent.available ? agent.name : `${agent.name} · ${agent.error || '不可用'}`,
+                    disabled: !agent.available,
+                  }))}
+                />
+                <Select
+                  showSearch
+                  value={active?.model}
+                  className="chat-model-select"
+                  disabled={activeRunning}
+                  optionFilterProp="label"
+                  loading={!!active && !models[active.agent]}
+                  onOpenChange={(open) => {
+                    if (open && active) void loadModels(active.agent, true).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
+                  }}
+                  onChange={(value) => void changeModel(value)}
+                  options={modelOptions}
+                />
+                {!!currentModel?.reasoning_efforts?.length && (
+                  <Select
+                    value={active?.reasoning_effort}
+                    className="chat-effort-select"
+                    disabled={activeRunning}
+                    onChange={(value) => void updateSession({ reasoning_effort: value })}
+                    options={currentModel.reasoning_efforts.map((value) => ({ value, label: value }))}
+                  />
+                )}
+              </div>
+              {activeRunning ? (
+                <Button danger icon={<StopOutlined />} onClick={() => void stop()}>
+                  停止
+                </Button>
+              ) : (
+                <Button type="primary" icon={<SendOutlined />} disabled={!input.trim() && !attachments.length} onClick={() => void send()}>
+                  发送
+                </Button>
+              )}
+            </div>
+          </div>
+          <div className="chat-composer-hint">Enter 发送 · Shift + Enter 换行 · 可粘贴或拖入文件</div>
+        </div>
       </div>
-      <Text type="secondary" className="chat-context-note">{agentName} 会结合这些上下文回答</Text>
-    </header>
-    <div
-      className="chat-messages"
-      ref={listRef}
-      role="log"
-      aria-live="polite"
-      aria-relevant="additions text"
-      aria-label="对话记录"
-    >
-      {messages.length === 0 && <div className="chat-empty">
-        <div className="chat-empty-mark" aria-hidden="true">{agentShortName}</div>
-        <Text strong className="chat-empty-title">从当前页面开始</Text>
-        <Text type="secondary" className="chat-empty-description">你可以直接询问，也可以选一个建议填入输入框。</Text>
-        <div className="chat-suggestions" aria-label="建议问题">
-          {suggestions.map((suggestion) => (
-            <button
-              key={suggestion}
-              type="button"
-              className="chat-suggestion"
-              onClick={() => fillSuggestion(suggestion)}
-            >
-              <span>{suggestion}</span>
-              <span className="chat-suggestion-arrow" aria-hidden="true">→</span>
+      <Drawer title="会话历史" placement="left" size="min(320px, 88vw)" open={historyOpen} onClose={() => setHistoryOpen(false)}>
+        <Button block icon={<PlusOutlined />} onClick={() => void createSession()}>
+          新对话
+        </Button>
+        <div className="chat-drawer-sessions">
+          {sessions.map((session) => (
+            <button key={session.id} onClick={() => void openSession(session.id)}>
+              <strong>{session.title}</strong>
+              <span>
+                {agentLabel(session.agent)} · {session.model}
+              </span>
             </button>
           ))}
         </div>
-      </div>}
-      {messages.map((msg, index) => (
-        <div
-          key={index}
-          className={`chat-bubble-row ${msg.role}`}
-          aria-label={msg.role === 'assistant' ? `${agentName} 的回复` : '你的消息'}
-        >
-          <div className={`chat-bubble ${msg.role}`}>
-            {msg.role === 'assistant' && msg.text === '' && sending
-              ? <span className="chat-typing"><span className="chat-typing-dots" aria-hidden="true"><i /><i /><i /></span>{agentName} 正在思考</span>
-              : msg.text}
-          </div>
+      </Drawer>
+    </section>
+  )
+}
+
+function ChatMessageCard({ message, agentName, shortName, typing = false }: { message: ChatHistoryMessage; agentName: string; shortName: string; typing?: boolean }) {
+  return (
+    <article className={`chat-message-card ${message.role}`}>
+      {message.role === 'assistant' && (
+        <div className="chat-assistant-label">
+          <span>{shortName}</span>
+          <strong>{agentName}</strong>
+          <small>
+            {message.agent && agentLabel(message.agent)}
+            {message.model && ` · ${message.model}`}
+          </small>
         </div>
-      ))}
-    </div>
-    {error && <Alert className="chat-error" type="error" showIcon title={`${agentName} 暂时无法回复`} description={error} closable onClose={() => setError(undefined)} />}
-    <div className="chat-composer">
-      <Input.TextArea
-        ref={inputRef}
-        className="chat-textarea"
-        value={input}
-        onChange={(event) => setInput(event.target.value)}
-        onKeyDown={onKeyDown}
-        disabled={sending}
-        autoSize={{ minRows: 1, maxRows: 6 }}
-        maxLength={4000}
-        aria-label={`发送给 ${agentName} 的消息`}
-        aria-describedby="chat-composer-hint"
-        placeholder={`询问 ${agentName}，或者告诉它你想做什么…`}
-      />
-      <div className="chat-composer-footer">
-        <Text id="chat-composer-hint" type="secondary" className="chat-composer-hint" aria-live="polite">
-          {stopping ? '正在停止回复…' : sending ? `${agentName} 正在回复，你可以随时停止` : 'Enter 发送 · Shift + Enter 换行'}
-        </Text>
-        {sending
-          ? <Button danger icon={<StopOutlined />} disabled={stopping} aria-label={`停止 ${agentName} 回复`} onClick={stop}>
-            {stopping ? '正在停止' : '停止生成'}
-          </Button>
-          : <Button type="primary" icon={<SendOutlined />} disabled={!input.trim()} aria-label="发送消息" onClick={() => void send()}>发送</Button>}
+      )}
+      <div className="chat-message-body">
+        {typing && !message.text ? (
+          <span className="chat-typing">
+            正在思考<span>•••</span>
+          </span>
+        ) : message.role === 'assistant' ? (
+          <MarkdownReport content={message.text} />
+        ) : (
+          <div className="chat-user-text">{message.text}</div>
+        )}
       </div>
+      {!!message.attachments?.length && (
+        <div className="chat-message-files">
+          {message.attachments.map((file) => (
+            <FileCard key={file.id} file={file} />
+          ))}
+        </div>
+      )}
+    </article>
+  )
+}
+function FileCard({ file, removable, onRemove }: { file: ChatAttachment; removable?: boolean; onRemove?: () => void }) {
+  const href = `/api/chat/attachments/${file.id}/content`
+  return (
+    <div className="chat-file-card">
+      <a href={href} target="_blank" rel="noreferrer">
+        {file.mime_type.startsWith('image/') ? <img src={href} alt="" /> : <FileOutlined />}
+        <span>
+          <strong>{file.name}</strong>
+          <small>{formatBytes(file.size_bytes)} · 下载</small>
+        </span>
+      </a>
+      {removable && (
+        <button type="button" aria-label={`移除 ${file.name}`} onClick={onRemove}>
+          ×
+        </button>
+      )}
     </div>
-  </section>
+  )
 }

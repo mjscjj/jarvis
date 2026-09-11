@@ -10,12 +10,13 @@ import (
 
 	"jarvis/internal/datatypes"
 	"jarvis/internal/domain"
+	"jarvis/internal/prompttemplate"
 	"jarvis/internal/skill"
 	"jarvis/internal/workrule"
 )
 
 func testExecutionPromptInput(systemPrompt, approvalPolicy string, task *domain.Task, repoPath, toolCatalog, sharedMemory, workRules, skills string, history *runHistory) executionPromptInput {
-	return executionPromptInput{
+	return executionPromptInput{InitiativeLevel: "normal",
 		SystemPrompt: systemPrompt, ApprovalPolicy: approvalPolicy, Task: task,
 		RepoPath: repoPath, ToolCatalog: toolCatalog, SharedMemory: sharedMemory,
 		WorkRules: workRules, Skills: skills, History: history,
@@ -63,7 +64,7 @@ func TestRepositoryM5EffectivePromptUsesExplicitMessageTool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encode prompt fixture: %v", err)
 	}
-	prompt, err := buildExecutionPrompt(executionPromptInput{
+	prompt, err := buildExecutionPrompt(executionPromptInput{InitiativeLevel: "normal",
 		SystemPrompt:   read("conf/prompts/m5-system-prompt.md"),
 		ApprovalPolicy: read("conf/prompts/m5-approval-policy.md"),
 		Task: &domain.Task{
@@ -272,5 +273,38 @@ func uint64Ptr(value uint64) *uint64 { return &value }
 func TestDecodeExecutionSupplementsRejectsInvalidJSON(t *testing.T) {
 	if _, err := decodeExecutionSupplements([]byte(`{"note":"x"}`)); err == nil {
 		t.Fatalf("invalid supplements JSON must fail")
+	}
+}
+
+func TestExecutionAndBothResumesUseCurrentInitiative(t *testing.T) {
+	input := testExecutionPromptInput(testM5SystemPrompt, "approval-policy", &domain.Task{
+		ID: 1, Title: "explicit task", ActionType: "investigate", SourcePayload: frozenTestContent(`{"request":"finish this task"}`, `{}`),
+	}, "", testToolCatalog, "memory", "M5_RULES", "SKILLS", nil)
+	for _, level := range []string{"active", "quiet", "normal", ""} {
+		input.InitiativeLevel = level
+		initial, initialErr := buildExecutionPrompt(input)
+		waiting, waitingErr := buildScheduledResumePrompt(testM5SystemPrompt, "approval-policy", "wait condition", "M5_RULES", testToolCatalog, "SKILLS", level)
+		human, humanErr := buildHumanResumePrompt(testM5SystemPrompt, "approval-policy", "answer", "M5_RULES", testToolCatalog, "SKILLS", level)
+		if level == "" {
+			if initialErr == nil || waitingErr == nil || humanErr == nil {
+				t.Fatal("missing current mode accepted")
+			}
+			continue
+		}
+		if initialErr != nil || waitingErr != nil || humanErr != nil {
+			t.Fatalf("builders: %v / %v / %v", initialErr, waitingErr, humanErr)
+		}
+		want, err := prompttemplate.Render("m5", testM5SystemPrompt, "M5_RULES", "approval-policy", level)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, prompt := range []string{initial, waiting, human} {
+			if !strings.HasPrefix(prompt, want+"\n") || strings.Count(prompt, "BEGIN_INITIATIVE_LEVEL") != 1 {
+				t.Fatalf("wrong effective instructions for %s", level)
+			}
+		}
+		if !strings.Contains(waiting, "phase=resume_waiting") || !strings.Contains(human, "phase=resume_human") {
+			t.Fatal("lost resume phase")
+		}
 	}
 }

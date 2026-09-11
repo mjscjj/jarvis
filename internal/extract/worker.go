@@ -214,6 +214,10 @@ func countNewMessages(batch ChatBatch) int {
 }
 
 func (w *Worker) buildBatchPrompts(ctx context.Context, batch ChatBatch, runNow time.Time, allowSingleNewOverLimit bool) ([]Prompt, error) {
+	initiativeLevel, err := w.opts.SystemPrompts.Content(ctx, textstore.InitiativeLevelKey)
+	if err != nil {
+		return nil, fmt.Errorf("read extract initiative level chat_id=%s: %w", batch.Group.ChatID, err)
+	}
 	workRules, err := w.opts.WorkRules.Block(ctx, workrule.StageExtract)
 	if err != nil {
 		return nil, fmt.Errorf("read extract work rules chat_id=%s: %w", batch.Group.ChatID, err)
@@ -245,6 +249,7 @@ func (w *Worker) buildBatchPrompts(ctx context.Context, batch ChatBatch, runNow 
 	for index := range batch.Units {
 		unit := batch.Units[index]
 		prompt, err := BuildPrompt(batch, unit, counts, runNow, PromptOptions{
+			InitiativeLevel: initiativeLevel,
 			PrincipalOpenID: w.opts.PrincipalOpenID, Location: w.opts.Location, MaxChars: w.opts.MaxPromptChars,
 			AllowSingleNewOverLimit: allowSingleNewOverLimit,
 			SystemPrompt:            systemPrompt, ToolCatalog: toolCatalog,

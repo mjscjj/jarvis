@@ -349,6 +349,17 @@ body {
   transition: margin-right 0.2s ease;
 }
 
+.app-main.is-chat-page,
+.app-content.is-chat-page {
+  height: 100vh;
+  min-height: 0;
+}
+
+.app-content.is-chat-page {
+  padding: 0;
+  overflow: hidden;
+}
+
 .mobile-topbar,
 .mobile-bottom-nav {
   display: none;
@@ -422,75 +433,6 @@ body {
   border-bottom: 1px solid var(--color-border);
 }
 
-/* Jarvis 对话覆盖在页面之上，不再挤压表格和详情布局。 */
-.chat-overlay {
-  position: fixed;
-  z-index: 180;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: var(--chat-width);
-  max-width: calc(100vw - var(--sider-width) - 24px);
-  border-left: 1px solid var(--color-border);
-  background: var(--color-bg-elevated);
-  box-shadow: var(--shadow-lg);
-  overflow: hidden;
-  pointer-events: none;
-  transform: translateX(102%);
-  transition: transform 0.2s ease;
-}
-
-.chat-overlay.is-open {
-  pointer-events: auto;
-  transform: translateX(0);
-}
-
-.chat-dock-placeholder {
-  height: 100%;
-  min-height: 240px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px dashed var(--color-border-strong);
-  border-radius: var(--radius-md);
-  color: var(--color-text-secondary);
-  font-size: 13px;
-}
-
-.chat-toggle {
-  position: fixed;
-  right: var(--space-4);
-  bottom: var(--space-4);
-  z-index: 200;
-  box-shadow: var(--shadow-lg);
-  transition: right 0.25s ease;
-}
-
-/* 对话框打开时，FAB 挪到 dock 左侧，避免盖住输入区的发送/停止按钮 */
-.chat-toggle.chat-open {
-  right: calc(var(--chat-width) + var(--space-4));
-}
-
-.chat-close {
-  margin-inline-start: auto;
-}
-
-@media (min-width: 1600px) {
-  .app-shell.chat-is-open .app-content {
-    margin-right: var(--chat-width);
-  }
-
-  .app-shell.chat-is-open .chat-overlay {
-    box-shadow: none;
-  }
-}
-
-@media (max-width: 900px) {
-  .chat-overlay {
-    max-width: calc(100vw - 24px);
-  }
-}
-
 @media (max-width: 767px) {
   body {
     font-size: 14px;
@@ -523,6 +465,15 @@ body {
   .app-content {
     width: 100%;
     padding: 68px var(--space-3) 92px;
+  }
+
+  .app-main.is-chat-page,
+  .app-content.is-chat-page {
+    height: calc(100vh - 120px);
+  }
+
+  .app-content.is-chat-page {
+    padding: 52px 0 68px;
   }
 
   .page-header {
@@ -588,22 +539,6 @@ body {
   .mobile-system-links .ant-btn {
     height: 44px;
     justify-content: flex-start;
-  }
-
-  .chat-overlay {
-    z-index: 300;
-    width: 100vw;
-    max-width: none;
-    border-left: 0;
-  }
-
-  .chat-toggle {
-    right: var(--space-3);
-    bottom: 82px;
-  }
-
-  .chat-is-open .chat-toggle {
-    display: none;
   }
 
   .ant-drawer-content-wrapper {

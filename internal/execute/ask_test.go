@@ -314,16 +314,16 @@ var errTest = errors.New("group not found")
 // asked to judge approval without the policy to judge against. Both resume
 // paths must refuse to build rather than run blind.
 func TestResumePromptsRequireApprovalPolicy(t *testing.T) {
-	if _, err := buildHumanResumePrompt(testM5SystemPrompt, "  ", "回应", "", testToolCatalog, ""); err == nil {
+	if _, err := buildHumanResumePrompt(testM5SystemPrompt, "  ", "回应", "", testToolCatalog, "", "normal"); err == nil {
 		t.Fatal("buildHumanResumePrompt() with blank approval policy = nil error, want error")
 	}
-	if _, err := buildScheduledResumePrompt(testM5SystemPrompt, "", "等 CI", "", testToolCatalog, ""); err == nil {
+	if _, err := buildScheduledResumePrompt(testM5SystemPrompt, "", "等 CI", "", testToolCatalog, "", "normal"); err == nil {
 		t.Fatal("buildScheduledResumePrompt() with blank approval policy = nil error, want error")
 	}
 }
 
 func TestBuildScheduledResumePromptCarriesApprovalPolicy(t *testing.T) {
-	prompt, err := buildScheduledResumePrompt(testM5SystemPrompt, "test approval policy", "等 CI 跑完", "", testToolCatalog, "CURRENT_SKILL_CHECK_ONCE")
+	prompt, err := buildScheduledResumePrompt(testM5SystemPrompt, "test approval policy", "等 CI 跑完", "", testToolCatalog, "CURRENT_SKILL_CHECK_ONCE", "normal")
 	if err != nil {
 		t.Fatalf("buildScheduledResumePrompt() error = %v", err)
 	}
@@ -335,7 +335,7 @@ func TestBuildScheduledResumePromptCarriesApprovalPolicy(t *testing.T) {
 }
 
 func TestBuildHumanResumePrompt(t *testing.T) {
-	prompt, err := buildHumanResumePrompt(testM5SystemPrompt, "test approval policy", "我已确认授权，请继续", "", testToolCatalog, "CURRENT_HUMAN_SKILL")
+	prompt, err := buildHumanResumePrompt(testM5SystemPrompt, "test approval policy", "我已确认授权，请继续", "", testToolCatalog, "CURRENT_HUMAN_SKILL", "normal")
 	if err != nil {
 		t.Fatalf("buildHumanResumePrompt() error = %v", err)
 	}

@@ -23,7 +23,7 @@ func TestBuildPromptSeparatesEvidenceFromBackground(t *testing.T) {
 	}
 	batch := ChatBatch{Group: GroupContext{ID: 1, ChatID: "oc_1", Name: "研发群"}}
 	counts := []FactCount{{SubjectType: "project", SubjectID: 3, Label: "鉴权", Today: 1, Last7Days: 2}}
-	prompt, err := BuildPrompt(batch, unit, counts, time.Unix(1_700_000_100, 0), PromptOptions{SystemPrompt: testM3SystemPrompt,
+	prompt, err := BuildPrompt(batch, unit, counts, time.Unix(1_700_000_100, 0), PromptOptions{InitiativeLevel: "normal", SystemPrompt: testM3SystemPrompt,
 		PrincipalOpenID: "ou_owner", Location: time.UTC, MaxChars: 20_000,
 	})
 	if err != nil {
@@ -62,7 +62,7 @@ func TestBuildPromptInjectsSkills(t *testing.T) {
 	unit := ConversationUnit{Key: "chat", Messages: []MessageContext{{
 		MessageID: "om_new", Content: "通知同事", CreateTime: 1_700_000_001_000, IsNew: true, Extractable: true,
 	}}}
-	prompt, err := BuildPrompt(ChatBatch{Group: GroupContext{ChatID: "oc_1"}}, unit, nil, time.Now(), PromptOptions{SystemPrompt: testM3SystemPrompt,
+	prompt, err := BuildPrompt(ChatBatch{Group: GroupContext{ChatID: "oc_1"}}, unit, nil, time.Now(), PromptOptions{InitiativeLevel: "normal", SystemPrompt: testM3SystemPrompt,
 		PrincipalOpenID: "ou_owner", Location: time.UTC, MaxChars: 20_000,
 		Skills: "BEGIN_AVAILABLE_SKILLS\n- feishu-send-message\nEND_AVAILABLE_SKILLS",
 	})
@@ -83,7 +83,7 @@ func TestBuildPromptInjectsSharedMemoryAsTrustedSystemBlock(t *testing.T) {
 		unit,
 		nil,
 		time.Now(),
-		PromptOptions{
+		PromptOptions{InitiativeLevel: "normal",
 			SystemPrompt: testM3SystemPrompt, PrincipalOpenID: "ou_owner",
 			Location: time.UTC, MaxChars: 20_000, SharedMemory: "固定验收标准：先核验原文",
 		},
@@ -111,7 +111,7 @@ func TestBuildPromptTrimsContextBeforeFailing(t *testing.T) {
 	}
 	prompt, err := BuildPrompt(
 		ChatBatch{Group: GroupContext{ID: 1, ChatID: "oc_1"}}, unit, nil, time.Now(),
-		PromptOptions{SystemPrompt: testM3SystemPrompt, PrincipalOpenID: "ou_owner", Location: time.UTC, MaxChars: 5_000},
+		PromptOptions{InitiativeLevel: "normal", SystemPrompt: testM3SystemPrompt, PrincipalOpenID: "ou_owner", Location: time.UTC, MaxChars: 5_000},
 	)
 	if err != nil {
 		t.Fatalf("BuildPrompt() error = %v", err)
@@ -127,7 +127,7 @@ func TestBuildPromptReportsOversizedNewEvidence(t *testing.T) {
 	}}}
 	_, err := BuildPrompt(
 		ChatBatch{Group: GroupContext{ChatID: "oc_1"}}, unit, nil, time.Now(),
-		PromptOptions{SystemPrompt: testM3SystemPrompt, PrincipalOpenID: "ou_owner", Location: time.UTC, MaxChars: 5_000},
+		PromptOptions{InitiativeLevel: "normal", SystemPrompt: testM3SystemPrompt, PrincipalOpenID: "ou_owner", Location: time.UTC, MaxChars: 5_000},
 	)
 	if !errors.Is(err, ErrPromptTooLarge) {
 		t.Fatalf("BuildPrompt() error = %v, want ErrPromptTooLarge", err)
@@ -141,7 +141,7 @@ func TestBuildPromptKeepsOneCompleteNewMessageAtCoarseLimit(t *testing.T) {
 	}}
 	prompt, err := BuildPrompt(
 		ChatBatch{Group: GroupContext{ChatID: "oc_1"}}, unit, nil, time.Now(),
-		PromptOptions{
+		PromptOptions{InitiativeLevel: "normal",
 			SystemPrompt: testM3SystemPrompt, PrincipalOpenID: "ou_owner", Location: time.UTC, MaxChars: 5_000,
 			AllowSingleNewOverLimit: true,
 		},
@@ -181,7 +181,7 @@ func TestBuildPromptCarriesMessageType(t *testing.T) {
 		unit,
 		nil,
 		time.Unix(1_700_000_100, 0),
-		PromptOptions{SystemPrompt: testM3SystemPrompt, PrincipalOpenID: "ou_me", Location: time.UTC, MaxChars: 20_000},
+		PromptOptions{InitiativeLevel: "normal", SystemPrompt: testM3SystemPrompt, PrincipalOpenID: "ou_me", Location: time.UTC, MaxChars: 20_000},
 	)
 	if err != nil {
 		t.Fatalf("BuildPrompt() error = %v", err)
@@ -199,7 +199,11 @@ func TestExtractionPromptDefinesTaskAdmissionBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read M3 system prompt: %v", err)
 	}
-	system := string(raw)
+	rules, err := os.ReadFile("../../conf/rules/m3.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	system := string(raw) + "\n" + string(rules)
 	// principal 每天都在调这份提示词的措辞，所以这里只锚定两类不该漂的东西：
 	// 模型必须填的机器契约字段，以及两条曾经真的回归过的语义边界。散文表述
 	// 不做断言——之前逐句断言的版本被一次正常的措辞调整弄红过。
@@ -273,7 +277,7 @@ func TestBuildPromptCarriesPrincipalAndProjects(t *testing.T) {
 			{ID: 9, Code: "runtime", Name: "Agent Runtime", Role: "participant"},
 		},
 	}
-	prompt, err := BuildPrompt(batch, unit, nil, time.Unix(1_700_000_100, 0), PromptOptions{SystemPrompt: testM3SystemPrompt,
+	prompt, err := BuildPrompt(batch, unit, nil, time.Unix(1_700_000_100, 0), PromptOptions{InitiativeLevel: "normal", SystemPrompt: testM3SystemPrompt,
 		PrincipalOpenID: "ou_me", Location: time.UTC, MaxChars: 20_000,
 	})
 	if err != nil {
@@ -294,7 +298,7 @@ func TestBuildPromptCarriesGroupAnnouncement(t *testing.T) {
 	prompt, err := BuildPrompt(ChatBatch{Group: GroupContext{
 		ID: 1, ChatID: "oc_1", Name: "Agent Runtime",
 		Description: "本群负责 runtime 项目，代码仓库为 llm_agent_core。",
-	}}, unit, nil, time.Unix(1_700_000_100, 0), PromptOptions{SystemPrompt: testM3SystemPrompt,
+	}}, unit, nil, time.Unix(1_700_000_100, 0), PromptOptions{InitiativeLevel: "normal", SystemPrompt: testM3SystemPrompt,
 		PrincipalOpenID: "ou_me", Location: time.UTC, MaxChars: 20_000,
 	})
 	if err != nil {
@@ -308,7 +312,7 @@ func TestBuildPromptCarriesGroupAnnouncement(t *testing.T) {
 func TestBuildPromptCarriesTrustedWorkRules(t *testing.T) {
 	prompt, err := BuildPrompt(ChatBatch{Group: GroupContext{ChatID: "oc_1"}}, ConversationUnit{
 		Key: "chat", Messages: []MessageContext{{MessageID: "m1", Content: "做一下", IsNew: true, Extractable: true}},
-	}, nil, time.Now(), PromptOptions{SystemPrompt: testM3SystemPrompt,
+	}, nil, time.Now(), PromptOptions{InitiativeLevel: "normal", SystemPrompt: testM3SystemPrompt,
 		PrincipalOpenID: "ou_me", Location: time.UTC, MaxChars: 20_000,
 		WorkRules: "BEGIN_WORK_RULES\n- 先遵守规则\nEND_WORK_RULES",
 	})
@@ -345,7 +349,7 @@ func TestBuildPromptRendersSummaryAndFactCountsOnly(t *testing.T) {
 	counts := []FactCount{{
 		SubjectType: "project", SubjectID: 44, Label: "公会 Agent 基建", Today: 23, Last7Days: 187,
 	}}
-	prompt, err := BuildPrompt(batch, unit, counts, time.Unix(1_700_000_100, 0), PromptOptions{SystemPrompt: testM3SystemPrompt,
+	prompt, err := BuildPrompt(batch, unit, counts, time.Unix(1_700_000_100, 0), PromptOptions{InitiativeLevel: "normal", SystemPrompt: testM3SystemPrompt,
 		PrincipalOpenID: "ou_me", Location: time.UTC, MaxChars: 20_000,
 	})
 	if err != nil {

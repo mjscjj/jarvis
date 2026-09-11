@@ -1,5 +1,5 @@
 // Package prompttemplate renders the human-editable stable system-prompt
-// templates for M3 and M5. Work rules and approval policy remain independent
+// templates for M3, M5 and proactive. Work rules and approval policy remain independent
 // file-backed sources; their placeholders only control where those sources are
 // inserted into the effective instructions.
 package prompttemplate
@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	StageM3 = "m3"
-	StageM5 = "m5"
+	StageM3        = "m3"
+	StageM5        = "m5"
+	StageProactive = "proactive"
 
 	WorkRulesPlaceholder      = "{{WORK_RULES}}"
 	ApprovalPolicyPlaceholder = "{{APPROVAL_POLICY}}"
@@ -54,10 +55,14 @@ func Validate(stage, template string) error {
 }
 
 // Render expands the file-backed values into their stage template. M3 never
-// accepts an approval policy. M5 requires one even during apply/resume because
+// accepts an approval policy. M5 requires one even during resume because
 // a newly discovered, unapproved side effect still needs a policy judgment.
-func Render(stage, template, workRules, approvalPolicy string) (string, error) {
+func Render(stage, template, workRules, approvalPolicy, initiativeLevel string) (string, error) {
 	if err := Validate(stage, template); err != nil {
+		return "", err
+	}
+	levelBlock, err := InitiativeBlock(initiativeLevel)
+	if err != nil {
 		return "", err
 	}
 	if stage == StageM5 && strings.TrimSpace(approvalPolicy) == "" {
@@ -67,7 +72,24 @@ func Render(stage, template, workRules, approvalPolicy string) (string, error) {
 	if stage == StageM5 {
 		rendered = strings.Replace(rendered, ApprovalPolicyPlaceholder, approvalBlock(approvalPolicy), 1)
 	}
-	return strings.TrimSpace(rendered), nil
+	return levelBlock + "\n\n" + strings.TrimSpace(rendered), nil
+}
+
+// ValidateInitiativeLevel validates the UI's selection, never a business decision.
+func ValidateInitiativeLevel(level string) error {
+	switch strings.TrimSpace(level) {
+	case "quiet", "normal", "active":
+		return nil
+	default:
+		return fmt.Errorf("%w: initiative level %q must be quiet, normal or active", ErrInvalidTemplate, level)
+	}
+}
+
+func InitiativeBlock(level string) (string, error) {
+	if err := ValidateInitiativeLevel(level); err != nil {
+		return "", err
+	}
+	return "BEGIN_INITIATIVE_LEVEL\n" + strings.TrimSpace(level) + "\nEND_INITIATIVE_LEVEL", nil
 }
 
 func requiredPlaceholders(stage string) ([]string, error) {
@@ -76,6 +98,8 @@ func requiredPlaceholders(stage string) ([]string, error) {
 		return []string{WorkRulesPlaceholder}, nil
 	case StageM5:
 		return []string{WorkRulesPlaceholder, ApprovalPolicyPlaceholder}, nil
+	case StageProactive:
+		return nil, nil
 	default:
 		return nil, fmt.Errorf("%w: unknown stage %q", ErrInvalidTemplate, stage)
 	}

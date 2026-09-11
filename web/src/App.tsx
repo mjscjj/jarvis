@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { Badge, Button, Drawer, Input, Layout, Menu, Modal, Result, Spin, Tooltip, Typography, message } from 'antd'
 import type { MenuProps } from 'antd'
 import {
@@ -48,11 +48,12 @@ const Chat = lazy(() => import('./Chat'))
 const Plugins = lazy(() => import('./Plugins'))
 const SecuritySettings = lazy(() => import('./SecuritySettings'))
 
-const DEFAULT_KEY = 'overview'
+const DEFAULT_KEY = 'chat'
 
 const SIDER_WIDTH = 184
 const SIDER_COLLAPSED_WIDTH = 64
 const pageLabels: Record<string, string> = {
+  chat: '对话',
   overview: '工作台',
   tasks: '任务',
   progress: '工作台',
@@ -71,11 +72,9 @@ function AppShell() {
   const { user, logout } = useAuth()
   const { context, navigate } = usePageContext()
   const runtimeFailures = useRuntimeFailureCount()
-  const [chatOpen, setChatOpen] = useLocalStorage('jarvis.chatOverlayOpen', false)
-  const [chatLoaded, setChatLoaded] = useState(chatOpen)
   const [siderCollapsed, setSiderCollapsed] = useLocalStorage('jarvis.siderCollapsed', false)
-  const [managementOpen, setManagementOpen] = useState(true)
-  const [pluginsOpen, setPluginsOpen] = useState(true)
+  const [managementOpen, setManagementOpen] = useState(false)
+  const [pluginsOpen, setPluginsOpen] = useLocalStorage('jarvis.pluginsOpen', true)
   const [enabledPlugins, setEnabledPlugins] = useState<Array<Pick<Plugin, 'id' | 'name' | 'kind' | 'enabled'>>>([])
   const [pluginsLoaded, setPluginsLoaded] = useState(false)
   const [mobileSystemOpen, setMobileSystemOpen] = useState(false)
@@ -85,9 +84,6 @@ function AppShell() {
   const [savingName, setSavingName] = useState(false)
   const [modal, modalContext] = Modal.useModal()
   const [messageApi, messageContext] = message.useMessage()
-  const chatRef = useRef<HTMLElement>(null)
-  const chatToggleRef = useRef<HTMLButtonElement>(null)
-  const chatWasOpen = useRef(chatOpen)
 
   let managementIcon: React.ReactNode = <SettingOutlined />
   if (runtimeFailures.count && runtimeFailures.count > 0) {
@@ -110,7 +106,6 @@ function AppShell() {
   useEffect(() => {
     void refreshPlugins()
     const onChanged = () => {
-      setPluginsOpen(true)
       void refreshPlugins()
     }
     window.addEventListener('jarvis:plugins-changed', onChanged)
@@ -133,6 +128,7 @@ function AppShell() {
     : null
 
   const menuProps: MenuProps['items'] = [
+    { key: 'chat', label: '对话', icon: <MessageOutlined /> },
     { key: 'overview', label: '工作台', icon: <HomeOutlined /> },
     { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
     { key: 'background', label: '世界', icon: <DatabaseOutlined /> },
@@ -153,6 +149,7 @@ function AppShell() {
   ]
 
   const pages: Record<string, React.ReactNode> = {
+    chat: <Chat />,
     overview: <Progress />,
     todos: <Todos refreshKey={0} />,
     tasks: context.view_state.mode === 'delegated' && context.selection?.kind !== 'task' && delegationsEnabled !== false
@@ -166,47 +163,6 @@ function AppShell() {
     settings: <Settings />,
     progress: <Progress />,
     debug: <Debug />,
-  }
-
-  useEffect(() => {
-    if (chatOpen) setChatLoaded(true)
-  }, [chatOpen])
-
-  useEffect(() => {
-    const onEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setChatOpen(false)
-    }
-    window.addEventListener('keydown', onEscape)
-    return () => window.removeEventListener('keydown', onEscape)
-  }, [setChatOpen])
-
-  useEffect(() => {
-    if (chatOpen) {
-      window.requestAnimationFrame(() => {
-        const target = chatRef.current?.querySelector<HTMLElement>('textarea, button, [href], [tabindex]:not([tabindex="-1"])')
-        target?.focus()
-      })
-    } else if (chatWasOpen.current) {
-      chatToggleRef.current?.focus()
-    }
-    chatWasOpen.current = chatOpen
-  }, [chatOpen])
-
-  const handleChatKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
-    if (event.key !== 'Tab') return
-    const focusable = Array.from(chatRef.current?.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
-    ) ?? []).filter((element) => element.offsetParent !== null)
-    if (focusable.length === 0) return
-    const first = focusable[0]
-    const last = focusable[focusable.length - 1]
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault()
-      last.focus()
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault()
-      first.focus()
-    }
   }
 
   const goTo = (key: string) => {
@@ -292,7 +248,7 @@ function AppShell() {
 
   return (
     <Layout
-      className={`app-shell ${chatOpen ? 'chat-is-open' : ''}`}
+      className="app-shell"
       style={{ '--sider-width': `${siderWidth}px` } as React.CSSProperties}
     >
       {modalContext}
@@ -361,8 +317,12 @@ function AppShell() {
             ...(pluginsOpen && enabledPlugins.length > 0 ? ['plugin-group'] : []),
           ]}
           onOpenChange={(keys) => {
+            // Collapsing the whole sidebar also emits empty keys; preserve the user's section choices.
+            if (siderCollapsed) return
             setManagementOpen(keys.includes('management'))
-            setPluginsOpen(keys.includes('plugin-group'))
+            if (enabledPlugins.length > 0) {
+              setPluginsOpen(keys.includes('plugin-group'))
+            }
           }}
           items={menuProps}
           onClick={({ key }) => goTo(key)}
@@ -406,45 +366,20 @@ function AppShell() {
         <Button type="text" icon={<MoreOutlined />} aria-label="打开系统导航" onClick={() => setMobileSystemOpen(true)} />
       </header>
       <Layout>
-        <div className="app-main">
-          <Content className="app-content">
+        <div className={`app-main ${context.active_key === 'chat' ? 'is-chat-page' : ''}`}>
+          <Content className={`app-content ${context.active_key === 'chat' ? 'is-chat-page' : ''}`}>
             <Suspense fallback={<div className="page-loading"><Spin size="small" /><span>正在加载…</span></div>}>
               {pages[context.active_key]}
             </Suspense>
           </Content>
-          <aside
-            ref={chatRef}
-            className={`chat-overlay ${chatOpen ? 'is-open' : ''}`}
-            aria-hidden={!chatOpen}
-            inert={chatOpen ? undefined : true}
-            onKeyDown={handleChatKeyDown}
-          >
-            {chatLoaded && (
-              <Suspense fallback={<div className="page-loading"><Spin size="small" /><span>正在打开对话…</span></div>}>
-                <Chat open={chatOpen} onClose={() => setChatOpen(false)} />
-              </Suspense>
-            )}
-          </aside>
         </div>
       </Layout>
-      <Tooltip title={chatOpen ? '收起对话' : '打开对话'}>
-        <Button
-          type="primary"
-          shape="circle"
-          size="large"
-          icon={<MessageOutlined />}
-          className={`chat-toggle ${chatOpen ? 'chat-open' : ''}`}
-          ref={chatToggleRef}
-          aria-label={chatOpen ? `关闭 ${agentName} 对话` : `打开 ${agentName} 对话`}
-          onClick={() => setChatOpen((open) => !open)}
-        />
-      </Tooltip>
       <nav className="mobile-bottom-nav" aria-label="主要导航">
         {[
+          { key: 'chat', label: '对话', icon: <MessageOutlined /> },
           { key: 'overview', label: '工作台', icon: <HomeOutlined /> },
           { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
           { key: 'background', label: '世界', icon: <DatabaseOutlined /> },
-          { key: 'settings', label: '设置', icon: <SettingOutlined /> },
         ].map((item) => (
           <button key={item.key} type="button" className={primaryNavigationKey === item.key ? 'is-active' : ''} onClick={() => goTo(item.key)}>
             {item.icon}<span>{item.label}</span>

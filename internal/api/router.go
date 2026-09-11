@@ -85,6 +85,7 @@ type Dependencies struct {
 	Readiness          ReadinessTargets  // /readyz 探测的外部依赖；缺失只降级，不影响 /healthz
 	SystemControl      SystemShutdowner
 	Onboarding         *onboarding.Service
+	UpdateRoot         string // 可选：DEV2 发布目录；为空时不注册 /jarvis-updates
 }
 
 // Register 把所有路由挂到 Hertz 实例上。
@@ -203,6 +204,14 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	}
 	h.GET("/healthz", Health(deps.DB))
 	h.GET("/readyz", Readiness(deps.DB, deps.Readiness))
+	if strings.TrimSpace(deps.UpdateRoot) != "" {
+		updateFiles, err := NewUpdateFileHandler(deps.UpdateRoot)
+		if err != nil {
+			return fmt.Errorf("create update file handler: %w", err)
+		}
+		h.GET("/jarvis-updates/:filename", updateFiles)
+		h.HEAD("/jarvis-updates/:filename", updateFiles)
+	}
 	h.GET("/api/auth/status", GetAuthStatus(deps.Auth))
 	h.POST("/api/auth/login", LoginWithByteDance(deps.Auth))
 	h.POST("/api/auth/login/complete", CompleteByteDanceLogin(deps.Auth))
@@ -390,9 +399,20 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.PUT("/api/resources/:resource_id", UpdateResource(deps.Resources))
 	h.POST("/api/resources/:resource_id/touch", TouchResource(deps.Resources))
 	h.DELETE("/api/resources/:resource_id", DeleteResource(deps.Resources))
-	// 基于 codex CLI 的流式对话（SSE）。与 execute 一致：未启用（nil）则不注册路由。
+	// 持久多 Agent 对话（SSE）。未启用（nil）则不注册整组路由。
 	if deps.Chat != nil {
-		h.POST("/api/chat", Chat(deps.Chat))
+		h.GET("/api/chat/agents", ListChatAgents(deps.Chat))
+		h.GET("/api/chat/agents/:agent_id/models", ListChatModels(deps.Chat))
+		h.GET("/api/chat/sessions", ListChatSessions(deps.Chat))
+		h.POST("/api/chat/sessions", CreateChatSession(deps.Chat))
+		h.GET("/api/chat/sessions/:session_id", GetChatSession(deps.Chat))
+		h.PATCH("/api/chat/sessions/:session_id", UpdateChatSession(deps.Chat))
+		h.DELETE("/api/chat/sessions/:session_id", DeleteChatSession(deps.Chat))
+		h.POST("/api/chat/sessions/:session_id/messages", StreamChatSession(deps.Chat))
+		h.POST("/api/chat/sessions/:session_id/cancel", CancelChatSession(deps.Chat))
+		h.POST("/api/chat/sessions/:session_id/attachments", UploadChatAttachment(deps.Chat))
+		h.DELETE("/api/chat/sessions/:session_id/attachments/:attachment_id", DeleteChatAttachment(deps.Chat))
+		h.GET("/api/chat/attachments/:attachment_id/content", DownloadChatAttachment(deps.Chat))
 	}
 	// 精确 API 路由优先于这个兜底。必须在进程注册根 StaticFS 之前拦住
 	// 未知 /api/*，否则 Hertz 会把它当作 web/dist 下的静态文件并返回

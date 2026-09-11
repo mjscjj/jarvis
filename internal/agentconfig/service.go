@@ -1,5 +1,5 @@
 // Package agentconfig exposes stage-centric, read-only previews of the stable
-// M3/M5 instructions. It composes the exact same file-backed templates and
+// M3/M5/proactive instructions. It composes the exact same file-backed templates and
 // rules as runtime; dynamic task/session blocks remain explicitly listed rather
 // than being fabricated in the admin UI.
 package agentconfig
@@ -18,10 +18,11 @@ import (
 var ErrStageNotFound = errors.New("agent config stage not found")
 
 type Preview struct {
-	Stage         string   `json:"stage"`
-	Name          string   `json:"name"`
-	Content       string   `json:"content"`
-	DynamicBlocks []string `json:"dynamic_blocks"`
+	InitiativeLevel string   `json:"initiative_level"`
+	Stage           string   `json:"stage"`
+	Name            string   `json:"name"`
+	Content         string   `json:"content"`
+	DynamicBlocks   []string `json:"dynamic_blocks"`
 }
 
 type Service struct {
@@ -50,6 +51,9 @@ func (s *Service) Preview(ctx context.Context, stage string) (*Preview, error) {
 	case prompttemplate.StageM5:
 		promptKey, ruleStage, name = textstore.SystemPromptM5Key, workrule.StageExecute, "任务执行"
 		dynamicBlocks = []string{"phase_instructions", "shared_memory", "skills", "tool_catalog", "task_context", "output_schema"}
+	case prompttemplate.StageProactive:
+		promptKey, name = textstore.SystemPromptProactiveKey, "主动巡视"
+		dynamicBlocks = []string{"shared_memory", "skills", "tool_catalog", "heartbeat"}
 	default:
 		return nil, fmt.Errorf("%w: %q", ErrStageNotFound, stage)
 	}
@@ -58,9 +62,12 @@ func (s *Service) Preview(ctx context.Context, stage string) (*Preview, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read %s system prompt: %w", stage, err)
 	}
-	rules, err := s.rules.Block(ctx, ruleStage)
-	if err != nil {
-		return nil, fmt.Errorf("read %s work rules: %w", stage, err)
+	rules := ""
+	if ruleStage != "" {
+		rules, err = s.rules.Block(ctx, ruleStage)
+		if err != nil {
+			return nil, fmt.Errorf("read %s work rules: %w", stage, err)
+		}
 	}
 	approvalPolicy := ""
 	if stage == prompttemplate.StageM5 {
@@ -69,9 +76,13 @@ func (s *Service) Preview(ctx context.Context, stage string) (*Preview, error) {
 			return nil, fmt.Errorf("read M5 approval policy: %w", err)
 		}
 	}
-	content, err := prompttemplate.Render(stage, template, rules, approvalPolicy)
+	initiativeLevel, err := s.prompts.Content(ctx, textstore.InitiativeLevelKey)
+	if err != nil {
+		return nil, fmt.Errorf("read initiative level: %w", err)
+	}
+	content, err := prompttemplate.Render(stage, template, rules, approvalPolicy, initiativeLevel)
 	if err != nil {
 		return nil, fmt.Errorf("render %s preview: %w", stage, err)
 	}
-	return &Preview{Stage: stage, Name: name, Content: content, DynamicBlocks: dynamicBlocks}, nil
+	return &Preview{Stage: stage, Name: name, Content: content, DynamicBlocks: dynamicBlocks, InitiativeLevel: strings.TrimSpace(initiativeLevel)}, nil
 }

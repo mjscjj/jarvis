@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: normative module guide
-> Last verified: 2026-09-05
+> Last verified: 2026-09-10
 > Code source: `internal/extract/`, `internal/contextsnap/`
 
 M3 把新证据和工作背景转成经过准入判断的 Todo。它回答“这条线索是否值得启动一次 M5”，只创建/更新 Todo，不创建 Task、不执行外部写操作、不手工写长期 Fact，也不替 M5 制定方案或完成调查。
@@ -14,7 +14,7 @@ M3 把新证据和工作背景转成经过准入判断的 Todo。它回答“这
 - 本轮新 message、受限会话上下文和工具补查消息；
 - Group、Project、Person、PrincipalProfile、Resource；
 - 既有 open Todos；各实体的长期事实页 `summary`，Fact 只给条数不给明细；
-- shared memory、rules、Skills 与工具目录。
+- 当前主动程度、shared memory、rules、Skills 与工具目录。
 
 写入：
 
@@ -24,7 +24,7 @@ M3 把新证据和工作背景转成经过准入判断的 Todo。它回答“这
 M3 状态只有：
 
 - `extracted`：存在需要 M5 执行 Agent 调查和判断的动作线索；
-- `observing`：值得知道，但当前无需任何人行动。
+- `observing`：值得保留，但按当前证据与本档标准暂不启动 M5；不等于事项完成。
 
 重提取可以在 `extracted ↔ observing` 间调整，不随意重新打开已经 `materialized` 的 Todo。
 
@@ -78,13 +78,15 @@ Todo、事件、水位和去重向量在同一落库流程中协调；关键步�
 | `extract.fact_limit` | 默认注入的已有 Fact 上限 |
 | `extract.semantic_*` | Qdrant Todo 去重配置 |
 
-稳定行为正文在 `conf/prompts/m3-system-prompt.md`；运行时组装在 `internal/extract/prompt.go`；工具说明来自 `internal/toolcatalog`。M3 的工具查询只服务四个准入问题：相关性、未闭环状态、责任归属和完成/重复检查；证据足够后立即停止。
+阶段职责与输出协议在 `conf/prompts/m3-system-prompt.md`，三档准入尺度及领域特例在 `conf/rules/m3.md`；运行时组装在 `internal/extract/prompt.go`；工具说明来自 `internal/toolcatalog`。M3 的工具查询只服务四个准入问题：相关性、未闭环状态、责任归属和完成/重复检查；证据足够后立即停止。
 
 M2 新消息实时唤醒 M3；`extract.schedule` 只做持久化补偿。单聊中的一个人和一个群都由各自的 `chat_id` 隔离：不同 chat 可以并行，同一 chat 的连续水位严格串行。补偿扫描与实时抽取互斥，拿到待处理 chat 后再按 `extract.concurrency` 并发，避免同一批证据被两条路径重复处理。
 
 ```bash
 ./bin/jarvis-server -config conf/config.yaml -extract-once
 ```
+
+`conf/prompts/initiative-level.md` 保存 quiet / normal / active（默认 normal）。每次批次组装读取一次，各 conversation unit 与格式/证据重试使用已组装的选择；新的批次读取更新值。安静档要求明确的介入必要性，普通档保留当前不确定即准入及反馈、回顾特例，活跃档增加有证据的前置准备。明确交办与明确订阅三档都履行。代码只注入选择，Todo 固化依旧只看 extracted。
 
 ## 6. 当前限制
 

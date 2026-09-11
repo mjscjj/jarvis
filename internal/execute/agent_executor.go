@@ -356,7 +356,11 @@ func (e *AgentExecutor) ResumeTask(ctx context.Context, taskID, sourceRunID uint
 	if err != nil {
 		return err
 	}
-	prompt, err := buildScheduledResumePrompt(systemPrompt, approvalPolicy, reason, workRules, toolCatalog, skills)
+	initiativeLevel, err := e.textStore.Content(ctx, textstore.InitiativeLevelKey)
+	if err != nil {
+		return err
+	}
+	prompt, err := buildScheduledResumePrompt(systemPrompt, approvalPolicy, reason, workRules, toolCatalog, skills, initiativeLevel)
 	if err != nil {
 		return err
 	}
@@ -400,7 +404,11 @@ func (e *AgentExecutor) KickResumeAfterHuman(ctx context.Context, taskID uint64,
 	if err != nil {
 		return nil, err
 	}
-	prompt, err := buildHumanResumePrompt(systemPrompt, approvalPolicy, response, workRules, toolCatalog, skills)
+	initiativeLevel, err := e.textStore.Content(ctx, textstore.InitiativeLevelKey)
+	if err != nil {
+		return nil, err
+	}
+	prompt, err := buildHumanResumePrompt(systemPrompt, approvalPolicy, response, workRules, toolCatalog, skills, initiativeLevel)
 	if err != nil {
 		return nil, err
 	}
@@ -518,13 +526,13 @@ func (e *AgentExecutor) resumeClaimed(ctx context.Context, taskID, sourceRunID u
 // carries the approval policy because a resumed session runs under the same
 // result contract as a first pass: it may well decide the next step needs
 // approval, and it cannot make that call without the policy text.
-func buildScheduledResumePrompt(systemPrompt, approvalPolicy, reason, workRules, toolCatalog, skills string) (string, error) {
+func buildScheduledResumePrompt(systemPrompt, approvalPolicy, reason, workRules, toolCatalog, skills, initiativeLevel string) (string, error) {
 	systemPrompt = strings.TrimSpace(systemPrompt)
 	reason = strings.TrimSpace(reason)
 	if systemPrompt == "" || reason == "" {
 		return "", fmt.Errorf("waiting resume system prompt and reason are required")
 	}
-	prompt, err := renderResumeInstructions(systemPrompt, approvalPolicy, m5PhaseResumeWaiting, workRules, toolCatalog, skills)
+	prompt, err := renderResumeInstructions(systemPrompt, approvalPolicy, m5PhaseResumeWaiting, workRules, toolCatalog, skills, initiativeLevel)
 	if err != nil {
 		return "", err
 	}
@@ -534,13 +542,13 @@ func buildScheduledResumePrompt(systemPrompt, approvalPolicy, reason, workRules,
 // buildHumanResumePrompt builds the prompt that continues a session after the
 // principal answered. It carries the approval policy for the same reason as the
 // waiting resume above.
-func buildHumanResumePrompt(systemPrompt, approvalPolicy, response, workRules, toolCatalog, skills string) (string, error) {
+func buildHumanResumePrompt(systemPrompt, approvalPolicy, response, workRules, toolCatalog, skills, initiativeLevel string) (string, error) {
 	systemPrompt = strings.TrimSpace(systemPrompt)
 	response = strings.TrimSpace(response)
 	if systemPrompt == "" || response == "" {
 		return "", fmt.Errorf("human resume system prompt and response are required")
 	}
-	prompt, err := renderResumeInstructions(systemPrompt, approvalPolicy, m5PhaseResumeHuman, workRules, toolCatalog, skills)
+	prompt, err := renderResumeInstructions(systemPrompt, approvalPolicy, m5PhaseResumeHuman, workRules, toolCatalog, skills, initiativeLevel)
 	if err != nil {
 		return "", err
 	}
@@ -549,8 +557,8 @@ func buildHumanResumePrompt(systemPrompt, approvalPolicy, response, workRules, t
 
 // renderResumeInstructions assembles the shared resume preamble: phase, approval
 // policy, work rules and tool catalog.
-func renderResumeInstructions(systemPrompt, approvalPolicy, phase, workRules, toolCatalog, skills string) (string, error) {
-	renderedSystemPrompt, err := prompttemplate.Render(prompttemplate.StageM5, systemPrompt, workRules, approvalPolicy)
+func renderResumeInstructions(systemPrompt, approvalPolicy, phase, workRules, toolCatalog, skills, initiativeLevel string) (string, error) {
+	renderedSystemPrompt, err := prompttemplate.Render(prompttemplate.StageM5, systemPrompt, workRules, approvalPolicy, initiativeLevel)
 	if err != nil {
 		return "", fmt.Errorf("render M5 resume system prompt: %w", err)
 	}
@@ -999,8 +1007,13 @@ func (e *AgentExecutor) runOnce(ctx context.Context, task *domain.Task) (*domain
 		cause := fmt.Errorf("load M5 tool catalog: %w", err)
 		return e.failRun(run, startedAt, cause), nil, cause
 	}
+	initiativeLevel, err := e.textStore.Content(ctx, textstore.InitiativeLevelKey)
+	if err != nil {
+		return e.failRun(run, startedAt, err), nil, err
+	}
 	prompt, err := buildExecutionPrompt(executionPromptInput{
-		SystemPrompt: systemPrompt, ApprovalPolicy: approvalPolicy, Task: task,
+		InitiativeLevel: initiativeLevel,
+		SystemPrompt:    systemPrompt, ApprovalPolicy: approvalPolicy, Task: task,
 		RepoPath: repoPath, ToolCatalog: toolCatalog, SharedMemory: sharedMemory,
 		WorkRules: workRules, Skills: skills,
 		History: history,

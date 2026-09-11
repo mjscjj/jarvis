@@ -1,7 +1,8 @@
-// Package chat 提供「基于 codex CLI 的流式对话服务」。
+// Package chat provides persistent streaming conversations backed by the
+// installed Codex, TRAE, or Cursor CLI.
 //
-// 与 internal/execute 的一次性 codex 封装不同，本包用 StdoutPipe + json.Decoder
-// 边读 codex 的 JSONL 事件边通过回调吐出，支撑 /api/chat 的 SSE 流式对话。
+// 与 internal/execute 的任务执行封装不同，本包用 StdoutPipe + json.Decoder
+// 边读原生事件边通过回调吐出，支撑 /api/chat/* 的 SSE 流式对话。
 // 本地可信环境：codex 跑 danger-full-access + 联网，能调用 jarvis-tools、
 // 调用 jarvis-tools/lark-cli/git。fail-fast：非零退出、超时、JSON 解析失败都
 // 转成 error 事件并返回 error，绝不静默吞。
@@ -15,6 +16,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -44,6 +46,7 @@ type Event struct {
 // runner 封装 codex CLI 的流式调用。它持有已解析的 bin 与固定的模型/沙箱/
 // reasoning_effort/超时，Service 组装好 prompt 后交给它执行。
 type runner struct {
+	agent           string
 	bin             string
 	model           string
 	sandbox         string
@@ -67,15 +70,14 @@ func newRunner(bin, model, sandbox, reasoningEffort string, timeout time.Duratio
 	default:
 		return nil, fmt.Errorf("chat codex sandbox must be read-only, workspace-write or danger-full-access, got %q", sandbox)
 	}
-	switch reasoningEffort {
-	case "minimal", "low", "medium", "high", "xhigh":
-	default:
-		return nil, fmt.Errorf("chat codex reasoning_effort must be minimal/low/medium/high/xhigh, got %q", reasoningEffort)
+	if strings.TrimSpace(reasoningEffort) == "" {
+		return nil, fmt.Errorf("chat reasoning_effort is required")
 	}
 	if timeout <= 0 {
 		return nil, fmt.Errorf("chat codex timeout must be positive")
 	}
 	return &runner{
+		agent:           agentFromBinary(resolved),
 		bin:             resolved,
 		model:           model,
 		sandbox:         sandbox,
@@ -84,13 +86,54 @@ func newRunner(bin, model, sandbox, reasoningEffort string, timeout time.Duratio
 	}, nil
 }
 
+func agentFromBinary(bin string) string {
+	base := strings.ToLower(filepath.Base(bin))
+	if strings.Contains(base, "cursor") || base == "agent" {
+		return "cursor"
+	}
+	if strings.Contains(base, "trae") {
+		return "trae"
+	}
+	return "codex"
+}
+
+func newAgentRunner(agent, model, sandbox, reasoningEffort string, timeout time.Duration) (*runner, error) {
+	var bin string
+	switch strings.ToLower(strings.TrimSpace(agent)) {
+	case "codex":
+		bin = "codex"
+	case "trae", "traex":
+		bin = "traex"
+		agent = "trae"
+	case "cursor":
+		bin = "cursor-agent"
+	default:
+		return nil, fmt.Errorf("unknown chat agent %q", agent)
+	}
+	r, err := newRunner(bin, model, sandbox, reasoningEffort, timeout)
+	if err != nil {
+		return nil, err
+	}
+	r.agent = agent
+	return r, nil
+}
+
 // args 构造 codex 命令行。resume 子命令与首轮的可用 flag 不同：
 //   - 首轮：codex exec --json --color never --sandbox <s> -c ... --model <m> -
 //   - 多轮：codex exec resume <thread_id> --json -c sandbox_mode="<s>" -c ... --model <m> -
 //
 // 事实来自实跑 codex（见包测试样本）：resume 不接受 --color/--sandbox flag，
 // 沙箱只能经 -c sandbox_mode 覆盖，否则 codex 直接以 exit 2 报 unexpected argument。
-func (r *runner) args(threadID string) []string {
+func (r *runner) args(threadID string, imagePaths []string) []string {
+	if r.agent == "cursor" {
+		args := []string{"--print", "--output-format", "stream-json", "--stream-partial-output", "--force", "--model", r.model}
+		if strings.TrimSpace(threadID) != "" {
+			args = append(args, "--resume", strings.TrimSpace(threadID))
+		}
+		// Cursor reads stdin only when the positional prompt is omitted. Passing
+		// "-" sends a literal dash as the prompt instead.
+		return args
+	}
 	var args []string
 	if strings.TrimSpace(threadID) == "" {
 		args = []string{
@@ -102,7 +145,7 @@ func (r *runner) args(threadID string) []string {
 			"--model", r.model,
 			"-",
 		}
-		return args
+		return appendImageArgs(args, imagePaths)
 	}
 	args = []string{
 		"exec", "resume", threadID, "--json",
@@ -113,14 +156,26 @@ func (r *runner) args(threadID string) []string {
 		"--model", r.model,
 		"-",
 	}
-	return args
+	return appendImageArgs(args, imagePaths)
+}
+
+func appendImageArgs(args, paths []string) []string {
+	if len(paths) == 0 {
+		return args
+	}
+	last := args[len(args)-1]
+	args = args[:len(args)-1]
+	for _, path := range paths {
+		args = append(args, "--image", path)
+	}
+	return append(args, last)
 }
 
 // Stream 执行一轮 codex 对话。prompt 从 stdin 灌入；threadID 非空则 resume。
 // 每解析出一条 thread/delta 事件就回调 emit；emit 返回 error（如 SSE 写失败）
 // 会中止本轮并杀掉子进程。正常结束返回 nil（上游据此发 done）；任何异常
 // （非零退出、超时、JSON 解析失败、stderr 有内容而无输出）返回 error。
-func (r *runner) Stream(ctx context.Context, prompt, threadID string, emit func(Event) error) error {
+func (r *runner) Stream(ctx context.Context, prompt, threadID string, imagePaths []string, emit func(Event) error) error {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		return fmt.Errorf("chat prompt is required")
@@ -129,7 +184,7 @@ func (r *runner) Stream(ctx context.Context, prompt, threadID string, emit func(
 	runCtx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
 
-	command := exec.CommandContext(runCtx, r.bin, r.args(threadID)...)
+	command := exec.CommandContext(runCtx, r.bin, r.args(threadID, imagePaths)...)
 	command.Env = append(os.Environ(), "JARVIS_AGENT_STAGE=chat")
 	command.Stdin = strings.NewReader(prompt)
 	stdout, err := command.StdoutPipe()
@@ -146,9 +201,22 @@ func (r *runner) Stream(ctx context.Context, prompt, threadID string, emit func(
 
 	// 边读边解析 codex JSONL。parseErr 记录解析/回调阶段的第一个错误；
 	// 无论如何都要 Wait 回收子进程，避免僵尸与句柄泄漏。
-	parseErr := parseCodexStream(stdout, emit)
+	var parseErr error
+	if r.agent == "cursor" {
+		parseErr = parseCursorStream(stdout, emit)
+	} else {
+		parseErr = parseCodexStream(stdout, emit)
+	}
+	// A broken downstream stream must stop the CLI before Wait. Otherwise the
+	// child can block while writing to an unread stdout pipe until the turn timeout.
+	if parseErr != nil {
+		cancel()
+	}
 	waitErr := command.Wait()
 
+	if ctx.Err() == context.Canceled {
+		return context.Canceled
+	}
 	if runCtx.Err() == context.DeadlineExceeded {
 		return fmt.Errorf("codex chat timed out after %s: %s", r.timeout, stderr.text())
 	}
@@ -159,6 +227,68 @@ func (r *runner) Stream(ctx context.Context, prompt, threadID string, emit func(
 		return fmt.Errorf("codex chat exited abnormally: %w: %s", waitErr, stderr.text())
 	}
 	return nil
+}
+
+// parseCursorStream accepts Cursor Agent's stream-json protocol. Cursor has
+// shipped both direct text deltas and Claude-style assistant content blocks;
+// the parser projects only explicit session IDs and assistant text.
+func parseCursorStream(stdout io.Reader, emit func(Event) error) error {
+	decoder := json.NewDecoder(bufio.NewReader(stdout))
+	sawThread := false
+	emitted := ""
+	for {
+		var event map[string]any
+		if err := decoder.Decode(&event); err != nil {
+			if err == io.EOF {
+				break
+			}
+			return fmt.Errorf("decode cursor stream JSON: %w", err)
+		}
+		if id := firstString(event, "session_id", "sessionId", "chat_id", "chatId"); id != "" && !sawThread {
+			sawThread = true
+			if err := emit(Event{Kind: EventThread, ThreadID: id}); err != nil {
+				return err
+			}
+		}
+		// Thinking events also carry a top-level text field. Only assistant
+		// events belong in the visible answer.
+		if firstString(event, "type") != "assistant" {
+			continue
+		}
+		message, _ := event["message"].(map[string]any)
+		content, _ := message["content"].([]any)
+		_, isPartial := event["timestamp_ms"]
+		for _, raw := range content {
+			part, _ := raw.(map[string]any)
+			if text, _ := part["text"].(string); text != "" {
+				// Cursor emits a final aggregate assistant event after the partial
+				// events. Project only its unseen suffix to avoid duplicate text.
+				if !isPartial && strings.HasPrefix(text, emitted) {
+					text = strings.TrimPrefix(text, emitted)
+				}
+				if text == "" {
+					continue
+				}
+				if err := emit(Event{Kind: EventDelta, Text: text}); err != nil {
+					return err
+				}
+				emitted += text
+			}
+		}
+	}
+	if !sawThread {
+		return fmt.Errorf("cursor stream is missing session id")
+	}
+	return nil
+}
+
+func firstString(object map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if value, _ := object[key].(string); strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 // parseCodexStream 逐事件解析 codex 的 JSONL stdout，把 thread/delta 通过 emit 吐出。

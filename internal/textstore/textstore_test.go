@@ -146,11 +146,53 @@ func writeDefinitions(t *testing.T, directory string) {
 
 func testContent(item definition) string {
 	switch item.key {
+	case InitiativeLevelKey:
+		return "normal"
 	case SystemPromptM3Key:
 		return "initial " + item.key + "\n{{WORK_RULES}}"
 	case SystemPromptM5Key:
 		return "initial " + item.key + "\n{{WORK_RULES}}\n{{APPROVAL_POLICY}}"
 	default:
 		return "initial " + item.key
+	}
+}
+
+func TestInitiativeReadWriteAndInvalidFiles(t *testing.T) {
+	s := newTestService(t)
+	var path string
+	for _, level := range []string{"quiet", "active", "normal"} {
+		updated, err := s.Update(t.Context(), InitiativeLevelKey, Input{Content: level})
+		if err != nil {
+			t.Fatal(err)
+		}
+		path = updated.Path
+		if got, err := s.Content(t.Context(), InitiativeLevelKey); err != nil || got != level {
+			t.Fatalf("read after save = %q, %v", got, err)
+		}
+	}
+	for _, invalid := range []string{"", "unknown", "normal\nactive"} {
+		if _, err := s.Update(t.Context(), InitiativeLevelKey, Input{Content: invalid}); !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("invalid update %q: %v", invalid, err)
+		}
+		if got, _ := s.Content(t.Context(), InitiativeLevelKey); got != "normal" {
+			t.Fatalf("invalid update replaced level with %q", got)
+		}
+	}
+	for _, invalid := range []string{"", "typo"} {
+		if err := os.WriteFile(path, []byte(invalid), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.Content(t.Context(), InitiativeLevelKey); !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("invalid local file %q: %v", invalid, err)
+		}
+		if _, err := NewService(filepath.Dir(path)); !errors.Is(err, ErrInvalidInput) {
+			t.Fatalf("startup accepted invalid local file: %v", err)
+		}
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Content(t.Context(), InitiativeLevelKey); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing level: %v", err)
 	}
 }

@@ -57,7 +57,7 @@ func TestRepositoryRulesKeepExecuteOnlyCapabilitiesOutOfExtract(t *testing.T) {
 	}
 }
 
-func TestRepositoryBaxAdmissionRuleBelongsOnlyToExtract(t *testing.T) {
+func TestRepositoryFeedbackAdmissionRuleBelongsOnlyToExtractNormalProfile(t *testing.T) {
 	service, err := NewService(filepath.Join("..", "..", "conf", "rules"))
 	if err != nil {
 		t.Fatalf("NewService(repository rules): %v", err)
@@ -72,18 +72,20 @@ func TestRepositoryBaxAdmissionRuleBelongsOnlyToExtract(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"Bax (For Ops)- 问题反馈群",
-		"oc_60a252c90df7cf108281bbcf22e87679",
-		"Bax (For Backstage)- 问题反馈群//Feedback Group",
-		"oc_f552fbd743fcd3714cb4b6a38d72258e",
-		"优先于通用的 observing 判断",
+		"每个独立的用户问题、负面体验、功能诉求和待验证修复",
+		"Pulse 已派人",
 	} {
 		if !strings.Contains(extract, want) {
-			t.Fatalf("extract rules missing Bax admission guidance %q:\n%s", want, extract)
+			t.Fatalf("extract rules missing feedback admission guidance %q:\n%s", want, extract)
 		}
 		if strings.Contains(execute, want) {
-			t.Fatalf("execute rules contain M3-owned Bax admission guidance %q:\n%s", want, execute)
+			t.Fatalf("execute rules contain M3-owned admission guidance %q:\n%s", want, execute)
 		}
+	}
+	quiet, normal, active := strings.Index(extract, "### quiet"), strings.Index(extract, "### normal"), strings.Index(extract, "### active")
+	feedback := strings.Index(extract, "每个独立的用户问题")
+	if quiet < 0 || normal <= quiet || active <= normal || feedback <= normal || feedback >= active {
+		t.Fatal("default feedback admission must belong to normal profile, not quiet or common rules")
 	}
 }
 

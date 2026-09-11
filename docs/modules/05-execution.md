@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: normative module guide
-> Last verified: 2026-09-05
+> Last verified: 2026-09-10
 > Code source: `internal/execute/`, `internal/taskcreate/`, `internal/scheduledtask/`, `internal/effectops/`
 
 执行环节接管 `pending` Task：调查真实状态、确定目标和动作、判断具体副作用要不要先问 principal，并把事项推进到真实结果、等待或明确阻塞。
@@ -24,7 +24,7 @@ Task 可来自：
 - 可展开的 capture 区块、会话消息数和读取命令；
 - execution supplements；
 - 历史 run 数量及最近一次 ID/状态，不放 run 正文；
-- shared memory、M5 rules、Skills、工具目录和审批政策。
+- 当前主动程度、shared memory、M5 rules、Skills、工具目录和审批政策。
 
 完整 Candidate、周边会话、实体背景、相关 Todo/Task 和历史 run 正文都按需读取。`get-task --context ...` 展开冻结区块，`--message-id` 读取单条冻结消息；`list-tasks` / `list-todos` 可按关键词、来源消息、项目或群筛选；`list-task-runs` 返回分页概要，`get-task-run` 再读完整结果、错误和 effects，只有 `--include-prompt` 才展开 prompt。需要实体当前状态时由 M5 读取 summary 页或 Fact，而不是在启动时重新拼一个 `current_world`。
 
@@ -43,6 +43,10 @@ Task 可来自：
 | `resume_human` | principal 回答后续跑同一 Session |
 
 没有独立的 apply 阶段：回答直接回到提问的那个 Session，它带着当时的全部调查继续，而不是照着一份冻结的稿子重放。
+
+三种 phase 都重新读取 `conf/prompts/initiative-level.md`（quiet / normal / active），通过与后台预览相同的 `prompttemplate.Render` 注入。三档执行扩展与通知尺度归 `conf/rules/m5.md`；审批尺度仍归原审批策略。正在运行的一轮保持已组装的选择，等待和人工回答恢复时带上新选择，保留原 Session 的授权与动作证据。切档不取消已有 Task 或撤回问题卡。
+
+安静档把一般发现留在 Task，普通档保留当前主动增益与送达尺度，活跃档增加有依据的准备与建议。明确交付和真实对外动作回执三档仍履行；需要人工决定的必要动作正常提问，消息工具和 runtime 不按档位拦截。
 
 ## 3. Outcome 与 Task 状态
 

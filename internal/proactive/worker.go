@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"jarvis/internal/prompttemplate"
 	"jarvis/internal/sharedmem"
 	"jarvis/internal/skill"
 	"jarvis/internal/textstore"
@@ -95,6 +96,14 @@ func (w *Worker) Run(ctx context.Context, trigger string) (string, error) {
 	systemPrompt, err := w.prompts.Content(ctx, textstore.SystemPromptProactiveKey)
 	if err != nil {
 		return "", fmt.Errorf("read proactive system prompt: %w", err)
+	}
+	initiativeLevel, err := w.prompts.Content(ctx, textstore.InitiativeLevelKey)
+	if err != nil {
+		return "", fmt.Errorf("read proactive initiative level: %w", err)
+	}
+	systemPrompt, err = prompttemplate.Render(prompttemplate.StageProactive, systemPrompt, "", "", initiativeLevel)
+	if err != nil {
+		return "", fmt.Errorf("render proactive system prompt: %w", err)
 	}
 	sharedMemory, err := w.sharedMemory.Text(ctx)
 	if err != nil {

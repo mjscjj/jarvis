@@ -244,7 +244,7 @@ type ExecuteConfig struct {
 	StaleExecutingMinute int    `yaml:"stale_executing_minute"` // executing 超过此时长仍未结束 → 标 failed（防重启僵尸）
 }
 
-// ChatConfig 控制「基于 agent CLI 的流式对话服务」（/api/chat，SSE）。
+// ChatConfig controls the persistent multi-agent chat workspace under /api/chat/*.
 // Enabled=false 时不注册路由。CLI 二进制复用 execute.bin（与 M5 同引擎）；
 // 沙箱固定为对话场景的 danger-full-access + 联网（本地可信环境），reasoning_effort 可调。
 type ChatConfig struct {

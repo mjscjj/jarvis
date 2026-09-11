@@ -1,8 +1,13 @@
 package chat
 
 import (
+	"context"
+	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 // realCodexJSONL 是实跑 codex `exec --json`（gpt-5.5）灌一句 prompt 后的真实
@@ -125,6 +130,67 @@ func TestParseCodexStreamMalformedJSON(t *testing.T) {
 	}
 }
 
+func TestParseCursorStreamEmitsAssistantTextOnly(t *testing.T) {
+	t.Parallel()
+	jsonl := `{"type":"system","session_id":"cursor-1"}
+{"type":"thinking","text":"private reasoning","session_id":"cursor-1"}
+{"type":"assistant","message":{"content":[{"type":"text","text":"你好"}]},"session_id":"cursor-1","timestamp_ms":1}
+{"type":"assistant","message":{"content":[{"type":"text","text":"，世界"}]},"session_id":"cursor-1","timestamp_ms":2}
+{"type":"assistant","message":{"content":[{"type":"text","text":"你好，世界"}]},"session_id":"cursor-1"}
+{"type":"result","result":"你好，世界","session_id":"cursor-1"}
+`
+	var threadID string
+	var deltas []string
+	err := parseCursorStream(strings.NewReader(jsonl), func(event Event) error {
+		if event.Kind == EventThread {
+			threadID = event.ThreadID
+		} else {
+			deltas = append(deltas, event.Text)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("parseCursorStream() error = %v", err)
+	}
+	if threadID != "cursor-1" {
+		t.Fatalf("thread_id = %q, want cursor-1", threadID)
+	}
+	if got := strings.Join(deltas, ""); got != "你好，世界" {
+		t.Fatalf("assistant text = %q, want %q", got, "你好，世界")
+	}
+}
+
+func TestCursorArgsReadPromptFromStdin(t *testing.T) {
+	t.Parallel()
+	r := runner{agent: "cursor", model: "auto"}
+	got := r.args("", nil)
+	if got[len(got)-1] == "-" {
+		t.Fatalf("Cursor arguments must omit the positional prompt: %v", got)
+	}
+}
+
+func TestRunnerStopsProcessWhenStreamConsumerFails(t *testing.T) {
+	t.Parallel()
+	bin := filepath.Join(t.TempDir(), "cursor-agent-test")
+	script := `#!/bin/sh
+printf '%s\n' '{"type":"system","session_id":"cursor-1"}'
+while :; do printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"x"}]},"session_id":"cursor-1","timestamp_ms":1}'; done
+`
+	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	want := errors.New("stream consumer closed")
+	r := runner{agent: "cursor", bin: bin, model: "auto", timeout: 5 * time.Second}
+	started := time.Now()
+	err := r.Stream(context.Background(), "hello", "", nil, func(Event) error { return want })
+	if !errors.Is(err, want) {
+		t.Fatalf("Stream() error = %v, want %v", err, want)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("Stream() took %s after consumer failure; child process was not stopped promptly", elapsed)
+	}
+}
+
 func TestNewRunnerValidation(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -137,7 +203,7 @@ func TestNewRunnerValidation(t *testing.T) {
 	}{
 		{name: "blank bin", bin: "", model: "m", sandbox: "read-only", reasoningEffort: "low", wantErr: "bin is required"},
 		{name: "bad sandbox", bin: "codex", model: "m", sandbox: "nope", reasoningEffort: "low", wantErr: "sandbox must be"},
-		{name: "bad reasoning", bin: "codex", model: "m", sandbox: "read-only", reasoningEffort: "nope", wantErr: "reasoning_effort must be"},
+		{name: "blank reasoning", bin: "codex", model: "m", sandbox: "read-only", reasoningEffort: "", wantErr: "reasoning_effort is required"},
 	}
 	for _, tt := range tests {
 		tt := tt

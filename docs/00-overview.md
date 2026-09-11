@@ -98,13 +98,13 @@ M3 默认使用 Agent CLI，model API 是可选引擎。它只调查到足以决
 M3 可以产出：
 
 - `extracted`：存在需要交给 M5 执行 Agent 调查和判断的动作线索；
-- `observing`：值得保留，但当前不需要任何人行动。
+- `observing`：值得保留，但按当前证据与主动程度暂不启动 M5；不表示事项已完成。
 
 M3 可以查询责任归属、当前状态、已有 Todo/Task 和明确项目归属，但证据足够作出准入结论后立即停止。它不制定执行方案、不选择具体副作用、不判断要不要请示，也不为丰富 payload 展开代码、commit、MR 或长文档调查。`payload` 是开放的准入简报，只说明相关性、未闭环状态、责任、已核验证据、准入依据和不确定性。
 
 `Todo.content` 保存创建时证据。消息只保存在 `capture.messages` 一次，不依照提示词长度截断。M5 默认只读经过校验的 `source_message_ids` 对应原文与简短说明，其余按会话、背景或原始消息 ID 读取；实体当前状态仍通过事实页和 fact 查询，不能替代冻结证据。
 
-已结束会议的准入口径由 M3 工作规则维护：Principal 实际参加且尚缺回顾时，整理回顾本身就是可交给 M5 的目标，不以存在行动项为前提。采集 Skill 先按原始线索 ID 查重，只为未知会议补取详情；会议结束事件和既有周期巡扫的调度方式不变。
+已结束会议的准入口径由 M3 工作规则维护：普通档、活跃档以及明确回顾订阅中，Principal 实际参加且尚缺回顾时，整理回顾本身就是可交给 M5 的目标，不以存在行动项为前提；安静档默认要求明确回顾需求或具体决策、承诺价值。采集 Skill 先按原始线索 ID 查重，只为未知会议补取详情；会议结束事件和既有周期巡扫的调度方式不变。
 
 ### 3.3 Todo 固化
 
@@ -171,11 +171,14 @@ KeyMatter 承载需要长期记住和定期回看、但不构成项目也不是�
 
 | 类型             | 真源                                                          | 读取语义                        |
 | ---------------- | ------------------------------------------------------------- | ------------------------------- |
+| 主动程度 | `conf/prompts/initiative-level.md`（textstore key `initiative_level`） | quiet / normal / active，默认 normal；每批/每轮实时读取，非法或缺失 fail-fast |
 | 系统 prompts     | `conf/prompts/*.md`，在 `internal/textstore/defaults.go` 注册 | 缺失/空正文 fail-fast           |
 | 工作 rules       | `conf/rules/m3.md`、`conf/rules/m5.md`                        | M3、M5 分阶段读取；正文允许为空 |
 | Skills           | `.agents/skills/*/SKILL.md` + `conf/skills.yaml`              | 正文与启用阶段分离              |
 | Shared memory    | `data/shared-memory.md`                                       | Principal 明确要求长期记住的行为偏好；最多 2000 字 |
 | Runtime settings | `conf/config.runtime.yaml`                                    | 覆盖基线配置；重启后生效        |
+
+主动程度由 `prompttemplate.Render` 注入当前选择，三档行为分别归 M3/M5 rules 与 proactive 系统提示词维护。M3 每次组装批次读取选择，批次内各 unit 及输出重试保持一致；M5 初次执行、等待恢复、人工回答恢复和 proactive 每轮都读取当前值。选择不冻结到 Task 来源，不驱动固化或消息拦截，也不撤销已有目标、授权和问题卡。M3/M5/proactive 的后台生效预览使用同一组装函数；共享记忆、Skills、工具和业务上下文仍列为动态块。
 
 工具说明由 `internal/toolcatalog` 和 Skills 维护，不复制到每个 prompt。
 

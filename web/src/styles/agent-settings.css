@@ -2,6 +2,17 @@
   width: 100%;
 }
 
+.agent-initiative-card {
+  margin-bottom: var(--space-4);
+}
+
+.agent-initiative-description {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-3) 0;
+}
+
 .agent-settings-page > .ant-alert {
   margin-bottom: var(--space-3);
 }

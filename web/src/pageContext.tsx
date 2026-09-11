@@ -17,6 +17,7 @@ export interface PageContextValue {
 const Context = createContext<PageContextValue | null>(null)
 
 const pageHashes: Record<string, string> = {
+  chat: '/chat',
   overview: '/today',
   tasks: '/work',
   progress: '/review',
