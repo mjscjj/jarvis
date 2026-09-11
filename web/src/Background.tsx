@@ -65,6 +65,7 @@ import {
 } from './api'
 import { keyMatterToInput, replaceKeyMatter } from './keyMatters'
 import { personToUpdateInput } from './persons'
+import AboutSettings from './AboutSettings'
 import SharedMemory from './SharedMemory'
 import RuntimeSettings from './RuntimeSettings'
 import SystemTasks from './SystemTasks'
@@ -1878,9 +1879,9 @@ export default function Background() {
 export function Settings() {
   const { name: agentName } = useAgentIdentity()
   const { context, setViewState } = usePageContext()
-  type SettingsView = 'runtime' | 'scheduling' | 'memory' | 'extensions'
+  type SettingsView = 'runtime' | 'scheduling' | 'memory' | 'extensions' | 'about'
   const settingsView = (value: string | undefined): SettingsView => (
-    value === 'runtime' || value === 'scheduling' || value === 'memory' || value === 'extensions'
+    value === 'runtime' || value === 'scheduling' || value === 'memory' || value === 'extensions' || value === 'about'
       ? value
       : 'runtime'
   )
@@ -1888,7 +1889,7 @@ export function Settings() {
 
   return (
     <div className="settings-page">
-      <PageHeader title="系统设置" subtitle={`配置 ${agentName} 的运行、调度、共享记忆和扩展能力`} />
+      <PageHeader title="系统设置" subtitle={`配置 ${agentName} 的运行、调度、共享记忆和扩展能力，查看应用版本`} />
       <Tabs
         activeKey={activeView}
         onChange={(view) => setViewState({ view })}
@@ -1897,6 +1898,7 @@ export function Settings() {
           { key: 'scheduling', label: '调度', children: <SystemTasks /> },
           { key: 'memory', label: '共享记忆', children: <SharedMemory /> },
           { key: 'extensions', label: '扩展', children: <SkillsPanel /> },
+          { key: 'about', label: '关于', children: <AboutSettings /> },
         ]}
       />
     </div>
