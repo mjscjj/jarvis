@@ -62,3 +62,5 @@ https://jarvisx.bytedance.net/jarvis-updates/latest.json
 - 签名校验失败：保留错误信息联系发布者，不跳过签名校验。
 - 更新后启动失败：查看 `~/Library/Application Support/Jarvis/logs`，保留原数据目录
   排查，不自动清库。
+- 运行中的本地服务异常退出：窗口保留错误提示，不自动重启。检查上述日志、修正问题后，退出并重新打开 Jarvis。
+- 安装配置保存后需等新服务启动才可进入主界面；保存失败可直接重试。首次连接飞书时刷新页面，可再次点击“连接飞书”恢复尚未结束的连接。
