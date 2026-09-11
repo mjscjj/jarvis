@@ -26,12 +26,12 @@ func (r authRunner) Run(_ context.Context, bin string, args ...string) ([]byte, 
 	return r.run(bin, args)
 }
 
-func TestLoginWithByteDanceSetsJarvisSessionCookie(t *testing.T) {
-	service, err := authn.NewServiceWithRunner("bytedcli", time.Hour, true, authRunner{run: func(_ string, args []string) ([]byte, error) {
-		if strings.Join(args, " ") != "--json auth status" {
+func TestLoginWithByteDanceStartsDeviceFlowWithoutSession(t *testing.T) {
+	service, err := authn.NewServiceWithRunner("bytedcli", time.Hour, true, []string{"alice"}, authRunner{run: func(_ string, args []string) ([]byte, error) {
+		if !strings.Contains(strings.Join(args, " "), "auth login --begin") {
 			t.Fatalf("args = %v", args)
 		}
-		return []byte(`{"data":{"authenticated":true,"bytecloud_auth":{"identity":{"username":"alice","email":"alice@bytedance.com"}}}}`), nil
+		return []byte(`{"data":{"complete_token":"resume-1","verification_uri_complete":"https://sso.example/login"}}`), nil
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -41,17 +41,20 @@ func TestLoginWithByteDanceSetsJarvisSessionCookie(t *testing.T) {
 	if request.Response.StatusCode() != consts.StatusOK {
 		t.Fatalf("status = %d body=%s", request.Response.StatusCode(), request.Response.Body())
 	}
-	if cookie := string(request.Response.Header.Peek("Set-Cookie")); !strings.Contains(cookie, authn.CookieName+"=") || !strings.Contains(cookie, "HttpOnly") {
-		t.Fatalf("Set-Cookie = %q", cookie)
+	if cookie := string(request.Response.Header.Peek("Set-Cookie")); cookie != "" {
+		t.Fatalf("an unverified visitor received a session cookie: %q", cookie)
 	}
 }
 
-func TestRemoteLoginReusesCurrentByteDanceIdentity(t *testing.T) {
-	service, err := authn.NewServiceWithRunner("bytedcli", time.Hour, true, authRunner{run: func(_ string, args []string) ([]byte, error) {
-		if strings.Join(args, " ") != "--json auth status" {
-			t.Fatalf("args = %v", args)
+// The host's own bytedcli identity belongs to the machine, not to whoever
+// opened the page. Reusing it would sign every visitor in as the machine owner.
+func TestRemoteLoginDoesNotReuseHostIdentity(t *testing.T) {
+	service, err := authn.NewServiceWithRunner("bytedcli", time.Hour, true, []string{"alice"}, authRunner{run: func(_ string, args []string) ([]byte, error) {
+		command := strings.Join(args, " ")
+		if strings.Contains(command, "auth status") {
+			return []byte(`{"data":{"authenticated":true,"bytecloud_auth":{"identity":{"username":"alice","email":"alice@bytedance.com"}}}}`), nil
 		}
-		return []byte(`{"data":{"authenticated":true,"bytecloud_auth":{"identity":{"username":"alice","email":"alice@bytedance.com"}}}}`), nil
+		return []byte(`{"data":{"complete_token":"resume-1","verification_uri_complete":"https://sso.example/login"}}`), nil
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -63,13 +66,13 @@ func TestRemoteLoginReusesCurrentByteDanceIdentity(t *testing.T) {
 	if request.Response.StatusCode() != consts.StatusOK {
 		t.Fatalf("status = %d body=%s", request.Response.StatusCode(), request.Response.Body())
 	}
-	if cookie := string(request.Response.Header.Peek("Set-Cookie")); !strings.Contains(cookie, authn.CookieName+"=") || !strings.Contains(cookie, "HttpOnly") {
-		t.Fatalf("Set-Cookie = %q", cookie)
+	if cookie := string(request.Response.Header.Peek("Set-Cookie")); cookie != "" {
+		t.Fatalf("a remote visitor inherited the host identity: %q", cookie)
 	}
 }
 
 func TestCompleteByteDanceLoginRequiresFlowID(t *testing.T) {
-	service, err := authn.NewServiceWithRunner("bytedcli", time.Hour, true, authRunner{run: func(_ string, _ []string) ([]byte, error) {
+	service, err := authn.NewServiceWithRunner("bytedcli", time.Hour, true, []string{"alice"}, authRunner{run: func(_ string, _ []string) ([]byte, error) {
 		return nil, nil
 	}})
 	if err != nil {
@@ -93,7 +96,7 @@ func TestCompleteByteDanceLoginRequiresFlowID(t *testing.T) {
 }
 
 func TestGetAuthStatusReportsDisabledBrowserGate(t *testing.T) {
-	service, err := authn.NewServiceWithRunner("bytedcli", time.Hour, false, authRunner{run: func(_ string, _ []string) ([]byte, error) {
+	service, err := authn.NewServiceWithRunner("bytedcli", time.Hour, false, nil, authRunner{run: func(_ string, _ []string) ([]byte, error) {
 		t.Fatal("disabled authentication must not invoke bytedcli")
 		return nil, nil
 	}})

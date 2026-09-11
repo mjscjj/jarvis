@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/cloudwego/hertz/pkg/common/hlog"
 )
 
 const (
@@ -23,7 +25,10 @@ const (
 	loginFlowTTL = 15 * time.Minute
 )
 
-var ErrPending = errors.New("authentication is still pending")
+var (
+	ErrPending    = errors.New("authentication is still pending")
+	ErrNotAllowed = errors.New("this ByteDance identity is not on the allow list")
+)
 
 type User struct {
 	Username    string `json:"username"`
@@ -59,6 +64,7 @@ type flow struct {
 	token     string
 	url       string
 	code      string
+	profile   string
 	expiresAt time.Time
 }
 
@@ -72,6 +78,7 @@ type Service struct {
 	bin        string
 	runner     CommandRunner
 	sessionTTL time.Duration
+	allowed    map[string]bool
 	now        func() time.Time
 
 	mu       sync.Mutex
@@ -79,11 +86,11 @@ type Service struct {
 	sessions map[string]session
 }
 
-func NewService(bin string, sessionTTL time.Duration, enabled bool) (*Service, error) {
-	return NewServiceWithRunner(bin, sessionTTL, enabled, execRunner{})
+func NewService(bin string, sessionTTL time.Duration, enabled bool, allowed []string) (*Service, error) {
+	return NewServiceWithRunner(bin, sessionTTL, enabled, allowed, execRunner{})
 }
 
-func NewServiceWithRunner(bin string, sessionTTL time.Duration, enabled bool, runner CommandRunner) (*Service, error) {
+func NewServiceWithRunner(bin string, sessionTTL time.Duration, enabled bool, allowed []string, runner CommandRunner) (*Service, error) {
 	if strings.TrimSpace(bin) == "" {
 		return nil, fmt.Errorf("authn bytedcli binary is empty")
 	}
@@ -93,15 +100,33 @@ func NewServiceWithRunner(bin string, sessionTTL time.Duration, enabled bool, ru
 	if runner == nil {
 		return nil, fmt.Errorf("authn command runner is nil")
 	}
+	allowList := make(map[string]bool, len(allowed))
+	for _, entry := range allowed {
+		if normalized := strings.ToLower(strings.TrimSpace(entry)); normalized != "" {
+			allowList[normalized] = true
+		}
+	}
+	if enabled && len(allowList) == 0 {
+		return nil, fmt.Errorf("authn is enabled but nobody is on the allow list")
+	}
 	return &Service{
 		enabled:    enabled,
 		bin:        strings.TrimSpace(bin),
 		runner:     runner,
 		sessionTTL: sessionTTL,
+		allowed:    allowList,
 		now:        time.Now,
 		flows:      make(map[string]flow),
 		sessions:   make(map[string]session),
 	}, nil
+}
+
+// allows reports whether an authenticated ByteDance identity may open this
+// instance. Both the username and the enterprise email are accepted so the
+// configured list can be written in whichever form the operator knows.
+func (s *Service) allows(user User) bool {
+	return s.allowed[strings.ToLower(strings.TrimSpace(user.Username))] ||
+		s.allowed[strings.ToLower(strings.TrimSpace(user.Email))]
 }
 
 func (s *Service) Enabled() bool {
@@ -123,28 +148,32 @@ func (s *Service) SessionMaxAge() int {
 	return int(s.sessionTTL.Seconds())
 }
 
+// Login always starts a fresh device flow. It deliberately does not reuse the
+// machine's own bytedcli identity: that identity belongs to the host, not to
+// whoever opened the page, and handing it out would sign every visitor in as
+// the machine owner.
 func (s *Service) Login(ctx context.Context) (LoginResult, error) {
 	if !s.enabled {
 		return LoginResult{View: s.Status("")}, nil
-	}
-	user, authenticated, err := s.probe(ctx)
-	if err != nil {
-		return LoginResult{}, err
-	}
-	if authenticated {
-		user.IsPrincipal = true
-		return s.startSession(user)
 	}
 	return s.beginLogin(ctx)
 }
 
 func (s *Service) beginLogin(ctx context.Context) (LoginResult, error) {
+	flowID, err := randomToken()
+	if err != nil {
+		return LoginResult{}, fmt.Errorf("create SSO flow ID: %w", err)
+	}
+	// Every browser logs in under its own throwaway bytedcli profile, which
+	// isolates credentials and sessions under profiles/<name>/. Without it a
+	// visitor's login would overwrite the host's own ByteDance credentials.
+	profile := "jarvis-web-" + flowID
 	// Jarvis consumes bytedcli's resumable ByteCloud device-flow contract:
 	// --begin returns a completion token and verification URL, then --complete
 	// finishes the same flow. --session is a different browser-session flow and
 	// may legitimately return success without either value when it reuses an
 	// existing session.
-	raw, err := s.run(ctx, "--json", "auth", "login", "--begin")
+	raw, err := s.run(ctx, profile, "auth", "login", "--begin")
 	if err != nil {
 		return LoginResult{}, commandError("start ByteDance SSO", raw, err)
 	}
@@ -155,14 +184,10 @@ func (s *Service) beginLogin(ctx context.Context) (LoginResult, error) {
 	if token == "" || url == "" {
 		return LoginResult{}, fmt.Errorf("start ByteDance SSO: response is missing token or verification URL")
 	}
-	flowID, err := randomToken()
-	if err != nil {
-		return LoginResult{}, fmt.Errorf("create SSO flow ID: %w", err)
-	}
 	s.mu.Lock()
 	s.pruneExpiredFlowsLocked()
 	s.flows[flowID] = flow{
-		token: token, url: url, code: code,
+		token: token, url: url, code: code, profile: profile,
 		expiresAt: s.now().Add(loginFlowTTL),
 	}
 	s.mu.Unlock()
@@ -182,25 +207,43 @@ func (s *Service) Complete(ctx context.Context, flowID string) (LoginResult, err
 		return LoginResult{}, fmt.Errorf("SSO flow not found or expired")
 	}
 
-	raw, err := s.run(ctx, "--json", "auth", "login", "--complete", pendingFlow.token)
+	raw, err := s.run(ctx, pendingFlow.profile, "auth", "login", "--complete", pendingFlow.token)
 	if err != nil {
 		if hasErrorCode(raw, "AUTHORIZATION_PENDING", "SLOW_DOWN") {
 			return LoginResult{}, ErrPending
 		}
-		s.deleteFlow(flowID)
+		s.discardFlow(ctx, flowID, pendingFlow.profile)
 		return LoginResult{}, commandError("complete ByteDance SSO", raw, err)
 	}
-	user, authenticated, err := s.probe(ctx)
+	user, authenticated, err := s.probe(ctx, pendingFlow.profile)
 	if err != nil {
-		s.deleteFlow(flowID)
+		s.discardFlow(ctx, flowID, pendingFlow.profile)
 		return LoginResult{}, err
 	}
 	if !authenticated {
 		return LoginResult{}, ErrPending
 	}
+	// Jarvis only needs to learn who this is. Dropping the throwaway profile
+	// keeps the visitor's corporate credentials off this host.
+	s.discardFlow(ctx, flowID, pendingFlow.profile)
+	if !s.allows(user) {
+		return LoginResult{}, fmt.Errorf("%w: %s", ErrNotAllowed, user.Username)
+	}
 	user.IsPrincipal = true
-	s.deleteFlow(flowID)
 	return s.startSession(user)
+}
+
+// discardFlow forgets a login attempt and clears the bytedcli profile it used.
+// Clearing is best effort: a stale profile directory must never block a login
+// that already produced a verified identity.
+func (s *Service) discardFlow(ctx context.Context, flowID, profile string) {
+	s.deleteFlow(flowID)
+	if strings.TrimSpace(profile) == "" {
+		return
+	}
+	if raw, err := s.run(ctx, profile, "auth", "clear", "--yes"); err != nil {
+		hlog.CtxWarnf(ctx, "clear bytedcli login profile %s failed: %v: %s", profile, err, strings.TrimSpace(string(raw)))
+	}
 }
 
 func (s *Service) Authenticate(token string) (User, bool) {
@@ -264,8 +307,8 @@ func (s *Service) startSession(user User) (LoginResult, error) {
 	}, nil
 }
 
-func (s *Service) probe(ctx context.Context) (User, bool, error) {
-	raw, err := s.run(ctx, "--json", "auth", "status")
+func (s *Service) probe(ctx context.Context, profile string) (User, bool, error) {
+	raw, err := s.run(ctx, profile, "auth", "status")
 	if err != nil {
 		return User{}, false, commandError("read ByteDance SSO status", raw, err)
 	}
@@ -292,10 +335,10 @@ func (s *Service) probe(ctx context.Context) (User, bool, error) {
 	return user, true, nil
 }
 
-func (s *Service) run(ctx context.Context, args ...string) ([]byte, error) {
+func (s *Service) run(ctx context.Context, profile string, args ...string) ([]byte, error) {
 	runCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	return s.runner.Run(runCtx, s.bin, args...)
+	return s.runner.Run(runCtx, s.bin, append([]string{"--json", "--profile", profile}, args...)...)
 }
 
 func randomToken() (string, error) {

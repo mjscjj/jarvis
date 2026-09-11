@@ -283,6 +283,7 @@ function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }:
 	            <CommentInteractionProvider value={{ enabled: true, triggerMode: 'surface', selected: commentTarget, focused: focusedComment, comments, counts: commentCounts, pendingSelection: pendingCommentSelection, setPendingSelection: setPendingCommentSelection, select: openComments }}>
             <div className={`transition-opacity ${saving ? 'pointer-events-none opacity-55' : ''}`}>
 			  <ManagementView
+                compactPresentation
                 title=""
                 subtitle=""
                 showTags

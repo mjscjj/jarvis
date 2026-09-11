@@ -54,6 +54,13 @@ func CompleteByteDanceLogin(service *authn.Service) app.HandlerFunc {
 			})
 			return
 		}
+		if errors.Is(err, authn.ErrNotAllowed) {
+			c.JSON(consts.StatusForbidden, map[string]any{
+				"code": 403,
+				"msg":  "这个字节身份没有本实例的访问权限；OKR 模块请直接用飞书登录",
+			})
+			return
+		}
 		if err != nil {
 			writeAuthError(c, err)
 			return

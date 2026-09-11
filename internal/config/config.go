@@ -42,15 +42,31 @@ type Config struct {
 	ScheduledTask ScheduledTaskConfig `yaml:"scheduled_task"`
 }
 
-// AuthConfig controls only the outer Jarvis Web browser gate. It does not
-// change Feishu identities owned by app modules or CLI tools. Enabled is a
-// pointer so an omitted value can retain the product default: disabled.
+// AuthConfig controls the outer Jarvis Web browser gate. It does not change
+// Feishu identities owned by app modules or CLI tools, and app modules stay
+// open to their own audience. Enabled is a pointer so an omitted value can
+// retain the product default: disabled.
 type AuthConfig struct {
 	Enabled *bool `yaml:"enabled"`
+	// Principals lists who may open this instance, by ByteDance SSO username
+	// or enterprise email. An empty list with the gate on is a configuration
+	// error rather than "everyone".
+	Principals []string `yaml:"principals"`
 }
 
 func (c AuthConfig) IsEnabled() bool {
 	return c.Enabled != nil && *c.Enabled
+}
+
+// AllowedPrincipals returns the configured identities without blanks.
+func (c AuthConfig) AllowedPrincipals() []string {
+	var allowed []string
+	for _, entry := range c.Principals {
+		if trimmed := strings.TrimSpace(entry); trimmed != "" {
+			allowed = append(allowed, trimmed)
+		}
+	}
+	return allowed
 }
 
 // IdentityConfig is the user-selected assistant identity. It is machine-local
@@ -397,6 +413,9 @@ func decodeKnownYAML(raw []byte, target any) error {
 func (c *Config) validate() error {
 	if err := agentidentity.ValidateName(c.Identity.DisplayName); err != nil {
 		return fmt.Errorf("identity.display_name 无效: %w", err)
+	}
+	if c.Auth.IsEnabled() && len(c.Auth.AllowedPrincipals()) == 0 {
+		return fmt.Errorf("auth.enabled 为 true 时 auth.principals 不能为空，否则没人进得来")
 	}
 	if c.Server.Addr == "" {
 		return fmt.Errorf("server.addr 不能为空")

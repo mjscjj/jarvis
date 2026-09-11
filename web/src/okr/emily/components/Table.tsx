@@ -133,7 +133,7 @@ function HistoryPreview({ point }: { point: Point }) {
   )
 }
 
-function MetricRow({ krId, metric, readOnly, onRemove }: { krId: string; metric: MetricLine; readOnly: boolean; onRemove: () => void }) {
+function MetricRow({ compactPresentation = false, krId, metric, readOnly, onRemove }: { compactPresentation?: boolean; krId: string; metric: MetricLine; readOnly: boolean; onRemove: () => void }) {
   const { patchMetric } = useBoard()
   const commentTarget = { type: 'metric' as const, id: metric.id, title: metric.text }
   const commentSurface = useCommentSurface(commentTarget)
@@ -150,7 +150,7 @@ function MetricRow({ krId, metric, readOnly, onRemove }: { krId: string; metric:
       onPaste={readOnly ? undefined : paste.onPaste}
       tabIndex={readOnly ? -1 : 0}
       aria-busy={paste.uploading}
-      className={`group/metric group/commentable flex min-h-12 items-start gap-3 border-b border-slate-100 px-4 py-2.5 outline-none last:border-b-0 focus-within:bg-blue-50/30 focus:bg-blue-50/30 ${commentSurface.enabled ? 'cursor-pointer hover:bg-indigo-50/70' : ''} ${commentSurface.selected || commentSurface.focused ? 'bg-indigo-50/80 ring-2 ring-inset ring-indigo-500' : ''}`}
+      className={`group/metric group/commentable flex items-start gap-3 border-b border-slate-100 px-4 ${compactPresentation ? 'min-h-8 py-1' : 'min-h-12 py-2.5'} outline-none last:border-b-0 focus-within:bg-blue-50/30 focus:bg-blue-50/30 ${commentSurface.enabled ? 'cursor-pointer hover:bg-indigo-50/70' : ''} ${commentSurface.selected || commentSurface.focused ? 'bg-indigo-50/80 ring-2 ring-inset ring-indigo-500' : ''}`}
     >
       <div className="min-w-0 flex-1">
         <div className="flex items-start gap-3">
@@ -159,7 +159,7 @@ function MetricRow({ krId, metric, readOnly, onRemove }: { krId: string; metric:
             value={metric.text}
             onChange={(text) => patchMetric(krId, metric.id, { text })}
             placeholder="例：Q3 累计自然入驻 1,253 家，线索到入驻转化率 16.51%"
-            className="text-[16px] leading-6 tracking-[0.005em] text-slate-800"
+            className={`text-[16px] tracking-[0.005em] text-slate-800 ${compactPresentation ? 'leading-5' : 'leading-6'}`}
             readOnly={readOnly}
             commentTarget={{ type: 'metric', id: metric.id, title: metric.text }}
           />
@@ -182,11 +182,11 @@ function MetricRow({ krId, metric, readOnly, onRemove }: { krId: string; metric:
   )
 }
 
-function EmptyMetric({ disabled, pasteEnabled, onCreate }: { disabled: boolean; pasteEnabled: boolean; onCreate: (images?: ImageRef[]) => void }) {
+function EmptyMetric({ compactPresentation = false, disabled, pasteEnabled, onCreate }: { compactPresentation?: boolean; disabled: boolean; pasteEnabled: boolean; onCreate: (images?: ImageRef[]) => void }) {
   const paste = usePastedImageUpload((uploaded) => onCreate(uploaded), disabled || !pasteEnabled)
   return (
     <div onPaste={disabled || !pasteEnabled ? undefined : paste.onPaste} tabIndex={disabled || !pasteEnabled ? -1 : 0} className="outline-none focus:bg-blue-50/30">
-      <button type="button" disabled={disabled || paste.uploading} onClick={() => onCreate()} className="flex min-h-12 w-full items-center gap-3 border-b border-slate-100 px-4 py-2.5 text-left text-[16px] leading-6 tracking-[0.005em] text-slate-400 last:border-b-0 enabled:hover:bg-slate-50 enabled:hover:text-slate-500">
+      <button type="button" disabled={disabled || paste.uploading} onClick={() => onCreate()} className={`flex w-full items-center gap-3 border-b border-slate-100 px-4 text-left text-[16px] tracking-[0.005em] text-slate-400 last:border-b-0 enabled:hover:bg-slate-50 enabled:hover:text-slate-500 ${compactPresentation ? 'min-h-8 py-1 leading-5' : 'min-h-12 py-2.5 leading-6'}`}>
         <span>{paste.uploading ? '图片上传中…' : pasteEnabled ? '填写核心数据，或在此按 ⌘V / Ctrl+V 粘贴截图' : '例：Q3 累计自然入驻 1,253 家，线索到入驻转化率 16.51%'}</span>
       </button>
       {paste.uploadError && <div className="px-4 pb-2 text-[11px] text-red-500" title={paste.uploadError}>
@@ -196,7 +196,7 @@ function EmptyMetric({ disabled, pasteEnabled, onCreate }: { disabled: boolean; 
   )
 }
 
-function MetricBox({ kr, readOnly }: { kr: Kr; readOnly: boolean }) {
+function MetricBox({ compactPresentation = false, kr, readOnly }: { compactPresentation?: boolean; kr: Kr; readOnly: boolean }) {
   const { setMetricNote, addMetric, removeMetric, week } = useBoard()
   const metricCanBeAdded = canAddMetric(readOnly)
   const createMetric = (images: ImageRef[] = []) => {
@@ -205,8 +205,8 @@ function MetricBox({ kr, readOnly }: { kr: Kr; readOnly: boolean }) {
   }
 
   return (
-    <section className="rounded-xl border border-blue-100 bg-blue-50/55 p-2.5">
-      <div className="mb-2 flex items-center gap-3">
+    <section className={`rounded-xl border border-blue-100 bg-blue-50/55 ${compactPresentation ? 'px-2.5 py-1.5' : 'p-2.5'}`}>
+      <div className={`flex items-center gap-3 ${compactPresentation ? 'mb-1' : 'mb-2'}`}>
         <h3 className="border-l-[3px] border-blue-500 pl-2 text-[12px] font-semibold text-blue-700">核心数据</h3>
         {(!readOnly || kr.metricNote) && (
           <span className="min-w-0 flex-1 text-right text-[11px] text-slate-400">
@@ -216,10 +216,10 @@ function MetricBox({ kr, readOnly }: { kr: Kr; readOnly: boolean }) {
       </div>
       <div className="group/metrics rounded-lg border border-blue-100 bg-white/90">
         {kr.metrics.map((metric) => (
-          <MetricRow key={metric.id} krId={kr.id} metric={metric} readOnly={readOnly} onRemove={() => removeMetric(kr.id, metric.id)} />
+          <MetricRow compactPresentation={compactPresentation} key={metric.id} krId={kr.id} metric={metric} readOnly={readOnly} onRemove={() => removeMetric(kr.id, metric.id)} />
         ))}
         {kr.metrics.length === 0 && (
-          <EmptyMetric disabled={!metricCanBeAdded} pasteEnabled={Boolean(week)} onCreate={createMetric} />
+          <EmptyMetric compactPresentation={compactPresentation} disabled={!metricCanBeAdded} pasteEnabled={Boolean(week)} onCreate={createMetric} />
         )}
         {metricCanBeAdded && kr.metrics.length > 0 && (
           <button type="button" onClick={() => createMetric()} className="w-full border-t border-slate-100 px-4 py-2 text-left text-xs text-slate-400 hover:bg-slate-50 hover:text-blue-600">+ 一条核心数据</button>
@@ -253,8 +253,9 @@ function ownerTone(owner: KrOwner) {
   return OWNER_TONES[(hash >>> 0) % OWNER_TONES.length]
 }
 
-function KrOwnerBadge({ owner }: { owner: KrOwner }) {
+function KrOwnerBadge({ owner, compact = false }: { owner: KrOwner; compact?: boolean }) {
   const tone = ownerTone(owner)
+  if (compact) return <span title={owner.name} aria-label={owner.name} className={`inline-flex size-6 shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold ${tone.badge}`}>{Array.from(owner.name.trim())[0]}</span>
   return (
     <span title={`负责人：${owner.name}`} className={`inline-flex h-6 items-center gap-1 rounded-full border py-0.5 pr-2 pl-1 text-[10px] font-semibold shadow-sm ${tone.badge}`}>
       <PersonAvatar name={owner.name} openId={owner.openId} size="size-4 text-[8px]" tone={tone.avatar} />
@@ -296,7 +297,7 @@ function KrHeader({ objectiveId, kr, open, onToggle, onMoveUp, onMoveDown, readO
   )
 }
 
-function PointHeader({ objectiveId, krId, point, index, open, onToggle, onMoveUp, onMoveDown, readOnly, structureReadOnly, showProgress = true, showScore = false, scoreReadOnly = true, tagSuggestions, deleteWarning }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; onMoveUp?: () => void; onMoveDown?: () => void; readOnly: boolean; structureReadOnly: boolean; showProgress?: boolean; showScore?: boolean; scoreReadOnly?: boolean; tagSuggestions?: KrTag[]; deleteWarning: string }) {
+function PointHeader({ compactPresentation = false, objectiveId, krId, point, index, open, onToggle, onMoveUp, onMoveDown, readOnly, structureReadOnly, showProgress = true, showScore = false, scoreReadOnly = true, tagSuggestions, deleteWarning }: { compactPresentation?: boolean; objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; onMoveUp?: () => void; onMoveDown?: () => void; readOnly: boolean; structureReadOnly: boolean; showProgress?: boolean; showScore?: boolean; scoreReadOnly?: boolean; tagSuggestions?: KrTag[]; deleteWarning: string }) {
   const { setPointTitle, setPointKind, setPointMeegoLink, removePoint, addPointTag, removePointTag, setPointScore, week } = useBoard()
   const commentTarget = { type: 'point' as const, id: point.id, title: point.title }
   const commentSurface = useCommentSurface(commentTarget)
@@ -326,7 +327,7 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, onMoveUp
       <div className="flex items-start gap-2">
         {showProgress ? <Caret open={open} onToggle={onToggle} label="具体 KR" /> : <span className="w-4 shrink-0" />}
         <span className="mt-0.5 shrink-0 rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-600">KR{index + 1}</span>
-        {!structureReadOnly && <select
+        {!compactPresentation && !structureReadOnly && <select
           value={point.kind}
           onChange={(event) => setPointKind(krId, point.id, event.target.value as PointKind)}
           title="切换这条具体 KR 的分组"
@@ -338,7 +339,7 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, onMoveUp
         <div className="min-w-0 flex-1">
           <div className="flex items-start gap-2">
             <span className="flex min-w-0 flex-1 items-start gap-1">
-              <Text value={point.title} onChange={(value) => setPointTitle(objectiveId, krId, point.id, value)} placeholder="具体 KR 点" className="text-[15px] font-semibold leading-6 text-slate-800" readOnly={readOnly} commentTarget={{ type: 'point', id: point.id, title: point.title }} />
+              <Text value={point.title} onChange={(value) => setPointTitle(objectiveId, krId, point.id, value)} placeholder="具体 KR 点" className={`text-[15px] font-semibold text-slate-800 ${compactPresentation ? 'leading-5' : 'leading-6'}`} readOnly={readOnly} commentTarget={{ type: 'point', id: point.id, title: point.title }} />
             </span>
             {showScore && <span className="pt-0.5"><WeeklyScoreControl score={point.score} readOnly={scoreReadOnly} onChange={(score) => setPointScore(krId, point.id, score)} label="具体 KR 评分" /></span>}
             {showProgress && <span className="pt-1 text-xs text-slate-400">{doing} 进展 · {done} 已完成</span>}
@@ -362,8 +363,8 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, onMoveUp
             <button type="button" onClick={() => setEditingMeego(true)} className="mt-1 text-[11px] text-slate-300 opacity-0 transition-opacity hover:text-blue-500 group-hover/point:opacity-100">+ 关联 Meego</button>
           )}
         </div>
-        {!readOnly && <span className="flex max-w-[45%] shrink-0 flex-wrap items-center justify-end gap-1 pt-0.5"><PointPeoplePicker krId={krId} point={point} /></span>}
-        {readOnly && (point.owners?.length ?? 0) > 0 && <span aria-label="具体 KR 负责人" className="flex max-w-[45%] shrink-0 flex-wrap items-center justify-end gap-1 pt-0.5">{point.owners?.map((owner, ownerIndex) => <KrOwnerBadge key={`${owner.openId || owner.name}:${ownerIndex}`} owner={owner} />)}</span>}
+        {!readOnly && <span className="flex max-w-[45%] shrink-0 flex-wrap items-center justify-end gap-1 pt-0.5"><PointPeoplePicker krId={krId} point={point} initialsOnly={compactPresentation} /></span>}
+        {readOnly && (point.owners?.length ?? 0) > 0 && <span aria-label="具体 KR 负责人" className="flex max-w-[45%] shrink-0 flex-wrap items-center justify-end gap-1 pt-0.5">{point.owners?.map((owner, ownerIndex) => <KrOwnerBadge key={`${owner.openId || owner.name}:${ownerIndex}`} owner={owner} compact={compactPresentation} />)}</span>}
         {!readOnly && <MoveButtons label="条具体 KR" onUp={onMoveUp} onDown={onMoveDown} />}
         {!structureReadOnly && (confirmDelete ? (
           <span className="flex shrink-0 items-center gap-1">
@@ -390,7 +391,7 @@ function PointHeader({ objectiveId, krId, point, index, open, onToggle, onMoveUp
   )
 }
 
-function PointBlock({ objectiveId, krId, point, index, open, onToggle, onMoveUp, onMoveDown, definitionReadOnly, structureReadOnly, progressReadOnly, showProgress, reviewEnabled = false, tagSuggestions, deleteWarning }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; onMoveUp?: () => void; onMoveDown?: () => void; definitionReadOnly: boolean; structureReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; reviewEnabled?: boolean; tagSuggestions?: KrTag[]; deleteWarning: string }) {
+function PointBlock({ compactPresentation = false, objectiveId, krId, point, index, open, onToggle, onMoveUp, onMoveDown, definitionReadOnly, structureReadOnly, progressReadOnly, showProgress, reviewEnabled = false, tagSuggestions, deleteWarning }: { compactPresentation?: boolean; objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; onMoveUp?: () => void; onMoveDown?: () => void; definitionReadOnly: boolean; structureReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; reviewEnabled?: boolean; tagSuggestions?: KrTag[]; deleteWarning: string }) {
   const { templateKey } = useBoard()
   // Review reports one combined lane; the classic weekly report splits 进展 and
   // 已完成. Both formats read the loaded week's template, never the tab.
@@ -400,7 +401,7 @@ function PointBlock({ objectiveId, krId, point, index, open, onToggle, onMoveUp,
   const reviewTarget = { kind: 'point' as const, objectiveId, krId, pointId: point.id, title: point.title }
   return (
     <article id={`point-${point.id}`} className="scroll-mt-5 border-l-2 border-slate-200 pl-3 sm:pl-4">
-      <PointHeader objectiveId={objectiveId} krId={krId} point={point} index={index} open={open} onToggle={onToggle} onMoveUp={onMoveUp} onMoveDown={onMoveDown} readOnly={definitionReadOnly} structureReadOnly={structureReadOnly} showProgress={showProgress} showScore={showReview} scoreReadOnly={progressReadOnly} tagSuggestions={tagSuggestions} deleteWarning={deleteWarning} />
+      <PointHeader compactPresentation={compactPresentation} objectiveId={objectiveId} krId={krId} point={point} index={index} open={open} onToggle={onToggle} onMoveUp={onMoveUp} onMoveDown={onMoveDown} readOnly={definitionReadOnly} structureReadOnly={structureReadOnly} showProgress={showProgress} showScore={!compactPresentation && showReview} scoreReadOnly={progressReadOnly} tagSuggestions={tagSuggestions} deleteWarning={deleteWarning} />
       {showReview && <div className="mt-1.5 flex justify-end pl-7"><PreviewReviewButton target={reviewTarget} label="AI评审" /></div>}
       {showReview && <PreviewReviewPanel target={reviewTarget} className="mt-1.5 ml-7" />}
       {open && showProgress && (review
@@ -427,28 +428,28 @@ function PointBlock({ objectiveId, krId, point, index, open, onToggle, onMoveUp,
   )
 }
 
-function PointGroup({ objectiveId, kr, kind, closed, toggle, definitionReadOnly, structureReadOnly, progressReadOnly, showProgress, reviewEnabled = false, tagSuggestions, deleteWarning }: { objectiveId: string; kr: Kr; kind: PointKind; closed: Set<string>; toggle: (id: string) => void; definitionReadOnly: boolean; structureReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; reviewEnabled?: boolean; tagSuggestions?: KrTag[]; deleteWarning: string }) {
+function PointGroup({ compactPresentation = false, objectiveId, kr, kind, closed, toggle, definitionReadOnly, structureReadOnly, progressReadOnly, showProgress, reviewEnabled = false, tagSuggestions, deleteWarning }: { compactPresentation?: boolean; objectiveId: string; kr: Kr; kind: PointKind; closed: Set<string>; toggle: (id: string) => void; definitionReadOnly: boolean; structureReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; reviewEnabled?: boolean; tagSuggestions?: KrTag[]; deleteWarning: string }) {
   const { addPoint, swapPoints } = useBoard()
   const points = kr.points.filter((point) => point.kind === kind)
   if (points.length === 0 && structureReadOnly) return null
 
   return (
-    <section className={`rounded-xl border-l-[3px] p-2.5 ${kind === 'strategy' ? 'border-l-violet-500 bg-violet-50/35' : 'border-l-teal-500 bg-teal-50/35'}`}>
-      <div className="mb-2 flex items-center gap-2">
-        <span className={`flex size-5 items-center justify-center rounded text-[10px] font-bold text-white ${kind === 'strategy' ? 'bg-violet-500' : 'bg-teal-500'}`}>{kind === 'strategy' ? '策' : '产'}</span>
+    <section className={`rounded-xl border-l-[3px] ${compactPresentation ? 'px-2 py-1.5' : 'p-2.5'} ${kind === 'strategy' ? 'border-l-violet-500 bg-violet-50/35' : 'border-l-teal-500 bg-teal-50/35'}`}>
+      <div className={`flex items-center gap-2 ${compactPresentation ? 'mb-1' : 'mb-2'}`}>
+        {!compactPresentation && <><span className={`flex size-5 items-center justify-center rounded text-[10px] font-bold text-white ${kind === 'strategy' ? 'bg-violet-500' : 'bg-teal-500'}`}>{kind === 'strategy' ? '策' : '产'}</span>
         <h3 className={`text-[12px] font-semibold ${kind === 'strategy' ? 'text-violet-700' : 'text-teal-700'}`}>{KIND_LABEL[kind]}</h3>
-        <span className="rounded-full bg-white/80 px-1.5 text-[10px] text-slate-400">{points.length} 条</span>
+        <span className="rounded-full bg-white/80 px-1.5 text-[10px] text-slate-400">{points.length} 条</span></>}
         {!structureReadOnly && <button type="button" onClick={() => addPoint(objectiveId, kr.id, kind)} className="text-xs text-slate-400 hover:text-blue-600">+ 一项</button>}
       </div>
-      <div className="space-y-4">
-        {points.map((point, index) => <PointBlock key={point.id} objectiveId={objectiveId} krId={kr.id} point={point} index={index} open={!closed.has(point.id)} onToggle={() => toggle(point.id)} onMoveUp={index > 0 ? () => swapPoints(kr.id, point.id, points[index - 1].id) : undefined} onMoveDown={index < points.length - 1 ? () => swapPoints(kr.id, point.id, points[index + 1].id) : undefined} definitionReadOnly={definitionReadOnly} structureReadOnly={structureReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} reviewEnabled={reviewEnabled} tagSuggestions={tagSuggestions} deleteWarning={deleteWarning} />)}
+      <div className={compactPresentation ? 'space-y-1.5' : 'space-y-4'}>
+        {points.map((point, index) => <PointBlock compactPresentation={compactPresentation} key={point.id} objectiveId={objectiveId} krId={kr.id} point={point} index={index} open={!closed.has(point.id)} onToggle={() => toggle(point.id)} onMoveUp={index > 0 ? () => swapPoints(kr.id, point.id, points[index - 1].id) : undefined} onMoveDown={index < points.length - 1 ? () => swapPoints(kr.id, point.id, points[index + 1].id) : undefined} definitionReadOnly={definitionReadOnly} structureReadOnly={structureReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} reviewEnabled={reviewEnabled} tagSuggestions={tagSuggestions} deleteWarning={deleteWarning} />)}
         {points.length === 0 && <Empty>暂无{KIND_LABEL[kind]}</Empty>}
       </div>
     </section>
   )
 }
 
-export function KrDefinitionDetails({ objectiveId, kr, tagSuggestions, deletePointWarning = '连同各周进展一起删除', compactEmptyPointGroups = false, cardBody = false, readOnly = false, reviewEnabled = false }: { objectiveId: string; kr: Kr; tagSuggestions?: KrTag[]; deletePointWarning?: string; compactEmptyPointGroups?: boolean; cardBody?: boolean; readOnly?: boolean; reviewEnabled?: boolean }) {
+export function KrDefinitionDetails({ compactPresentation = false, objectiveId, kr, tagSuggestions, deletePointWarning = '连同各周进展一起删除', compactEmptyPointGroups = false, cardBody = false, readOnly = false, reviewEnabled = false }: { compactPresentation?: boolean; objectiveId: string; kr: Kr; tagSuggestions?: KrTag[]; deletePointWarning?: string; compactEmptyPointGroups?: boolean; cardBody?: boolean; readOnly?: boolean; reviewEnabled?: boolean }) {
   const { addPoint } = useBoard()
   const [closed, setClosed] = useState<Set<string>>(new Set())
   const toggle = (id: string) => setClosed((previous) => {
@@ -459,10 +460,11 @@ export function KrDefinitionDetails({ objectiveId, kr, tagSuggestions, deletePoi
   })
 
   return (
-    <div className={cardBody ? 'space-y-5 border-t border-slate-100 pt-4' : 'space-y-4 rounded-xl border border-slate-200 bg-slate-50/55 p-3'}>
-		<MetricBox kr={kr} readOnly={readOnly} />
+    <div className={compactPresentation ? 'space-y-2 border-t border-slate-100 pt-2' : cardBody ? 'space-y-5 border-t border-slate-100 pt-4' : 'space-y-4 rounded-xl border border-slate-200 bg-slate-50/55 p-3'}>
+		<MetricBox compactPresentation={compactPresentation} kr={kr} readOnly={readOnly} />
       {KINDS.filter((kind) => !compactEmptyPointGroups || kr.points.some((point) => point.kind === kind)).map((kind) => (
         <PointGroup
+          compactPresentation={compactPresentation}
           key={kind}
           objectiveId={objectiveId}
           kr={kr}
@@ -479,7 +481,7 @@ export function KrDefinitionDetails({ objectiveId, kr, tagSuggestions, deletePoi
         />
       ))}
 		{!readOnly && compactEmptyPointGroups && KINDS.some((kind) => !kr.points.some((point) => point.kind === kind)) && <div className="flex flex-wrap gap-2">
-        {KINDS.filter((kind) => !kr.points.some((point) => point.kind === kind)).map((kind) => <button key={kind} type="button" onClick={() => addPoint(objectiveId, kr.id, kind)} className="rounded-md border border-dashed border-slate-200 bg-white px-2.5 py-1.5 text-[10px] text-slate-400 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600">+ {KIND_LABEL[kind]}</button>)}
+        {KINDS.filter((kind) => !kr.points.some((point) => point.kind === kind)).map((kind) => <button key={kind} type="button" onClick={() => addPoint(objectiveId, kr.id, kind)} className="rounded-md border border-dashed border-slate-200 bg-white px-2.5 py-1.5 text-[10px] text-slate-400 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600">{compactPresentation ? '+ 一项' : `+ ${KIND_LABEL[kind]}`}</button>)}
       </div>}
     </div>
   )

@@ -74,7 +74,7 @@ function KrTagEditor({ kr, suggestions, readOnly }: { kr: Kr; suggestions: KrTag
 	return <TagEditor idPrefix={`tag-options-${kr.id}`} tags={allTags} suggestions={suggestions.filter((item) => !isStructuralTag(item))} onAdd={(value, type) => addTag(kr.id, value, type)} onRemove={(type, value) => removeTag(kr.id, type, value)} readOnly={readOnly} />
 }
 
-function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories, detailsOpen, cardHierarchy, compactEmptyPointGroups, onToggleDetails, onMoveUp, onMoveDown, showTags, showStructuralFields, deleteWarning, readOnly, reviewEnabled }: { objectiveId: string; kr: Kr; tagSuggestions: KrTag[]; businessCategories: string[]; detailsOpen: boolean; cardHierarchy: boolean; compactEmptyPointGroups: boolean; onToggleDetails: () => void; onMoveUp?: () => void; onMoveDown?: () => void; showTags: boolean; showStructuralFields: boolean; deleteWarning: string; readOnly: boolean; reviewEnabled: boolean }) {
+function KrEditorRow({ compactPresentation = false, objectiveId, kr, tagSuggestions, businessCategories, detailsOpen, cardHierarchy, compactEmptyPointGroups, onToggleDetails, onMoveUp, onMoveDown, showTags, showStructuralFields, deleteWarning, readOnly, reviewEnabled }: { compactPresentation?: boolean; objectiveId: string; kr: Kr; tagSuggestions: KrTag[]; businessCategories: string[]; detailsOpen: boolean; cardHierarchy: boolean; compactEmptyPointGroups: boolean; onToggleDetails: () => void; onMoveUp?: () => void; onMoveDown?: () => void; showTags: boolean; showStructuralFields: boolean; deleteWarning: string; readOnly: boolean; reviewEnabled: boolean }) {
 	const { setKrTitle, setKrBusinessCategory, setKrPriority, deleteKr } = useBoard()
 	const [confirmDelete, setConfirmDelete] = useState(false)
 	const [deleting, setDeleting] = useState(false)
@@ -95,7 +95,7 @@ function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories, deta
   }
 
   return (
-    <article id={commentTargetElementId(commentTarget)} onClick={commentSurface.onClick} className={`group/kr group/commentable grid grid-cols-[minmax(0,1fr)_auto] gap-2 transition-[background-color,box-shadow] ${cardHierarchy ? 'overflow-hidden rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 shadow-[0_2px_8px_rgba(31,35,40,0.035)]' : 'px-3.5 py-2'} ${commentSurface.enabled ? 'cursor-pointer hover:bg-indigo-50/70' : cardHierarchy ? '' : 'hover:bg-slate-50/70'} ${commentSurface.selected || commentSurface.focused ? 'bg-indigo-50/80 ring-2 ring-inset ring-indigo-500' : ''}`}>
+    <article id={commentTargetElementId(commentTarget)} onClick={commentSurface.onClick} className={`group/kr group/commentable grid grid-cols-[minmax(0,1fr)_auto] gap-2 transition-[background-color,box-shadow] ${cardHierarchy ? `overflow-hidden rounded-xl border border-slate-200 bg-white px-3.5 ${compactPresentation ? 'py-1.5' : 'py-2.5'} shadow-[0_2px_8px_rgba(31,35,40,0.035)]` : 'px-3.5 py-2'} ${commentSurface.enabled ? 'cursor-pointer hover:bg-indigo-50/70' : cardHierarchy ? '' : 'hover:bg-slate-50/70'} ${commentSurface.selected || commentSurface.focused ? 'bg-indigo-50/80 ring-2 ring-inset ring-indigo-500' : ''}`}>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-1.5">
 			{cardHierarchy && <button type="button" onClick={onToggleDetails} title={detailsOpen ? '折叠 KR' : '展开 KR'} aria-label={detailsOpen ? '折叠 KR' : '展开 KR'} aria-expanded={detailsOpen} className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><svg viewBox="0 0 12 12" aria-hidden className={`size-3 transition-transform ${detailsOpen ? 'rotate-90' : ''}`}><path d="M4 2.2 L8.8 6 L4 9.8 Z" fill="currentColor" /></svg></button>}
@@ -113,7 +113,7 @@ function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories, deta
 					<option value="">未标注</option><option value="p0">Focus · P0</option><option value="p1">P1</option><option value="p2">P2</option>
 				</select>)}
         </div>
-		<div className={`flex flex-wrap items-start gap-2 px-1.5 ${cardHierarchy ? 'mt-1.5' : 'mt-1'}`}>
+		<div className={`flex flex-wrap items-start gap-2 px-1.5 ${compactPresentation ? 'mt-0.5' : cardHierarchy ? 'mt-1.5' : 'mt-1'}`}>
 			  {cardHierarchy && showStructuralFields && (readOnly ? <span className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] text-blue-700">{businessCategoryOf(kr) || '未标注业务'}</span> : <BusinessCategoryField value={businessCategoryOf(kr)} categories={businessCategories} onChange={(value) => setKrBusinessCategory(kr.id, value)} allowEmpty ariaLabel="业务分类" className="h-6 max-w-36 rounded-md border border-blue-200 bg-blue-50 px-2 text-[10px] text-blue-700 outline-none focus:border-blue-400" />)}
 			  {cardHierarchy && (readOnly ? <span className={`rounded-md border px-2 py-1 text-[10px] ${priorityTone(priority)}`}>{priority ? (priority === 'p0' ? 'Focus · P0' : priority.toUpperCase()) : '未标注'}</span> : <select value={priority} onChange={(event) => setKrPriority(kr.id, event.target.value as KrPriority | '')} aria-label="优先级标签" className={`h-6 rounded-md border px-2 text-[10px] outline-none focus:border-blue-400 ${priorityTone(priority)}`}><option value="">未标注</option><option value="p0">Focus · P0</option><option value="p1">P1</option><option value="p2">P2</option></select>)}
 		  {showTags && <div className="min-w-0 flex-1"><KrTagEditor kr={kr} suggestions={tagSuggestions} readOnly={readOnly} /></div>}
@@ -127,9 +127,9 @@ function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories, deta
           </button>}
         </div>
       </div>
-      <div className="flex min-w-12 items-center justify-end gap-1">
+      <div className={`flex min-w-12 justify-end gap-1 ${compactPresentation ? 'items-start self-start' : 'items-center'}`}>
 		{reviewEnabled && <PreviewReviewButton target={reviewTarget} label="AI评审" />}
-		{readOnly ? <span className="flex flex-wrap justify-end gap-1">{krOwners(kr).map((owner) => <span key={`${owner.openId}:${owner.name}`} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-500">{owner.name}</span>)}</span> : <FeishuPeoplePicker kr={kr} compact={!cardHierarchy} />}
+		{readOnly ? <span className="flex flex-wrap justify-end gap-1">{krOwners(kr).map((owner) => <span key={`${owner.openId}:${owner.name}`} title={owner.name} aria-label={owner.name} className="inline-flex min-h-6 min-w-6 items-center justify-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-500">{compactPresentation ? Array.from(owner.name.trim())[0] : owner.name}</span>)}</span> : <FeishuPeoplePicker kr={kr} compact={!cardHierarchy} initialsOnly={compactPresentation} />}
 		{!readOnly && <span className={`flex items-center gap-1 transition-opacity ${cardHierarchy && !confirmDelete ? 'sm:opacity-0 sm:group-hover/kr:opacity-100 sm:group-focus-within/kr:opacity-100' : ''}`}>
         <MoveButtons label="条 KR" onUp={onMoveUp} onDown={onMoveDown} />
         {confirmDelete ? (
@@ -143,7 +143,7 @@ function KrEditorRow({ objectiveId, kr, tagSuggestions, businessCategories, deta
         <CommentSurfaceHint target={commentTarget} />
       </div>
 		{reviewEnabled && <PreviewReviewPanel target={reviewTarget} className="col-span-2" />}
-		{detailsOpen && <div className={`col-span-2 ${cardHierarchy ? 'px-0.5 pb-1' : 'px-1.5 pb-1'}`}><KrDefinitionDetails objectiveId={objectiveId} kr={kr} tagSuggestions={showTags ? tagSuggestions : undefined} deletePointWarning={deleteWarning} compactEmptyPointGroups={compactEmptyPointGroups} cardBody={cardHierarchy} readOnly={readOnly} reviewEnabled={reviewEnabled} /></div>}
+		{detailsOpen && <div className={`col-span-2 ${cardHierarchy ? 'px-0.5 pb-1' : 'px-1.5 pb-1'}`}><KrDefinitionDetails compactPresentation={compactPresentation} objectiveId={objectiveId} kr={kr} tagSuggestions={showTags ? tagSuggestions : undefined} deletePointWarning={deleteWarning} compactEmptyPointGroups={compactEmptyPointGroups} cardBody={cardHierarchy} readOnly={readOnly} reviewEnabled={reviewEnabled} /></div>}
     </article>
   )
 }
@@ -305,6 +305,7 @@ function ObjectiveEditorHeader({
 }
 
 export function ManagementView({
+	compactPresentation = false,
 	title = 'OKR 管理',
 	subtitle = '标签可标在整条 KR，也可下钻到策略/产品要点；长标签完整换行展示',
 	showTags = true,
@@ -320,6 +321,7 @@ export function ManagementView({
 	readOnly = false,
 		reviewEnabled = false,
 }: {
+	compactPresentation?: boolean
 	title?: string
 	subtitle?: string
 	showTags?: boolean
@@ -570,7 +572,7 @@ export function ManagementView({
 			</div>}
         </div>
 
-        <div className={cardHierarchy ? 'space-y-6 pt-1' : ''}>
+        <div className={compactPresentation ? 'space-y-3 pt-1' : cardHierarchy ? 'space-y-6 pt-1' : ''}>
           {groups.map((objective, objectiveIndex) => (
             <section key={objective.id}>
               <ObjectiveEditorHeader
@@ -590,9 +592,10 @@ export function ManagementView({
 					readOnly={readOnly}
 						reviewEnabled={reviewEnabled}
               />
-			  {!collapsed.has(objective.id) && <div className={cardHierarchy ? 'space-y-3' : 'divide-y divide-slate-100'}>
+			  {!collapsed.has(objective.id) && <div className={compactPresentation ? 'space-y-1.5' : cardHierarchy ? 'space-y-3' : 'divide-y divide-slate-100'}>
 						{!readOnly && creatingObjectiveId === objective.id && <NewKrRow objective={objective} businessCategories={businessCategories} peopleOptions={peopleOptions} cardHierarchy={cardHierarchy} onClose={() => setCreatingObjectiveId('')} onCreated={() => setPlacementNotice(`已新建 KR，位于“O ${objective.title}”下的 KR 列表最底部。`)} />}
 						{objective.krs.map((kr, krIndex) => <KrEditorRow
+                            compactPresentation={compactPresentation}
 							key={kr.id}
 							objectiveId={objective.id}
 							kr={kr}

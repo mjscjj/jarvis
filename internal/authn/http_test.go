@@ -24,15 +24,23 @@ func TestBrowserMiddlewareRequiresSessionForBrowserAPI(t *testing.T) {
 	}
 }
 
-func TestBrowserMiddlewareRequiresSessionForOKRImages(t *testing.T) {
+func TestBrowserMiddlewareAllowsWholeOKRModuleWithoutSSO(t *testing.T) {
 	service := newTestService(t, fakeRunner{run: func(_ string, _ []string) ([]byte, error) {
 		return nil, nil
 	}})
-	request := middlewareRequestForPath(service, "127.0.0.1:18801", "/okr-assets/image.png", map[string]string{
-		"Sec-Fetch-Mode": "no-cors",
-	})
-	if request.Response.StatusCode() != consts.StatusUnauthorized {
-		t.Fatalf("status = %d, want 401", request.Response.StatusCode())
+	for _, path := range []string{
+		"/api/okr/board",
+		"/api/biz-okr/board",
+		"/okr-assets/image.png",
+		"/api/people/search",
+		"/api/app-modules",
+	} {
+		request := middlewareRequestForPath(service, "10.0.0.8:43000", path, map[string]string{
+			"Sec-Fetch-Mode": "cors",
+		})
+		if request.Response.StatusCode() != consts.StatusOK {
+			t.Fatalf("%s status = %d, want 200", path, request.Response.StatusCode())
+		}
 	}
 }
 
@@ -125,7 +133,7 @@ func TestRedactAddress(t *testing.T) {
 }
 
 func TestBrowserMiddlewareAllowsBrowserWhenAuthenticationDisabled(t *testing.T) {
-	service, err := NewServiceWithRunner("bytedcli", time.Hour, false, fakeRunner{run: func(_ string, _ []string) ([]byte, error) {
+	service, err := NewServiceWithRunner("bytedcli", time.Hour, false, nil, fakeRunner{run: func(_ string, _ []string) ([]byte, error) {
 		t.Fatal("disabled authentication must not invoke bytedcli")
 		return nil, nil
 	}})
