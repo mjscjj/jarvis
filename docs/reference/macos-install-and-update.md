@@ -50,33 +50,16 @@ https://jarvisx.bytedance.net/jarvis-updates/latest.json
 ```
 
 发现更高 SemVer 后，Tauri updater 会下载对应的 `.app.tar.gz`，使用应用内置公钥验证
-`.sig`，安装并重启。`jarvisx.bytedance.net` 直接回源 DEV2 Jarvis，更新文件由同一个
-Jarvis 服务从发布目录提供。
+清单中的签名，安装并重启。普通客户端只下载更新，不对外托管安装包。
 
 0.1.0 及更早的安装包没有 updater，必须先手动覆盖安装 0.1.1；后续版本才能走自动
 更新。退出 Jarvis 会停止其本机子服务，不会删除数据。
 
-## 当前线上入口
+## 排障
 
-| 内容 | 地址 |
-|---|---|
-| 更新清单 | <https://jarvisx.bytedance.net/jarvis-updates/latest.json> |
-| 0.1.1 DMG | <https://jarvisx.bytedance.net/jarvis-updates/Jarvis_0.1.1_aarch64.dmg> |
-| 0.1.1 updater 包 | <https://jarvisx.bytedance.net/jarvis-updates/Jarvis_0.1.1_aarch64.app.tar.gz> |
-
-更新清单是客户端判断最新版本的真源；表中的版本化下载链接用于首次安装和人工恢复。
-
-## 验证与排障
-
-```bash
-curl -fsS https://jarvisx.bytedance.net/jarvis-updates/latest.json | jq
-curl -fsSI https://jarvisx.bytedance.net/jarvis-updates/Jarvis_0.1.1_aarch64.dmg
-```
-
-- 清单或安装包返回非 2xx：检查 DEV2 Jarvis 服务和
-  `/data00/home/chujiejie.1/jarvis-updates`。
+- 无法检查或下载更新：确认能访问公司网络中的更新地址；发布机配置及检查命令见
+  [打包与发布说明](../../packaging/macos/README.md#托管配置)。
 - 已是最新版本：updater 不执行下载和重启。
-- 签名校验失败：停止发布，不允许绕过；检查发布机私钥是否与
-  `desktop/src-tauri/tauri.conf.json` 的公钥成对。
+- 签名校验失败：保留错误信息联系发布者，不跳过签名校验。
 - 更新后启动失败：查看 `~/Library/Application Support/Jarvis/logs`，保留原数据目录
   排查，不自动清库。

@@ -66,10 +66,25 @@ desktop/src-tauri/target/release/bundle/dmg/Jarvis_<version>_aarch64.dmg
 
 ## 发布自动更新
 
-桌面应用启动成功后会通过
-`https://jarvisx.bytedance.net/jarvis-updates/latest.json` 检查更新。发现更高版本时，
-使用 Tauri updater 校验签名、安装并重启；用户数据仍保存在
-`~/Library/Application Support/Jarvis`。
+客户端更新行为见[用户安装文档](../../docs/reference/macos-install-and-update.md#自动更新)。
+
+### 托管配置
+
+更新文件由 Jarvis 主服务的可选模块提供。仅发布机设置：
+
+```text
+JARVIS_UPDATE_ROOT=/data00/home/chujiejie.1/jarvis-updates
+```
+
+目录必须已存在；配置了不存在的目录时启动报错。未设置或为空时不注册更新路由，
+普通客户端无需设置。DEV2 将该环境变量配置在
+`com.bytedance.jarvis.server.service.d/update-root.conf` 的 `[Service]` 中。
+修改主服务配置后的构建或重启使用 `./scripts/rebuild-server.sh`。
+
+现有 TLB 和网关继续使用原路由；网关将更新请求转给 DEV2 Jarvis `18801`。
+完整路由由 AMZ 仓库 `product-demo/DEPLOY.md` 维护。
+
+### 构建与发布
 
 首次发布机准备一次更新签名密钥：
 
@@ -94,7 +109,8 @@ npm --prefix desktop exec tauri signer generate -- \
 ```
 
 脚本复用完整 DMG 构建门禁，生成 `.app.tar.gz` 和 `.sig`，再将版本化更新包、DMG
-与最后写入的 `latest.json` 原子发布到 DEV2。默认目标是
+上传到 DEV2，先移动版本化安装包，最后替换 `latest.json`。清单替换是单文件操作，
+整批文件不是一个原子事务。每次发布使用新版本号，不覆盖已发布的版本化文件。默认目标是
 `chujiejie.1@10.199.197.219:/data00/home/chujiejie.1/jarvis-updates`，可用
 `JARVIS_UPDATE_REMOTE`、`JARVIS_UPDATE_REMOTE_ROOT` 和
 `JARVIS_UPDATE_BASE_URL` 覆盖。首个带 updater 的版本仍需手动安装一次，后续版本
@@ -128,5 +144,4 @@ DMG 挂载窗口同时提供“插件扩展与解耦规范”和“代码提交�
 - `missing Qdrant binary`：安装到 `bin/qdrant`，或设置 `JARVIS_QDRANT_BIN`。
 - `missing CC Connect binary`：安装到 `bin/cc-connect-jarvis`，或设置
   `JARVIS_CC_CONNECT_BIN`。
-- 授权按钮无响应：确认使用的是最新 DMG；桌面外链依赖 Tauri opener，普通旧
-  `.app` 不会自动更新。
+- 授权按钮无响应：桌面外链依赖 Tauri opener；0.1.0 及更早版本需手动覆盖安装带 updater 的版本。

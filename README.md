@@ -109,7 +109,6 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 macOS 14+ Apple Silicon 用户优先使用 DMG：
 
 - [macOS 安装、覆盖安装与自动更新](docs/reference/macos-install-and-update.md)
-- [下载当前首个自动更新版本 Jarvis 0.1.1](https://jarvisx.bytedance.net/jarvis-updates/Jarvis_0.1.1_aarch64.dmg)
 
 0.1.1 及后续版本会从 `jarvisx.bytedance.net` 检查签名更新并自动安装；0.1.0
 及更早版本需要先手动覆盖安装 0.1.1。应用位于 `/Applications/Jarvis.app`，用户数据
