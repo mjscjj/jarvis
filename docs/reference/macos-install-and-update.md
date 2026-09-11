@@ -18,7 +18,7 @@
 
 ## 首次安装
 
-当前版本：[Jarvis 0.1.2 DMG](https://jarvisx.bytedance.net/jarvis-updates/Jarvis_0.1.2_aarch64.dmg)。
+当前版本：[Jarvis 0.1.5 DMG](https://jarvisx.bytedance.net/jarvis-updates/Jarvis_0.1.5_aarch64.dmg)。
 
 1. 下载并打开 DMG。
 2. 将 `Jarvis.app` 拖入 `Applications`。
