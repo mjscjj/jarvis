@@ -27,7 +27,7 @@
   "bundle": {
     "active": true,
     "targets": ["app"],
-    "createUpdaterArtifacts": true,
+    "createUpdaterArtifacts": false,
     "resources": {
       "generated/runtime/": "runtime/"
     },

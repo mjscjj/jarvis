@@ -144,18 +144,7 @@ owner during first launch.
 
 ## Build
 
-Prepare the self-contained runtime and build the Apple Silicon image:
-
-```bash
-./packaging/macos/prepare-runtime.sh desktop/src-tauri/generated/runtime
-./packaging/macos/build-dmg.sh
-```
-
-The image is written to:
-
-```text
-desktop/src-tauri/target/release/bundle/dmg/Jarvis_<version>_aarch64.dmg
-```
-
-The default build uses ad-hoc signing for internal testing. External
-distribution requires a Developer ID identity and Apple notarization.
+The authoritative build, signing, verification, and release procedure is
+[`packaging/macos/README.md`](../packaging/macos/README.md).
+`build-dmg.sh` invokes `prepare-runtime.sh` through Tauri's
+`beforeBuildCommand`; do not run both commands as separate build steps.
