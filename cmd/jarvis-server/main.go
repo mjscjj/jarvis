@@ -1010,6 +1010,7 @@ func main() {
 		Readiness:          readinessTargets,
 		SystemControl:      systemControlService,
 		Onboarding:         onboardingService,
+		UpdateRoot:         os.Getenv("JARVIS_UPDATE_ROOT"),
 	}); err != nil {
 		fatalf("register API routes failed: %v", err)
 	}

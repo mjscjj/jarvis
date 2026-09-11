@@ -85,6 +85,7 @@ type Dependencies struct {
 	Readiness          ReadinessTargets  // /readyz 探测的外部依赖；缺失只降级，不影响 /healthz
 	SystemControl      SystemShutdowner
 	Onboarding         *onboarding.Service
+	UpdateRoot         string // 可选：DEV2 发布目录；为空时不注册 /jarvis-updates
 }
 
 // Register 把所有路由挂到 Hertz 实例上。
@@ -203,6 +204,14 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	}
 	h.GET("/healthz", Health(deps.DB))
 	h.GET("/readyz", Readiness(deps.DB, deps.Readiness))
+	if strings.TrimSpace(deps.UpdateRoot) != "" {
+		updateFiles, err := NewUpdateFileHandler(deps.UpdateRoot)
+		if err != nil {
+			return fmt.Errorf("create update file handler: %w", err)
+		}
+		h.GET("/jarvis-updates/:filename", updateFiles)
+		h.HEAD("/jarvis-updates/:filename", updateFiles)
+	}
 	h.GET("/api/auth/status", GetAuthStatus(deps.Auth))
 	h.POST("/api/auth/login", LoginWithByteDance(deps.Auth))
 	h.POST("/api/auth/login/complete", CompleteByteDanceLogin(deps.Auth))

@@ -50,7 +50,8 @@ https://jarvisx.bytedance.net/jarvis-updates/latest.json
 ```
 
 发现更高 SemVer 后，Tauri updater 会下载对应的 `.app.tar.gz`，使用应用内置公钥验证
-`.sig`，安装并重启。更新源由 DEV2 的 `jarvisx.bytedance.net` HTTPS gateway 提供。
+`.sig`，安装并重启。`jarvisx.bytedance.net` 直接回源 DEV2 Jarvis，更新文件由同一个
+Jarvis 服务从发布目录提供。
 
 0.1.0 及更早的安装包没有 updater，必须先手动覆盖安装 0.1.1；后续版本才能走自动
 更新。退出 Jarvis 会停止其本机子服务，不会删除数据。
@@ -72,7 +73,7 @@ curl -fsS https://jarvisx.bytedance.net/jarvis-updates/latest.json | jq
 curl -fsSI https://jarvisx.bytedance.net/jarvis-updates/Jarvis_0.1.1_aarch64.dmg
 ```
 
-- 清单或安装包返回非 2xx：检查 DEV2 gateway 和
+- 清单或安装包返回非 2xx：检查 DEV2 Jarvis 服务和
   `/data00/home/chujiejie.1/jarvis-updates`。
 - 已是最新版本：updater 不执行下载和重启。
 - 签名校验失败：停止发布，不允许绕过；检查发布机私钥是否与
