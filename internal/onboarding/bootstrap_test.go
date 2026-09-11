@@ -33,6 +33,16 @@ func TestBootstrapOnlyReadsLocalConfiguration(t *testing.T) {
 	if err != nil || !status.MachineConfigurationReady {
 		t.Fatalf("installed: %+v, %v", status, err)
 	}
+	service.options.Desktop = true
+	status, err = service.Bootstrap()
+	if err != nil || status.MachineConfigurationReady {
+		t.Fatalf("desktop must apply saved configuration before fast entry: %+v, %v", status, err)
+	}
+	service.runtimeConfigured = true
+	status, err = service.Bootstrap()
+	if err != nil || !status.MachineConfigurationReady {
+		t.Fatalf("configured desktop runtime: %+v, %v", status, err)
+	}
 	if err := os.WriteFile(path, []byte("invalid: ["), 0o600); err != nil {
 		t.Fatal(err)
 	}

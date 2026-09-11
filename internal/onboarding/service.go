@@ -226,7 +226,7 @@ func (s *Service) Bootstrap() (*BootstrapStatus, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &BootstrapStatus{MachineConfigurationReady: configuration.MachineConfigurationReady}, nil
+	return &BootstrapStatus{MachineConfigurationReady: configuration.MachineConfigurationReady && (!s.options.Desktop || s.runtimeConfigured)}, nil
 }
 
 type BootstrapStatus struct {
