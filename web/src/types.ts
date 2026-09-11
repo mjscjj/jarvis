@@ -1130,7 +1130,6 @@ export interface RuntimeSettings {
   execute_stale_minutes: number
   execute_concurrency: number
 
-  chat_enabled: boolean
   chat_model: string
   chat_sandbox: 'read-only' | 'workspace-write' | 'danger-full-access'
   chat_reasoning_effort: ReasoningEffort
@@ -1273,8 +1272,8 @@ export interface Plugin {
 
 // --- codex 对话框契约（跨 agent 冻结，A/B/C 共用）---
 
-// PageContext 是右侧对话框对左侧页面的单向感知：当前所在 Tab + 选中项摘要。
-// 由各页面写入 PageContext（React Context），发送对话时随请求带给后端注入 prompt。
+// PageContext carries the active page and selected record for navigation and
+// explicit source selection in the conversation workspace.
 export interface PageContext {
   // 当前左侧导航 key：overview/todos/tasks/scheduled-tasks/plugins/background/security/settings/progress/debug
   active_key: string

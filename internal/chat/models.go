@@ -70,13 +70,34 @@ func (s *Service) ListModels(ctx context.Context, agent string) ([]ModelView, er
 	}
 	switch agent {
 	case "codex":
-		return discoverCodexModels(discoveryCtx, bin)
+		models, err := discoverCodexModels(discoveryCtx, bin)
+		return s.applyConfiguredDefault(agent, models), err
 	case "trae":
-		return discoverTRAEModels(discoveryCtx, bin)
+		models, err := discoverTRAEModels(discoveryCtx, bin)
+		return s.applyConfiguredDefault(agent, models), err
 	case "cursor":
-		return discoverCursorModels(discoveryCtx, bin)
+		models, err := discoverCursorModels(discoveryCtx, bin)
+		return s.applyConfiguredDefault(agent, models), err
 	}
 	return nil, fmt.Errorf("unknown agent %q", agent)
+}
+
+func (s *Service) applyConfiguredDefault(agent string, models []ModelView) []ModelView {
+	if agent != s.runner.agent {
+		return models
+	}
+	for i := range models {
+		if models[i].ID != s.runner.model {
+			continue
+		}
+		for j := range models {
+			models[j].Default = false
+		}
+		models[i].Default = true
+		models[i].DefaultReasoningEffort = s.runner.reasoningEffort
+		break
+	}
+	return models
 }
 
 // Resolve the command selected by PATH. Version text only rejects a known

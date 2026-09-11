@@ -831,7 +831,6 @@ func enableDesktopRuntime(ctx context.Context, configPath string) error {
 	settings := view.Settings
 	settings.ExtractEnabled = true
 	settings.ExecuteAutoEnabled = true
-	settings.ChatEnabled = true
 	settings.FactEngineEnabled = true
 	settings.ProactiveEnabled = true
 	settings.ScheduledTaskEnabled = true

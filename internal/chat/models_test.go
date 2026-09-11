@@ -46,6 +46,23 @@ func TestParseCursorModelsFailsOnProtocolDrift(t *testing.T) {
 	}
 }
 
+func TestConfiguredChatDefaultsApplyOnlyToDefaultAgent(t *testing.T) {
+	t.Parallel()
+	svc := &Service{runner: &runner{agent: "trae", model: "preferred", reasoningEffort: "high"}}
+	models := []ModelView{
+		{ID: "first", Default: true, DefaultReasoningEffort: "low"},
+		{ID: "preferred", DefaultReasoningEffort: "medium"},
+	}
+	got := svc.applyConfiguredDefault("trae", models)
+	if got[0].Default || !got[1].Default || got[1].DefaultReasoningEffort != "high" {
+		t.Fatalf("configured defaults = %#v", got)
+	}
+	other := svc.applyConfiguredDefault("codex", []ModelView{{ID: "native", Default: true}})
+	if !other[0].Default {
+		t.Fatalf("non-default agent model order was changed: %#v", other)
+	}
+}
+
 func TestAgentSelectionRejectsMislabeledCommandWithoutSearchingPastIt(t *testing.T) {
 	wrapperDir, realDir := t.TempDir(), t.TempDir()
 	writeExecutable(t, wrapperDir, "codex", "#!/bin/sh\nprintf '%s\\n' 'traecli 0.200.19'\n")

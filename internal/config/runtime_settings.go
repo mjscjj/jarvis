@@ -57,7 +57,6 @@ type RuntimeSettings struct {
 	ExecuteStaleMinutes    int    `json:"execute_stale_minutes"`
 	ExecuteConcurrency     int    `json:"execute_concurrency"`
 
-	ChatEnabled         bool   `json:"chat_enabled"`
 	ChatModel           string `json:"chat_model"`
 	ChatSandbox         string `json:"chat_sandbox"`
 	ChatReasoningEffort string `json:"chat_reasoning_effort"`
@@ -180,6 +179,7 @@ func (s *RuntimeSettingsService) Update(ctx context.Context, input RuntimeSettin
 	override := runtimeOverrideFromSettings(input)
 	override.Server.Addr = cfg.Server.Addr
 	override.Server.PublicURL = cfg.Server.PublicURL
+	override.Chat.Enabled = cfg.Chat.Enabled
 	override.Capture.P2PScanEnabled = cfg.Capture.P2PScanEnabled
 	override.Extract.PrincipalOpenID = cfg.Extract.PrincipalOpenID
 	override.LarkCLI.Bin = cfg.LarkCLI.Bin
@@ -223,6 +223,7 @@ func (s *RuntimeSettingsService) UpdateSecurity(ctx context.Context, input Secur
 	override := runtimeOverrideFromSettings(settings)
 	override.Server.Addr = cfg.Server.Addr
 	override.Server.PublicURL = cfg.Server.PublicURL
+	override.Chat.Enabled = cfg.Chat.Enabled
 	override.Capture.P2PScanEnabled = cfg.Capture.P2PScanEnabled
 	override.Extract.PrincipalOpenID = cfg.Extract.PrincipalOpenID
 	override.LarkCLI.Bin = cfg.LarkCLI.Bin
@@ -298,7 +299,6 @@ func runtimeSettingsFromConfig(cfg *Config) RuntimeSettings {
 		ExecuteTimeoutSeconds:        cfg.Execute.TimeoutSecond,
 		ExecuteStaleMinutes:          cfg.Execute.StaleExecutingMinute,
 		ExecuteConcurrency:           cfg.Execute.Concurrency,
-		ChatEnabled:                  cfg.Chat.Enabled,
 		ChatModel:                    cfg.Chat.Model,
 		ChatSandbox:                  cfg.Chat.Sandbox,
 		ChatReasoningEffort:          cfg.Chat.ReasoningEffort,
@@ -374,7 +374,6 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 	cfg.Execute.TimeoutSecond = input.ExecuteTimeoutSeconds
 	cfg.Execute.StaleExecutingMinute = input.ExecuteStaleMinutes
 	cfg.Execute.Concurrency = input.ExecuteConcurrency
-	cfg.Chat.Enabled = input.ChatEnabled
 	cfg.Chat.Model = strings.TrimSpace(input.ChatModel)
 	cfg.Chat.Sandbox = strings.TrimSpace(input.ChatSandbox)
 	cfg.Chat.ReasoningEffort = strings.TrimSpace(input.ChatReasoningEffort)
@@ -559,7 +558,6 @@ func runtimeOverrideFromSettings(input RuntimeSettings) runtimeOverride {
 	override.Execute.TimeoutSecond = input.ExecuteTimeoutSeconds
 	override.Execute.StaleExecutingMinute = input.ExecuteStaleMinutes
 	override.Execute.Concurrency = input.ExecuteConcurrency
-	override.Chat.Enabled = input.ChatEnabled
 	override.Chat.Model = strings.TrimSpace(input.ChatModel)
 	override.Chat.Sandbox = strings.TrimSpace(input.ChatSandbox)
 	override.Chat.ReasoningEffort = strings.TrimSpace(input.ChatReasoningEffort)
