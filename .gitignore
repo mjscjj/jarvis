@@ -51,6 +51,8 @@ __pycache__/
 /.cc-connect/
 
 # agent 在仓库根产生的临时工作目录
+/.jarvis/tmp/
+/auth*_qr.png
 /.tmp/
 /.tmp-*/
 /.codex-tmp/
