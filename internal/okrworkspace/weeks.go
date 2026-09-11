@@ -43,21 +43,10 @@ var (
 	ErrWeekTemplateConflict = errors.New("weekly report week template conflict")
 )
 
-type DeleteWeekCounts struct {
-	WeeklyCores     int64 `json:"weekly_cores"`
-	Progress        int64 `json:"progress"`
-	FollowUps       int64 `json:"follow_ups"`
-	Scores          int64 `json:"scores"`
-	Comments        int64 `json:"comments"`
-	MeegoSnapshots  int64 `json:"meego_snapshots"`
-	ReminderBatches int64 `json:"reminder_batches"`
-}
-
 type DeleteWeekResult struct {
-	Quarter  string           `json:"quarter"`
-	Week     string           `json:"week"`
-	NextWeek string           `json:"next_week,omitempty"`
-	Deleted  DeleteWeekCounts `json:"deleted"`
+	Quarter  string `json:"quarter"`
+	Week     string `json:"week"`
+	NextWeek string `json:"next_week,omitempty"`
 }
 
 func (s *Service) ListWeeks(ctx context.Context, quarter string) (WeekList, error) {
@@ -102,8 +91,11 @@ func (s *Service) OpenWeek(ctx context.Context, input OpenWeekInput) (OpenWeekRe
 		return OpenWeekResult{}, fmt.Errorf("open weekly report week: %w", created.Error)
 	}
 	if created.RowsAffected == 0 {
-		if err := s.db.WithContext(ctx).First(&row, "quarter = ? AND week = ?", input.Quarter, input.Week).Error; err != nil {
+		if err := s.db.WithContext(ctx).Unscoped().First(&row, "quarter = ? AND week = ?", input.Quarter, input.Week).Error; err != nil {
 			return OpenWeekResult{}, fmt.Errorf("read opened weekly report week: %w", err)
+		}
+		if row.DeletedAt.Valid {
+			return OpenWeekResult{}, fmt.Errorf("该周次已删除，不允许重新新建")
 		}
 		if row.TemplateKey != input.TemplateKey {
 			return OpenWeekResult{}, fmt.Errorf("%w: %s/%s is %q, requested %q", ErrWeekTemplateConflict, input.Quarter, input.Week, row.TemplateKey, input.TemplateKey)
@@ -112,14 +104,8 @@ func (s *Service) OpenWeek(ctx context.Context, input OpenWeekInput) (OpenWeekRe
 	return OpenWeekResult{Week: weekView(row), Created: created.RowsAffected == 1}, nil
 }
 
-// DeleteWeek removes one complete Biz OKR weekly scope while preserving the
-// stable OKR definition and every other week. The week anchor is deleted last
-// so an interrupted deletion remains visible and can be retried safely.
-//
-// Deletion stays whole-week and Biz-owned on purpose. Comments, scores,
-// follow-ups and reminder batches are keyed by (quarter, week) with no foreign
-// key to this anchor, so a partial delete would resurface them on the next
-// week opened under the same key.
+// DeleteWeek soft-deletes the week anchor and preserves all associated data.
+// The (quarter, week) key remains reserved and cannot be reopened.
 func (s *Service) DeleteWeek(ctx context.Context, quarter, week, expectedToken string) (DeleteWeekResult, error) {
 	quarter = strings.TrimSpace(quarter)
 	week = strings.TrimSpace(week)
@@ -147,67 +133,7 @@ func (s *Service) DeleteWeek(ctx context.Context, quarter, week, expectedToken s
 		return DeleteWeekResult{}, ErrConflict
 	}
 
-	var krIDs []string
-	if err := s.db.WithContext(ctx).Model(&domain.KR{}).
-		Joins("JOIN okr_workspace_objective ON okr_workspace_objective.id = okr_workspace_kr.objective_id").
-		Where("okr_workspace_objective.quarter = ? AND okr_workspace_objective.plan_id = ''", quarter).
-		Pluck("okr_workspace_kr.id", &krIDs).Error; err != nil {
-		return DeleteWeekResult{}, fmt.Errorf("list weekly report KRs before delete: %w", err)
-	}
-	var pointIDs []string
-	if len(krIDs) > 0 {
-		if err := s.db.WithContext(ctx).Model(&domain.KRPoint{}).Where("kr_id IN ?", krIDs).Pluck("id", &pointIDs).Error; err != nil {
-			return DeleteWeekResult{}, fmt.Errorf("list weekly report points before delete: %w", err)
-		}
-	}
-
 	result := DeleteWeekResult{Quarter: quarter, Week: week}
-	comments := s.db.WithContext(ctx).Where("quarter = ? AND week = ?", quarter, week).Delete(&domain.PageComment{})
-	if comments.Error != nil {
-		return DeleteWeekResult{}, fmt.Errorf("delete weekly report comments: %w", comments.Error)
-	}
-	result.Deleted.Comments = comments.RowsAffected
-
-	followUps := s.db.WithContext(ctx).Where("quarter = ? AND week = ?", quarter, week).Delete(&domain.FollowUpItem{})
-	if followUps.Error != nil {
-		return DeleteWeekResult{}, fmt.Errorf("delete weekly report follow-ups: %w", followUps.Error)
-	}
-	result.Deleted.FollowUps = followUps.RowsAffected
-
-	if len(pointIDs) > 0 {
-		progress := s.db.WithContext(ctx).Where("point_id IN ? AND week = ?", pointIDs, week).Delete(&domain.KRProgress{})
-		if progress.Error != nil {
-			return DeleteWeekResult{}, fmt.Errorf("delete weekly report progress: %w", progress.Error)
-		}
-		result.Deleted.Progress = progress.RowsAffected
-
-		snapshots := s.db.WithContext(ctx).Where("point_id IN ? AND week = ?", pointIDs, week).Delete(&domain.MeegoSyncSnapshot{})
-		if snapshots.Error != nil {
-			return DeleteWeekResult{}, fmt.Errorf("delete weekly report Meego snapshots: %w", snapshots.Error)
-		}
-		result.Deleted.MeegoSnapshots = snapshots.RowsAffected
-	}
-
-	scores := s.db.WithContext(ctx).Where("quarter = ? AND week = ?", quarter, week).Delete(&domain.WeeklyScore{})
-	if scores.Error != nil {
-		return DeleteWeekResult{}, fmt.Errorf("delete weekly report scores: %w", scores.Error)
-	}
-	result.Deleted.Scores = scores.RowsAffected
-
-	if len(krIDs) > 0 {
-		cores := s.db.WithContext(ctx).Where("kr_id IN ? AND week = ?", krIDs, week).Delete(&domain.WeeklyKRCore{})
-		if cores.Error != nil {
-			return DeleteWeekResult{}, fmt.Errorf("delete weekly report core data: %w", cores.Error)
-		}
-		result.Deleted.WeeklyCores = cores.RowsAffected
-	}
-
-	batches := s.db.WithContext(ctx).Where("quarter = ? AND week = ?", quarter, week).Delete(&domain.ReminderBatch{})
-	if batches.Error != nil {
-		return DeleteWeekResult{}, fmt.Errorf("delete weekly report reminder batches: %w", batches.Error)
-	}
-	result.Deleted.ReminderBatches = batches.RowsAffected
-
 	anchor := s.db.WithContext(ctx).Where("quarter = ? AND week = ?", quarter, week).Delete(&domain.WeeklyReportWeek{})
 	if anchor.Error != nil {
 		return DeleteWeekResult{}, fmt.Errorf("delete weekly report week: %w", anchor.Error)

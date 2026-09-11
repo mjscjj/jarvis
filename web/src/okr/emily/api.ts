@@ -549,15 +549,6 @@ export interface DeleteWeekResult {
   quarter: string
   week: string
   nextWeek?: string
-  deleted: {
-    weeklyCores: number
-    progress: number
-    followUps: number
-    scores: number
-    comments: number
-    meegoSnapshots: number
-    reminderBatches: number
-  }
 }
 
 export async function openWeeklyReportWeek(input: { quarter: string; week: string; templateKey: WeekTemplateKey }): Promise<OpenWeekResult> {
@@ -598,15 +589,6 @@ export async function deleteWeeklyReportWeek(quarter: string, week: string, dele
     quarter: string
     week: string
     next_week?: string
-    deleted: {
-      weekly_cores: number
-      progress: number
-      follow_ups: number
-      scores: number
-      comments: number
-      meego_snapshots: number
-      reminder_batches: number
-    }
 	}>(`/api/biz-okr/weeks/${encodeURIComponent(week)}?quarter=${encodeURIComponent(quarter)}`, {
 		method: 'DELETE',
 		body: JSON.stringify({ delete_token: deleteToken }),
@@ -615,15 +597,6 @@ export async function deleteWeeklyReportWeek(quarter: string, week: string, dele
     quarter: value.quarter,
     week: value.week,
     nextWeek: value.next_week,
-    deleted: {
-      weeklyCores: value.deleted.weekly_cores,
-      progress: value.deleted.progress,
-      followUps: value.deleted.follow_ups,
-      scores: value.deleted.scores,
-      comments: value.deleted.comments,
-      meegoSnapshots: value.deleted.meego_snapshots,
-      reminderBatches: value.deleted.reminder_batches,
-    },
   }
 }
 

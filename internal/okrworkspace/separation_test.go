@@ -481,7 +481,7 @@ func TestWeeklyReportWeekLifecycleDoesNotRequireProgress(t *testing.T) {
 	}
 }
 
-func TestDeleteWeekRemovesOnlySelectedWeeklyReportScope(t *testing.T) {
+func TestDeleteWeekSoftDeletesAndPreventsReopening(t *testing.T) {
 	db := openWorkspaceTestDB(t)
 	q2Objective := domain.Objective{ID: "o-delete-q2", Title: "测试季度", Quarter: "2026-Q2"}
 	q3Objective := domain.Objective{ID: "o-delete-q3", Title: "正式季度", Quarter: "2026-Q3"}
@@ -532,9 +532,6 @@ func TestDeleteWeekRemovesOnlySelectedWeeklyReportScope(t *testing.T) {
 	if deleted.NextWeek != "2026-W14" {
 		t.Fatalf("next week = %q, want 2026-W14", deleted.NextWeek)
 	}
-	if deleted.Deleted.WeeklyCores != 1 || deleted.Deleted.Progress != 1 || deleted.Deleted.Comments != 1 || deleted.Deleted.MeegoSnapshots != 1 || deleted.Deleted.ReminderBatches != 1 {
-		t.Fatalf("deleted counts = %+v", deleted.Deleted)
-	}
 
 	assertCount := func(model any, query string, args []any, want int64) {
 		t.Helper()
@@ -547,11 +544,11 @@ func TestDeleteWeekRemovesOnlySelectedWeeklyReportScope(t *testing.T) {
 		}
 	}
 	assertCount(&domain.WeeklyReportWeek{}, "quarter = ? AND week = ?", []any{"2026-Q2", "2026-W15"}, 0)
-	assertCount(&domain.WeeklyKRCore{}, "kr_id = ? AND week = ?", []any{q2KR.ID, "2026-W15"}, 0)
-	assertCount(&domain.KRProgress{}, "point_id = ? AND week = ?", []any{q2Point.ID, "2026-W15"}, 0)
-	assertCount(&domain.PageComment{}, "quarter = ? AND week = ?", []any{"2026-Q2", "2026-W15"}, 0)
-	assertCount(&domain.MeegoSyncSnapshot{}, "point_id = ? AND week = ?", []any{q2Point.ID, "2026-W15"}, 0)
-	assertCount(&domain.ReminderBatch{}, "quarter = ? AND week = ?", []any{"2026-Q2", "2026-W15"}, 0)
+	assertCount(&domain.WeeklyKRCore{}, "kr_id = ? AND week = ?", []any{q2KR.ID, "2026-W15"}, 1)
+	assertCount(&domain.KRProgress{}, "point_id = ? AND week = ?", []any{q2Point.ID, "2026-W15"}, 1)
+	assertCount(&domain.PageComment{}, "quarter = ? AND week = ?", []any{"2026-Q2", "2026-W15"}, 1)
+	assertCount(&domain.MeegoSyncSnapshot{}, "point_id = ? AND week = ?", []any{q2Point.ID, "2026-W15"}, 1)
+	assertCount(&domain.ReminderBatch{}, "quarter = ? AND week = ?", []any{"2026-Q2", "2026-W15"}, 1)
 
 	assertCount(&domain.WeeklyReportWeek{}, "quarter = ? AND week = ?", []any{"2026-Q2", "2026-W14"}, 1)
 	assertCount(&domain.KRProgress{}, "point_id = ? AND week = ?", []any{q2Point.ID, "2026-W14"}, 1)
@@ -561,6 +558,40 @@ func TestDeleteWeekRemovesOnlySelectedWeeklyReportScope(t *testing.T) {
 	assertCount(&domain.Objective{}, "id IN ?", []any{[]string{q2Objective.ID, q3Objective.ID}}, 2)
 	assertCount(&domain.KR{}, "id IN ?", []any{[]string{q2KR.ID, q3KR.ID}}, 2)
 	assertCount(&domain.KRPoint{}, "id IN ?", []any{[]string{q2Point.ID, q3Point.ID}}, 2)
+
+	var anchor domain.WeeklyReportWeek
+	if err := db.Unscoped().First(&anchor, "quarter = ? AND week = ?", "2026-Q2", "2026-W15").Error; err != nil {
+		t.Fatal(err)
+	}
+	if !anchor.DeletedAt.Valid {
+		t.Fatal("deleted week must remain in storage with a deletion timestamp")
+	}
+	// Startup migration must not revive the retained historical progress.
+	if err := Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	weeks, err := service.ListWeeks(t.Context(), "2026-Q2")
+	if err != nil || len(weeks.Weeks) != 1 || weeks.Weeks[0].Week != "2026-W14" {
+		t.Fatalf("visible weeks = %+v, err = %v", weeks, err)
+	}
+	if _, err := service.Board(t.Context(), "2026-Q2", "2026-W15"); err == nil {
+		t.Fatal("deleted week must not be readable")
+	}
+	if _, err := service.Comments(t.Context(), "2026-Q2", "2026-W15"); err == nil {
+		t.Fatal("deleted week comments must not be readable")
+	}
+	scope, err := service.latestWeeklyScopeForQuarter(t.Context(), "2026-Q2")
+	if err != nil || scope.Week != "2026-W14" {
+		t.Fatalf("latest visible scope = %+v, err = %v", scope, err)
+	}
+	for _, template := range []domain.WeekTemplateKey{domain.WeekTemplateClassic, domain.WeekTemplateOKRPreview} {
+		if _, err := service.OpenWeek(t.Context(), OpenWeekInput{Quarter: "2026-Q2", Week: "2026-W15", TemplateKey: template}); err == nil || err.Error() != "该周次已删除，不允许重新新建" {
+			t.Fatalf("reopen deleted week error = %v, want explicit rejection", err)
+		}
+	}
+	if err := service.requireOpenWeek(t.Context(), "2026-Q2", "2026-W15"); err == nil {
+		t.Fatal("reopening must not restore the week")
+	}
 
 	if _, err := service.DeleteWeek(t.Context(), "2026-Q2", "2026-W15", "already-deleted"); err != ErrWeekNotFound {
 		t.Fatalf("delete missing week error = %v, want ErrWeekNotFound", err)

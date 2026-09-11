@@ -119,11 +119,15 @@ func TestWeeklyScoresArePreviewOnlyAndVersionedPerTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	weekDeleted, err := service.DeleteWeek(t.Context(), objective.Quarter, preview.Week, boardBeforeWeekDelete.DeleteToken)
+	_, err = service.DeleteWeek(t.Context(), objective.Quarter, preview.Week, boardBeforeWeekDelete.DeleteToken)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if weekDeleted.Deleted.Scores != 1 {
-		t.Fatalf("deleted score count = %+v", weekDeleted.Deleted)
+	var retainedScores int64
+	if err := db.Model(&domain.WeeklyScore{}).Where("quarter = ? AND week = ?", objective.Quarter, preview.Week).Count(&retainedScores).Error; err != nil {
+		t.Fatal(err)
+	}
+	if retainedScores != 1 {
+		t.Fatalf("retained score count = %d, want 1", retainedScores)
 	}
 }

@@ -320,7 +320,7 @@ export default function App({
 					centered
 					width={460}
 				>
-					<p className="mt-2 text-sm leading-6 text-slate-600">会删除这个周次的周度数据；不会删除 O、KR、指标定义和拆解，也不会影响其他周。删除后无法恢复。</p>
+					<p className="mt-2 text-sm leading-6 text-slate-600">删除后该周次将不再展示，数据保留。同一季度内不允许重新新建该周次，其他周及 O、KR 定义不受影响。</p>
 					<div className="mt-4 flex justify-end gap-2">
 						<button type="button" onClick={() => setConfirmDeleteWeek(false)} disabled={deletingWeek} className="rounded-lg px-4 py-2 text-sm font-medium text-slate-500 hover:bg-slate-50 disabled:opacity-40">取消</button>
 						<button type="button" onClick={() => void removeWeek()} disabled={deletingWeek} className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-40">{deletingWeek ? '正在删除…' : `确认删除 ${week}`}</button>

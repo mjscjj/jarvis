@@ -47,7 +47,7 @@ Jarvis 世界模型
 - API 前缀：`/api/okr/*`。实际注册见 `internal/api/okr_module_routes.go`。
 - 原子工具：`scripts/okr-module-tools`。
 - 已支持 Objective/KR 维护、Metric/Point/Owner 完整拆解、周次、Weekly KR Core、正式 Progress CRUD、图片上传和乐观版本控制。`插件 → OKR` 以只读方式展示结构和分层进展；人工填写仍在 OKR 业务页面。
-- 通用侧可以开周和逐条改进展，但没有删整周的入口。评论、评分、Follow-up 和催填批次按 `(quarter, week)` 存且不指向周记录，只删正式时间线会让它们在下次开同名周时复活，所以整周删除只归 Biz。
+- 通用侧可以开周和逐条改进展，但没有删整周的入口。整周删除只归 Biz：仅软删除周记录，保留所有关联数据；列表和周页面不再展示已删除周，同一 `(quarter, week)` 不允许重新新建。
 - `PUT /api/okr/krs/:kr_id` 与 `okr-module-tools replace-kr` 只接受通用拆解数据，不能夹带 Biz 标签、Meego 或周进展。
 - 只启用 `okr` 时，不校验或初始化 Biz SSO、飞书 Secret 和 OKR AI Review。
 

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"jarvis/internal/datatypes"
+
+	"gorm.io/gorm"
 )
 
 type Status string
@@ -232,6 +234,7 @@ type WeeklyReportWeek struct {
 	TemplateKey WeekTemplateKey `gorm:"not null;default:'classic'"`
 	OpenedBy    string          `gorm:"not null;default:''"`
 	OpenedAt    time.Time       `gorm:"not null"`
+	DeletedAt   gorm.DeletedAt
 }
 
 func (WeeklyReportWeek) TableName() string { return "okr_workspace_week" }
