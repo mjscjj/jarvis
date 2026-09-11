@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict'
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
-const base = process.env.CHAT_TEST_URL || 'http://127.0.0.1:5189'
+const base = process.env.CHAT_TEST_URL || 'http://127.0.0.1:18801'
 const source = await (await fetch(`${base}/src/Onboarding.tsx`)).text()
 const reactPath = source.match(/from ["']([^"']*react\.js[^"']*)["']/)[1]
 const browser = await chromium.launch({ executablePath: process.env.CHROME_EXECUTABLE, headless: true, args: ['--no-sandbox'] })

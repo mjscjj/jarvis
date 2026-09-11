@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
-const base = process.env.CHAT_TEST_URL || 'http://127.0.0.1:5189'
+const base = process.env.CHAT_TEST_URL || 'http://127.0.0.1:18801'
 const browser = await chromium.launch({ executablePath: process.env.CHROME_EXECUTABLE, headless: true })
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 })
 page.setDefaultTimeout(8000)

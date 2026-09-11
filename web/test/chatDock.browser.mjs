@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict'
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
-const base = process.env.CHAT_TEST_URL || 'http://127.0.0.1:5189'
+const base = process.env.CHAT_TEST_URL || 'http://127.0.0.1:18801'
 const source = await (await fetch(`${base}/src/Chat.tsx`)).text()
 const modulePath = (name) => {
   const result = source.match(new RegExp(`from ["']([^"']*${name}[^"']*)["']`))
