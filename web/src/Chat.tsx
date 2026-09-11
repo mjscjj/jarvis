@@ -78,7 +78,7 @@ function isMissingChatSession(cause: unknown): boolean {
   return cause instanceof Error && cause.message.includes('chat record not found')
 }
 
-export default function Chat({ compact = false }: { compact?: boolean }) {
+export default function Chat({ compact = false, hidden = false }: { compact?: boolean; hidden?: boolean }) {
   const { name: agentName, shortName } = useAgentIdentity()
   const { context, setViewState, navigate } = usePageContext()
   const [sessions, setSessions] = useState<ChatSession[]>([])
@@ -640,6 +640,8 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
   ]
   const displayMessages = (active?.messages || []).filter((item) => item.status !== 'streaming'),
     currentStream = active ? streamText[active.id] || (active.running && !running.has(active.id) ? active.messages?.find((item) => item.status === 'streaming')?.text || '上一轮仍在回复，完成后自动更新…' : '') : ''
+  if (hidden) return null
+
   if (compact) {
     const latest = activeRunning
       ? { id: 'stream', role: 'assistant' as const, text: currentStream || '', created_at: '', agent: active?.agent, model: active?.model }

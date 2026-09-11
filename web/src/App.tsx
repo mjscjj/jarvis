@@ -509,7 +509,7 @@ function AppShell() {
               {pages[context.active_key]}
             </Suspense>
             <Suspense fallback={null}>
-              <Chat compact={context.active_key !== 'chat'} />
+              <Chat compact={context.active_key !== 'chat'} hidden={context.active_key === 'biz-okr'} />
             </Suspense>
           </Content>
         </div>
