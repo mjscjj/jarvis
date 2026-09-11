@@ -6,10 +6,13 @@
 identity:
   display_name: "Jarvis"
 
-# Jarvis 管理页面的可选外层浏览器门禁。只控制 Web 访问，不控制 OKR 等模块
-# 自己使用的飞书身份；需要全局字节 SSO 时在 config.runtime.yaml 中显式开启。
+# Jarvis 管理页面的外层浏览器门禁。实例只监听回环时用不上；一旦对外监听或挂了
+# 域名，就在 config.runtime.yaml 里打开它。开启后 OKR 等模块沿用自己的飞书登录、
+# 照常对所有人开放，其余页面必须先过字节 SSO，且身份要在 principals 里。
+# principals 写字节 SSO 用户名或企业邮箱；开关为 true 而列表为空会启动失败。
 auth:
   enabled: false
+  principals: []
 
 server:
   addr: "127.0.0.1:18800"

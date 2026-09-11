@@ -18,7 +18,7 @@ const CookieName = "jarvis_session"
 func BrowserMiddleware(service *Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		path := string(c.Path())
-		if !service.Enabled() || !isProtectedBrowserPath(path) || isPublicPath(path) {
+		if !service.Enabled() || !isProtectedBrowserPath(path) || isPublicPath(path, c.Method()) {
 			c.Next(ctx)
 			return
 		}
@@ -38,12 +38,32 @@ func BrowserMiddleware(service *Service) app.HandlerFunc {
 }
 
 func isProtectedBrowserPath(path string) bool {
-	return strings.HasPrefix(path, "/api/") || strings.HasPrefix(path, "/okr-assets/")
+	return strings.HasPrefix(path, "/api/")
 }
 
-func isPublicPath(path string) bool {
-	return strings.HasPrefix(path, "/api/auth/") ||
-		path == "/api/agent-identity"
+// isPublicPath lists what a visitor reaches without a ByteDance session.
+//
+// App modules are open as a whole: each one runs its own visitor login and its
+// own in-module access list, and the people who already use them are not the
+// principal. `/okr-assets/` serves module images and is not matched here only
+// because it is not under `/api/`. Everything else on this instance — tasks,
+// the world model, prompts, settings, logs — belongs to the principal alone.
+func isPublicPath(path string, method []byte) bool {
+	for _, prefix := range []string{"/api/auth/", "/api/okr/", "/api/biz-okr/"} {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	switch path {
+	// The single-page shell performs these reads before it can route anyone,
+	// and the OKR comment/owner pickers resolve Feishu people through search.
+	case "/api/agent-identity", "/api/web-config", "/api/people/search",
+		"/api/setup/bootstrap", "/api/setup/status":
+		return true
+	case "/api/app-modules":
+		return string(method) == consts.MethodGet
+	}
+	return false
 }
 
 func isBrowserRequest(c *app.RequestContext) bool {

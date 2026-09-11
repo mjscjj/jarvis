@@ -3,11 +3,12 @@ import { useEffect, useState } from 'react'
 import { getDebugFailures } from '../api'
 import { countUnrecoveredFailures } from '../runtimeFailures'
 
-export function useRuntimeFailureCount(intervalMs = 60_000) {
+export function useRuntimeFailureCount(intervalMs = 60_000, enabled = true) {
   const [count, setCount] = useState<number>()
   const [error, setError] = useState<string>()
 
   useEffect(() => {
+    if (!enabled) return
     let active = true
     let request: AbortController | undefined
 
@@ -33,7 +34,7 @@ export function useRuntimeFailureCount(intervalMs = 60_000) {
       request?.abort()
       window.clearInterval(timer)
     }
-  }, [intervalMs])
+  }, [intervalMs, enabled])
 
   return { count, error }
 }

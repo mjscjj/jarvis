@@ -1,10 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Button, Result, Spin, Typography } from 'antd'
+import { Button, QRCode, Result, Spin, Typography } from 'antd'
 import { LinkOutlined, LoginOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
 import { authEvents, completeByteDanceLogin, getAuthStatus, loginWithByteDance, logoutFromJarvis, setAuthRecoveryHandler } from './api'
 import type { AuthUser, AuthView } from './types'
 import { DeveloperDocumentLinks } from './components/DeveloperDocuments'
+import { routeFromHash } from './pageRoutes'
+import { appModuleRegistry } from './modules/registry'
 
 interface AuthContextValue {
   loading: boolean
@@ -17,6 +19,18 @@ interface AuthContextValue {
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
+
+// App modules (OKR today) are open to their own visitors and run their own
+// in-module Lark login. The outer ByteDance SSO gate only guards the
+// principal-only surfaces, so on a module route we never start an SSO flow and
+// never block on it — the module decides who gets in.
+function isModuleRouteKey(key: string): boolean {
+  return appModuleRegistry.some((module) => module.key === key)
+}
+
+function currentRouteIsModule(): boolean {
+  return isModuleRouteKey(routeFromHash(window.location.hash, 'chat').key)
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
@@ -53,7 +67,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const status = await getAuthStatus()
         if (signedOut.current || !mounted.current) return
-        apply(!status.enabled || status.user ? status : await loginWithByteDance())
+        // On an app-module route we never start the SSO device flow: the module
+        // is open and runs its own visitor login. Only principal-only surfaces
+        // fall through to loginWithByteDance.
+        if (!status.enabled || status.user || currentRouteIsModule()) {
+          apply(status)
+        } else {
+          apply(await loginWithByteDance())
+        }
       } catch (cause) {
         if (mounted.current && !signedOut.current) {
           userRef.current = null
@@ -146,9 +167,19 @@ export function useAuth(): AuthContextValue {
 
 export function AuthGate({ agentName, children }: { agentName: string; children: ReactNode }) {
   const { loading, enabled, user, pending, error, login } = useAuth()
+  const [onModuleRoute, setOnModuleRoute] = useState(() => currentRouteIsModule())
+  useEffect(() => {
+    const sync = () => setOnModuleRoute(currentRouteIsModule())
+    window.addEventListener('hashchange', sync)
+    return () => window.removeEventListener('hashchange', sync)
+  }, [])
+  // Module visitors do not need a principal session, including during recovery.
+  if (onModuleRoute) return children
   if (loading) {
     return <div className="auth-loading"><Spin size="small" /><span>正在验证字节身份...</span></div>
   }
+  // App modules carry their own visitor login, so they render without the
+  // outer principal SSO session. Everything else stays behind the gate.
   if (!enabled || user) return children
 
   return (
@@ -159,6 +190,8 @@ export function AuthGate({ agentName, children }: { agentName: string; children:
         <Typography.Paragraph>使用字节身份登录</Typography.Paragraph>
         {pending?.verification_url ? (
           <>
+            <QRCode value={pending.verification_url} size={200} />
+            <Typography.Text>请使用飞书扫描二维码授权登录</Typography.Text>
             <Button type="primary" icon={<LinkOutlined />} href={pending.verification_url} target="_blank" rel="noreferrer">
               打开 SSO 授权页
             </Button>
