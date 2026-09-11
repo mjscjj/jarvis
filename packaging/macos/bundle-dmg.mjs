@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { createUpdaterArchive } from "./updater-archive.mjs";
+
 if (process.platform !== "darwin") {
   throw new Error("DMG packaging requires macOS");
 }
@@ -38,7 +40,11 @@ try {
   // Archive the same final signed app that is copied into the DMG below.
   const updaterPath = join(bundleRoot, "macos", `${config.productName}.app.tar.gz`);
   await rm(`${updaterPath}.sig`, { force: true });
-  run("tar", ["-czf", updaterPath, "-C", join(bundleRoot, "macos"), `${config.productName}.app`]);
+  await createUpdaterArchive(
+    join(bundleRoot, "macos"),
+    `${config.productName}.app`,
+    updaterPath,
+  );
   await mkdir(dmgDirectory, { recursive: true });
   await rm(dmgPath, { force: true });
   run("ditto", [appPath, join(staging, `${config.productName}.app`)]);
