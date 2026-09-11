@@ -49,7 +49,7 @@ DMG / `JARVIS_DESKTOP=1` 的登录、绑定和服务生命周期由应用内 onb
 
 只有 `validate-dependencies` 返回 `ok=true` 才继续。`install-cc-connect` 从固定 upstream 应用仓库补丁，只构建并验收 binary，不配置或启动 daemon。Qdrant 是依赖服务，可以在这一阶段启动。
 
-如果当前 Agent 既没有官方 `lark-suite`，也没有拆分布局中的 `lark-shared`、`lark-contact`、`lark-drive`、`lark-doc`、`lark-im`，首次安装用官方 lark-cli installer；已有 CLI 低于项目最低版本或 Skills/协议不完整时运行 `lark-cli update --json`，然后重新加载 Agent 能力。两种官方 Skills 布局都可验收。通过 `install-codex` 安装 CC Connect 固定调用的官方 Codex CLI；安装 bytedcli 后读回版本，其 SSO 登录可在 Jarvis Web 登录页完成，不作为服务启动前置条件。配置要求 traex 时让用户完成 SSO，再读回状态。逐项更新清单 B 区。
+如果当前 Agent 既没有官方 `lark-suite`，也没有拆分布局中的 `lark-shared`、`lark-contact`、`lark-drive`、`lark-doc`、`lark-im`，首次安装用官方 lark-cli installer；已有 CLI 低于项目最低版本或 Skills/协议不完整时运行 `lark-cli update --json`，然后重新加载 Agent 能力。两种官方 Skills 布局都可验收。通过 `install-codex` 安装 CC Connect 固定调用的官方 Codex CLI；安装 bytedcli 后读回版本，后台 CLI 授权按其官方登录流程独立检查，不作为服务启动前置条件；[网页访客 SSO](../../../docs/summery/sso-web-login.md) 不代替本机 CLI 授权。配置要求 traex 时让用户完成 SSO，再读回状态。逐项更新清单 B 区。
 
 依赖门还必须确认 lark-cli 支持安装流程使用的卡片回调 dry-run 协议，并确认 CC Connect 固定使用的 `codex` 在 PATH 中且 `codex login status` 已通过。Codex 未登录时运行 `codex login --device-auth`，traex 未登录时运行 `traex login --sso-device`；把链接/验证码原样交给用户，完成后重新读取各自 login status。
 

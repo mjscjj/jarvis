@@ -19,7 +19,7 @@
 
 - [ ] <!-- id:install.machine --> macOS/架构、Go、Node/npm、jq、git、CGO、C 编译器和 Xcode Command Line Tools 已验收。
 - [ ] <!-- id:install.lark-cli --> 官方 lark-cli 与初始化所需 Lark Agent Skills 已安装，版本不低于 `1.0.93`，卡片 dry-run 协议和 Skills 路径已读回。
-- [ ] <!-- id:install.bytedcli --> bytedcli 已安装且版本已读回；字节 SSO 可由 Jarvis Web 登录页完成。
+- [ ] <!-- id:install.bytedcli --> bytedcli 已安装且版本已读回；后台 CLI 授权与[网页访客 SSO](../summery/sso-web-login.md)分别核验，不能以网页能打开代替 CLI 授权检查。
 - [ ] <!-- id:install.agent-cli --> `codex` 与配置选择的 Agent CLI 已安装；Codex 登录已读回，仓库基线使用 traex 时已完成 SSO 并读回状态。
 - [ ] <!-- id:install.cc-binary --> 仓库固定版本和补丁的 `bin/cc-connect-jarvis` 已构建，版本与 patch commit 已验收；此时尚未启动 daemon。
 - [ ] <!-- id:install.qdrant --> Qdrant 已安装或确认复用，healthz 正常。
