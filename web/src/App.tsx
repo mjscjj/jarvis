@@ -97,7 +97,10 @@ function AppShell() {
   const runtimeFailures = useRuntimeFailureCount()
   const [siderCollapsed, setSiderCollapsed] = useLocalStorage('jarvis.siderCollapsed', false)
   const siderWidth = siderCollapsed ? SIDER_COLLAPSED_WIDTH : SIDER_WIDTH
-  const [openMenuKeys, setOpenMenuKeys] = useState<string[]>(['plugin-group'])
+  // Preserve an existing main-branch plugin choice when initializing the
+  // unified section preference. New users start with every section closed.
+  const [legacyPluginsOpen] = useLocalStorage('jarvis.pluginsOpen', false)
+  const [openMenuKeys, setOpenMenuKeys] = useLocalStorage<string[]>('jarvis.openMenuKeys', legacyPluginsOpen ? ['plugin-group'] : [])
   const [pluginsLoaded, setPluginsLoaded] = useState(false)
   const [mobileSystemOpen, setMobileSystemOpen] = useState(false)
   const [mobileModuleKey, setMobileModuleKey] = useState<string>()
@@ -276,11 +279,6 @@ function AppShell() {
     const registeredActiveModule = appModuleRegistry.find((module) => module.key === context.active_key)
     if (registeredActiveModule && !moduleEnablement[registeredActiveModule.key]) navigate('overview')
   }, [context.active_key, moduleEnablement, navigate])
-
-  useEffect(() => {
-    if (!activeModule || activeModuleChildren.length === 0) return
-    setOpenMenuKeys((keys) => keys.includes(activeModule.key) ? keys : [...keys, activeModule.key])
-  }, [activeModule, activeModuleChildren.length])
 
   const goTo = (key: string) => {
     setMobileSystemOpen(false)
