@@ -119,6 +119,24 @@ App ID：cli_xxxxx
 
 不建设权限管理平台、不自动代用户审批、不绕过卡片检查、不加入隐式 fallback、不在后台无限重试。主要改动集中在安装链路，业务流水线不变。
 
+## 已实现之后仍未解决的缺口
+
+以下三项在本方案落地后依然存在，其中第一项会使新用户无法自行完成安装。
+
+### 长连接订阅方式与安装顺序构成环形依赖
+
+开放平台保存「使用长连接接收事件/回调」这一订阅方式时，要求本地已有长连接在线，否则保存失败。而 `card.action.trigger` 的就绪现在既是 `Finalize` 的门禁，也进入了 `AppReady`；`botEventChecks` 使用 `--dry-run`，不建立连接；唯一会建立长连接的 cc-connect，其配置由 `writeCCConfig` 在 `Finalize` 内部才写入。
+
+因此新用户首次把订阅方式改为长连接时本机没有在线客户端，保存不成功，事件检查无法就绪，安装也就无法完成。建议在引导用户配置订阅方式期间，由安装流程维持一条临时的 `lark-cli event consume --as bot` 长连接；已确认 `--dry-run` 不满足在线条件，该临时连接是否被开放平台认作在线仍需实测。
+
+### 缺少用户 scope 仍被归因为“重新授权”
+
+`larkStatus` 在 `jarvis-lark-auth check` 失败时将 `User.Verified` 置为 false 并提示「请在安装页重新授权当前应用」，前端 `setupAction` 随即停在 `authorize`。但用户身份权限要求 App 侧先开通并发版，OAuth 才可能授予；App 侧未开通时重复授权永远不会通过。妙记权限即卡在此处。这一段需要按 `check` 返回的 `missing` 归因到应用配置，而不是引导重新授权。
+
+### 提交管理员审核存在可用接口
+
+`POST /open-apis/application/v6/scopes/apply` 以 `tenant_access_token` 向租户管理员申请应用内待审核权限，调用本身不需要权限。本方案选择不自动代用户审批，此处仅记录该接口存在：若后续要减少人工步骤，可在用户完成权限导入后由 Jarvis 提交审核，添加权限清单与发布版本仍无公开接口。
+
 ## 本次验证结果
 
 - `go test -race ./internal/onboarding` 与 `go test ./internal/api` 通过。
