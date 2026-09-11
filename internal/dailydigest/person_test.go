@@ -1,39 +1,12 @@
 package dailydigest
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
-
-type staticPersonSummaryRunner struct {
-	output        string
-	prompt        string
-	sandbox       string
-	workspaceRoot string
-}
-
-func (r *staticPersonSummaryRunner) RunTextSandbox(
-	_ context.Context,
-	prompt, sandbox string,
-) (string, error) {
-	r.prompt = prompt
-	r.sandbox = sandbox
-	return r.output, nil
-}
-
-func (r *staticPersonSummaryRunner) RunTextSandboxAt(
-	_ context.Context,
-	prompt, sandbox, workspaceRoot string,
-) (string, error) {
-	r.prompt = prompt
-	r.sandbox = sandbox
-	r.workspaceRoot = workspaceRoot
-	return r.output, nil
-}
 
 func TestCapRunes(t *testing.T) {
 	t.Parallel()

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"jarvis/internal/domain"
@@ -308,25 +307,6 @@ func (s *GroupBackgroundService) get(ctx context.Context, id uint64) (*GroupView
 	}
 	if err != nil {
 		return nil, fmt.Errorf("get group id=%d: %w", id, err)
-	}
-	view := toGroupView(&group)
-	return &view, nil
-}
-
-// GetByChatID looks a group up by its Feishu chat_id (the business key),
-// preloading the bound project. It is used by the jarvis-tools CLI so codex can
-// read the group announcement (description) and bound project during extraction.
-func (s *GroupBackgroundService) GetByChatID(ctx context.Context, chatID string) (*GroupView, error) {
-	if strings.TrimSpace(chatID) == "" {
-		return nil, invalid(fmt.Errorf("group chat_id must not be empty"))
-	}
-	var group domain.Group
-	err := s.db.WithContext(ctx).Preload("Project").Where("chat_id = ?", chatID).Take(&group).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("get group chat_id=%s: %w", chatID, err)
 	}
 	view := toGroupView(&group)
 	return &view, nil

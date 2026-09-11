@@ -38,16 +38,6 @@ var (
 	ErrEvidenceNoNewSource = errors.New("candidate has no extractable [new] evidence")
 )
 
-// commonActionTypes lists the well-known clue kinds we surface to the model as
-// guidance. action_type is an OPEN set: the model may emit any snake_case
-// identifier (e.g. a novel intent, or "other") and downstream must accept it.
-// M5 runs every known or novel type through the same execution/approval path,
-// so the set stays advisory, not a closed enum.
-var commonActionTypes = map[string]struct{}{
-	"code_change": {}, "summary_post": {}, "investigate": {}, "schedule_meeting": {},
-	"reply_message": {}, "doc_write": {}, "notify_principal": {}, "manual_followup": {}, "other": {},
-}
-
 // actionTypeIdentifier is the canonical action_type shape: a lowercase
 // snake_case token. Model output is normalized into it rather than rejected by
 // it; it still guards caller-supplied query filters, which have no such
@@ -58,14 +48,6 @@ var actionTypeIdentifier = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
 // punctuation a model may write between action_type words ("Code Change",
 // "code-change") where the canonical form uses a single underscore.
 var actionTypeSeparators = regexp.MustCompile(`[\s\-./]+`)
-
-// IsKnownActionType reports whether value is one of the well-known common types.
-// It no longer gates extraction (action_type is open); it is used where a
-// caller wants to distinguish common types from novel ones.
-func IsKnownActionType(value string) bool {
-	_, ok := commonActionTypes[value]
-	return ok
-}
 
 // IsValidActionType reports whether value is already a canonical action_type.
 // It gates query filters, not extraction.

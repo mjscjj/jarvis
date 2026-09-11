@@ -370,21 +370,6 @@ func eventDetail(eventType string, revision int32, messageIDs []string) (datatyp
 	return datatypes.JSON(encoded), nil
 }
 
-func mergeStrings(existing, incoming []string) []string {
-	result := append([]string(nil), existing...)
-	seen := make(map[string]struct{}, len(existing)+len(incoming))
-	for _, value := range existing {
-		seen[value] = struct{}{}
-	}
-	for _, value := range incoming {
-		if _, ok := seen[value]; !ok {
-			seen[value] = struct{}{}
-			result = append(result, value)
-		}
-	}
-	return result
-}
-
 func maxTime(first, second time.Time) time.Time {
 	if second.After(first) {
 		return second

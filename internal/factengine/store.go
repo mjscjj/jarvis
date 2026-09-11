@@ -513,18 +513,6 @@ func appendUniqueSubjects(dst []Subject, seen map[string]struct{}, candidates ..
 	return dst
 }
 
-// materialWindowEnd batches raw lifecycle events without interpreting them.
-// A unit never crosses a local natural day, so facts still land on the day their
-// material happened; MaxMessages keeps one prompt bounded.
-func materialWindowEnd(start, total, maxItems int, location *time.Location, occurredAt func(int) time.Time) int {
-	day := occurredAt(start).In(location).Format("2006-01-02")
-	end := start + 1
-	for end < total && end-start < maxItems && occurredAt(end).In(location).Format("2006-01-02") == day {
-		end++
-	}
-	return end
-}
-
 func structuredMaterialWindowEnd(start, total, maxItems int, location *time.Location, occurredAt func(int) time.Time, encodedSize func(int) int) int {
 	day := occurredAt(start).In(location).Format("2006-01-02")
 	end := start

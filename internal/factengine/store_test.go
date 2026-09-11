@@ -318,19 +318,3 @@ func TestTodoAndTaskUnitsProjectFinalResultsWithoutBackground(t *testing.T) {
 		}
 	}
 }
-
-func TestMaterialWindowEndCutsOnNaturalDayAndSize(t *testing.T) {
-	times := []time.Time{
-		time.Date(2026, 8, 1, 9, 0, 0, 0, time.UTC),
-		time.Date(2026, 8, 1, 10, 0, 0, 0, time.UTC),
-		time.Date(2026, 8, 1, 11, 0, 0, 0, time.UTC),
-		time.Date(2026, 8, 2, 9, 0, 0, 0, time.UTC),
-	}
-	at := func(i int) time.Time { return times[i] }
-	if end := materialWindowEnd(0, len(times), 2, time.UTC, at); end != 2 {
-		t.Fatalf("size cut end=%d, want 2", end)
-	}
-	if end := materialWindowEnd(2, len(times), 10, time.UTC, at); end != 3 {
-		t.Fatalf("day cut end=%d, want 3", end)
-	}
-}

@@ -191,8 +191,6 @@ func TestBuildExecutionPromptForwardsSourcePayloadVerbatim(t *testing.T) {
 	}
 }
 
-func stringPtr(value string) *string { return &value }
-
 func uint64Ptr(value uint64) *uint64 { return &value }
 
 func TestDecodeExecutionSupplementsRejectsInvalidJSON(t *testing.T) {

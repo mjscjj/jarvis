@@ -16,7 +16,6 @@ import type {
   MeetingReviewList,
   ModuleRun,
   MorningBrief,
-  ScanRow,
   WatermarkRow,
   GroupBackgroundInput,
   GroupList,
@@ -24,7 +23,6 @@ import type {
   KeyMatter,
   KeyMatterInput,
   KeyMatterList,
-  Overview,
   Paged,
   Person,
   PersonCreateInput,
@@ -445,10 +443,6 @@ export function createKeyMatter(body: KeyMatterInput): Promise<KeyMatter> {
   return request<KeyMatter>('/api/key-matters', { method: 'POST', body })
 }
 
-export function getKeyMatter(id: number, signal?: AbortSignal): Promise<KeyMatter> {
-  return request<KeyMatter>(`/api/key-matters/${id}`, { signal })
-}
-
 export function updateKeyMatter(id: number, body: KeyMatterInput): Promise<KeyMatter> {
   return request<KeyMatter>(`/api/key-matters/${id}`, { method: 'PUT', body })
 }
@@ -459,10 +453,6 @@ export function touchKeyMatter(id: number): Promise<KeyMatter> {
 
 export function closeKeyMatter(id: number): Promise<{ id: number; closed: boolean }> {
   return request(`/api/key-matters/${id}`, { method: 'DELETE' })
-}
-
-export function listProjectFacts(id: number, signal?: AbortSignal): Promise<{ items: Fact[] }> {
-  return listSubjectFacts('project', id, signal)
 }
 
 export function listSubjectFacts(subjectType: string, id: number, signal?: AbortSignal, options: {
@@ -486,7 +476,7 @@ export function appendProjectFact(id: number, description: string): Promise<Fact
 	return appendFact({ subject_type: 'project', subject_id: id, description })
 }
 
-export function appendFact(body: {
+function appendFact(body: {
   subject_type: string
   subject_id: number
   description: string
@@ -577,18 +567,8 @@ export function updateSharedMemory(content: string): Promise<SharedMemory> {
   return request<SharedMemory>('/api/shared-memory', { method: 'PUT', body: { content } })
 }
 
-// --- Overview & Progress ---
-
-export function getOverview(signal?: AbortSignal): Promise<Overview> {
-  return request<Overview>('/api/overview', { signal })
-}
-
 export function getDigests(days = 7, signal?: AbortSignal): Promise<Digest> {
   return request<Digest>(`/api/digests?days=${days}`, { signal })
-}
-
-export function summarizeDigest(days = 7): Promise<{ summary: string; days: number }> {
-  return request<{ summary: string; days: number }>(`/api/digests/summarize?days=${days}`, { method: 'POST' })
 }
 
 export function getDailyDigests(date: string, signal?: AbortSignal): Promise<{ items: DailyDigest[] }> {
@@ -638,10 +618,6 @@ export function getDebugFailures(hours = 24, signal?: AbortSignal): Promise<{ it
 export function getDebugMonitoring(from: string, until: string, signal?: AbortSignal): Promise<MonitoringSnapshot> {
   const params = new URLSearchParams({ from, until })
   return request<MonitoringSnapshot>(`/api/debug/monitoring?${params.toString()}`, { signal })
-}
-
-export function getDebugScans(limit = 50, signal?: AbortSignal): Promise<{ items: ScanRow[] }> {
-  return request<{ items: ScanRow[] }>(`/api/debug/scans?limit=${limit}`, { signal })
 }
 
 export function getDebugWatermarks(signal?: AbortSignal): Promise<{ items: WatermarkRow[] }> {
@@ -705,10 +681,6 @@ export function updateWorkRule(key: WorkRule['key'], body: WorkRuleInput): Promi
 
 export function listTextFiles(signal?: AbortSignal): Promise<{ items: TextFile[] }> {
   return request<{ items: TextFile[] }>('/api/text-files', { signal })
-}
-
-export function getTextFile(key: string, signal?: AbortSignal): Promise<TextFile> {
-  return request<TextFile>(`/api/text-files/${encodeURIComponent(key)}`, { signal })
 }
 
 export function updateTextFile(key: string, body: TextFileInput): Promise<TextFile> {
