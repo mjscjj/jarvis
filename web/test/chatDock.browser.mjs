@@ -250,6 +250,11 @@ try {
   await page.evaluate(() => window.__chatFinish())
   await page.getByRole('button', { name: '发送消息', exact: true }).waitFor()
   if (process.env.CHAT_TEST_SCREENSHOT) await page.screenshot({ path: process.env.CHAT_TEST_SCREENSHOT })
+  sessions.get('s4').messages.push({ id: 'failed-in-background', role: 'assistant', text: '', status: 'interrupted', error: '模型授权已过期（测试）', created_at: new Date().toISOString() })
+  await page.goto(`${base}/__chat-test#/chat?session=s4`)
+  await page.reload()
+  await page.getByText('模型授权已过期（测试）', { exact: true }).waitFor()
+  await page.getByText('回复已中断，以上为已保存内容。', { exact: true }).waitFor()
   assert.deepEqual(errors, [])
   console.log(JSON.stringify({ result: 'passed', composerHeight: initialHeight, checks: ['draft across pages', 'draft on fast session switch', 'serialized autosaves', 'same-session draft', 'model and effort', 'sources', 'file upload/remove', 'stream across pages', 'stop', 'reply detail', 'visible API errors', '320–1280px layout', 'collapse/expand focus', 'archived deep link', 'new session', 'visible Agent selection', 'unavailable Agent disabled', 'Agent switch cancellation', 'light theme', 'selected session styling', 'Shift+Enter newline', 'rejected input and attachments retained', 'remote reply stop', 'refresh and completion polling', 'clear only after acceptance'], apiCalls: calls.length }))
 } catch (error) {

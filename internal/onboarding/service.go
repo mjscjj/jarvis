@@ -314,12 +314,19 @@ func (s *Service) BeginLarkSetup(ctx context.Context) (*Flow, error) {
 		return nil, err
 	}
 	s.mu.Lock()
+	if s.flows == nil {
+		s.flows = make(map[string]*Flow)
+	}
 	for _, flow := range s.flows {
 		if flow.Status == flowPending {
 			if flow.kind == "lark_setup" {
-				result := cloneFlow(flow)
-				s.mu.Unlock()
-				return result, nil
+				if flow.VerificationURL == "" {
+					result := cloneFlow(flow)
+					s.mu.Unlock()
+					return result, nil
+				}
+				s.failPendingFlowLocked(flow, "已重新生成连接链接；上一流程已停止")
+				continue
 			}
 			s.mu.Unlock()
 			return nil, fmt.Errorf("请先完成或取消当前连接")
@@ -351,11 +358,18 @@ func (s *Service) BeginLarkLogin(ctx context.Context) (*Flow, error) {
 	if err != nil {
 		return nil, err
 	}
-	flow := &Flow{ID: flowID, Status: flowPending, VerificationURL: verifyURL, UserCode: userCode}
+	flow := &Flow{
+		ID: flowID, Status: flowPending, VerificationURL: verifyURL, UserCode: userCode,
+		kind: "lark_login",
+	}
 	s.mu.Lock()
+	if s.flows == nil {
+		s.flows = make(map[string]*Flow)
+	}
+	s.cancelPendingFlowsLocked("lark_login", "已重新生成授权链接；上一流程已停止")
 	s.flows[flowID] = flow
-	s.mu.Unlock()
 	result := cloneFlow(flow)
+	s.mu.Unlock()
 	go s.completeLarkLogin(flowID, deviceCode)
 	return result, nil
 }
@@ -375,11 +389,15 @@ func (s *Service) BeginAgentLogin(ctx context.Context) (*Flow, error) {
 	if err != nil {
 		return nil, err
 	}
-	flow := &Flow{ID: flowID, Status: flowPending}
+	flow := &Flow{ID: flowID, Status: flowPending, kind: "agent_login"}
 	s.mu.Lock()
+	if s.flows == nil {
+		s.flows = make(map[string]*Flow)
+	}
+	s.cancelPendingFlowsLocked("agent_login", "已重新生成登录链接；上一流程已停止")
 	s.flows[flowID] = flow
-	s.mu.Unlock()
 	result := cloneFlow(flow)
+	s.mu.Unlock()
 	go s.completeAgentLogin(flowID)
 	return result, nil
 }
@@ -704,6 +722,23 @@ func (s *Service) CancelFlow(id string) (*Flow, error) {
 		}
 	}
 	return cloneFlow(flow), nil
+}
+
+func (s *Service) cancelPendingFlowsLocked(kind, reason string) {
+	for _, flow := range s.flows {
+		if flow == nil || flow.Status != flowPending || flow.kind != kind {
+			continue
+		}
+		s.failPendingFlowLocked(flow, reason)
+	}
+}
+
+func (s *Service) failPendingFlowLocked(flow *Flow, reason string) {
+	flow.Status = flowFailed
+	flow.Error = reason
+	if flow.cancel != nil {
+		flow.cancel()
+	}
 }
 
 func (s *Service) larkStatus(ctx context.Context) LarkStatus {

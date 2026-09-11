@@ -122,7 +122,7 @@ func (s *Service) Stream(ctx context.Context, req Request, emit func(Event) erro
 			effort = r.reasoningEffort
 		}
 		var err error
-		r, err = newAgentRunner(agent, model, s.sandbox, effort, s.timeout)
+		r, err = newAgentRunner(ctx, agent, model, s.sandbox, effort, s.timeout)
 		if err != nil {
 			return err
 		}

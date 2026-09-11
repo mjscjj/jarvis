@@ -906,6 +906,7 @@ function ChatMessageCard({ message, agentName, shortName, typing = false }: { me
         )}
       </div>
       {message.status === 'interrupted' && <Text type="secondary">回复已中断，以上为已保存内容。</Text>}
+      {message.error && <Text type="danger">{message.error}</Text>}
       {!!message.attachments?.length && (
         <div className="chat-message-files">
           {message.attachments.map((file) => (

@@ -44,24 +44,14 @@ func (s *Service) ListAgents(ctx context.Context) []AgentView {
 	result := make([]AgentView, 0, 3)
 	for _, item := range []struct{ id, name string }{{"codex", "Codex"}, {"trae", "TRAE"}, {"cursor", "Cursor"}} {
 		view := AgentView{ID: item.id, Name: item.name, Default: item.id == s.runner.agent}
-		path, err := exec.LookPath(agentBinary(item.id))
+		_, version, err := resolveAgentExecutable(ctx, item.id)
 		if err != nil {
-			view.Error = "未安装"
+			view.Error = err.Error()
 			result = append(result, view)
 			continue
 		}
-		probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
-		out, err := exec.CommandContext(probeCtx, path, "--version").CombinedOutput()
-		cancel()
-		if err != nil {
-			view.Error = strings.TrimSpace(string(out))
-			if view.Error == "" {
-				view.Error = err.Error()
-			}
-		} else {
-			view.Available = true
-			view.Version = strings.TrimSpace(string(out))
-		}
+		view.Available = true
+		view.Version = version
 		result = append(result, view)
 	}
 	return result
@@ -74,19 +64,58 @@ func (s *Service) ListModels(ctx context.Context, agent string) ([]ModelView, er
 	}
 	discoveryCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
+	bin, _, err := resolveAgentExecutable(discoveryCtx, agent)
+	if err != nil {
+		return nil, err
+	}
 	switch agent {
 	case "codex":
-		return discoverCodexModels(discoveryCtx)
+		return discoverCodexModels(discoveryCtx, bin)
 	case "trae":
-		return discoverTRAEModels(discoveryCtx)
+		return discoverTRAEModels(discoveryCtx, bin)
 	case "cursor":
-		return discoverCursorModels(discoveryCtx)
+		return discoverCursorModels(discoveryCtx, bin)
 	}
 	return nil, fmt.Errorf("unknown agent %q", agent)
 }
 
-func discoverTRAEModels(ctx context.Context) ([]ModelView, error) {
-	out, err := exec.CommandContext(ctx, "traex", "models", "--json").Output()
+// Resolve the command selected by PATH. Version text only rejects a known
+// different Agent (for example a codex wrapper that actually starts TRAE).
+// Cursor may report just a build number, so branding is not required.
+func resolveAgentExecutable(ctx context.Context, agent string) (string, string, error) {
+	path, err := exec.LookPath(agentBinary(agent))
+	if err != nil {
+		return "", "", err
+	}
+	probeCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	output, err := exec.CommandContext(probeCtx, path, "--version").CombinedOutput()
+	version := strings.TrimSpace(string(output))
+	if err != nil {
+		return "", "", fmt.Errorf("probe %s: %w: %s", path, err, version)
+	}
+	if actual := agentFromVersion(version); actual != "" && actual != agent {
+		return "", "", fmt.Errorf("%s reports %s, expected %s; correct the command in PATH", path, actual, agent)
+	}
+	return path, version, nil
+}
+
+func agentFromVersion(version string) string {
+	lower := strings.ToLower(strings.TrimSpace(version))
+	switch {
+	case strings.HasPrefix(lower, "codex-cli ") || strings.HasPrefix(lower, "codex "):
+		return "codex"
+	case strings.HasPrefix(lower, "traecli ") || strings.HasPrefix(lower, "traex "):
+		return "trae"
+	case strings.Contains(lower, "cursor"):
+		return "cursor"
+	default:
+		return ""
+	}
+}
+
+func discoverTRAEModels(ctx context.Context, bin string) ([]ModelView, error) {
+	out, err := exec.CommandContext(ctx, bin, "models", "--json").Output()
 	if err != nil {
 		return nil, fmt.Errorf("discover TRAE models: %w", err)
 	}
@@ -123,8 +152,8 @@ func parseTRAEModels(out []byte) ([]ModelView, error) {
 
 var cursorModelLine = regexp.MustCompile(`^([A-Za-z0-9_.-]+)\s+-\s+(.+)$`)
 
-func discoverCursorModels(ctx context.Context) ([]ModelView, error) {
-	out, err := exec.CommandContext(ctx, "cursor-agent", "--list-models").Output()
+func discoverCursorModels(ctx context.Context, bin string) ([]ModelView, error) {
+	out, err := exec.CommandContext(ctx, bin, "--list-models").Output()
 	if err != nil {
 		return nil, fmt.Errorf("discover Cursor models: %w", err)
 	}
@@ -150,8 +179,8 @@ func parseCursorModels(output string) ([]ModelView, error) {
 	return result, nil
 }
 
-func discoverCodexModels(ctx context.Context) ([]ModelView, error) {
-	command := exec.CommandContext(ctx, "codex", "app-server", "--stdio")
+func discoverCodexModels(ctx context.Context, bin string) ([]ModelView, error) {
+	command := exec.CommandContext(ctx, bin, "app-server", "--stdio")
 	stdin, err := command.StdinPipe()
 	if err != nil {
 		return nil, err

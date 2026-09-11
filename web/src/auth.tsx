@@ -87,6 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const view = await completeByteDanceLogin(pending.flow_id!)
         if (cancelled || signedOut.current) return
+        if (pendingRef.current?.flow_id !== pending.flow_id) return
         if (view.status === 'authenticated' && view.user) {
           apply(view)
           setError('')
@@ -95,6 +96,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         timer = setTimeout(poll, 2000)
       } catch (cause) {
         if (cancelled || signedOut.current) return
+        if (pendingRef.current?.flow_id !== pending.flow_id) return
         pendingRef.current = null
         setPending(null)
         setError(cause instanceof Error ? cause.message : String(cause))
@@ -161,6 +163,7 @@ export function AuthGate({ agentName, children }: { agentName: string; children:
             </Button>
             {pending.user_code && <Typography.Text className="auth-code">验证码：{pending.user_code}</Typography.Text>}
             <Typography.Text type="secondary">授权完成后此页面会自动进入</Typography.Text>
+            <Button onClick={() => void login()}>重新生成授权链接</Button>
           </>
         ) : (
           <Button type="primary" icon={<LoginOutlined />} onClick={() => void login()}>

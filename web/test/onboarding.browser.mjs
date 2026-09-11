@@ -17,6 +17,14 @@ let statusCalls = 0
 let loginCalls = 0
 let finalizeCalls = 0
 let pending = []
+let pendingLogin = false
+let holdLogin = false
+let finishLogin
+let holdCancel = false
+let finishCancel
+let cancelCalls = 0
+let currentFlow
+const flowStates = new Map()
 const ready = () => ({ runtime_id: 'runtime', app_ready: true, completed: true, world_model_ready: true,
   configuration: { machine_configuration_ready: true, agent_name_configured: true },
   lark: { available: true, app_id: 'cli_test', app_name: '测试飞书助手', application_checks: [{ event: 'im.message.receive_v1', ready: true }, { event: 'card.action.trigger', ready: true }], credential_available: true, bot: { status: 'ready', verified: true }, user: { status: 'ready', verified: true } },
@@ -36,10 +44,26 @@ try {
         : { json: { code: 0, data: status } })
     } else if (path === '/api/setup/lark/login') {
       loginCalls++;
+      if (pendingLogin) {
+        const id = `flow-${loginCalls}`
+        if (holdLogin) await new Promise(resolve => { finishLogin = resolve })
+        currentFlow = id
+        flowStates.set(id, 'pending')
+        await route.fulfill({ json: { code: 0, data: { id, status: 'pending', verification_url: `https://example.test/${id}` } } })
+        return
+      }
       if (installed) status = ready()
       else { status.lark.user.verified = true; status.lark.user.status = 'ready' }
       hold = true
       await route.fulfill({ json: { code: 0, data: { id: 'test-flow', status: 'success' } } })
+    } else if (path.startsWith('/api/setup/flows/')) {
+      const id = path.split('/')[4]
+      if (path.endsWith('/cancel')) {
+        cancelCalls++
+        if (holdCancel) await new Promise(resolve => { finishCancel = resolve })
+        flowStates.set(id, 'failed')
+      }
+      await route.fulfill({ json: { code: 0, data: { id, status: flowStates.get(id), verification_url: `https://example.test/${id}` } } })
     } else if (path === '/api/setup/lark/permissions') {
       await route.fulfill({ json: { code: 0, data: { scopes: { tenant: ['im:message:readonly'], user: ['minutes:minutes.artifacts:read'] } } } })
     } else if (path === '/api/setup/finalize') {
@@ -137,6 +161,59 @@ try {
   await page.getByRole('button', { name: '重试并继续', exact: true }).click()
   await workspace.waitFor()
   assert.equal(finalizeCalls, 2)
+
+  // Regeneration is one begin request; the backend owns replacing the old flow.
+  installed = false; pendingLogin = true
+  status = ready(); status.app_ready = false; status.configuration.machine_configuration_ready = false; status.lark.user.verified = false
+  await page.reload()
+  const authorize = page.getByRole('button', { name: '授权飞书账号', exact: true })
+  await authorize.click()
+  const connection = page.locator('a[href^="https://example.test/flow-"]')
+  await connection.waitFor()
+  const originalFlow = currentFlow
+  const beforeRegenerate = loginCalls
+  holdLogin = true
+  const beginRequest = page.waitForRequest('**/api/setup/lark/login')
+  await page.getByRole('button', { name: '重新生成连接', exact: true }).evaluate(button => { button.click(); button.click() })
+  await beginRequest
+  assert.equal(await authorize.isDisabled(), true)
+  assert.equal(loginCalls, beforeRegenerate + 1)
+  assert.equal(cancelCalls, 0, 'regeneration must not also send cancellation')
+  holdLogin = false; finishLogin()
+  await connection.waitFor()
+  assert.notEqual(currentFlow, originalFlow)
+  assert.equal(await connection.getAttribute('href'), `https://example.test/${currentFlow}`)
+
+  // An old successful poll waiting on /status cannot clear its replacement.
+  const oldFlow = currentFlow
+  hold = true
+  const oldStatusRequest = page.waitForRequest('**/api/setup/status')
+  flowStates.set(oldFlow, 'success')
+  await oldStatusRequest
+  await page.getByRole('button', { name: '重新生成连接', exact: true }).click()
+  await connection.waitFor()
+  assert.notEqual(currentFlow, oldFlow)
+  const newFlow = currentFlow
+  const oldStatusResponse = page.waitForResponse('**/api/setup/status')
+  release()
+  await oldStatusResponse
+  // Observe a subsequent poll: a cleared replacement would stop polling.
+  await page.waitForRequest(`**/api/setup/flows/${newFlow}`)
+  assert.equal(await connection.getAttribute('href'), `https://example.test/${newFlow}`)
+
+  // Explicit cancellation keeps the begin button locked until it completes.
+  holdCancel = true
+  const cancelRequest = page.waitForRequest(`**/api/setup/flows/${newFlow}/cancel`)
+  await page.getByRole('button', { name: '返回', exact: true }).click()
+  await cancelRequest
+  assert.equal(await authorize.isDisabled(), true)
+  holdCancel = false; finishCancel()
+  await page.getByText('正在取消连接…', { exact: true }).waitFor({ state: 'detached' })
+  assert.equal(await authorize.isDisabled(), false)
+  assert.equal(cancelCalls, 1)
   assert.deepEqual(errors, [])
-  console.log(JSON.stringify({ result: 'passed', checks: ['installed app before full check', 'background expiry notice', 'draft survives checks and repair', 'authorization rechecks credentials', 'network error and retry', 'first install waits for full check', 'application identity before secret', 'event repair without secret', 'complete permission config visible', 'OAuth before chat secret', 'failed secret retained and retry succeeds'], statusCalls }))
-} finally { release(); await browser.close() }
+  console.log(JSON.stringify({ result: 'passed', checks: ['installed app before full check', 'background expiry notice', 'draft survives checks and repair', 'authorization rechecks credentials', 'network error and retry', 'first install waits for full check', 'application identity before secret', 'event repair without secret', 'complete permission config visible', 'OAuth before chat secret', 'failed secret retained and retry succeeds', 'single regeneration request', 'stale poll cannot clear replacement', 'cancel locks new authorization'], statusCalls }))
+} catch (error) {
+  console.error(JSON.stringify({ errors, body: await page.locator('body').innerText(), links: await page.locator('a').evaluateAll(links => links.map(link => ({ text: link.textContent, role: link.getAttribute('role'), href: link.getAttribute('href') }))) }))
+  throw error
+} finally { release(); finishLogin?.(); finishCancel?.(); await browser.close() }

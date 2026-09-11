@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"jarvis/internal/datatypes"
@@ -55,7 +56,7 @@ func TestReplyPersistsBeforeDeliveryAndRecordsInterruption(t *testing.T) {
 	for _, interrupted := range []bool{false, true} {
 		t.Run(fmt.Sprintf("interrupted=%v", interrupted), func(t *testing.T) {
 			binDir := t.TempDir()
-			script := "#!/bin/sh\nprintf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"native-test\"}' '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"saved reply\"}}'\n"
+			script := "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf '%s\\n' 'codex-cli 0.153.4'; exit 0; fi\nprintf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"native-test\"}' '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"saved reply\"}}'\n"
 			if err := os.WriteFile(filepath.Join(binDir, "codex"), []byte(script), 0o700); err != nil {
 				t.Fatal(err)
 			}
@@ -65,7 +66,6 @@ func TestReplyPersistsBeforeDeliveryAndRecordsInterruption(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			stop := errors.New("downstream interrupted")
 			err = svc.StreamSession(t.Context(), session.ID, SendInput{Message: "hello"}, func(event Event) error {
 				if event.Kind != EventDelta {
 					return nil
@@ -75,11 +75,13 @@ func TestReplyPersistsBeforeDeliveryAndRecordsInterruption(t *testing.T) {
 					t.Fatalf("reply not persisted before delivery: %+v, %v", view, err)
 				}
 				if interrupted {
-					return stop
+					if !svc.CancelSession(session.ID) {
+						t.Fatal("active reply was not canceled")
+					}
 				}
 				return nil
 			})
-			if interrupted && !errors.Is(err, stop) || !interrupted && err != nil {
+			if interrupted && !errors.Is(err, context.Canceled) || !interrupted && err != nil {
 				t.Fatalf("run: %v", err)
 			}
 			view, err := svc.GetSession(t.Context(), session.ID)
@@ -121,6 +123,7 @@ func TestOrphanedStreamingReplyIsShownAsInterrupted(t *testing.T) {
 }
 
 func TestAcceptedEventFollowsMessageAndAttachmentPersistence(t *testing.T) {
+	installChatCLI(t, `printf '%s\n' '{"type":"thread.started","thread_id":"thread-1"}' '{"type":"item.delta","delta":"done"}'`)
 	svc := newPersistentTestService(t)
 	session, err := svc.CreateSession(t.Context(), CreateSessionInput{Agent: "codex", Model: "gpt-5.5", ReasoningEffort: "high", Draft: json.RawMessage(`{"text":"hello"}`)})
 	if err != nil {
@@ -130,20 +133,87 @@ func TestAcceptedEventFollowsMessageAndAttachmentPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stopBeforeCLI := errors.New("test stops after acceptance")
 	accepted := false
 	err = svc.StreamSession(t.Context(), session.ID, SendInput{Message: "hello", AttachmentIDs: []string{file.ID}}, func(event Event) error {
-		if event.Kind != EventAccepted {
-			t.Fatalf("first event = %s", event.Kind)
+		if !accepted {
+			if event.Kind != EventAccepted {
+				t.Fatalf("first event = %s", event.Kind)
+			}
+			accepted = true
+			view, err := svc.GetSession(t.Context(), session.ID)
+			if err != nil || !view.Running || len(view.Messages) != 1 || view.Messages[0].Text != "hello" || len(view.Messages[0].Attachments) != 1 || len(view.PendingAttachments) != 0 || string(view.Draft) != "{}" {
+				t.Fatalf("acceptance before persistence: %+v, %v", view, err)
+			}
 		}
-		accepted = true
-		view, err := svc.GetSession(t.Context(), session.ID)
-		if err != nil || !view.Running || len(view.Messages) != 1 || view.Messages[0].Text != "hello" || len(view.Messages[0].Attachments) != 1 || len(view.PendingAttachments) != 0 || string(view.Draft) != "{}" {
-			t.Fatalf("acceptance before persistence: %+v, %v", view, err)
-		}
-		return stopBeforeCLI
+		return nil
 	})
-	if !accepted || !errors.Is(err, stopBeforeCLI) || svc.sessionRunning(session.ID) {
+	if !accepted || err != nil || svc.sessionRunning(session.ID) {
 		t.Fatalf("acceptance/cleanup: %v, %v", accepted, err)
+	}
+	view, err := svc.GetSession(t.Context(), session.ID)
+	if err != nil || len(view.Messages) != 2 || view.Messages[1].Text != "done" {
+		t.Fatalf("persisted assistant reply: %+v, %v", view, err)
+	}
+}
+
+func installChatCLI(t *testing.T, body string) {
+	t.Helper()
+	dir := t.TempDir()
+	writeExecutable(t, dir, "codex", "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then printf '%s\\n' 'codex-cli 0.153.4'; exit 0; fi\ncat >/dev/null\n"+body+"\n")
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func TestClientDisconnectKeepsReplyAndFailureRecoverable(t *testing.T) {
+	for _, disconnectAt := range []EventKind{EventAccepted, EventThread, EventDelta} {
+		for _, fail := range []bool{false, true} {
+			t.Run(fmt.Sprintf("disconnect=%s/fail=%v", disconnectAt, fail), func(t *testing.T) {
+				script := "printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"thread-1\"}'\n"
+				// Before the first delta, the failing CLI can terminate without any text.
+				if !fail || disconnectAt == EventDelta {
+					script += "printf '%s\\n' '{\"type\":\"item.delta\",\"delta\":\"后台\"}' '{\"type\":\"item.delta\",\"delta\":\"完成\"}'\n"
+				}
+				if fail {
+					script += "printf '%s\\n' 'credentials expired' >&2\nexit 1\n"
+				}
+				installChatCLI(t, script)
+				svc := newPersistentTestService(t)
+				session, err := svc.CreateSession(t.Context(), CreateSessionInput{Agent: "codex", Model: "test", ReasoningEffort: "high"})
+				if err != nil {
+					t.Fatal(err)
+				}
+				ctx, disconnect := context.WithCancel(t.Context())
+				defer disconnect()
+				disconnected := false
+				err = svc.StreamSession(ctx, session.ID, SendInput{Message: "hello"}, func(e Event) error {
+					if disconnected {
+						t.Fatal("attempted delivery after disconnection")
+					}
+					if e.Kind == disconnectAt {
+						disconnected = true
+						disconnect()
+						return errors.New("browser closed")
+					}
+					return nil
+				})
+				if !disconnected || (err != nil) != fail {
+					t.Fatalf("disconnected=%v, run error=%v", disconnected, err)
+				}
+				view, err := svc.GetSession(t.Context(), session.ID)
+				if err != nil || view.Running || len(view.Messages) != 2 {
+					t.Fatalf("recovered: %+v, %v", view, err)
+				}
+				reply := view.Messages[1]
+				if fail {
+					if reply.Status != "interrupted" || !strings.Contains(reply.Error, "credentials expired") {
+						t.Fatalf("lost failure: %+v", reply)
+					}
+				} else if reply.Status != "completed" || reply.Text != "后台完成" || reply.Error != "" {
+					t.Fatalf("lost reply: %+v", reply)
+				}
+				if string(view.Draft) != "{}" {
+					t.Fatalf("stale draft: %s", view.Draft)
+				}
+			})
+		}
 	}
 }

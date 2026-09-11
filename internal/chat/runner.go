@@ -105,18 +105,14 @@ func agentFromBinary(bin string) string {
 	return "codex"
 }
 
-func newAgentRunner(agent, model, sandbox, reasoningEffort string, timeout time.Duration) (*runner, error) {
-	var bin string
-	switch strings.ToLower(strings.TrimSpace(agent)) {
-	case "codex":
-		bin = "codex"
-	case "trae", "traex":
-		bin = "traex"
-		agent = "trae"
-	case "cursor":
-		bin = "cursor-agent"
-	default:
-		return nil, fmt.Errorf("unknown chat agent %q", agent)
+func newAgentRunner(ctx context.Context, agent, model, sandbox, reasoningEffort string, timeout time.Duration) (*runner, error) {
+	agent, err := normalizeAgent(agent)
+	if err != nil {
+		return nil, err
+	}
+	bin, _, err := resolveAgentExecutable(ctx, agent)
+	if err != nil {
+		return nil, err
 	}
 	r, err := newRunner(bin, model, sandbox, reasoningEffort, timeout)
 	if err != nil {

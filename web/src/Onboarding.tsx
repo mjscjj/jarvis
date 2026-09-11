@@ -15,6 +15,7 @@ import jarvisIcon from './assets/jarvis-icon.png'
 
 const restartKey = 'jarvis.onboardingRestartFrom'
 const errorText = (cause: unknown) => cause instanceof Error ? cause.message : String(cause)
+type FlowKind = 'connect' | 'authorize' | 'agent'
 
 export function OnboardingGate({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<SetupStatus | null>(null)
@@ -26,9 +27,12 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
   const [appSecret, setAppSecret] = useState('')
   const [editingSecret, setEditingSecret] = useState(false)
   const [flow, setFlow] = useState<SetupFlow | null>(null)
+  const [flowKind, setFlowKind] = useState<FlowKind | null>(null)
   const [restartFrom, setRestartFrom] = useState<string | null>(() => localStorage.getItem(restartKey))
   const running = useRef(false)
   const recoveryAttempted = useRef(false)
+  const flowIDRef = useRef<string | null>(null)
+  const flowBusy = useRef(false)
 
   const load = useCallback(async () => {
     const next = await getSetupStatus()
@@ -65,6 +69,7 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!flow?.id || flow.status !== 'pending') return
+    flowIDRef.current = flow.id
     let cancelled = false
     let failures = 0
     let timer: number
@@ -72,17 +77,20 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
       try {
         const next = await getSetupFlow(flow.id)
         if (cancelled) return
+        if (flowIDRef.current !== flow.id) return
         if (next.status !== 'pending') {
           if (next.status === 'success') await load()
           else setError(next.error || '操作未完成，请重试')
-          setBusy(''); setFlow(null)
+          if (cancelled || flowIDRef.current !== flow.id) return
+          setBusy(''); flowIDRef.current = null; setFlow(null); setFlowKind(null)
           return
         }
         failures = 0; setFlow(next)
       } catch (cause) {
         if (cancelled) return
+        if (flowIDRef.current !== flow.id) return
         if (++failures >= 3) {
-          setBusy(''); setFlow(null)
+          setBusy(''); flowIDRef.current = null; setFlow(null); setFlowKind(null)
           setError(`连接进度读取失败：${errorText(cause)}。请重新检查，已有授权不会丢失。`)
           return
         }
@@ -133,15 +141,19 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
     void start()
   }, [status, loading, start])
 
-  const beginFlow = async (kind: 'connect' | 'authorize' | 'agent') => {
+  const beginFlow = async (kind: FlowKind) => {
+    if (flowBusy.current) return
+    flowBusy.current = true
+    flowIDRef.current = null; setFlow(null); setFlowKind(null)
     setError(''); setBusy('正在打开连接页面…')
     try {
       const next = await (kind === 'connect' ? beginSetupLarkConnection() : kind === 'authorize' ? beginSetupLarkLogin() : beginSetupAgentLogin())
-      if (next.status === 'pending') setFlow(next)
-      else if (next.status === 'success') await load()
-      else setError(next.error || '操作未完成')
+      setFlowKind(kind)
+      if (next.status === 'pending') { flowIDRef.current = next.id; setFlow(next) }
+      else if (next.status === 'success') { flowIDRef.current = null; setFlow(null); setFlowKind(null); await load() }
+      else { flowIDRef.current = null; setFlow(null); setFlowKind(null); setError(next.error || '操作未完成') }
     } catch (cause) { setError(errorText(cause)) }
-    finally { setBusy('') }
+    finally { flowBusy.current = false; setBusy('') }
   }
 
   const repairCredentials = async () => {
@@ -156,9 +168,14 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
   }
 
   const cancelFlow = async () => {
-    if (!flow?.id) return
-    try { await cancelSetupFlow(flow.id); setFlow(null); await load() }
+    if (!flow?.id || flowBusy.current) return
+    flowBusy.current = true
+    setBusy('正在取消连接…')
+    const current = flow
+    flowIDRef.current = null; setFlow(null); setFlowKind(null)
+    try { await cancelSetupFlow(current.id); await load() }
     catch (cause) { setError(errorText(cause)) }
+    finally { flowBusy.current = false; setBusy('') }
   }
 
   if (loading) return <main className="setup-loading"><Spin size="small" /><span>正在检查已有配置…</span></main>
@@ -206,7 +223,8 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
           <Typography.Text>请在打开的页面完成操作，完成后这里会自动继续。</Typography.Text>
           {flow.user_code && <Typography.Text code>{flow.user_code}</Typography.Text>}
           {flowURL ? <><Button href={flowURL} target="_blank" rel="noreferrer" icon={<LinkOutlined />}>打开连接页面</Button><QRCode value={flowURL} size={144} /></> : <Spin size="small" />}
-          <Button aria-label="返回" onClick={() => void cancelFlow()}>返回</Button>
+          {flowKind && <Button disabled={Boolean(busy)} onClick={() => void beginFlow(flowKind)}>重新生成连接</Button>}
+          <Button aria-label="返回" disabled={Boolean(busy)} onClick={() => void cancelFlow()}>返回</Button>
         </>}
       </div>
       {(error || status.lark.error || status.agent.error) && <Alert type="error" showIcon message="本次操作未完成" description={error || status.lark.error || status.agent.error} />}

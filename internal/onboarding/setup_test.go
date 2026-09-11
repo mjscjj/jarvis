@@ -244,12 +244,12 @@ func TestFailedFinalizeRemainsNotReadyAndCanRetry(t *testing.T) {
 	}
 }
 
-func TestConnectionRetryReturnsPendingSetupFlow(t *testing.T) {
+func TestConnectionRetryReusesPendingSetupBeforeURLIsPublished(t *testing.T) {
 	service := &Service{runner: unconfiguredSetupRunner{}, flows: map[string]*Flow{
-		"pending": {ID: "pending", Status: flowPending, kind: "lark_setup", VerificationURL: "https://example.test/connect"},
+		"pending": {ID: "pending", Status: flowPending, kind: "lark_setup"},
 	}}
 	flow, err := service.BeginLarkSetup(t.Context())
-	if err != nil || flow.ID != "pending" || flow.VerificationURL != "https://example.test/connect" {
+	if err != nil || flow.ID != "pending" {
 		t.Fatalf("retry did not resume existing connection: %+v, %v", flow, err)
 	}
 	if len(service.flows) != 1 {
@@ -257,6 +257,34 @@ func TestConnectionRetryReturnsPendingSetupFlow(t *testing.T) {
 	}
 	if _, err := service.CancelFlow(flow.ID); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestConnectionRefreshReplacesPublishedSetupLink(t *testing.T) {
+	service := &Service{runner: unconfiguredSetupRunner{}, flows: map[string]*Flow{
+		"old": {ID: "old", Status: flowPending, kind: "lark_setup", VerificationURL: "https://example.test/old"},
+	}}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	if !service.registerFlowCancel("old", cancel) {
+		t.Fatal("cancel registration failed")
+	}
+	flow, err := service.BeginLarkSetup(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if flow.ID == "old" || flow.Status != flowPending {
+		t.Fatalf("refresh did not create a new setup flow: %+v", flow)
+	}
+	if ctx.Err() == nil {
+		t.Fatal("old setup command was not cancelled")
+	}
+	old, err := service.Flow("old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if old.Status != flowFailed || !strings.Contains(old.Error, "重新生成") {
+		t.Fatalf("old flow = %+v", old)
 	}
 }
 
