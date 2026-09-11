@@ -21,6 +21,7 @@ import {
   SafetyCertificateOutlined,
   UserOutlined,
 } from '@ant-design/icons'
+import { AppUpdateProvider } from './AppUpdate'
 import { AgentIdentityProvider, useAgentIdentity } from './agentIdentity'
 import { AuthGate, AuthProvider, useAuth } from './auth'
 import { OnboardingGate } from './Onboarding'
@@ -36,7 +37,6 @@ import { DeveloperHelpButton } from './components/DeveloperDocuments'
 const { Sider, Content } = Layout
 const { Title } = Typography
 
-const AppUpdate = lazy(() => import('./AppUpdate'))
 const Delegations = lazy(() => import('./Delegations'))
 const Tasks = lazy(() => import('./Tasks'))
 const Progress = lazy(() => import('./Progress'))
@@ -430,17 +430,14 @@ function AppShell() {
 
 export default function App() {
   return (
-    <>
-      {/* The update prompt is independent of login and onboarding state. */}
-      <Suspense fallback={null}>
-        <AppUpdate />
-      </Suspense>
+    // The update prompt is independent of login and onboarding state.
+    <AppUpdateProvider>
       <AgentIdentityProvider>
         <AuthProvider>
           <AuthenticatedApp />
         </AuthProvider>
       </AgentIdentityProvider>
-    </>
+    </AppUpdateProvider>
   )
 }
 
