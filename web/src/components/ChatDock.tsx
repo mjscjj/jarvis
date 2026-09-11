@@ -20,6 +20,9 @@ interface ChatDockProps {
   running: boolean
   error?: string
   onDismissError: () => void
+  connectionLost: boolean
+  reconnecting: boolean
+  onReconnect: () => void
   replyText: string
   replyContent: ReactNode
   sources: ReactNode
@@ -106,6 +109,9 @@ export default function ChatDock(props: ChatDockProps) {
     <div className="chat-dock-inner" ref={dockRef} onKeyDown={(event) => {
       if (event.key === 'Escape') { setPanel(null); event.stopPropagation() }
     }}>
+      {props.connectionLost && <Alert className="chat-dock-error" type="warning" showIcon title="连接中断，可能正在重启"
+        description={props.reconnecting ? '正在重连…' : '正在自动重连，也可手动重连。'}
+        action={<Button size="small" loading={props.reconnecting} onClick={props.onReconnect}>重连</Button>} />}
       {props.error && <Alert className="chat-dock-error" type="error" showIcon closable title="对话遇到问题" description={props.error} onClose={props.onDismissError} />}
       {!!props.replyText && <Popover {...popover('reply')} placement="top" content={reply}>
         <button type="button" className="chat-dock-preview" aria-label="查看最新回复全文">

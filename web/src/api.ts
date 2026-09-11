@@ -151,6 +151,41 @@ export class APIRequestError extends Error {
   }
 }
 
+// ServiceUnavailableError 表示服务暂时不可用：后端重启期间网关会返回一个 HTML
+// 错误页，或返回不带 JSON 正文的 5xx。前端据此显示「正在重连」而不是把 HTML
+// 丢给 JSON.parse 抛出看不懂的 "Unexpected token '<'"。
+export class ServiceUnavailableError extends Error {
+  readonly status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'ServiceUnavailableError'
+    this.status = status
+  }
+}
+
+export function isServiceUnavailableError(cause: unknown): cause is ServiceUnavailableError {
+  return cause instanceof ServiceUnavailableError
+}
+
+// looksLikeServiceRestart 判断一个响应是否来自「服务重启 / 暂时不可用」：网关
+// 回了 HTML 错误页，或响应体不是 JSON。用于在解析前给出人话提示。
+export function looksLikeServiceRestart(response: Response): boolean {
+  if (response.status === 502 || response.status === 503 || response.status === 504) return true
+  const contentType = response.headers.get('content-type') || ''
+  return !contentType.includes('application/json') && !contentType.includes('text/event-stream')
+}
+
+// pingHealth 探一次后端健康检查，用于自动 / 手动重连时确认服务是否恢复。
+export async function pingHealth(signal?: AbortSignal): Promise<boolean> {
+  try {
+    const response = await fetch('/healthz', { signal, headers: { Accept: 'application/json' } })
+    return response.ok
+  } catch {
+    return false
+  }
+}
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const controller = new AbortController()
   const abort = () => controller.abort(options.signal?.reason)
@@ -166,6 +201,10 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       headers: { Accept: 'application/json', ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }) },
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
     })
+    // 服务重启时网关会返回 HTML 错误页；先识别，避免把 HTML 丢给 JSON.parse。
+    if (looksLikeServiceRestart(response)) {
+      throw new ServiceUnavailableError('与服务的连接中断，可能正在重启', response.status)
+    }
     const payload = (await response.json()) as APIResponse<T>
     if (!response.ok || payload.code !== 0 || payload.data === undefined) {
       throw new APIRequestError(payload.msg || `请求失败：HTTP ${response.status}`, response.status, payload.code)

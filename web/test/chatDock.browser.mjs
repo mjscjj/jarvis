@@ -41,7 +41,10 @@ try {
       const match = url.pathname.match(/^\/api\/chat\/sessions\/([^/]+)(.*)$/)
       assert.ok(match, `Unexpected API: ${url.pathname}`)
       const session = sessions.get(match[1])
-      assert.ok(session, `Missing fixture session: ${match[1]}`)
+      if (!session) {
+        await route.fulfill({ status: 404, json: { code: 40460, msg: 'chat record not found' } })
+        return
+      }
       const tail = match[2]
       if (!tail) {
         if (method === 'PATCH') {
@@ -205,6 +208,11 @@ try {
   // An archived deep link isn't in the recent list but must still load directly.
   await page.evaluate(() => { window.location.hash = '/chat?session=s3' })
   await page.locator('.chat-session-heading strong').filter({ hasText: '归档的讨论' }).waitFor()
+  // A stale deep link should not strand the chat page on a 404.
+  await page.evaluate(() => { window.location.hash = '/chat?session=missing' })
+  await page.locator('.chat-session-heading strong').filter({ hasText: '今日工作安排' }).waitFor()
+  assert.ok(page.url().endsWith('#/chat?session=s1'))
+  assert.equal(await page.getByText('chat record not found', { exact: true }).count(), 0)
   await page.getByRole('button', { name: '工作台入口', exact: true }).click()
   await page.getByRole('button', { name: '切换会话', exact: true }).click()
   await page.locator('.chat-dock-sessions .ant-btn').filter({ hasText: '新对话' }).click()

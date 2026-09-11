@@ -5,7 +5,7 @@ import type { MenuProps } from 'antd'
 import type { TextAreaRef } from 'antd/es/input/TextArea'
 import { useAgentIdentity } from './agentIdentity'
 import { usePageContext } from './pageContext'
-import { apiFetch } from './api'
+import { apiFetch, looksLikeServiceRestart, pingHealth, ServiceUnavailableError, isServiceUnavailableError } from './api'
 import MarkdownReport from './components/MarkdownReport'
 import ChatDock from './components/ChatDock'
 import type { ChatAgent, ChatAttachment, ChatHistoryMessage, ChatModel, ChatSession, ChatSource } from './types'
@@ -35,6 +35,8 @@ const SUGGESTIONS = [
 
 async function api<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await apiFetch(url, options)
+  // 服务重启时网关返回 HTML 错误页；先识别，避免 JSON.parse 抛出 "Unexpected token '<'"。
+  if (looksLikeServiceRestart(response)) throw new ServiceUnavailableError('与服务的连接中断，可能正在重启', response.status)
   const payload = (await response.json()) as APIEnvelope<T>
   if (!response.ok || payload.code !== 0 || payload.data === undefined) throw new Error(payload.msg || `请求失败：HTTP ${response.status}`)
   return payload.data
@@ -72,6 +74,9 @@ function formatBytes(size: number): string {
 function defaultEffort(model?: ChatModel): string {
   return model?.default_reasoning_effort || model?.reasoning_efforts?.find((value) => value === 'medium') || model?.reasoning_efforts?.[0] || 'medium'
 }
+function isMissingChatSession(cause: unknown): boolean {
+  return cause instanceof Error && cause.message.includes('chat record not found')
+}
 
 export default function Chat({ compact = false }: { compact?: boolean }) {
   const { name: agentName, shortName } = useAgentIdentity()
@@ -91,6 +96,9 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
   const [accepting, setAccepting] = useState<string | null>(null)
   const [streamText, setStreamText] = useState<Record<string, string>>({})
   const [error, setError] = useState<string>()
+  // connectionLost 记录服务疑似重启导致的断连；reconnecting 表示正在探活恢复。
+  const [connectionLost, setConnectionLost] = useState(false)
+  const [reconnecting, setReconnecting] = useState(false)
   const [editingTitle, setEditingTitle] = useState(false)
   const [switching, setSwitching] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -108,7 +116,11 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
   draftRef.current = { text: input, attachment_ids: attachments.map((item) => item.id) }
   const sessionRequest = useRef(0)
   const draftWrite = useRef<Promise<unknown>>(Promise.resolve())
-  const reportError = (cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause))
+  const reportError = (cause: unknown) => {
+    // 服务重启导致的断连单独提示并触发重连，不把它当普通错误弹给用户。
+    if (isServiceUnavailableError(cause)) { setConnectionLost(true); return }
+    setError(cause instanceof Error ? cause.message : String(cause))
+  }
   const attempt = async (action: Promise<unknown>) => { try { await action } catch (cause) { reportError(cause) } }
   const saveDraft = useCallback((id: string, draft: ChatSession['draft']) => {
     // Keep an older debounce request from overwriting a newer session-switch save.
@@ -209,7 +221,15 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
         setAgents(agentData.items)
         setSessions(sessionData.items)
         const requested = pageRef.current.context.active_key === 'chat' ? pageRef.current.context.view_state.session : undefined
-        const targetID = requested || sessionData.items[0]?.id
+        if (requested) {
+          try {
+            await openSession(requested, false)
+            return
+          } catch (cause) {
+            if (!isMissingChatSession(cause)) throw cause
+          }
+        }
+        const targetID = sessionData.items[0]?.id
         if (targetID) await openSession(targetID, false)
         else {
           const available = agentData.items.find((item) => item.default && item.available) || agentData.items.find((item) => item.available)
@@ -252,7 +272,16 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
   useEffect(() => {
     if (loading || context.active_key !== 'chat') return
     const requested = context.view_state.session
-    if (requested && requested !== activeID.current) void attempt(openSession(requested))
+    if (requested && requested !== activeID.current) void attempt((async () => {
+      try {
+        await openSession(requested)
+      } catch (cause) {
+        if (!isMissingChatSession(cause)) throw cause
+        const items = await loadSessions(false, '')
+        if (items[0]) await openSession(items[0].id)
+        else await createSession()
+      }
+    })())
     else if (!requested && activeID.current) setViewState({ session: activeID.current })
   }, [context.active_key, context.view_state.session, loading]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -277,6 +306,44 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
     },
     [loadSessions],
   )
+  // reconnect 探一次后端健康，恢复后清掉断连提示并刷新当前会话，让界面重新可用。
+  // 手动「重连」按钮和自动重连共用它，避免两套逻辑。
+  const reconnect = useCallback(async () => {
+    if (reconnecting) return
+    setReconnecting(true)
+    try {
+      if (!(await pingHealth())) return
+      setConnectionLost(false)
+      setError(undefined)
+      const sessionID = activeID.current
+      if (sessionID) await refreshActive(sessionID).catch(() => undefined)
+    } finally {
+      setReconnecting(false)
+    }
+  }, [reconnecting, refreshActive])
+  // 断连后自动探活：带退避（3s 起，最多 15s），服务恢复即自动清除断连状态。
+  useEffect(() => {
+    if (!connectionLost) return
+    let cancelled = false
+    let timer: number
+    let delay = 3000
+    const tick = async () => {
+      if (cancelled) return
+      if (await pingHealth()) {
+        if (cancelled) return
+        setConnectionLost(false)
+        setError(undefined)
+        const sessionID = activeID.current
+        if (sessionID) await refreshActive(sessionID).catch(() => undefined)
+        return
+      }
+      if (cancelled) return
+      delay = Math.min(delay + 3000, 15000)
+      timer = window.setTimeout(() => void tick(), delay)
+    }
+    timer = window.setTimeout(() => void tick(), delay)
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [connectionLost, refreshActive])
   // Only poll a reply whose stream belongs to an earlier page load/tab.
   useEffect(() => {
     if (!active?.running || running.has(active.id)) return
@@ -325,6 +392,8 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
           sources: active.sources.map((source) => ({ ...source, label: sourceLabel(source) })),
         }),
       })
+      // 服务重启时网关会用 HTML 错误页回应流式请求；识别后按断连处理，而非当成普通失败。
+      if (looksLikeServiceRestart(response)) throw new ServiceUnavailableError('与服务的连接中断，可能正在重启', response.status)
       if (!response.ok || !response.body) throw new Error(`对话请求失败：HTTP ${response.status}`)
       const reader = response.body.getReader(),
         decoder = new TextDecoder()
@@ -361,7 +430,7 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
       }
       if (streamError) throw new Error(streamError)
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      reportError(cause)
     } finally {
       await refreshActive(sessionID).catch(reportError)
       setAccepting(null)
@@ -580,6 +649,7 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
       input={input} onInput={setInput} attachments={attachments} uploading={uploading}
       loading={loading} busy={switching || saving || creating || accepting === active?.id} running={activeRunning}
       error={error} onDismissError={() => setError(undefined)}
+      connectionLost={connectionLost} reconnecting={reconnecting} onReconnect={() => void reconnect()}
       replyText={activeRunning ? currentStream || '正在思考…' : latest?.text || (latest?.attachments?.length ? '已生成附件，点击查看' : '')}
       replyContent={latest && <ChatMessageCard message={latest} agentName={agentName} shortName={shortName} typing={activeRunning} />}
       sources={sourcePicker}
@@ -698,6 +768,9 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
           </Dropdown>
         </header>
         <div className="chat-message-list" ref={listRef} role="log" aria-live="polite">
+          {connectionLost && <Alert type="warning" showIcon title="与服务的连接中断，可能正在重启"
+            description={reconnecting ? '正在重连…' : '正在自动重连，也可以手动重连。'}
+            action={<Button size="small" loading={reconnecting} onClick={() => void reconnect()}>重连</Button>} />}
           {error && <Alert type="error" showIcon closable title="对话暂时遇到问题" description={error} onClose={() => setError(undefined)} />}
           {!displayMessages.length && !currentStream && (
             <div className="chat-welcome">
