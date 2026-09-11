@@ -28,7 +28,7 @@ func (r authRunner) Run(_ context.Context, bin string, args ...string) ([]byte, 
 
 func TestLoginWithByteDanceStartsDeviceFlowWithoutSession(t *testing.T) {
 	service, err := authn.NewServiceWithRunner("bytedcli", time.Hour, true, []string{"alice"}, authRunner{run: func(_ string, args []string) ([]byte, error) {
-		if !strings.Contains(strings.Join(args, " "), "auth login --begin --session --session-method qr") {
+		if !strings.Contains(strings.Join(args, " "), "auth login --begin") {
 			t.Fatalf("args = %v", args)
 		}
 		return []byte(`{"data":{"complete_token":"resume-1","verification_uri_complete":"https://sso.example/login"}}`), nil
@@ -154,12 +154,12 @@ func TestBrowserSessionCompletionCookie(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			service, err := authn.NewServiceWithRunner("bytedcli", time.Hour, true, []string{"alice@bytedance.com"}, authRunner{run: func(_ string, args []string) ([]byte, error) {
 				switch strings.Join(args[3:], " ") {
-				case "auth login --begin --session --session-method qr":
+				case "auth login --begin":
 					return []byte(`{"data":{"complete_token":"resume","verification_uri_complete":"https://sso.bytedance.com/qr"}}`), nil
 				case "auth login --complete resume":
-					return []byte(`{"status":"success","data":{"login_status":"success"}}`), nil
-				case "auth userinfo":
-					return json.Marshal(map[string]any{"data": map[string]string{"username": tc.username, "email": tc.username + "@bytedance.com"}})
+					return []byte(`{"status":"success","data":{"status":"success"}}`), nil
+				case "auth status":
+					return json.Marshal(map[string]any{"data": map[string]any{"bytecloud_auth": map[string]any{"status": "ready", "identity": map[string]string{"username": tc.username, "email": tc.username + "@bytedance.com"}}}})
 				case "auth clear --yes":
 					return []byte(`{"status":"success"}`), nil
 				default:

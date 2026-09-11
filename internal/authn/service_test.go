@@ -20,12 +20,12 @@ func TestLoginCompletesDeviceFlow(t *testing.T) {
 	service := newTestService(t, fakeRunner{run: func(_ string, args []string) ([]byte, error) {
 		command := strings.Join(args, " ")
 		switch {
-		case strings.HasSuffix(command, "auth login --begin --session --session-method qr"):
-			return []byte(`{"event":"qr_image_ready","data":{"complete_token":"resume-1","verification_uri_complete":"https://sso.example/login","lark_applink_url":"https://applink.feishu.cn/client/web_url/open?url=sso","user_code":"ABCD"}}`), nil
+		case strings.HasSuffix(command, "auth login --begin"):
+			return []byte(`{"event":"qr_image_ready","data":{"complete_token":"resume-1","verification_uri_complete":"https://sso.example/login","user_code":"ABCD"}}`), nil
 		case strings.HasSuffix(command, "auth login --complete resume-1"):
-			return []byte(`{"status":"success","data":{"login_mode":"session","login_status":"success"}}`), nil
-		case strings.HasSuffix(command, "auth userinfo"):
-			return []byte(`{"status":"success","data":{"username":"alice","email":"alice@bytedance.com"}}`), nil
+			return []byte(`{"status":"success","data":{"mode":"app","status":"success"}}`), nil
+		case strings.HasSuffix(command, "auth status"):
+			return []byte(`{"status":"success","data":{"bytecloud_auth":{"status":"ready","identity":{"username":"alice","email":"alice@bytedance.com"}}}}`), nil
 		case strings.HasSuffix(command, "auth clear --yes"):
 			return []byte(`{"status":"success"}`), nil
 		default:
@@ -40,8 +40,8 @@ func TestLoginCompletesDeviceFlow(t *testing.T) {
 	if begin.Status != StatusPending || begin.FlowID == nil || begin.VerificationURL == nil {
 		t.Fatalf("begin = %#v", begin)
 	}
-	if *begin.VerificationURL != "https://sso.example/login" || begin.LarkAppLinkURL == nil || *begin.LarkAppLinkURL != "https://applink.feishu.cn/client/web_url/open?url=sso" {
-		t.Fatalf("QR and client links must remain separate: %#v", begin.View)
+	if *begin.VerificationURL != "https://sso.example/login" {
+		t.Fatalf("browser authorization URL must be preserved: %#v", begin.View)
 	}
 	complete, err := service.Complete(t.Context(), *begin.FlowID)
 	if err != nil {
@@ -59,12 +59,12 @@ func TestCompleteRejectsIdentityOutsideAllowList(t *testing.T) {
 	service := newTestService(t, fakeRunner{run: func(_ string, args []string) ([]byte, error) {
 		command := strings.Join(args, " ")
 		switch {
-		case strings.HasSuffix(command, "auth login --begin --session --session-method qr"):
+		case strings.HasSuffix(command, "auth login --begin"):
 			return []byte(`{"data":{"complete_token":"resume-1","verification_url":"https://sso.example/login"}}`), nil
 		case strings.HasSuffix(command, "auth login --complete resume-1"):
-			return []byte(`{"status":"success","data":{"login_mode":"session","login_status":"success"}}`), nil
-		case strings.HasSuffix(command, "auth userinfo"):
-			return []byte(`{"data":{"username":"mallory","email":"mallory@bytedance.com"}}`), nil
+			return []byte(`{"status":"success","data":{"mode":"app","status":"success"}}`), nil
+		case strings.HasSuffix(command, "auth status"):
+			return []byte(`{"data":{"bytecloud_auth":{"status":"ready","identity":{"username":"mallory","email":"mallory@bytedance.com"}}}}`), nil
 		case strings.HasSuffix(command, "auth clear --yes"):
 			return []byte(`{"status":"success"}`), nil
 		default:
@@ -84,10 +84,10 @@ func TestCompleteKeepsPendingFlow(t *testing.T) {
 	service := newTestService(t, fakeRunner{run: func(_ string, args []string) ([]byte, error) {
 		command := strings.Join(args, " ")
 		switch {
-		case strings.HasSuffix(command, "auth login --begin --session --session-method qr"):
+		case strings.HasSuffix(command, "auth login --begin"):
 			return []byte(`{"data":{"complete_token":"resume-1","verification_url":"https://sso.example/login"}}`), nil
 		case strings.HasSuffix(command, "auth login --complete resume-1"):
-			return []byte(`{"status":"success","data":{"login_mode":"session","login_status":"pending","complete_token":"resume-1"}}`), nil
+			return []byte(`{"status":"success","data":{"mode":"app","status":"pending","complete_token":"resume-1"}}`), nil
 		default:
 			return nil, errors.New("unexpected command: " + command)
 		}
@@ -143,13 +143,15 @@ func newTestService(t *testing.T, runner CommandRunner) *Service {
 	return service
 }
 
-func TestSessionLoginLifecycle(t *testing.T) {
+func TestDeviceLoginLifecycle(t *testing.T) {
 	for _, tc := range []struct {
 		name, status string
 		pending      bool
 	}{
-		{"waiting for scan", "pending", true},
-		{"expired QR", "expired", false},
+		{"waiting for approval", "pending", true},
+		{"expired authorization", "expired", false},
+		{"denied authorization", "denied", false},
+		{"invalid ticket", "invalid_ticket", false},
 		{"unknown result", "", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -166,10 +168,10 @@ func TestSessionLoginLifecycle(t *testing.T) {
 				}
 				command := strings.Join(args[3:], " ")
 				switch command {
-				case "auth login --begin --session --session-method qr":
-					return []byte(`{"status":"success","data":{"login_mode":"session","login_status":"pending","complete_token":"resume-1","verification_uri_complete":"https://sso.bytedance.com/qr"}}`), nil
+				case "auth login --begin":
+					return []byte(`{"status":"success","data":{"mode":"app","status":"pending","complete_token":"resume-1","verification_uri_complete":"https://sso.bytedance.com/qr"}}`), nil
 				case "auth login --complete resume-1":
-					return []byte(`{"status":"success","data":{"login_mode":"session","login_status":"` + tc.status + `"}}`), nil
+					return []byte(`{"status":"success","data":{"mode":"app","status":"` + tc.status + `"}}`), nil
 				case "auth clear --yes":
 					cleared = true
 					return []byte(`{"status":"success"}`), nil
@@ -197,19 +199,21 @@ func TestSessionLoginLifecycle(t *testing.T) {
 	}
 }
 
-func TestSessionIdentityRequiresActualUserInfo(t *testing.T) {
+func TestDeviceIdentityRequiresAuthenticatedVisitor(t *testing.T) {
 	for _, raw := range []string{
 		`{"data":{"authenticated":true,"bytecloud_auth":{"identity":{"username":"alice","email":"alice@bytedance.com"}}}}`,
-		`{"data":{"username":"alice"}}`,
+		`{"data":{"bytecloud_auth":{"status":"ready","identity":{"username":"alice"}}}}`,
+		`{"data":{"bytecloud_auth":{"status":"need_login","identity":{"username":"alice","email":"alice@bytedance.com"}}}}`,
+		`{"data":{"username":"alice","email":"alice@bytedance.com"}}`,
 	} {
 		service := newTestService(t, fakeRunner{run: func(_ string, args []string) ([]byte, error) {
-			if strings.Join(args[3:], " ") != "auth userinfo" {
+			if strings.Join(args[3:], " ") != "auth status" {
 				t.Fatalf("args=%v", args)
 			}
 			return []byte(raw), nil
 		}})
 		if _, err := service.probe(t.Context(), "jarvis-web-test"); err == nil {
-			t.Fatal("accepted SDK identity or incomplete session identity")
+			t.Fatal("accepted unauthenticated or incomplete visitor identity")
 		}
 	}
 }

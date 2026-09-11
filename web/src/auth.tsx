@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Button, QRCode, Result, Spin, Typography } from 'antd'
+import { Button, Result, Spin, Typography } from 'antd'
 import { LinkOutlined, LoginOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
 import { authEvents, completeByteDanceLogin, getAuthStatus, loginWithByteDance, logoutFromJarvis, setAuthRecoveryHandler } from './api'
 import type { AuthUser, AuthView } from './types'
@@ -190,11 +190,10 @@ export function AuthGate({ agentName, children }: { agentName: string; children:
         <Typography.Paragraph>使用字节身份登录</Typography.Paragraph>
         {pending?.verification_url ? (
           <>
-            <QRCode value={pending.verification_url} size={200} />
-            <Typography.Text>请用手机飞书扫码，或在电脑飞书客户端中授权</Typography.Text>
-            {pending.lark_applink_url && <Button type="primary" icon={<LinkOutlined />} href={pending.lark_applink_url} target="_blank" rel="noreferrer">
-              在飞书客户端授权
-            </Button>}
+            <Typography.Text>在浏览器中打开字节授权页，完成登录与授权</Typography.Text>
+            <Button type="primary" icon={<LinkOutlined />} href={pending.verification_url} target="_blank" rel="noreferrer">
+              打开字节授权页
+            </Button>
             {pending.user_code && <Typography.Text className="auth-code">验证码：{pending.user_code}</Typography.Text>}
             <Typography.Text type="secondary">授权完成后此页面会自动进入</Typography.Text>
           </>

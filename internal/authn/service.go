@@ -41,7 +41,6 @@ type View struct {
 	Status          string  `json:"status"`
 	User            *User   `json:"user,omitempty"`
 	VerificationURL *string `json:"verification_url,omitempty"`
-	LarkAppLinkURL  *string `json:"lark_applink_url,omitempty"`
 	UserCode        *string `json:"user_code,omitempty"`
 	FlowID          *string `json:"flow_id,omitempty"`
 }
@@ -169,9 +168,9 @@ func (s *Service) beginLogin(ctx context.Context) (LoginResult, error) {
 	// isolates credentials and sessions under profiles/<name>/. Without it a
 	// visitor's login would overwrite the host's own ByteDance credentials.
 	profile := "jarvis-web-" + flowID
-	// Explicit QR session mode acquires the visitor's browser SSO session.
-	// ByteCloud's default device flow is a different authorization contract.
-	raw, err := s.run(ctx, profile, "auth", "login", "--begin", "--session", "--session-method", "qr")
+	// Use the original resumable browser authorization flow. Session QR login
+	// forces a Lark login method that some corporate accounts cannot use.
+	raw, err := s.run(ctx, profile, "auth", "login", "--begin")
 	if err != nil {
 		return LoginResult{}, commandError("start ByteDance SSO", raw, err)
 	}
@@ -191,8 +190,7 @@ func (s *Service) beginLogin(ctx context.Context) (LoginResult, error) {
 	s.mu.Unlock()
 	return LoginResult{View: View{
 		Enabled: true, Status: StatusPending, VerificationURL: stringPointer(url),
-		LarkAppLinkURL: optionalString(findString(values, "lark_applink_url")),
-		UserCode:       optionalString(code), FlowID: stringPointer(flowID),
+		UserCode: optionalString(code), FlowID: stringPointer(flowID),
 	}}, nil
 }
 
@@ -214,15 +212,25 @@ func (s *Service) Complete(ctx context.Context, flowID string) (LoginResult, err
 		s.discardFlow(ctx, flowID, pendingFlow.profile)
 		return LoginResult{}, commandError("complete ByteDance SSO", raw, err)
 	}
-	// The session CLI exits successfully for pending and expired challenges too.
-	switch findString(decodeJSONValues(raw), "login_status") {
+	// CLI exit success describes the command, not authorization. Read the
+	// device-flow result in data.status before looking up the visitor.
+	var completion struct {
+		Data struct {
+			Status string `json:"status"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &completion); err != nil {
+		s.discardFlow(ctx, flowID, pendingFlow.profile)
+		return LoginResult{}, fmt.Errorf("complete ByteDance SSO: decode response: %w", err)
+	}
+	switch completion.Data.Status {
 	case "pending":
 		return LoginResult{}, ErrPending
 	case "expired":
 		s.discardFlow(ctx, flowID, pendingFlow.profile)
-		return LoginResult{}, fmt.Errorf("SSO QR code expired; please start login again")
+		return LoginResult{}, fmt.Errorf("SSO authorization expired; please start login again")
 	case "success":
-		// Only a completed browser session may be used to resolve the visitor.
+		// Only completed authorization may be used to resolve the visitor.
 	default:
 		s.discardFlow(ctx, flowID, pendingFlow.profile)
 		return LoginResult{}, fmt.Errorf("complete ByteDance SSO: unexpected login status")
@@ -316,20 +324,27 @@ func (s *Service) startSession(user User) (LoginResult, error) {
 	}, nil
 }
 
-// userinfo resolves the verified session JWT bootstrapped by --complete.
-// auth status's bytecloud_auth.identity belongs to the separate SDK login.
+// Resolve the identity authorized by the device flow in this visitor's profile.
 func (s *Service) probe(ctx context.Context, profile string) (User, error) {
-	raw, err := s.run(ctx, profile, "auth", "userinfo")
+	raw, err := s.run(ctx, profile, "auth", "status")
 	if err != nil {
 		return User{}, commandError("read ByteDance SSO identity", raw, err)
 	}
 	var response struct {
-		Data User `json:"data"`
+		Data struct {
+			ByteCloudAuth struct {
+				Status   string `json:"status"`
+				Identity User   `json:"identity"`
+			} `json:"bytecloud_auth"`
+		} `json:"data"`
 	}
 	if err := json.Unmarshal(raw, &response); err != nil {
 		return User{}, fmt.Errorf("read ByteDance SSO identity: decode response: %w", err)
 	}
-	user := response.Data
+	if response.Data.ByteCloudAuth.Status != "ready" {
+		return User{}, fmt.Errorf("read ByteDance SSO identity: visitor is not authenticated")
+	}
+	user := response.Data.ByteCloudAuth.Identity
 	user.Username = strings.TrimSpace(user.Username)
 	user.Email = strings.TrimSpace(user.Email)
 	if user.Username == "" || user.Email == "" {
