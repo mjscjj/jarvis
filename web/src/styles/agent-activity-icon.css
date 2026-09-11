@@ -23,6 +23,11 @@
   outline-offset: 4px;
 }
 
+.agent-activity-filter {
+  position: absolute;
+  pointer-events: none;
+}
+
 .agent-activity-core {
   position: relative;
   display: block;
