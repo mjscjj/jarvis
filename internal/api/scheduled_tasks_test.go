@@ -107,3 +107,27 @@ func TestScheduledTaskListOmitsDetailBodies(t *testing.T) {
 		}
 	}
 }
+
+func TestScheduledTaskListReturnsEmptyArray(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "schedules.db")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&domain.ScheduledTask{}); err != nil {
+		t.Fatal(err)
+	}
+	service, err := scheduledtask.NewCRUDService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := server.New()
+	h.GET("/api/scheduled-tasks", ListScheduledTasks(service))
+
+	response := ut.PerformRequest(h.Engine, "GET", "/api/scheduled-tasks?plugin=product-management", nil).Result()
+	if response.StatusCode() != 200 {
+		t.Fatalf("list HTTP %d: %s", response.StatusCode(), response.Body())
+	}
+	if !strings.Contains(string(response.Body()), `"items":[]`) {
+		t.Fatalf("empty scheduled task list must be an array: %s", response.Body())
+	}
+}

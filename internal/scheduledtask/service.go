@@ -201,7 +201,7 @@ func (s *Service) List(ctx context.Context, filter ListFilter) ([]ListItem, erro
 		}
 		query = query.Where("status = ?", status)
 	}
-	var items []ListItem
+	items := make([]ListItem, 0)
 	if err := query.Select(
 		"id", "dispatch_kind", "subject_type", "subject_id", "source_run_id",
 		"title", "action_type", "instruction", "schedule_type", "daily_time",
