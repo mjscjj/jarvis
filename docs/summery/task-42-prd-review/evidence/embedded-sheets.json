@@ -1,0 +1,404 @@
+{
+  "ok": true,
+  "identity": "user",
+  "data": {
+    "sheets": [
+      {
+        "columns": [
+          "Revenue/Consumption Data Type\n营收/消费相关数据类型",
+          "col2",
+          "Included in the feature?\n新增功能中是否包含此类数据 ",
+          "If included, please specify\n如包含，请详述"
+        ],
+        "data": [
+          [
+            "Revenue/Consumption Data of individual user  ",
+            "Gifting-Related\n(e.g. top 20 spenders, revenue growth, live revenue/consumption etc.)",
+            null,
+            null
+          ],
+          [
+            null,
+            "Transaction Info: \nrecharge, refund, withdrawal, account balance etc.",
+            null,
+            null
+          ],
+          [
+            "Aggregate Revenue/Consumption Data of UV less than 1000 ",
+            "Can Trace \nUID/User Handle/RoomID",
+            null,
+            null
+          ],
+          [
+            null,
+            "Can Not Trace \nUID/User Handle/RoomID",
+            null,
+            null
+          ]
+        ],
+        "dtypes": {
+          "If included, please specify\n如包含，请详述": "object",
+          "Included in the feature?\n新增功能中是否包含此类数据 ": "object",
+          "Revenue/Consumption Data Type\n营收/消费相关数据类型": "object",
+          "col2": "object"
+        },
+        "name": "7O2rb4",
+        "range": "A1:D5"
+      },
+      {
+        "columns": [
+          "US User Data Type\n美属用户数据类型\n(US Users: Users whose registration country is US/AS/GU/MP/PR/VI/UM)",
+          "col2",
+          "col3",
+          "Included in the feature?\n新增功能中是否包含此类数据",
+          "If included, please specify\n如包含，请详述"
+        ],
+        "data": [
+          [
+            "Non-Aggregate Data",
+            "Host data",
+            "Non-Public\n(e.g. UID, DID, \ntransaction history etc.)",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "Public \n(e.g. user handle, \nnumber of followers etc.)",
+            null,
+            null
+          ],
+          [
+            null,
+            "Non-Host data",
+            "Public \u0026 Non-Public",
+            null,
+            null
+          ],
+          [
+            "Aggregate data",
+            "Host/Spender/Live Room Details \n(UID/RoomID displayed)",
+            "Impression-related\n(e.g. room impression UV/PV, user live performance impressions etc.)",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "Revenue-related\n(e.g. gifts UV, top 10 gifts diamonds, top 20 spenders etc.)",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "Other data",
+            null,
+            null
+          ],
+          [
+            null,
+            "Other Pages\n(UID/RoomID not displayed \ne.g. traffic analysis, gift analysis, banner, message etc.)",
+            "US UV less than 1000\n",
+            null,
+            null
+          ],
+          [
+            null,
+            null,
+            "US UV equal or more than 1000",
+            null,
+            null
+          ]
+        ],
+        "dtypes": {
+          "If included, please specify\n如包含，请详述": "object",
+          "Included in the feature?\n新增功能中是否包含此类数据": "object",
+          "US User Data Type\n美属用户数据类型\n(US Users: Users whose registration country is US/AS/GU/MP/PR/VI/UM)": "object",
+          "col2": "object",
+          "col3": "object"
+        },
+        "name": "Bn4J5d",
+        "range": "A1:E9"
+      },
+      {
+        "columns": [
+          "col1",
+          "数据平台//\nData Platform",
+          "营收C端//\nRevenue Client-side",
+          "基础线C端//\nFundational Client-side",
+          "生态C端//\nEcosystem Client-side",
+          "TikTok C端//\nTikTok Client-side",
+          "MinT",
+          "Others"
+        ],
+        "data": [
+          [
+            "Yes",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          [
+            "No",
+            "✅",
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        ],
+        "dtypes": {
+          "MinT": "object",
+          "Others": "object",
+          "TikTok C端//\nTikTok Client-side": "object",
+          "col1": "object",
+          "基础线C端//\nFundational Client-side": "object",
+          "数据平台//\nData Platform": "object",
+          "生态C端//\nEcosystem Client-side": "object",
+          "营收C端//\nRevenue Client-side": "object"
+        },
+        "name": "5dIW3b",
+        "range": "A1:H3"
+      },
+      {
+        "columns": [
+          "Event Key*",
+          "Event Desc*",
+          "Log Type*",
+          "Screenshot*",
+          "Property",
+          "Special report time\n(这里标注一下特殊上报时机，默认为“点击”则留空",
+          "Property type\n(这里标注一下特殊上报时机，默认为“点击”则留空）"
+        ],
+        "data": [],
+        "dtypes": {
+          "Event Desc*": "object",
+          "Event Key*": "object",
+          "Log Type*": "object",
+          "Property": "object",
+          "Property type\n(这里标注一下特殊上报时机，默认为“点击”则留空）": "object",
+          "Screenshot*": "object",
+          "Special report time\n(这里标注一下特殊上报时机，默认为“点击”则留空": "object"
+        },
+        "name": "eSbDNi",
+        "range": "A1:G1"
+      },
+      {
+        "columns": [
+          "Sections  //模块",
+          "Involves  //相关方",
+          "Proposal  //规划",
+          "Approval",
+          "Actual Realization  "
+        ],
+        "data": [
+          [
+            "L1\u0026L2 //低龄",
+            "Legal //法务",
+            null,
+            null,
+            null
+          ],
+          [
+            "Data Collection //数据采集",
+            "Privacy Legal //隐私法务",
+            null,
+            null,
+            null
+          ],
+          [
+            "Content Quality //内容画风",
+            "TNS ",
+            null,
+            null,
+            null
+          ],
+          [
+            "IP ",
+            "Privacy Legal //隐私法务",
+            null,
+            null,
+            null
+          ],
+          [
+            "Third Party //三方",
+            "Legal //法务",
+            null,
+            null,
+            null
+          ],
+          [
+            "Security //安全",
+            "Security //安全\u0026风控",
+            null,
+            null,
+            null
+          ],
+          [
+            "Anti-Spam//反作弊",
+            "Risk Control //反作弊\u0026风控",
+            null,
+            null,
+            null
+          ]
+        ],
+        "dtypes": {
+          "Actual Realization  ": "object",
+          "Approval": "object",
+          "Involves  //相关方": "object",
+          "Proposal  //规划": "object",
+          "Sections  //模块": "object"
+        },
+        "name": "ikp9EZ",
+        "range": "A1:E8"
+      },
+      {
+        "columns": [
+          "col1",
+          "Completion",
+          "Release Date",
+          "Actual Release Version",
+          "Links (optional)"
+        ],
+        "data": [
+          [
+            "Initial Release Notification",
+            null,
+            "1/1/2021",
+            null,
+            null
+          ]
+        ],
+        "dtypes": {
+          "Actual Release Version": "object",
+          "Completion": "object",
+          "Links (optional)": "object",
+          "Release Date": "object",
+          "col1": "object"
+        },
+        "name": "GrxUi3",
+        "range": "A1:E2"
+      },
+      {
+        "columns": [
+          "col1",
+          "Completion",
+          "Meets Expecation?",
+          "Links (optional)"
+        ],
+        "data": [
+          [
+            "Feature Result Sharing",
+            null,
+            null,
+            null
+          ]
+        ],
+        "dtypes": {
+          "Completion": "object",
+          "Links (optional)": "object",
+          "Meets Expecation?": "object",
+          "col1": "object"
+        },
+        "name": "X6BTEu",
+        "range": "A1:D2"
+      },
+      {
+        "columns": [
+          "App / Device",
+          "iOS",
+          "Android"
+        ],
+        "data": [
+          [
+            "TikTok-M \u0026 TikTok-T",
+            "Video LIVE",
+            "Video LIVE"
+          ],
+          [
+            "TikTok lite",
+            "N/A",
+            null
+          ],
+          [
+            "Web / PC",
+            null,
+            null
+          ],
+          [
+            "WebApp",
+            null,
+            null
+          ],
+          [
+            "Official Website",
+            null,
+            null
+          ],
+          [
+            "Game Mode",
+            null,
+            null
+          ],
+          [
+            "TV",
+            null,
+            null
+          ],
+          [
+            "TV",
+            "Cast on PC",
+            null
+          ],
+          [
+            "Product Vertical ",
+            null,
+            null
+          ],
+          [
+            "Game Compatibility",
+            "Video LIVE",
+            null
+          ],
+          [
+            "Kids Mode/Private Accounts//儿童模式/私密账户",
+            null,
+            null
+          ],
+          [
+            "Enable for Kids mode users",
+            "Cast on PC",
+            null
+          ],
+          [
+            "Enable for Private Accounts",
+            "Video LIVE",
+            null
+          ]
+        ],
+        "dtypes": {
+          "Android": "object",
+          "App / Device": "object",
+          "iOS": "object"
+        },
+        "name": "SeMGXh",
+        "range": "A1:C14"
+      }
+    ]
+  },
+  "_notice": {
+    "update": {
+      "command": "lark-cli update",
+      "current": "1.0.93",
+      "latest": "1.0.94",
+      "message": "lark-cli 1.0.94 available, current 1.0.93, run: lark-cli update"
+    }
+  }
+}

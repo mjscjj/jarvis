@@ -1,0 +1,33 @@
+{
+  "type": "Update",
+  "content": "5 份 Arena PRD Review 已从上一轮过短版本调整为适中详略，并已读回确认。单篇报告恢复了关键场景、原文依据、影响推理和具体建议；汇总仍保持简洁入口。",
+  "idempotency_key": "task46-prd-review-medium-v1",
+  "task_id": 46,
+  "links": [
+    {
+      "label": "批次汇总",
+      "url": "https://bytedance.my.larkoffice.com/docx/YYKmdUevToWBYYxBZOvmO0ioyGf"
+    },
+    {
+      "label": "LIVE Push CTR",
+      "url": "https://bytedance.my.larkoffice.com/docx/LC7YdQLpIoPVmcxF99FmGNZly5g"
+    },
+    {
+      "label": "B端报告内容迁移",
+      "url": "https://bytedance.my.larkoffice.com/docx/VjZPddXcNokSp9xpH3pmcMXAylh"
+    },
+    {
+      "label": "铁魔杖文件上传",
+      "url": "https://bytedance.my.larkoffice.com/docx/UynidBTYpolI8rx005AmyIZnyId"
+    },
+    {
+      "label": "Rena 主播人群包拆分",
+      "url": "https://bytedance.my.larkoffice.com/docx/XTKAdu2JgoRsmdxg2rnmRqYiyl2"
+    },
+    {
+      "label": "主播类型与运营绑定解耦",
+      "url": "https://bytedance.my.larkoffice.com/docx/HhmRd3m4bo4mbdxS0r0mmrVZy0b"
+    }
+  ],
+  "details": "读回校验：五篇单篇正文约 1858、2120、1938、2345、2009 字；汇总约 781 字。结构解析均 passed。"
+}

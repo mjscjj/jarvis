@@ -1,0 +1,19 @@
+{
+  "ok": true,
+  "identity": "user",
+  "data": {
+    "document": {
+      "content": "<title id=\"YYKmdUevToWBYYxBZOvmO0ioyGf\">Arena PRD Review 汇总｜2026-09-09 组内评审｜精简版</title><h1 id=\"doxmyb5gB30oyFFdiiOw3Ti6vse\">总评</h1><p id=\"doxmy0lLD9nwt6Ypfb1ZybIabkf\">本次 5 份 PRD 均可继续推进；最值得 Principal 关注的是 2 个 with todo 需求，以及跨需求反复出现的数据口径、状态流转、异常兜底、权限可见范围和上线验收边界。</p><h1 id=\"doxmyVEFHMOSCEA6ffhHIcErPNh\">报告入口</h1><table id=\"doxmyfhn30y7jQqfIhOdp9zBJbc\"><colgroup><col width=\"223\"/><col width=\"148\"/><col width=\"287\"/><col width=\"80\"/></colgroup><thead><tr><th vertical-align=\"top\"><p id=\"doxmyBJi1YMkeAcxpQIhIW6GZvd\">PRD</p></th><th vertical-align=\"top\"><p id=\"doxmy9iHgt4GO1jki2mp1kNLaru\">会议状态</p></th><th vertical-align=\"top\"><p id=\"doxmypHcdhnzcQCSiWkiN8JVjpe\">最关键结论</p></th><th vertical-align=\"top\"><p id=\"doxmyC6fTS3NLY0dWYFO9i00dmb\">报告</p></th></tr></thead><tbody><tr><td vertical-align=\"top\"><p id=\"doxmyeqwi1TK2GWs4aB158QxTfh\">LIVE Push CTR</p></td><td vertical-align=\"top\"><p id=\"doxmykMxEIJQ4HHujqqfB4gXiOg\">通过</p></td><td vertical-align=\"top\"><p id=\"doxmySIccZgA8iEbL2YNeFidxV3\">DS 实验方案、Full 组护栏和模型异常兜底需作为正式实验前置。</p></td><td vertical-align=\"top\"><p id=\"doxmyBG7CM2PHoawvOXPFzlnnkg\"><a href=\"https://bytedance.my.larkoffice.com/docx/LC7YdQLpIoPVmcxF99FmGNZly5g\">打开</a></p></td></tr><tr><td vertical-align=\"top\"><p id=\"doxmykIvXikj3Can2EPxvdzzOXd\">B端报告内容迁移</p></td><td vertical-align=\"top\"><p id=\"doxmynApcXsMD11sYCK5toqQ80d\">通过 with todo</p></td><td vertical-align=\"top\"><p id=\"doxmyFOJgzGEntLLr8oTeYvkqYc\">分享内容来源、Rena 口播 Skill 依赖、旧报告下线兼容需固化。</p></td><td vertical-align=\"top\"><p id=\"doxmyXNbHHfCv1zv7yDMqJOeCiu\"><a href=\"https://bytedance.my.larkoffice.com/docx/VjZPddXcNokSp9xpH3pmcMXAylh\">打开</a></p></td></tr><tr><td vertical-align=\"top\"><p id=\"doxmyzc24l88IvWcgS5JHNqyoVe\">铁魔杖文件上传</p></td><td vertical-align=\"top\"><p id=\"doxmysnIj0acz2t2qCG6PdFa5Hh\">通过</p></td><td vertical-align=\"top\"><p id=\"doxmyjazxwPTn9NTyzTsTOZLFfb\">上传模板、Warn/Fail 流转、审批替换和执行前二次校验需补齐。</p></td><td vertical-align=\"top\"><p id=\"doxmyLcMONbNviIokprtjTRSWMh\"><a href=\"https://bytedance.my.larkoffice.com/docx/UynidBTYpolI8rx005AmyIZnyId\">打开</a></p></td></tr><tr><td vertical-align=\"top\"><p id=\"doxmyQOKWDUZfeBY0Y6X240bHDi\">Rena 主播人群包拆分</p></td><td vertical-align=\"top\"><p id=\"doxmymJSROZS50NEIh9uoutHDSa\">通过</p></td><td vertical-align=\"top\"><p id=\"doxmyQysB3DIgSI4RbDlrMD2MGc\">发送前状态复核、拆包触发方、重复拆分和本期量级承诺需确认。</p></td><td vertical-align=\"top\"><p id=\"doxmy5aUXS0OjEdXHJWPxeVeLEb\"><a href=\"https://bytedance.my.larkoffice.com/docx/XTKAdu2JgoRsmdxg2rnmRqYiyl2\">打开</a></p></td></tr><tr><td vertical-align=\"top\"><p id=\"doxmy6ezQq8qmgaOcPokWhJbHmf\">主播类型与运营绑定解耦</p></td><td vertical-align=\"top\"><p id=\"doxmyRxWIhb6WoFO1cFkIr8Uqec\">通过 with todo</p></td><td vertical-align=\"top\"><p id=\"doxmyM9mLJd5II5t9qqegbKwHJf\">新增字段口径、下游报表、历史回填和 TCN 可见权限需明确。</p></td><td vertical-align=\"top\"><p id=\"doxmyBHAzHRmxPEtmbgPw4mckwg\"><a href=\"https://bytedance.my.larkoffice.com/docx/HhmRd3m4bo4mbdxS0r0mmrVZy0b\">打开</a></p></td></tr></tbody></table><h1 id=\"doxmyB8FBayxIH7XkFBHqJenvyg\">范围</h1><p id=\"doxmyhiNCJA7TuRLhfFzWocwdxd\">会议证据：<a href=\"https://applink.feishu.cn/client/thread/open?open_chat_id=oc_43d3b4c42308cc09705a09768650734d&amp;open_thread_id=omt_19c7d40625cf0765\">2026/09/10 Arena 产品组内结论消息</a>。本次只精简既有 Review 报告和汇总，不修改源 PRD、Meego、群消息或 OKR。</p>",
+      "document_id": "YYKmdUevToWBYYxBZOvmO0ioyGf",
+      "revision_id": 4
+    }
+  },
+  "_notice": {
+    "update": {
+      "command": "lark-cli update",
+      "current": "1.0.93",
+      "latest": "1.0.94",
+      "message": "lark-cli 1.0.94 available, current 1.0.93, run: lark-cli update"
+    }
+  }
+}

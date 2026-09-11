@@ -1,0 +1,19 @@
+{
+  "ok": true,
+  "identity": "user",
+  "data": {
+    "document": {
+      "content": "<title id=\"VjZPddXcNokSp9xpH3pmcMXAylh\">PRD Review｜[主播报告]B端报告内容迁移｜2026-09-09 Arena组内</title><h1 id=\"doxmy8rl04qMWSyozzMjh3aOYUd\">结论</h1><p id=\"doxmyKbJ0i9P4gGu5iEh9hRdvqd\">这份 PRD 的核心取舍合理：停止低效高成本的 B 端报告预生产，把仍有价值的内部评估信息迁移到「优质主播评估详情」，切片与口播分析改为 Rena 按需生成。当前最需要补齐的是新入口的完整用户路径、Rena Skill 可用性与数据口径，以及下线旧链路后的兼容和灰度策略。</p><h1 id=\"doxmy96k4fnG3kJ2sJiaOmofNgV\">来源</h1><ul><li id=\"doxmyTuIunO2BsHbCn9jBf0AhDb\">原 PRD：<a href=\"https://bytedance.larkoffice.com/wiki/OM6lwdQsxi4EndkSN1lcyOHSnyb\">[主播报告]B端报告内容迁移</a></li><li id=\"doxmyDRDmUbNH5fWDsLelnaKXUg\">会议证据：2026/09/09 Arena 产品组内结论，状态为通过 with todo，todo 为调整回答模块布局、下线 B 端报告、推进口播 skill 研究。</li><li id=\"doxmyEDsxVeWI6itEclCEKD4Glg\">读取版本：revision 2937，读取时间 2026-09-11。</li></ul><h1 id=\"doxmy9I1NeZ2dvOElje7rA8Zt6e\">产品理解</h1><p id=\"doxmyP6kaCH15f79BZMC6Vh6fSc\">PRD 试图把 B 端报告从“批量预生成文档/报告”转为“详情页集中展示 + Rena 按需分析”。它同时处理三个动作：迁移 B 端内部内容、停止 B 端报告生产、更新 PGC 口播展示并新增 Rena 口播分析 Skill。</p><h1 id=\"doxmyhWfeSOrXAWWbsa8m4SQY9g\">主要发现</h1><h2 id=\"doxmyaj5aiv0vTNK3DkOc6kOjnf\">目标用户与入口口径已被追问，但正文仍未把最终口径固化</h2><p id=\"doxmyBMntnreXEeEqpLpriSxVFc\">评论中张月仁追问“目标谁用这个”，回复是“查看优质主播详情页 tab 的 CM 对于总分有疑问 / 四要素生产有需求”。另一条评论还追问 35 人进入报告详情与 58 人报告访问用户的关系，回复区分了主入口与调优工作台入口。</p><p id=\"doxmylroG2ALmBpWYpkruFy8pth\">影响：正文中的漏斗和目标用户如果不固定口径，后续很难判断迁移是否改善使用效率，研发也难以决定哪些入口必须保留、哪些可以下线。</p><p id=\"doxmyaPCWZ9FgYc54g59g2S8gzd\">建议：把目标用户拆成至少两类：从主播详情页进入的 CM、从调优工作台进入的 CM；分别定义迁移后入口、核心动作和埋点口径。</p><h2 id=\"doxmyRzZFV65qvQRpCALXDwyZga\">“停止生产 B 端报告”与“保留分享能力”之间需要明确分享内容来源</h2><p id=\"doxmyosLBDO6DJBy6AwliPmCquO\">PRD 说不再生产 B 端报告，主播可见内容复用 C 端报告，内部评估信息在详情页展示；同时要求保留“分享报告给主播”。目前没有明确分享预览和分享链接到底指向 C 端报告、详情页快照，还是新生成的可分享内容。</p><p id=\"doxmyKqtHWbf14PhRpVnB0F48NL\">影响：如果分享内容含内部评估信息，存在权限与内容泄露风险；如果只分享 C 端报告，则分享入口与详情页内部信息需要在 UI 上明显区分。</p><p id=\"doxmy3LSgT6pGgVB8ePuTEgfD7b\">建议：补充分享对象、分享内容、可见字段和权限边界，明确内部评估信息不可被主播侧访问。</p><h2 id=\"doxmytx3MUvNluHuFxnfYoNYvFg\">Rena 口播分析 Skill 是关键依赖，但当前仍是设计态</h2><p id=\"doxmy8r53BYxLeGBEZqvF8dydjh\">文档明确“调用 Skill 名称待算法确认，本期新增口播分析 Skill”，并设计了 query pattern 与 answer pattern。这部分是业务价值的核心，却尚未写清数据源、接口状态、失败提示和上线依赖。</p><p id=\"doxmytvV057p5c5jnB6rPeb2OzY\">影响：如果 Rena Skill 未按期可用，迁移后 CM 可能只能看到静态指标，无法获得切片和可执行建议，原 B 端报告的关键价值会断档。</p><p id=\"doxmyx8JwSJqfS60ZZlnd9t2HEh\">建议：把 Rena Skill 拆为独立依赖项，定义 P0 能力、不可用兜底、切片生成超时/失败提示，以及与“优质主播评估详情”的联调验收。</p><h2 id=\"doxmyfG4T6IzgYLtMtAQu2mhKlC\">口播达标标准与报告策略之间存在口径并存风险</h2><p id=\"doxmyAEbVPkIQp2EyCf56sRTNyB\">文档写 PGC 达标采用“条件①且（②或③）”新版口径，同时补充规则说明策略表仍有“场均口播&lt;100”等 WIP 配置，问题诊断复用经确认的报告策略。</p><p id=\"doxmylM5VSeWneJSc7xQIWZDkjg\">影响：同一主播可能出现 PGC 达标结论与诊断问题不一致，CM 不清楚应以哪个口径指导主播。</p><p id=\"doxmy2ndMtxqSgucUkTqt9sOwXb\">建议：在页面和 Skill 回答中显式区分“PGC 达标评估口径”和“报告问题诊断口径”，并给出口径冲突时的解释文案。</p><h2 id=\"doxmyZ2UxicBg9BeSuJIDCA1Iaf\">下线旧入口需要灰度与回退路径</h2><p id=\"doxmyRkOwoty2cP4draS79WV7Ab\">PRD 规定旧“主播报告”按钮不再打开原 B 端报告页，而是切到优质主播评估详情并弹迁移提示。但没有说明老报告链接、历史报告访问、调优工作台 View report 跳转和区域培训的回退策略。</p><p id=\"doxmy8EDETG3G37ogjlNOsuK2og\">影响：若用户仍持有历史报告链接，或调优工作台入口未同步更新，会造成断链或误导。</p><p id=\"doxmyJfXOH2WsPcMvlFoFr2bWqN\">建议：补充旧链接处理、入口迁移灰度、监控指标和回退条件；至少覆盖主播详情页按钮、调优工作台 View report、历史报告链接三类入口。</p><h1 id=\"doxmycNeesj63BPOkMCIiht8qTb\">待决策事项</h1><ul><li id=\"doxmyq81miYAqk9v2ZgdsfiWnDf\">分享给主播时最终展示的是 C 端报告、详情页快照，还是新的分享页。</li><li id=\"doxmyHZ7sFD2i5F9OsmLhgJLgCh\">Rena 口播分析 Skill 是否作为本需求上线硬依赖，还是允许先迁移静态内容。</li><li id=\"doxmyL1YPPh79QkqRBaTw07knPc\">旧 B 端报告历史链接保留多久，是否需要跳转或只读归档。</li></ul><h1 id=\"doxmyX9pVkATygCBfe5sJAeQIYb\">未覆盖范围</h1><p id=\"doxmyDtIrkFBAaiYeiLZwH8jIAg\">本次读取了 PRD 正文和可见评论，未下载全部图片，也未读取嵌入表格中的埋点、依赖、合规细节。</p>",
+      "document_id": "VjZPddXcNokSp9xpH3pmcMXAylh",
+      "revision_id": 3
+    }
+  },
+  "_notice": {
+    "update": {
+      "command": "lark-cli update",
+      "current": "1.0.93",
+      "latest": "1.0.94",
+      "message": "lark-cli 1.0.94 available, current 1.0.93, run: lark-cli update"
+    }
+  }
+}

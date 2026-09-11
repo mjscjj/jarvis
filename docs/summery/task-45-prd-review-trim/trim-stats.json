@@ -1,0 +1,68 @@
+[
+  {
+    "token": "LC7YdQLpIoPVmcxF99FmGNZly5g",
+    "title_before": "PRD Review｜[触达中心] LIVE Push CTR模型与强触达恢复｜2026-09-09 Arena组内",
+    "title_after": "PRD Review｜LIVE Push CTR｜精简版",
+    "revision_before": 3,
+    "revision_after": 4,
+    "chars_before": 1447,
+    "chars_after": 357,
+    "reduction_chars": 1090,
+    "reduction_percent": 75.3
+  },
+  {
+    "token": "VjZPddXcNokSp9xpH3pmcMXAylh",
+    "title_before": "PRD Review｜[主播报告]B端报告内容迁移｜2026-09-09 Arena组内",
+    "title_after": "PRD Review｜B端报告内容迁移｜精简版",
+    "revision_before": 3,
+    "revision_after": 4,
+    "chars_before": 1696,
+    "chars_after": 379,
+    "reduction_chars": 1317,
+    "reduction_percent": 77.7
+  },
+  {
+    "token": "UynidBTYpolI8rx005AmyIZnyId",
+    "title_before": "PRD Review｜[流量工具]铁魔杖新版本增加文件上传功能｜2026-09-09 Arena组内",
+    "title_after": "PRD Review｜铁魔杖文件上传｜精简版",
+    "revision_before": 3,
+    "revision_after": 4,
+    "chars_before": 1474,
+    "chars_after": 368,
+    "reduction_chars": 1106,
+    "reduction_percent": 75.0
+  },
+  {
+    "token": "XTKAdu2JgoRsmdxg2rnmRqYiyl2",
+    "title_before": "PRD Review｜Rena 主播人群包拆分｜9月10日 Arena 组内结论",
+    "title_after": "PRD Review｜Rena 主播人群包拆分｜精简版",
+    "revision_before": 12,
+    "revision_after": 13,
+    "chars_before": 3655,
+    "chars_after": 474,
+    "reduction_chars": 3181,
+    "reduction_percent": 87.0
+  },
+  {
+    "token": "HhmRd3m4bo4mbdxS0r0mmrVZy0b",
+    "title_before": "PRD Review｜[主播管理] 主播类型与运营绑定关系单向解耦｜2026-09-09 Arena组内",
+    "title_after": "PRD Review｜主播类型与运营绑定解耦｜精简版",
+    "revision_before": 3,
+    "revision_after": 4,
+    "chars_before": 1538,
+    "chars_after": 493,
+    "reduction_chars": 1045,
+    "reduction_percent": 67.9
+  },
+  {
+    "token": "YYKmdUevToWBYYxBZOvmO0ioyGf",
+    "title_before": "Arena PRD Review 汇总｜2026-09-09 组内评审",
+    "title_after": "Arena PRD Review 汇总｜2026-09-09 组内评审｜精简版",
+    "revision_before": 3,
+    "revision_after": 4,
+    "chars_before": 1286,
+    "chars_after": 446,
+    "reduction_chars": 840,
+    "reduction_percent": 65.3
+  }
+]

@@ -1,0 +1,19 @@
+{
+  "ok": true,
+  "identity": "user",
+  "data": {
+    "document": {
+      "content": "<title id=\"LC7YdQLpIoPVmcxF99FmGNZly5g\">PRD Review｜LIVE Push CTR｜精简版</title><h1 id=\"doxmyJBlVpdcPuXqibW3fKQoned\">结论</h1><p id=\"doxmybzojzox2ciohTdpxaEfq5K\">方向可以继续：用 LIVE 自有 CTR 模型争取 Push 强触达资格。上线前最关键的是把 DS 实验方案、Full 组护栏和异常兜底写成可执行口径。</p><h1 id=\"doxmy5Cv7Aj11XIfD8jQSjzhC2c\">关键问题</h1><ul><li id=\"doxmyP0IJlrYvYzOrt5kOJeBMVe\">DS 还未正式承接实验方案。会议评论要求“让 DS 出；提个需求”，建议把阈值表、样本量、T+15d 成熟口径列为正式实验前置。</li><li id=\"doxmyRwtlgaClb5QOverX0XdGPe\">Full 组已知达不到 5% CTR，但 PRD 只写 0.2% 规模，未写曝光上限、负反馈阈值和回退 Owner；建议补中台确认记录和停止条件。</li><li id=\"doxmy0te6XufkqxAWmjtlPA3tPe\">模型失败、特征缺失、Push 回传缺失时只写“弱触达或停止”，建议补异常决策表，避免实验样本和真实触达混杂。</li></ul><h1 id=\"doxmyX2VtmecVQ2hTf2V07aF03e\">依据</h1><p id=\"doxmyAbI3pHQcUku8xBdV6Xoxad\">原 PRD：<a href=\"https://bytedance.my.larkoffice.com/docx/JzNOdClz4o388RxZRQSmubiwyTh\">LIVE Push CTR模型与强触达恢复</a>；会议状态：通过；读取版本：revision 752。未覆盖：外部算法文档、Push 中台正式口径和完整合规材料。</p>",
+      "document_id": "LC7YdQLpIoPVmcxF99FmGNZly5g",
+      "revision_id": 4
+    }
+  },
+  "_notice": {
+    "update": {
+      "command": "lark-cli update",
+      "current": "1.0.93",
+      "latest": "1.0.94",
+      "message": "lark-cli 1.0.94 available, current 1.0.93, run: lark-cli update"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "ok": true,
+  "identity": "user",
+  "data": {
+    "file_token": "XTKAdu2JgoRsmdxg2rnmRqYiyl2",
+    "title": "PRD Review｜Rena 主播人群包拆分｜9月10日 Arena 组内结论",
+    "type": "docx",
+    "updated": true,
+    "url": "https://www.feishu.cn/docx/XTKAdu2JgoRsmdxg2rnmRqYiyl2"
+  },
+  "_notice": {
+    "update": {
+      "command": "lark-cli update",
+      "current": "1.0.93",
+      "latest": "1.0.94",
+      "message": "lark-cli 1.0.94 available, current 1.0.93, run: lark-cli update"
+    }
+  }
+}

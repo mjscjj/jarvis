@@ -1,0 +1,19 @@
+{
+  "ok": true,
+  "identity": "user",
+  "data": {
+    "document": {
+      "content": "<title id=\"UynidBTYpolI8rx005AmyIZnyId\">PRD Review｜铁魔杖文件上传｜精简版</title><h1 id=\"doxmyXjJRhjrWiwvCw60b4PQT1g\">结论</h1><p id=\"doxmyyOJnBL7K13BeTzTD7WyCKc\">需求边界清楚：为新版铁魔杖补回多任务文件上传能力。主要交付风险在模板字段、校验结果流转、审批替换和执行前二次校验。</p><h1 id=\"doxmy7ZSjQWodPD8UpBSs7HWkQf\">关键问题</h1><ul><li id=\"doxmycoRUhmfErLhoBPmvPaCdIe\">PRD 未固化上传模板字段。建议补字段名、必填、枚举、时区/时间格式、最大 100 个 VID、示例值和错误文案，避免运营与研发口径不一致。</li><li id=\"doxmyKzXsN5BsbximoEEkcTArCh\">Fail/Warn/Success 后续动作不够清楚。建议规定 Fail 不可提交且可下载错误清单，Warn 需确认后提交，审批只包含 Success 和已确认 Warn。</li><li id=\"doxmylipebRp54aZusKPcyRHbug\">重新上传会替换原视频并重走审批，但未定义旧审批、文件版本和视频列表关系。建议新增状态流，并在执行前对配额、冲突、可加热状态做二次校验。</li></ul><h1 id=\"doxmyeGidJzrXdyeUsNWkakFEYb\">依据</h1><p id=\"doxmy2SkgaINsN9xVnQsZCmHPAd\">原 PRD：<a href=\"https://bytedance.larkoffice.com/wiki/WY6WwFv4BipY3gkFMjaclHzGn5g\">铁魔杖新版本增加文件上传功能</a>；会议状态：通过；读取版本：revision 1695。未覆盖：配置指南、模板文件、审批系统细节和图片。</p>",
+      "document_id": "UynidBTYpolI8rx005AmyIZnyId",
+      "revision_id": 4
+    }
+  },
+  "_notice": {
+    "update": {
+      "command": "lark-cli update",
+      "current": "1.0.93",
+      "latest": "1.0.94",
+      "message": "lark-cli 1.0.94 available, current 1.0.93, run: lark-cli update"
+    }
+  }
+}

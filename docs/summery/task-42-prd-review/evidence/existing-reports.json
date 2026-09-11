@@ -1,0 +1,19 @@
+{
+  "ok": true,
+  "identity": "user",
+  "data": {
+    "has_more": false,
+    "page_token": "{\"Mode\":0,\"GeoStrategyInfos\":{\"eu_ea\":{\"Mode\":0,\"Size\":15,\"Offset\":0,\"PreviousOffset\":0,\"Total\":0,\"strategies_infos\":[{\"strategies\":{},\"before_current_strategy_have_recalled_count\":0},{\"strategies\":{},\"before_current_strategy_have_recalled_count\":0}],\"last_strategy_infos\":{\"strategies\":{},\"before_current_strategy_have_recalled_count\":0},\"search_cold\":true},\"eu_nc\":{\"Mode\":0,\"Size\":15,\"Offset\":0,\"PreviousOffset\":0,\"Total\":0,\"strategies_infos\":[{\"strategies\":{},\"before_current_strategy_have_recalled_count\":0},{\"strategies\":{},\"before_current_strategy_have_recalled_count\":0}],\"last_strategy_infos\":{\"strategies\":{},\"before_current_strategy_have_recalled_count\":0},\"search_cold\":true},\"larkmy\":{\"Mode\":0,\"Size\":15,\"Offset\":0,\"PreviousOffset\":0,\"Total\":0,\"strategies_infos\":[{\"strategies\":{},\"before_current_strategy_have_recalled_count\":0},{\"strategies\":{},\"before_current_strategy_have_recalled_count\":0}],\"last_strategy_infos\":{\"strategies\":{},\"before_current_strategy_have_recalled_count\":0},\"search_cold\":true},\"larksgaws\":{\"Mode\":0,\"Size\":15,\"Offset\":0,\"PreviousOffset\":0,\"Total\":0,\"strategies_infos\":[{\"strategies\":{},\"before_current_strategy_have_recalled_count\":0},{\"strategies\":{},\"before_current_strategy_have_recalled_count\":0}],\"last_strategy_infos\":{\"strategies\":{},\"before_current_strategy_have_recalled_count\":0},\"search_cold\":true},\"useast15a\":{\"Mode\":0,\"Size\":15,\"Offset\":0,\"PreviousOffset\":0,\"Total\":0,\"strategies_infos\":[{\"strategies\":{},\"before_current_strategy_have_recalled_count\":0},{\"strategies\":{},\"before_current_strategy_have_recalled_count\":0}],\"last_strategy_infos\":{\"strategies\":{},\"before_current_strategy_have_recalled_count\":0},\"search_cold\":true}},\"size\":15,\"shown_recordids_cache_Key\":\"6620193300198457604_6d52db79-7e69-4b16-a461-b9208942a122_1789116414280399798\",\"search_cold\":true}",
+    "results": [],
+    "total": 0
+  },
+  "meta": {},
+  "_notice": {
+    "update": {
+      "command": "lark-cli update",
+      "current": "1.0.93",
+      "latest": "1.0.94",
+      "message": "lark-cli 1.0.94 available, current 1.0.93, run: lark-cli update"
+    }
+  }
+}
