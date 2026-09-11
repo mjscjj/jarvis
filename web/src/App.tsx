@@ -107,8 +107,8 @@ function AppShell() {
   const [moduleEnablement, setModuleEnablement] = useState<Record<string, boolean>>()
   const [okrManagementAccess, setOKRManagementAccess] = useState(false)
   const [okrUserEmail, setOKRUserEmail] = useState<string>()
-  const showOKRChat = user?.username === 'lixiaolin' || [user?.email, okrUserEmail]
-    .some((email) => email?.trim().toLowerCase() === 'claire.li@bytedance.com')
+  const showOKRChat = ['lixiaolin', 'chujiejie.1'].includes(user?.username ?? '') || [user?.email, okrUserEmail]
+    .some((email) => ['claire.li@bytedance.com', 'chujiejie.1@bytedance.com'].includes(email?.trim().toLowerCase() ?? ''))
   const [moduleLoadError, setModuleLoadError] = useState<string>()
   const [enabledPlugins, setEnabledPlugins] = useState<Array<Pick<Plugin, 'id' | 'name' | 'kind' | 'enabled'>>>([])
   const [shuttingDown, setShuttingDown] = useState(false)
