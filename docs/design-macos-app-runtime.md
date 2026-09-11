@@ -86,12 +86,12 @@ After Qdrant and Jarvis are healthy, stdout contains exactly one discovery line:
 JARVIS_RUNTIME_CONNECTION {"httpUrl":"http://127.0.0.1:18800","dataRoot":"..."}
 ```
 
-Question, approval, and task-associated Notice cards use `server.public_url`
+Question, approval, and task-associated Notice cards use `server.public_base_url`
 when configured, preserving the browser-facing scheme, host, port and path.
 This allows a remote instance behind a reverse proxy or port forward to link
 to its actual access URL independently of its listen address. Without that
-setting, links use the effective listen address including the `-addr` override;
-a loopback bind stays loopback and is never replaced with a LAN IP.
+setting, links use the effective listen address including the `-addr` override.
+macOS falls back to loopback; Linux may resolve a wildcard bind to its LAN IP.
 Loopback URLs are labelled “查看详情（本机访问）”: the device opening the link
 must have the local service or port forward running. For a default desktop
 installation, this means opening the link on the Mac while the app is running;

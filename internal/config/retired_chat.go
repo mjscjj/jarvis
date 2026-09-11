@@ -7,9 +7,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// DiscardRetiredChatConfig removes sidecar-only settings before deployment's
-// strict config read. It does not restore support for the retired settings.
-func DiscardRetiredChatConfig(configPath string) error {
+// MigrateRetiredConfig removes or moves retired settings before deployment's
+// strict config read. It does not restore support for retired settings.
+func MigrateRetiredConfig(configPath string) error {
 	for _, path := range []string{configPath, RuntimeOverridePath(configPath)} {
 		if _, err := os.Stat(path); os.IsNotExist(err) && path != configPath {
 			continue
@@ -29,6 +29,14 @@ func DiscardRetiredChatConfig(configPath string) error {
 				changed = true
 			}
 		}
+		server := mappingValue(root, "server")
+		if old := mappingValue(server, "public_url"); old != nil {
+			if current := mappingValue(server, "public_base_url"); current == nil || current.Value == "" {
+				setYAMLScalar(root, "server", "public_base_url", old.Value)
+			}
+			removeYAMLMappingKey(root, "server", "public_url")
+			changed = true
+		}
 		if !changed {
 			continue
 		}
@@ -38,10 +46,10 @@ func DiscardRetiredChatConfig(configPath string) error {
 		}
 		var cfg Config
 		if err := decodeKnownYAML(raw, &cfg); err != nil {
-			return fmt.Errorf("validate config after discarding retired chat settings: %w", err)
+			return fmt.Errorf("validate config after migrating retired settings: %w", err)
 		}
 		if err := os.WriteFile(path, raw, 0o600); err != nil {
-			return fmt.Errorf("discard retired chat settings in %q: %w", path, err)
+			return fmt.Errorf("migrate retired settings in %q: %w", path, err)
 		}
 	}
 	return nil

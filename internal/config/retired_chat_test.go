@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestDiscardRetiredChatConfig(t *testing.T) {
+func TestMigrateRetiredConfig(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	base := "server:\n  addr: 127.0.0.1:18802\nchat:\n  enabled: true\n  bin: old-agent\n"
 	override := "# keep local settings\nchat:\n  addr: 127.0.0.1:18803\n  fast_mode: false\n  history_dir: data/chat\n  model: current-model\nexecute:\n  bin: current-agent\n"
@@ -19,7 +19,7 @@ func TestDiscardRetiredChatConfig(t *testing.T) {
 	if _, err := InspectInstance(path); err == nil {
 		t.Fatal("old config must fail strict decoding before cleanup")
 	}
-	if err := DiscardRetiredChatConfig(path); err != nil {
+	if err := MigrateRetiredConfig(path); err != nil {
 		t.Fatal(err)
 	}
 	instance, err := InspectInstance(path)
@@ -34,7 +34,7 @@ func TestDiscardRetiredChatConfig(t *testing.T) {
 	if !strings.Contains(string(before), "# keep local settings") {
 		t.Fatal("cleanup lost comments")
 	}
-	if err := DiscardRetiredChatConfig(path); err != nil {
+	if err := MigrateRetiredConfig(path); err != nil {
 		t.Fatal(err)
 	}
 	after, _ := os.ReadFile(RuntimeOverridePath(path))
@@ -43,13 +43,53 @@ func TestDiscardRetiredChatConfig(t *testing.T) {
 	}
 }
 
-func TestDiscardRetiredChatConfigRejectsUnrelatedUnknownFields(t *testing.T) {
+func TestMigrateRetiredConfigMovesPublicURL(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	base := "server:\n  addr: 127.0.0.1:18802\n  public_base_url: ''\n"
+	override := "server:\n  public_url: https://jarvis.example.com\n"
+	for file, content := range map[string]string{path: base, RuntimeOverridePath(path): override} {
+		if err := os.WriteFile(file, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := MigrateRetiredConfig(path); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := readConfig(path)
+	if err != nil || cfg.Server.PublicBaseURL != "https://jarvis.example.com" {
+		t.Fatalf("public base URL = %q, error = %v", cfg.Server.PublicBaseURL, err)
+	}
+	raw, _ := os.ReadFile(RuntimeOverridePath(path))
+	if strings.Contains(string(raw), "public_url:") {
+		t.Fatalf("retired public_url remained: %s", raw)
+	}
+}
+
+func TestMigrateRetiredConfigPreservesExistingPublicBaseURL(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	base := "server:\n  addr: 127.0.0.1:18802\n"
+	override := "server:\n  public_base_url: https://new.example.com\n  public_url: https://old.example.com\n"
+	for file, content := range map[string]string{path: base, RuntimeOverridePath(path): override} {
+		if err := os.WriteFile(file, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := MigrateRetiredConfig(path); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := readConfig(path)
+	if err != nil || cfg.Server.PublicBaseURL != "https://new.example.com" {
+		t.Fatalf("public base URL = %q, error = %v", cfg.Server.PublicBaseURL, err)
+	}
+}
+
+func TestMigrateRetiredConfigRejectsUnrelatedUnknownFields(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	raw := "chat:\n  bin: old-agent\n  misspelled_model: bad\n"
 	if err := os.WriteFile(path, []byte(raw), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := DiscardRetiredChatConfig(path); err == nil {
+	if err := MigrateRetiredConfig(path); err == nil {
 		t.Fatal("cleanup must not discard or accept unrelated unknown keys")
 	}
 	got, _ := os.ReadFile(path)

@@ -23,14 +23,14 @@ type Resolver struct {
 	resolveIPv4 func() (net.IP, error)
 }
 
-// New fixes macOS links to loopback. Linux defaults to the LAN address and
-// allows public_url to override it for a reverse proxy or domain. The actual
+// New prefers the deployment's browser-reachable base URL. Without one, macOS
+// uses loopback while Linux defaults to the LAN address. The actual
 // listen port (including the desktop -addr override) is never hardcoded.
-func New(address, publicURL string) (*Resolver, error) {
-	return newForPlatform(address, publicURL, runtime.GOOS)
+func New(address, publicBaseURL string) (*Resolver, error) {
+	return newForPlatform(address, publicBaseURL, runtime.GOOS)
 }
 
-func newForPlatform(address, publicURL, platform string) (*Resolver, error) {
+func newForPlatform(address, publicBaseURL, platform string) (*Resolver, error) {
 	host, port, err := net.SplitHostPort(strings.TrimSpace(address))
 	if err != nil {
 		return nil, fmt.Errorf("UI link listen address: %w", err)
@@ -40,21 +40,21 @@ func newForPlatform(address, publicURL, platform string) (*Resolver, error) {
 		return nil, fmt.Errorf("UI link requires a fixed valid port: %q", port)
 	}
 	r := &Resolver{host: host, port: port, localOnly: platform == "darwin", resolveIPv4: currentIPv4}
-	if raw := strings.TrimSpace(publicURL); raw != "" {
+	if raw := strings.TrimSpace(publicBaseURL); raw != "" {
 		u, err := url.Parse(raw)
 		if err != nil {
-			return nil, fmt.Errorf("server.public_url: %w", err)
+			return nil, fmt.Errorf("server.public_base_url: %w", err)
 		}
 		if (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.ForceQuery || strings.Contains(raw, "#") {
-			return nil, fmt.Errorf("server.public_url must be an absolute http(s) base URL without credentials, query or fragment")
+			return nil, fmt.Errorf("server.public_base_url must be an absolute http(s) base URL without credentials, query or fragment")
 		}
 		if ip := net.ParseIP(u.Hostname()); ip != nil && ip.IsUnspecified() {
-			return nil, fmt.Errorf("server.public_url must use a browser-reachable host, not a wildcard address")
+			return nil, fmt.Errorf("server.public_base_url must use a browser-reachable host, not a wildcard address")
 		}
 		if port := u.Port(); port != "" {
 			n, err := strconv.Atoi(port)
 			if err != nil || n < 1 || n > 65535 {
-				return nil, fmt.Errorf("server.public_url requires a valid port: %q", port)
+				return nil, fmt.Errorf("server.public_base_url requires a valid port: %q", port)
 			}
 		}
 		r.publicURL = u
@@ -66,13 +66,6 @@ func (r *Resolver) Task(id uint64) (Link, error) {
 	if id == 0 {
 		return Link{}, fmt.Errorf("UI task link requires a positive task ID")
 	}
-	if r.localOnly {
-		host := "127.0.0.1"
-		if r.host == "::1" || r.host == "::" {
-			host = "::1"
-		}
-		return Link{URL: fmt.Sprintf("http://%s/#/work/task/%d", net.JoinHostPort(host, r.port), id), Label: detailLabel(host)}, nil
-	}
 	if r.publicURL != nil {
 		u := *r.publicURL
 		if u.Path == "" {
@@ -80,6 +73,13 @@ func (r *Resolver) Task(id uint64) (Link, error) {
 		}
 		u.Fragment = fmt.Sprintf("/work/task/%d", id)
 		return Link{URL: u.String(), Label: detailLabel(u.Hostname())}, nil
+	}
+	if r.localOnly {
+		host := "127.0.0.1"
+		if r.host == "::1" || r.host == "::" {
+			host = "::1"
+		}
+		return Link{URL: fmt.Sprintf("http://%s/#/work/task/%d", net.JoinHostPort(host, r.port), id), Label: detailLabel(host)}, nil
 	}
 	host := r.host
 	ip := net.ParseIP(host)

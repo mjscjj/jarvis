@@ -63,11 +63,10 @@ type IdentityConfig struct {
 type ServerConfig struct {
 	Addr string `yaml:"addr"` // 形如 0.0.0.0:18800
 	// PublicBaseURL 是这台部署对外可打开的根地址（形如 http://host.example:18800）。
-	// 分享链接用它替换浏览器地址栏里的 IP；留空表示沿用当前地址。
+	// 分享链接和飞书卡片详情链接都优先使用它；留空表示沿用当前地址。
 	PublicBaseURL string   `yaml:"public_base_url"`
-	PublicURL     string   `yaml:"public_url"` // Linux 的卡片访问入口覆盖；空值用局域网 IP，Mac 始终本地
-	WebRoot       string   `yaml:"web_root"`   // React production build directory
-	LogFiles      []string `yaml:"log_files"`  // 运行日志文件（供调试面板尾读并归并）；默认 server 的 stdout+stderr 两个文件。cron 日志走 stderr，必须都读。
+	WebRoot       string   `yaml:"web_root"`  // React production build directory
+	LogFiles      []string `yaml:"log_files"` // 运行日志文件（供调试面板尾读并归并）；默认 server 的 stdout+stderr 两个文件。cron 日志走 stderr，必须都读。
 }
 
 // SQLiteConfig is the single local business source of truth.
@@ -402,18 +401,18 @@ func (c *Config) validate() error {
 	if c.Server.Addr == "" {
 		return fmt.Errorf("server.addr 不能为空")
 	}
-	if _, err := uilink.New(c.Server.Addr, c.Server.PublicURL); err != nil {
-		return err
-	}
-	if c.Server.WebRoot == "" {
-		return fmt.Errorf("server.web_root 不能为空")
-	}
 	if raw := strings.TrimSpace(c.Server.PublicBaseURL); raw != "" {
 		parsed, err := url.Parse(raw)
 		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
 			return fmt.Errorf("server.public_base_url 必须是 http(s) 绝对地址，当前为 %q", c.Server.PublicBaseURL)
 		}
 		c.Server.PublicBaseURL = raw
+	}
+	if _, err := uilink.New(c.Server.Addr, c.Server.PublicBaseURL); err != nil {
+		return err
+	}
+	if c.Server.WebRoot == "" {
+		return fmt.Errorf("server.web_root 不能为空")
 	}
 	if len(c.Server.LogFiles) == 0 {
 		// stdout（路由/启动）与 stderr（各 cron 运行结果、报错）默认都读，否则 cron 日志漏看。

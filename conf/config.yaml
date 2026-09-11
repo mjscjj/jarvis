@@ -13,8 +13,7 @@ auth:
 
 server:
   addr: "127.0.0.1:18800"
-  public_base_url: ""                     # 对外可打开的根地址（形如 https://emily.example/）；分享链接用它替换浏览器地址栏里的 IP，留空表示沿用当前地址
-  public_url: ""                         # Mac 固定本地链接；Linux 默认局域网 IP，可用此项覆盖为域名/代理入口
+  public_base_url: ""                     # 对外可打开的根地址；分享链接和飞书卡片详情链接优先使用它，留空表示沿用当前地址
   web_root: "web/dist"
   log_files:                              # 调试面板尾读并归并的运行日志；stderr 里有各 cron 运行结果，必须一起读
     - "var/log/jarvis-server.log"
@@ -22,7 +21,7 @@ server:
 
 # SQLite：单机业务真源。服务只开一个连接，所有写入在进程内串行执行。
 sqlite:
-  path: "var/jarvis.db"
+  path: "var/jarvis-lixiaolin.db"
 
 # M3 备用 model_api 模型名与超时。Ark endpoint、API Key、Todo embedding
 # 模型和维度按本机部署约定固定在 internal/ark，避免配置层出现第二真源。

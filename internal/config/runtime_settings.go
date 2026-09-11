@@ -183,7 +183,7 @@ func (s *RuntimeSettingsService) Update(ctx context.Context, input RuntimeSettin
 	// runtime overlay.
 	override.Auth = cfg.Auth
 	override.Server.Addr = cfg.Server.Addr
-	override.Server.PublicURL = cfg.Server.PublicURL
+	override.Server.PublicBaseURL = cfg.Server.PublicBaseURL
 	override.Capture.P2PScanEnabled = cfg.Capture.P2PScanEnabled
 	override.Extract.PrincipalOpenID = cfg.Extract.PrincipalOpenID
 	override.LarkCLI.Bin = cfg.LarkCLI.Bin
@@ -226,7 +226,7 @@ func (s *RuntimeSettingsService) UpdateSecurity(ctx context.Context, input Secur
 	settings := runtimeSettingsFromConfig(cfg)
 	override := runtimeOverrideFromSettings(settings)
 	override.Server.Addr = cfg.Server.Addr
-	override.Server.PublicURL = cfg.Server.PublicURL
+	override.Server.PublicBaseURL = cfg.Server.PublicBaseURL
 	override.Capture.P2PScanEnabled = cfg.Capture.P2PScanEnabled
 	override.Extract.PrincipalOpenID = cfg.Extract.PrincipalOpenID
 	override.LarkCLI.Bin = cfg.LarkCLI.Bin
@@ -423,8 +423,8 @@ type runtimeOverride struct {
 	Identity IdentityConfig `yaml:"identity"`
 	Auth     AuthConfig     `yaml:"auth"`
 	Server   struct {
-		Addr      string `yaml:"addr"`
-		PublicURL string `yaml:"public_url"`
+		Addr          string `yaml:"addr"`
+		PublicBaseURL string `yaml:"public_base_url"`
 	} `yaml:"server"`
 	Extract struct {
 		PrincipalOpenID       string  `yaml:"principal_open_id"`

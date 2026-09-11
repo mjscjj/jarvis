@@ -156,14 +156,14 @@ conf/config.yaml
 
 ### 卡片详情访问地址
 
-`server.addr` 控制服务监听，`server.public_url` 指定通知、提问及回答后的卡片
-使用的浏览器访问入口。Mac 固定生成本地地址，不使用域名覆盖；Linux 默认使用
-局域网地址和实际服务端口，配置 `public_url` 时优先使用域名或代理入口。
+`server.addr` 控制服务监听，`server.public_base_url` 是用户打开 Jarvis 的统一入口，
+同时用于页面分享以及通知、提问和回答后的卡片详情链接。未配置时，macOS 使用
+本机地址，Linux 使用局域网地址和实际服务端口。
 在 `conf/config.runtime.yaml` 配置，例如：
 
 ```yaml
 server:
-  public_url: "https://jarvis.example.com"
+  public_base_url: "https://jarvis.example.com"
 ```
 
 没有域名时也可填写 `http://服务器IP:18800`。示例地址需替换成自己的入口。支持 HTTP/HTTPS、自定义端口与代理路径；地址应指向

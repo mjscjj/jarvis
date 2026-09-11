@@ -70,7 +70,7 @@ func TestInvalidAddressAndTask(t *testing.T) {
 	}
 }
 
-func TestPublicURLOverridesListenAddress(t *testing.T) {
+func TestPublicBaseURLOverridesListenAddress(t *testing.T) {
 	for _, tc := range []struct{ base, want, label string }{
 		{"https://jarvis.example.com", "https://jarvis.example.com/#/work/task/7", "查看详情"},
 		{"https://jarvis.example.com:8443/proxy/", "https://jarvis.example.com:8443/proxy/#/work/task/7", "查看详情"},
@@ -94,28 +94,37 @@ func TestPublicURLOverridesListenAddress(t *testing.T) {
 	}
 }
 
-func TestMacAlwaysUsesLocalAddress(t *testing.T) {
+func TestMacUsesLocalAddressWithoutPublicBaseURL(t *testing.T) {
 	for _, tc := range []struct{ bind, want string }{
 		{"127.0.0.1:19900", "http://127.0.0.1:19900/#/work/task/7"},
 		{"0.0.0.0:18800", "http://127.0.0.1:18800/#/work/task/7"},
 		{"192.168.1.20:18800", "http://127.0.0.1:18800/#/work/task/7"},
 		{"[::1]:19900", "http://[::1]:19900/#/work/task/7"},
 	} {
-		for _, override := range []string{"", "https://jarvis.example.com:8443/proxy/"} {
-			r, err := newForPlatform(tc.bind, override, "darwin")
-			if err != nil {
-				t.Fatal(err)
-			}
-			r.resolveIPv4 = func() (net.IP, error) { t.Fatal("Mac links must work offline"); return nil, nil }
-			got, err := r.Task(7)
-			if err != nil || got.URL != tc.want || got.Label != "查看详情（本机访问）" {
-				t.Fatalf("bind=%s override=%s link=%+v err=%v", tc.bind, override, got, err)
-			}
+		r, err := newForPlatform(tc.bind, "", "darwin")
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.resolveIPv4 = func() (net.IP, error) { t.Fatal("Mac links must work offline"); return nil, nil }
+		got, err := r.Task(7)
+		if err != nil || got.URL != tc.want || got.Label != "查看详情（本机访问）" {
+			t.Fatalf("bind=%s link=%+v err=%v", tc.bind, got, err)
 		}
 	}
 }
 
-func TestInvalidPublicURL(t *testing.T) {
+func TestMacUsesConfiguredPublicBaseURL(t *testing.T) {
+	r, err := newForPlatform("127.0.0.1:19900", "https://jarvis.example.com:8443/proxy/", "darwin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := r.Task(7)
+	if err != nil || got.URL != "https://jarvis.example.com:8443/proxy/#/work/task/7" || got.Label != "查看详情" {
+		t.Fatalf("link=%+v err=%v", got, err)
+	}
+}
+
+func TestInvalidPublicBaseURL(t *testing.T) {
 	for _, raw := range []string{"jarvis.example.com", "/relative", "ftp://jarvis.example.com", "https://", "http://0.0.0.0:18800", "http://[::]:18800", "https://user:pass@example.com", "https://example.com?x=1", "https://example.com?", "https://example.com/#/work/task/1", "https://example.com/#", "http://example.com:0", "http://example.com:65536", "http://example.com:bad"} {
 		if _, err := New("127.0.0.1:18800", raw); err == nil {
 			t.Errorf("accepted %q", raw)

@@ -318,7 +318,7 @@ func main() {
 	} else {
 		infof("feishu user identity refreshed at startup: user=%s token=%s", user.UserName, user.TokenStatus)
 	}
-	principalNotices, err := notice.NewService(db, larkClient, cfg.Extract.PrincipalOpenID, filepath.Join(runtimeRoot, "var", "log", "principal-notices.jsonl"), cfg.Server.Addr, cfg.Server.PublicURL)
+	principalNotices, err := notice.NewService(db, larkClient, cfg.Extract.PrincipalOpenID, filepath.Join(runtimeRoot, "var", "log", "principal-notices.jsonl"), cfg.Server.Addr, cfg.Server.PublicBaseURL)
 	if err != nil {
 		fatalf("initialize principal notices failed: %v", err)
 	}
@@ -491,7 +491,7 @@ func main() {
 		if err != nil {
 			fatalf("initialize question card lark-cli failed: %v", err)
 		}
-		questionCards, err = cardask.NewNotifier(questionClient, cfg.Identity.DisplayName, cfg.CardApproval.PrincipalOpenID, cfg.Server.Addr, cfg.Server.PublicURL)
+		questionCards, err = cardask.NewNotifier(questionClient, cfg.Identity.DisplayName, cfg.CardApproval.PrincipalOpenID, cfg.Server.Addr, cfg.Server.PublicBaseURL)
 		if err != nil {
 			fatalf("initialize question notifier failed: %v", err)
 		}

@@ -116,7 +116,7 @@ func TestValidate(t *testing.T) {
 		{name: "valid"},
 		{name: "agent display name", mutate: func(c *Config) { c.Identity.DisplayName = "" }, wantErr: "identity.display_name"},
 		{name: "server address", mutate: func(c *Config) { c.Server.Addr = "" }, wantErr: "server.addr"},
-		{name: "server public URL", mutate: func(c *Config) { c.Server.PublicURL = "http://0.0.0.0:18800" }, wantErr: "server.public_url"},
+		{name: "server public base URL wildcard", mutate: func(c *Config) { c.Server.PublicBaseURL = "http://0.0.0.0:18800" }, wantErr: "server.public_base_url"},
 		{name: "server web root", mutate: func(c *Config) { c.Server.WebRoot = "" }, wantErr: "server.web_root"},
 		{name: "server public base url host only", mutate: func(c *Config) { c.Server.PublicBaseURL = "emily.example:18802" }, wantErr: "server.public_base_url"},
 		{name: "server public base url scheme", mutate: func(c *Config) { c.Server.PublicBaseURL = "ftp://emily.example" }, wantErr: "server.public_base_url"},
