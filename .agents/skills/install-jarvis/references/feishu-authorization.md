@@ -6,6 +6,14 @@
 
 Codebase、Meego 等可选外部插件继续通过各自 provider 授权；Oncall 和我的交办依赖的飞书消息能力已包含在内置清单。企业策略不允许的 OKR API、高级组织信息和与内置功能无关的邮箱、审批等权限不加入清单。
 
+## 应用侧一次配置
+
+运行 `./scripts/jarvis-lark-auth permissions` 可导出开放平台批量导入 JSON，其中 `scopes.user` 与 OAuth 申请清单完全一致，`scopes.tenant` 独立列出 Bot 消息、附件、表情和文档评论能力。进入当前应用的“权限管理 → 批量导入/导出权限”导入并申请开通。
+
+在同一应用启用机器人，配置长连接接收，订阅 `im.message.receive_v1` 与 `card.action.trigger`，创建并发布版本。事件配置不包含在权限 JSON 中，导入权限不能替代事件订阅和发布。若企业要求审批，等待完成后再检查和授权。
+
+导入 JSON 格式参考 [开放平台集成文档中的批量导入示例](https://help.aliyun.com/zh/document_detail/3006030.html)，具体权限以脚本和当前功能消费为准，不复制示例的权限集合。
+
 ## 源码安装
 
 1. 用 `lark-cli auth status --json --verify` 核对当前默认 App、用户和 Bot。
@@ -15,7 +23,11 @@ Codebase、Meego 等可选外部插件继续通过各自 provider 授权；Oncal
 
 ## 桌面安装
 
+先连接飞书并展示真实应用名称、App ID 和当前应用的管理入口；应用侧事件检查前移到安装状态，失败时逐项显示原始诊断，不统一归因为密钥错误。
+
 应用的授权按钮调用相同脚本的 `begin`，保留现有链接、二维码与后台完成 device flow 的交互。检查已有登录时调用 `check`，缺少安装所需权限则继续显示授权操作，不能直接跳过。
+
+个人授权与 Agent 登录完成后，若没有匹配当前 App ID 的已有聊天密钥，才提示填写该应用的 App Secret。输入框直接显示应用名称、App ID 和“凭证与基础信息”查找说明。已失效的应用凭据可显式选择修复；缺少事件或用户权限不要求更换密钥。Jarvis 仅复用已有聊天配置中的密钥，不读取 CLI 私有凭据存储。
 
 脚本随 runtime 的 `scripts/` 打包，不调用源码安装器，不要求桌面用户 clone 仓库。世界模型任务复用安装结果，继续只读审计，不在后台另起 OAuth 流程。
 

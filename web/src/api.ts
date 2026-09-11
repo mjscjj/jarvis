@@ -179,7 +179,11 @@ export function logoutFromJarvis(): Promise<AuthView> {
 }
 
 export function getSetupStatus(signal?: AbortSignal): Promise<SetupStatus> {
-  return request<SetupStatus>('/api/setup/status', { signal, timeoutMs: 30000 })
+  return request<SetupStatus>('/api/setup/status', { signal, timeoutMs: 60000 })
+}
+
+export function getSetupPermissionConfig(): Promise<{ scopes: { tenant: string[]; user: string[] } }> {
+  return request('/api/setup/lark/permissions', { timeoutMs: 10000 })
 }
 
 export function getSetupBootstrap(signal?: AbortSignal): Promise<{ machine_configuration_ready: boolean }> {

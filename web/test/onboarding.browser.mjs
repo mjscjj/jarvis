@@ -15,10 +15,11 @@ let hold = true
 let httpError = false
 let statusCalls = 0
 let loginCalls = 0
+let finalizeCalls = 0
 let pending = []
 const ready = () => ({ runtime_id: 'runtime', app_ready: true, completed: true, world_model_ready: true,
   configuration: { machine_configuration_ready: true, agent_name_configured: true },
-  lark: { available: true, app_id: 'app_test', credential_available: true, bot: { status: 'ready', verified: true }, user: { status: 'ready', verified: true } },
+  lark: { available: true, app_id: 'cli_test', app_name: '测试飞书助手', application_checks: [{ event: 'im.message.receive_v1', ready: true }, { event: 'card.action.trigger', ready: true }], credential_available: true, bot: { status: 'ready', verified: true }, user: { status: 'ready', verified: true } },
   agent: { available: true, authenticated: true } })
 let status = ready()
 const release = () => { hold = false; for (const resolve of pending) resolve(); pending = [] }
@@ -34,8 +35,22 @@ try {
         ? { status: 500, json: { code: 500, msg: '连接检查暂时失败' } }
         : { json: { code: 0, data: status } })
     } else if (path === '/api/setup/lark/login') {
-      loginCalls++; status = ready(); hold = true
+      loginCalls++;
+      if (installed) status = ready()
+      else { status.lark.user.verified = true; status.lark.user.status = 'ready' }
+      hold = true
       await route.fulfill({ json: { code: 0, data: { id: 'test-flow', status: 'success' } } })
+    } else if (path === '/api/setup/lark/permissions') {
+      await route.fulfill({ json: { code: 0, data: { scopes: { tenant: ['im:message:readonly'], user: ['minutes:minutes.artifacts:read'] } } } })
+    } else if (path === '/api/setup/finalize') {
+      finalizeCalls++
+      const input = route.request().postDataJSON()
+      assert.equal(input.app_secret, finalizeCalls === 1 ? 'wrong-secret' : 'correct-secret')
+      if (finalizeCalls === 1) await route.fulfill({ status: 400, json: { code: 40042, msg: 'App ID 与 App Secret 验证未通过' } })
+      else {
+        status = ready(); status.runtime_id = 'after-restart'
+        await route.fulfill({ json: { code: 0, data: { ...status, runtime_id: 'runtime', app_ready: false } } })
+      }
     } else throw new Error(`Unexpected API: ${path}`)
   })
   await page.route('**/__onboarding-test', route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: `<!doctype html><meta charset="utf-8"><div id="root"></div><script type="module">
@@ -87,9 +102,41 @@ try {
   release()
   await page.getByRole('button', { name: '授权飞书账号', exact: true }).waitFor()
   assert.equal(await workspace.count(), 0)
-  status = ready()
+  const identity = page.getByRole('region', { name: '当前飞书应用' })
+  await identity.getByText('正在连接的飞书助手：测试飞书助手').waitFor()
+  assert.match(await identity.innerText(), /cli_test/)
+  assert.equal(await identity.getByRole('link').getAttribute('href'), 'https://open.feishu.cn/app/cli_test')
+  assert.equal(await page.locator('#setup-secret').count(), 0)
+
+  // Missing events are repaired in the console, without asking for a secret.
+  status.lark.application_checks[1] = { event: 'card.action.trigger', ready: false, error: 'console_event_published missing; event not published' }
   await page.getByRole('button', { name: '重新检查', exact: true }).click()
+  await page.getByText('未就绪：card.action.trigger', { exact: true }).waitFor()
+  assert.equal(await page.locator('#setup-secret').count(), 0)
+  await page.getByText('查看具体检查结果', { exact: true }).click()
+  await page.getByText('console_event_published missing; event not published', { exact: true }).waitFor()
+  await page.getByRole('button', { name: '查看完整权限配置', exact: true }).click()
+  assert.match(await page.getByRole('textbox', { name: '完整权限配置' }).inputValue(), /minutes:minutes.artifacts:read/)
+
+  status.lark.application_checks[1].ready = true
+  status.lark.application_checks[1].error = undefined
+  status.lark.credential_available = false
+  await page.getByRole('button', { name: '重新检查', exact: true }).click()
+  await page.getByRole('button', { name: '授权飞书账号', exact: true }).click()
+  await page.waitForFunction(() => document.body.textContent.includes('正在打开连接页面'))
+  release()
+  const secret = page.getByLabel('请填写「测试飞书助手」的应用密钥（App Secret）', { exact: true })
+  await secret.waitFor()
+  await secret.fill('wrong-secret')
+  await page.getByRole('button', { name: '验证并开始使用', exact: true }).click()
+  await page.getByText('App ID 与 App Secret 验证未通过', { exact: true }).waitFor()
+  assert.equal(await secret.inputValue(), 'wrong-secret')
+  assert.equal(await workspace.count(), 0)
+  assert.match(await identity.innerText(), /cli_test/)
+  await secret.fill('correct-secret')
+  await page.getByRole('button', { name: '重试并继续', exact: true }).click()
   await workspace.waitFor()
+  assert.equal(finalizeCalls, 2)
   assert.deepEqual(errors, [])
-  console.log(JSON.stringify({ result: 'passed', checks: ['installed app before full check', 'background expiry notice', 'draft survives checks and repair', 'authorization rechecks credentials', 'network error and retry', 'first install waits for full check'], statusCalls }))
+  console.log(JSON.stringify({ result: 'passed', checks: ['installed app before full check', 'background expiry notice', 'draft survives checks and repair', 'authorization rechecks credentials', 'network error and retry', 'first install waits for full check', 'application identity before secret', 'event repair without secret', 'complete permission config visible', 'OAuth before chat secret', 'failed secret retained and retry succeeds'], statusCalls }))
 } finally { release(); await browser.close() }

@@ -7,7 +7,8 @@ import {
   cancelSetupFlow, finalizeSetup, getSetupBootstrap, getSetupFlow, getSetupStatus, repairSetupLarkCredentials,
 } from './api'
 import type { SetupFlow, SetupStatus } from './types'
-import { setupAction, setupCanEnter } from './onboardingState'
+import { setupAction, setupCanEnter, setupSecretVisible } from './onboardingState'
+import { SetupLarkApplication, larkApplicationURL } from './SetupLarkApplication'
 import { WorldModelSetup } from './WorldModelSetup'
 import { DeveloperDocumentLinks } from './components/DeveloperDocuments'
 import jarvisIcon from './assets/jarvis-icon.png'
@@ -166,28 +167,38 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
 
     const action = setupAction(status)
     const locked = Boolean(busy || flow)
-    const secretEditorVisible = action === 'repair' || editingSecret || (!status.configuration.machine_configuration_ready && !status.lark.credential_available)
+    const secretEditorVisible = setupSecretVisible(status, editingSecret)
     const flowURL = flow?.verification_url || flow?.output?.match(/https?:\/\/\S+/)?.[0]
     const appLabel = status.lark.app_name || status.lark.app_id
+    const appURL = larkApplicationURL(status.lark.app_id || '')
 
     return <main className="setup-page"><section className="setup-shell setup-simple">
       <header className="setup-header"><img src={jarvisIcon} alt="" /><div><Typography.Title level={2}>开始使用 Jarvis</Typography.Title><Typography.Text type="secondary">已有配置自动复用，只需补齐缺少的连接。</Typography.Text></div></header>
-      {appLabel && <p className="setup-connected">飞书助手：{appLabel}{status.lark.user.name ? ` · ${status.lark.user.name}` : ''}</p>}
+      {status.lark.app_id && <section className="setup-connected" aria-label="当前飞书应用">
+        <strong>正在连接的飞书助手：{status.lark.app_name || '应用名称暂未读取'}</strong>
+        <span>应用 App ID：<Typography.Text code>{status.lark.app_id}</Typography.Text></span>
+        <a href={appURL} target="_blank" rel="noreferrer">打开这个应用的管理页面</a>
+        {status.lark.user.verified && status.lark.user.name && <span>已授权账号：{status.lark.user.name}</span>}
+      </section>}
       <div className="setup-form">
         {!flow && <>
           {action === 'connect' && <Button type="primary" disabled={locked || Boolean(status.lark.error)} onClick={() => void beginFlow('connect')}>连接飞书</Button>}
-          {action === 'repair' && <Alert type="warning" showIcon message="当前飞书应用尚未就绪" description="请检查当前应用的凭据、机器人能力及发布状态，再点击重新检查；无需创建另一个 Bot。" />}
+          {action === 'application' && <Alert type="warning" showIcon message="当前飞书应用尚未就绪" description="请按下方检查结果补齐当前应用配置，再重新检查。无需创建另一个 Bot。" />}
+          {action === 'application' && <SetupLarkApplication lark={status.lark} disabled={locked} />}
+          {action === 'authorize' && <p>一次授权当前应用所需的消息、文档、日历、会议、妙记和待办权限。</p>}
           {action === 'authorize' && <Button type="primary" disabled={locked} onClick={() => void beginFlow('authorize')}>授权飞书账号</Button>}
           {action === 'agent' && <Button type="primary" disabled={locked} onClick={() => void beginFlow('agent')}>登录 Agent</Button>}
-          {(action === 'start' || action === 'repair') && <>
+          {(action === 'start' || editingSecret) && <>
             {secretEditorVisible && <div className="setup-field">
-              <label htmlFor="setup-secret">App Secret</label>
+              <strong>让这个助手在飞书里回复你</strong>
+              <label htmlFor="setup-secret">请填写「{appLabel}」的应用密钥（App Secret）</label>
+              <span>应用 App ID：{status.lark.app_id}</span>
               <Input.Password id="setup-secret" value={appSecret} disabled={locked} autoComplete="off" placeholder="补填当前飞书应用的密钥" onChange={(event) => { setAppSecret(event.target.value); setEditingSecret(true) }} />
-              <details className="setup-help"><summary>在哪里找？</summary><p>打开<a href="https://open.feishu.cn/app" target="_blank" rel="noreferrer">飞书开发者后台</a>，进入当前应用「{appLabel}」（{status.lark.app_id}）的「凭证与基础信息」，复制 App Secret。不是个人密码，也不是 Webhook。</p><p>只需填写一次，不要另建应用；验证失败会保留输入。</p></details>
+              <p><a href={appURL} target="_blank" rel="noreferrer">打开「{appLabel}」的管理页面</a>，进入“凭证与基础信息”，复制 App Secret。这是上方应用的密钥，不是个人密码。</p>
             </div>}
-            {action === 'repair'
+            {action !== 'start'
               ? <Button type="primary" disabled={locked || !appSecret.trim()} onClick={() => void repairCredentials()}>验证并更新密钥</Button>
-              : <Button type="primary" disabled={locked || (secretEditorVisible && !appSecret.trim())} onClick={() => void start()}>{error ? '重试并继续' : '开始使用'}</Button>}
+              : <Button type="primary" disabled={locked || (secretEditorVisible && !appSecret.trim())} onClick={() => void start()}>{error ? '重试并继续' : secretEditorVisible ? '验证并开始使用' : '开始使用'}</Button>}
           </>}
         </>}
         {busy && <span className="setup-running"><LoadingOutlined /> {busy}</span>}
@@ -205,7 +216,8 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
         <p>若提示机器人或权限未就绪，在<a href="https://open.feishu.cn/app" target="_blank" rel="noreferrer">飞书开发者后台</a>检查当前应用：启用机器人、开通消息权限、使用长连接订阅 im.message.receive_v1 和 card.action.trigger，再发布版本。没有操作权限时请联系管理员。</p>
         <p>默认助手名称为 Jarvis，之后可在设置中修改。服务就绪后即可使用，工作背景在后台初始化；等待或失败不会挡住主界面。</p>
         <p>同一个 Bot 不应同时在其他机器运行聊天长连接；若此前装过，请先停止旧实例。完成后可在飞书给这个 Bot 发一条消息验证回复。</p>
-        {action === 'start' && status.lark.credential_available && !status.configuration.machine_configuration_ready && <Button disabled={locked} onClick={() => setEditingSecret(true)}>补填当前应用密钥</Button>}
+        {status.lark.app_id && <Button disabled={locked} onClick={() => setEditingSecret(true)}>应用密钥已失效？更新这个应用的密钥</Button>}
+        {status.lark.app_id && action !== 'application' && <SetupLarkApplication lark={status.lark} disabled={locked} />}
         {status.lark.app_id && (error || status.lark.error) && <Button disabled={locked} onClick={() => void beginFlow('authorize')}>重新授权当前应用</Button>}
       </details>
       <details className="setup-help setup-documents"><summary>开发文档</summary><DeveloperDocumentLinks /></details>
@@ -215,7 +227,7 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
   if (!localReady && !(status && setupCanEnter(status, restartFrom))) return renderSetup()
 
   const warning = error || (status && !status.app_ready
-    ? status.lark.error || status.agent.error || '部分连接需要处理，相关功能可能暂不可用。'
+    ? status.lark.error || status.agent.error || (status.lark.application_checks.some(check => !check.ready) ? '飞书应用的权限或事件检查未通过，请处理连接。' : '部分连接需要处理，相关功能可能暂不可用。')
     : '')
   return <>
     {warning && <div className="setup-connection-notice" role="status">

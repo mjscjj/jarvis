@@ -177,6 +177,7 @@ export interface SetupStatus {
     app_id?: string
     app_name?: string
     credential_available?: boolean
+    application_checks: Array<{ event: string; ready: boolean; error?: string }>
     bot: SetupIdentityStatus
     user: SetupIdentityStatus
     error?: string

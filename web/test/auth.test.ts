@@ -81,6 +81,6 @@ test('status timeout aborts its pending request and exposes an actionable error'
       options.signal!.addEventListener('abort', () => reject(options.signal!.reason), { once: true })
     }))
   const pending = assert.rejects(getSetupStatus(), /请求超时/)
-  t.mock.timers.tick(30000)
+  t.mock.timers.tick(60000)
   await pending
 })
