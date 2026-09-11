@@ -44,6 +44,10 @@ func (f commandFunc) Run(ctx context.Context, bin string, args []string, input s
 	return f(ctx, bin, args, input)
 }
 
+func (f commandFunc) RunJSON(ctx context.Context, bin string, args []string, input string) ([]byte, error) {
+	return f(ctx, bin, args, input)
+}
+
 func TestInvalidCredentialsDoNotLeakUpstreamOutput(t *testing.T) {
 	err := verifyAppCredentials(t.Context(), credentialClient(t, `{"code":10003,"msg":"secret echoed by upstream"}`), "cli_test", "new-secret")
 	if err == nil || strings.Contains(err.Error(), "secret echoed") || strings.Contains(err.Error(), "new-secret") {
@@ -292,5 +296,17 @@ func TestConfigShowUsesOnlyStdout(t *testing.T) {
 	current, err := s.currentLarkConfig(t.Context())
 	if err != nil || current.AppID != "cli_test" || current.Profile != "default" {
 		t.Fatalf("read CLI config: %v, %v", current, err)
+	}
+}
+
+func TestAgentLoginStatusReadsStderr(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "agent")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\nprintf 'Logged in using Trae\\n' >&2\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	s := &Service{options: Options{AgentCLIBin: bin}, runner: execRunner{}}
+	status := s.agentStatus(t.Context())
+	if !status.Authenticated || status.Error != "" {
+		t.Fatalf("stderr login status: %+v", status)
 	}
 }

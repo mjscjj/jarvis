@@ -282,3 +282,7 @@ func TestBotEventsAreOnlyProbedAndFailuresAreNotReady(t *testing.T) {
 		}
 	}
 }
+
+func (r unconfiguredSetupRunner) RunJSON(ctx context.Context, bin string, args []string, input string) ([]byte, error) {
+	return r.Run(ctx, bin, args, input)
+}

@@ -37,6 +37,7 @@ const (
 
 type CommandRunner interface {
 	Run(context.Context, string, []string, string) ([]byte, error)
+	RunJSON(context.Context, string, []string, string) ([]byte, error)
 }
 
 type streamingCommandRunner interface {
@@ -45,7 +46,7 @@ type streamingCommandRunner interface {
 
 type execRunner struct{}
 
-func (execRunner) Run(ctx context.Context, binary string, args []string, input string) ([]byte, error) {
+func onboardingCommand(ctx context.Context, binary string, args []string, input string) *exec.Cmd {
 	command := exec.CommandContext(ctx, binary, args...)
 	if input != "" {
 		command.Stdin = strings.NewReader(input)
@@ -54,6 +55,16 @@ func (execRunner) Run(ctx context.Context, binary string, args []string, input s
 		"LARKSUITE_CLI_NO_UPDATE_NOTIFIER=1",
 		"LARKSUITE_CLI_NO_SKILLS_NOTIFIER=1",
 	)
+	return command
+}
+
+func (execRunner) Run(ctx context.Context, binary string, args []string, input string) ([]byte, error) {
+	return onboardingCommand(ctx, binary, args, input).CombinedOutput()
+}
+
+// JSON commands own stdout; human diagnostics on stderr are not JSON payload.
+func (execRunner) RunJSON(ctx context.Context, binary string, args []string, input string) ([]byte, error) {
+	command := onboardingCommand(ctx, binary, args, input)
 	var stdout, stderr bytes.Buffer
 	command.Stdout, command.Stderr = &stdout, &stderr
 	err := command.Run()

@@ -108,7 +108,7 @@ type larkConfig struct {
 func (s *Service) currentLarkConfig(ctx context.Context) (*larkConfig, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	output, err := s.runner.Run(ctx, s.options.LarkCLIBin, []string{"config", "show"}, "")
+	output, err := s.runner.RunJSON(ctx, s.options.LarkCLIBin, []string{"config", "show"}, "")
 	if err != nil {
 		return nil, fmt.Errorf("无法读取当前飞书应用配置，请重新检查")
 	}
