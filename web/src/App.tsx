@@ -106,6 +106,9 @@ function AppShell() {
   const [mobileModuleKey, setMobileModuleKey] = useState<string>()
   const [moduleEnablement, setModuleEnablement] = useState<Record<string, boolean>>()
   const [okrManagementAccess, setOKRManagementAccess] = useState(false)
+  const [okrUserEmail, setOKRUserEmail] = useState<string>()
+  const showOKRChat = user?.username === 'lixiaolin' || [user?.email, okrUserEmail]
+    .some((email) => email?.trim().toLowerCase() === 'claire.li@bytedance.com')
   const [moduleLoadError, setModuleLoadError] = useState<string>()
   const [enabledPlugins, setEnabledPlugins] = useState<Array<Pick<Plugin, 'id' | 'name' | 'kind' | 'enabled'>>>([])
   const [shuttingDown, setShuttingDown] = useState(false)
@@ -266,8 +269,14 @@ function AppShell() {
   useEffect(() => {
     const refresh = () => {
       void getOKRAuthStatus()
-        .then((auth) => setOKRManagementAccess(auth.managementAccess))
-        .catch(() => setOKRManagementAccess(false))
+        .then((auth) => {
+          setOKRManagementAccess(auth.managementAccess)
+          setOKRUserEmail(auth.authenticated ? auth.user?.email : undefined)
+        })
+        .catch(() => {
+          setOKRManagementAccess(false)
+          setOKRUserEmail(undefined)
+        })
     }
     refresh()
     window.addEventListener('jarvis:okr-auth-changed', refresh)
@@ -509,7 +518,7 @@ function AppShell() {
               {pages[context.active_key]}
             </Suspense>
             <Suspense fallback={null}>
-              <Chat compact={context.active_key !== 'chat'} hidden={context.active_key === 'biz-okr'} />
+              <Chat compact={context.active_key !== 'chat'} hidden={context.active_key === 'biz-okr' && !showOKRChat} />
             </Suspense>
           </Content>
         </div>
