@@ -242,15 +242,16 @@ func renderPrompt(instructions, toolCatalog, sharedMemory, skills string, supple
 // rather than a parameter list because the two builders need the same nine-plus
 // values and positional arguments stopped being readable.
 type executionPromptInput struct {
-	SystemPrompt   string
-	ApprovalPolicy string
-	Task           *domain.Task
-	RepoPath       string
-	ToolCatalog    string
-	SharedMemory   string
-	WorkRules      string
-	Skills         string
-	History        *runHistory
+	InitiativeLevel string
+	SystemPrompt    string
+	ApprovalPolicy  string
+	Task            *domain.Task
+	RepoPath        string
+	ToolCatalog     string
+	SharedMemory    string
+	WorkRules       string
+	Skills          string
+	History         *runHistory
 }
 
 // buildExecutionPrompt assembles the prompt for a Task's first pass. Every
@@ -261,7 +262,7 @@ type executionPromptInput struct {
 // Task state, history availability and the resolved repo.
 // task.execution_supplements (M5-only) are injected as high-priority directives.
 func buildExecutionPrompt(in executionPromptInput) (string, error) {
-	renderedSystemPrompt, err := prompttemplate.Render(prompttemplate.StageM5, in.SystemPrompt, in.WorkRules, in.ApprovalPolicy)
+	renderedSystemPrompt, err := prompttemplate.Render(prompttemplate.StageM5, in.SystemPrompt, in.WorkRules, in.ApprovalPolicy, in.InitiativeLevel)
 	if err != nil {
 		return "", fmt.Errorf("render M5 execution system prompt: %w", err)
 	}

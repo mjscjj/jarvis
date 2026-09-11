@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync } from 'node:fs'
 import { setupAction, setupCanEnter, worldModelProgress } from '../src/onboardingState.ts'
-import { beginSetupLarkConnection, cancelSetupFlow, finalizeSetup, rerunTask } from '../src/api.ts'
+import { beginSetupLarkConnection, cancelSetupFlow, finalizeSetup, repairSetupLarkCredentials, rerunTask } from '../src/api.ts'
 import type { SetupStatus, Task } from '../src/types.ts'
 
 const ready = (): SetupStatus => ({
@@ -40,10 +40,12 @@ test('app entry depends on usable runtime, not world model completion', () => {
   assert.equal(setupCanEnter(status, 'previous-runtime'), true)
 })
 
-test('source installations bypass desktop first-run onboarding', () => {
+test('saved configuration after failed finalize cannot enter the old runtime', () => {
   const status = ready()
-  status.onboarding_required = false
-  assert.equal(setupCanEnter(status, null), true)
+  status.configuration.machine_configuration_ready = true
+  assert.equal(setupAction(status), 'start')
+  assert.equal(setupCanEnter(status, null), false)
+  assert.equal(setupCanEnter(status, status.runtime_id), false)
 })
 
 test('background progress shows recorded waiting reason, wake time and failure', () => {
@@ -72,7 +74,7 @@ test('retry addresses the original task rather than creating initialization agai
 
 test('secret editor lifecycle depends on edit mode and saved credential, not draft length', () => {
   const source = readFileSync(new URL('../src/Onboarding.tsx', import.meta.url), 'utf8')
-  assert.match(source, /const secretEditorVisible = editingSecret \|\| \(!status\.configuration\.machine_configuration_ready && !status\.lark\.credential_available\)/)
+  assert.match(source, /const secretEditorVisible = action === 'repair' \|\| editingSecret \|\| \(!status\.configuration\.machine_configuration_ready && !status\.lark\.credential_available\)/)
   assert.doesNotMatch(source, /\{!appSecret\s*&&/)
   assert.match(source, /label htmlFor="setup-secret">App Secret/)
   assert.doesNotMatch(source, /<Steps|setup-app-id|setAppId|setSelected/)
@@ -91,9 +93,17 @@ test('frontend never chooses another App ID; only a missing secret is submitted'
   await beginSetupLarkConnection()
   await finalizeSetup('')
   await cancelSetupFlow('flow-1')
+  await repairSetupLarkCredentials('new-secret')
   assert.deepEqual(calls, [
     { path: '/api/setup/lark/connect', body: undefined },
     { path: '/api/setup/finalize', body: { app_secret: '' } },
     { path: '/api/setup/flows/flow-1/cancel', body: undefined },
+    { path: '/api/setup/lark/credentials', body: { app_secret: 'new-secret' } },
   ])
+})
+
+test('source installations bypass desktop first-run onboarding', () => {
+  const status = ready()
+  status.onboarding_required = false
+  assert.equal(setupCanEnter(status, null), true)
 })

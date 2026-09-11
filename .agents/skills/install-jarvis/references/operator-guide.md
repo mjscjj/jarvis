@@ -17,7 +17,7 @@
 | 时机 | 用户操作 | 完成标准 |
 |---|---|---|
 | 发现旧数据库、旧 checkout 或已有 service | 选择复用、迁移或替换 | 用户明确选择；未选择前不改旧实例 |
-| lark-cli user OAuth | 打开 Agent 展示的 URL 或二维码并确认授权 | 原 `device_code` 完成，`auth status --json --verify` 的 user 身份有效 |
+| lark-cli user OAuth | 打开 Agent 展示的 URL 或二维码并确认授权 | 原 `device_code` 完成，user 身份有效且 `scripts/jarvis-lark-auth check` 通过；申请范围见 [统一授权说明](feishu-authorization.md) |
 | 飞书 App/Bot 配置 | 在开放平台开启机器人，授予 `im:message:readonly`，订阅 `im.message.receive_v1` 与 `card.action.trigger`，发布应用版本 | Bot dry-run 逐项返回 ready；这不能由 user OAuth 代替 |
 | App Secret | 从「凭证与基础信息」复制并交给 Agent | `bind-cc` 用 App ID/Secret 成功换取 tenant token；Secret 只落本机明文配置并保持 `0600` |
 | Codex 登录 | 打开 `codex login --device-auth` 给出的地址并确认 | `codex login status` 返回已登录 |

@@ -10,7 +10,7 @@ import (
 func TestInstanceLabelSurvivesPortChangeAndSeparatesConfigs(t *testing.T) {
 	paths := []string{filepath.Join(t.TempDir(), "config.yaml"), filepath.Join(t.TempDir(), "config.yaml")}
 	for _, path := range paths {
-		if err := os.WriteFile(path, []byte("server:\n  addr: 0.0.0.0:18800\nchat:\n  addr: 0.0.0.0:18801\n"), 0600); err != nil {
+		if err := os.WriteFile(path, []byte("server:\n  addr: 0.0.0.0:18800\n"), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -1,1154 +1,935 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
-import { CloseOutlined, CompressOutlined, CopyOutlined, DeleteOutlined, ExpandOutlined, HistoryOutlined, LoadingOutlined, ArrowDownOutlined, PaperClipOutlined, PlusOutlined, ReloadOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
-import { Alert, Button, Input, Typography } from 'antd'
+import { DeleteOutlined, DownloadOutlined, EditOutlined, FileOutlined, HistoryOutlined, InboxOutlined, MenuOutlined, PaperClipOutlined, PlusOutlined, SearchOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
+import { Alert, Button, Checkbox, Drawer, Dropdown, Empty, Input, Modal, Popover, Select, Spin, Tooltip, Typography } from 'antd'
+import type { MenuProps } from 'antd'
 import type { TextAreaRef } from 'antd/es/input/TextArea'
-import { getChatHistory, getSignedInOpenID, isMissingChatHistoryError, listChatThreads, stopChatTurn } from './api'
 import { useAgentIdentity } from './agentIdentity'
 import { usePageContext } from './pageContext'
-import { isOKRTab, isWeeklyWorkspaceTab, OKR_TAB_DEFINITIONS } from './okr/navigation'
-import type { ChatDeltaEvent, ChatErrorEvent, ChatRequest, ChatThreadEvent, ChatThreadSummary, PageContext } from './types'
-import { ChatConnectionError, readChatStream } from './chatStream'
-import { useChatConnection } from './useChatConnection'
+import { apiFetch } from './api'
+import MarkdownReport from './components/MarkdownReport'
+import ChatDock from './components/ChatDock'
+import type { ChatAgent, ChatAttachment, ChatHistoryMessage, ChatModel, ChatSession, ChatSource } from './types'
 import './styles/chat.css'
 
 const { Text } = Typography
-
-type ChatMessageStatus = 'queued' | 'sending' | 'sent' | 'failed' | 'partial' | 'paused'
-
-interface ChatDiagnostic {
-  message: string
-  detail?: string
-  logId?: string
-  at: string
-  recoverable?: boolean
+interface APIEnvelope<T> {
+  code: number
+  data?: T
+  msg?: string
+}
+interface ListEnvelope<T> {
+  items: T[]
 }
 
-interface ChatMessage {
-  id: string
-  role: 'user' | 'assistant'
-  text: string
-  status?: ChatMessageStatus
-  imageName?: string
-  retryText?: string
-  retryImage?: File | null
-  diagnostic?: ChatDiagnostic
+const SOURCE_OPTIONS: ChatSource[] = [
+  { kind: 'workspace', label: '工作资料（按需查询）' },
+  { kind: 'tasks', label: '任务与当前进展' },
+  { kind: 'world', label: '世界模型' },
+  { kind: 'messages', label: '已采集消息与资料' },
+]
+const SUGGESTIONS = [
+  ['看清进展', '我现在最需要关注什么？'],
+  ['理解材料', '帮我阅读这份材料，提炼结论和疑问'],
+  ['推进事情', '帮我把这个想法整理成可执行的方案'],
+]
+
+async function api<T>(url: string, options?: RequestInit): Promise<T> {
+  const response = await apiFetch(url, options)
+  const payload = (await response.json()) as APIEnvelope<T>
+  if (!response.ok || payload.code !== 0 || payload.data === undefined) throw new Error(payload.msg || `请求失败：HTTP ${response.status}`)
+  return payload.data
 }
 
-interface QueuedChatTurn {
-  id: string
-  userMessageId: string
-  text: string
-  image: File | null
-  pageContext: PageContext
-  createdAt: number
-}
-
-const LEGACY_CHAT_THREAD_STORAGE_KEY = 'jarvis.chat.threadId'
-const CHAT_WORKSPACES_STORAGE_KEY = 'jarvis.chat.workspaces.v1'
-const CHAT_IMAGE_MAX_BYTES = 10 * 1024 * 1024
-const CHAT_IMAGE_TYPES = new Set(['image/png', 'image/jpeg'])
-const CHAT_THREAD_LIST_LIMIT = 30
-
-const threadDateFormatter = new Intl.DateTimeFormat('zh-CN', {
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-})
-
-const PAGE_LABELS: Record<string, string> = {
-  today: '工作台',
-  overview: '工作台',
-  workbench: '工作台',
-  tasks: '任务',
-  review: '工作台',
-  progress: '工作台',
-  memory: '世界',
-  background: '世界',
-  okr: 'OKR 插件',
-  'biz-okr': 'OKR',
-  automation: '任务',
-  'scheduled-tasks': '任务',
-  plugins: '插件',
-  clues: '线索',
-  todos: '线索',
-  management: '系统设置',
-  agents: '工作设定',
-  settings: '系统设置',
-  debug: '运行诊断',
-  'system-tasks': '系统任务',
-}
-
-const SELECTION_LABELS: Record<string, string> = {
-  task: '任务',
-  todo: '线索',
-  project: '项目',
-  person: '成员',
-  group: '群组',
-  resource: '资料',
-}
-
-function pageSuggestions(agentName: string): Record<string, string[]> {
-  return {
-    workbench: ['我现在最需要关注什么？', '总结今天真正完成的事', '有哪些风险会影响今天交付？'],
-    tasks: ['哪些任务最需要我处理？', '帮我梳理当前的阻塞', '检查进行中的任务是否偏离目标'],
-    review: ['总结今天真正完成的事', '哪些承诺还没有闭环？', '帮我找出值得复盘的问题'],
-    memory: [`${agentName} 目前是怎么理解我的工作的？`, '检查项目背景有没有过时信息', '帮我找到某个项目的关键上下文'],
-    automation: ['哪些自动化即将运行？', '检查自动化之间是否有冲突', '帮我设计一个新的自动化'],
-    weekly: ['总结当前周报的重点进展和风险', '检查哪些 KR 还需要补充', '帮我准备本周会议要点'],
-    clues: ['最近出现了哪些重要线索？', '哪些线索还在等待更多证据？', '帮我解释线索到任务的转换'],
-    system: [`检查 ${agentName} 当前的关键配置`, '有哪些系统异常会影响任务？', '帮我定位最近的运行问题'],
+function parseSSEBlock(block: string): { event: string; data: string } {
+  let event = 'message'
+  const dataLines: string[] = []
+  for (const rawLine of block.split('\n')) {
+    const line = rawLine.replace(/\r$/, '')
+    if (line.startsWith('event:')) event = line.slice(6).trim()
+    else if (line.startsWith('data:')) dataLines.push(line.slice(5).replace(/^ /, ''))
   }
+  return { event, data: dataLines.join('\n') }
+}
+function agentLabel(agent: string): string {
+  return ({ codex: 'Codex', trae: 'TRAE', cursor: 'Cursor' } as Record<string, string>)[agent] || agent
+}
+function sourceLabel(source: ChatSource): string {
+  return SOURCE_OPTIONS.find((option) => option.kind === source.kind)?.label || source.label
+}
+function dayGroup(value: string): string {
+  const date = new Date(value),
+    now = new Date()
+  if (date.toDateString() === now.toDateString()) return '今天'
+  const yesterday = new Date(now)
+  yesterday.setDate(now.getDate() - 1)
+  return date.toDateString() === yesterday.toDateString() ? '昨天' : '更早'
+}
+function formatBytes(size: number): string {
+  if (size < 1024) return `${size} B`
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`
+  return `${(size / 1024 / 1024).toFixed(1)} MB`
+}
+function defaultEffort(model?: ChatModel): string {
+  return model?.default_reasoning_effort || model?.reasoning_efforts?.find((value) => value === 'medium') || model?.reasoning_efforts?.[0] || 'medium'
 }
 
-function errorText(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause)
-}
-
-function pageLabel(context: PageContext): string {
-  if (context.active_key === 'biz-okr') {
-    const definition = OKR_TAB_DEFINITIONS.find((item) => item.key === context.view_state.tab)
-    return `OKR · ${definition?.label ?? '管理与打标'}`
-  }
-  return PAGE_LABELS[context.active_key] ?? '当前页面'
-}
-
-function pageGroup(context: PageContext): string {
-  if (context.active_key === 'biz-okr' && context.view_state.tab === 'agent-flows') return 'automation'
-  if (context.active_key === 'biz-okr' && isOKRTab(context.view_state.tab) && isWeeklyWorkspaceTab(context.view_state.tab)) return 'weekly'
-  if (['management', 'agents', 'settings', 'debug', 'system-tasks'].includes(context.active_key)) return 'system'
-  if (['today', 'overview', 'review', 'progress', 'workbench'].includes(context.active_key)) return 'workbench'
-  if (['tasks', 'automation', 'scheduled-tasks'].includes(context.active_key)) return 'tasks'
-  if (['memory', 'background'].includes(context.active_key)) return 'memory'
-  if (['clues', 'todos'].includes(context.active_key)) return 'clues'
-  return 'workbench'
-}
-
-function isAbortError(cause: unknown): boolean {
-  return (cause instanceof DOMException && cause.name === 'AbortError')
-    || (cause instanceof Error && cause.name === 'AbortError')
-}
-
-function isStaleThreadError(text: string): boolean {
-  return text.includes('no rollout found for thread id')
-    || text.includes('missing thread.started')
-    || text.includes('belongs to another CLI')
-}
-
-function chatImageError(file: File): string | undefined {
-  if (!CHAT_IMAGE_TYPES.has(file.type)) return '截图只支持 PNG 或 JPEG'
-  if (file.size === 0) return '截图文件为空'
-  if (file.size > CHAT_IMAGE_MAX_BYTES) return '截图不能超过 10 MB'
-  return undefined
-}
-
-function makeClientId(prefix: string): string {
-  if (typeof globalThis.crypto?.randomUUID === 'function') return `${prefix}-${globalThis.crypto.randomUUID()}`
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`
-}
-
-function compactText(text: string, limit: number): string {
-  const normalized = text.trim().replace(/\s+/g, ' ')
-  if (normalized.length <= limit) return normalized
-  return `${normalized.slice(0, Math.max(0, limit - 3))}...`
-}
-
-function formatThreadTime(value: string): string {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return ''
-  return threadDateFormatter.format(date)
-}
-
-function diagnosticFromEvent(event: ChatErrorEvent): ChatDiagnostic {
-  return {
-    message: event.message || '这轮没有完成，可以重试或继续发送。',
-    detail: event.detail,
-    logId: event.log_id,
-    recoverable: event.recoverable,
-    at: new Date().toISOString(),
-  }
-}
-
-async function diagnosticFromResponse(response: Response): Promise<ChatDiagnostic> {
-  let detail = `HTTP ${response.status}`
-  try {
-    const payload = await response.json() as { msg?: string }
-    if (payload.msg) detail = payload.msg
-  } catch {
-    // Keep the HTTP status as the diagnostic detail when the response is not JSON.
-  }
-  return {
-    message: '这轮没有完成，可以重试或继续发送。',
-    detail,
-    at: new Date().toISOString(),
-    recoverable: response.status >= 500,
-  }
-}
-
-function diagnosticFromCause(cause: unknown): ChatDiagnostic {
-  if (typeof cause === 'object' && cause !== null && 'message' in cause && 'at' in cause) return cause as ChatDiagnostic
-  const detail = errorText(cause)
-  return {
-    message: isStaleThreadError(detail) ? '这个会话暂时无法继续，已准备切换到新对话。' : '这轮没有完成，可以重试或继续发送。',
-    detail,
-    at: new Date().toISOString(),
-    recoverable: isStaleThreadError(detail),
-  }
-}
-
-function threadSummaryFromTurn(threadId: string, turn: QueuedChatTurn): ChatThreadSummary {
-  const at = new Date(turn.createdAt).toISOString()
-  return {
-    thread_id: threadId,
-    title: compactText(turn.text, 34) || '新对话',
-    preview: '正在回复...',
-    message_at: at,
-    updated_at: at,
-  }
-}
-
-interface ChatProps {
-  open: boolean
-  expanded: boolean
-  onToggleExpanded: () => void
-  onClose: () => void
-}
-
-interface ChatWorkspace {
-  id: string
-  title: string
-  threadId: string | null
-  busy?: boolean
-}
-
-interface ChatSessionProps {
-  open: boolean
-  active: boolean
-  workspace: ChatWorkspace
-  workspaceBar?: ReactNode
-  workspaceActions?: ReactNode
-  onWorkspaceChange: (id: string, change: Partial<ChatWorkspace>) => void
-}
-
-function defaultWorkspace(index = 1, threadId: string | null = null): ChatWorkspace {
-  return { id: makeClientId('workspace'), title: `会话 ${index}`, threadId }
-}
-
-function loadWorkspaces(): ChatWorkspace[] {
-  try {
-    const stored = window.localStorage.getItem(CHAT_WORKSPACES_STORAGE_KEY)
-    if (stored) {
-      const parsed = JSON.parse(stored) as unknown
-      if (Array.isArray(parsed)) {
-        const valid = parsed.flatMap((item): ChatWorkspace[] => {
-          if (!item || typeof item !== 'object') return []
-          const candidate = item as Partial<ChatWorkspace>
-          if (typeof candidate.id !== 'string' || typeof candidate.title !== 'string') return []
-          return [{
-            id: candidate.id,
-            title: candidate.title.trim() || '未命名会话',
-            threadId: typeof candidate.threadId === 'string' ? candidate.threadId : null,
-          }]
-        })
-        if (valid.length > 0) return valid
-      }
-    }
-  } catch {
-    // Invalid browser state should not prevent chat from opening.
-  }
-  try {
-    return [defaultWorkspace(1, window.localStorage.getItem(LEGACY_CHAT_THREAD_STORAGE_KEY))]
-  } catch {
-    return [defaultWorkspace()]
-  }
-}
-
-function ChatSession({ open, active, workspace, workspaceBar, workspaceActions, onWorkspaceChange }: ChatSessionProps) {
-  const { name: agentName, shortName: agentShortName } = useAgentIdentity()
-  const { context } = usePageContext()
-  const [messages, setMessages] = useState<ChatMessage[]>([])
+export default function Chat({ compact = false }: { compact?: boolean }) {
+  const { name: agentName, shortName } = useAgentIdentity()
+  const { context, setViewState, navigate } = usePageContext()
+  const [sessions, setSessions] = useState<ChatSession[]>([])
+  const [active, setActive] = useState<ChatSession | null>(null)
+  const [agents, setAgents] = useState<ChatAgent[]>([])
+  const [models, setModels] = useState<Record<string, ChatModel[]>>({})
+  const [loading, setLoading] = useState(true)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [archived, setArchived] = useState(false)
+  const [query, setQuery] = useState('')
   const [input, setInput] = useState('')
-  const [image, setImage] = useState<File | null>(null)
-  const [queue, setQueue] = useState<QueuedChatTurn[]>([])
-  const [sending, setSending] = useState(false)
-  const [stopping, setStopping] = useState(false)
-  const [queuePaused, setQueuePaused] = useState(false)
-  const [paused, setPaused] = useState(false)
-  const [historyLoading, setHistoryLoading] = useState(false)
-  const [threadsLoading, setThreadsLoading] = useState(false)
-  const [threadsOpen, setThreadsOpen] = useState(false)
-  const [threads, setThreads] = useState<ChatThreadSummary[]>([])
-  const [error, setError] = useState<ChatDiagnostic>()
-  const [diagnosticOpen, setDiagnosticOpen] = useState(false)
-  const [clock, setClock] = useState(Date.now)
-  const [followingOutput, setFollowingOutput] = useState(true)
-  const followingOutputRef = useRef(true)
-  const startedAtRef = useRef(0)
-  const lastDeltaAtRef = useRef(0)
-  const loadedThreadRef = useRef<string | null | undefined>(undefined)
-  const [notice, setNotice] = useState<string>()
-  const { baseURL: chatBaseURL, state: connectionState, reconnect } = useChatConnection()
-  const [threadId, setThreadId] = useState<string | null>(workspace.threadId)
-  const listRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<TextAreaRef>(null)
-  const imageInputRef = useRef<HTMLInputElement>(null)
-  const abortRef = useRef<AbortController | null>(null)
-  const activeTurnRef = useRef<string | null>(null)
-  const stoppingTurnRef = useRef<string | null>(null)
-  const processingRef = useRef(false)
-  const threadIdRef = useRef(threadId)
-
-  const rememberThreadId = useCallback((nextThreadId: string | null) => {
-    setThreadId(nextThreadId)
-    threadIdRef.current = nextThreadId
-    onWorkspaceChange(workspace.id, { threadId: nextThreadId })
-  }, [onWorkspaceChange, workspace.id])
-
-  const imagePreviewURL = useMemo(() => image ? URL.createObjectURL(image) : undefined, [image])
-
-  useEffect(() => () => {
-    if (imagePreviewURL) URL.revokeObjectURL(imagePreviewURL)
-  }, [imagePreviewURL])
-
-  useEffect(() => {
-    threadIdRef.current = threadId
-  }, [threadId])
-
-  const scrollToLatest = useCallback(() => {
-    followingOutputRef.current = true
-    setFollowingOutput(true)
-    const el = listRef.current
-    if (el) el.scrollTop = el.scrollHeight
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([])
+  const [uploading, setUploading] = useState(false)
+  const [running, setRunning] = useState<Set<string>>(new Set())
+  const [accepting, setAccepting] = useState<string | null>(null)
+  const [streamText, setStreamText] = useState<Record<string, string>>({})
+  const [error, setError] = useState<string>()
+  const [editingTitle, setEditingTitle] = useState(false)
+  const [switching, setSwitching] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const inputRef = useRef<TextAreaRef>(null),
+    fileRef = useRef<HTMLInputElement>(null),
+    listRef = useRef<HTMLDivElement>(null)
+  const activeID = useRef('')
+  const draftTimer = useRef<number | undefined>(undefined)
+  // The chat stays mounted across pages. Async results must use the current route,
+  // never the route captured when a request started.
+  const pageRef = useRef({ context, setViewState })
+  pageRef.current = { context, setViewState }
+  const draftRef = useRef({ text: input, attachment_ids: attachments.map((item) => item.id) })
+  draftRef.current = { text: input, attachment_ids: attachments.map((item) => item.id) }
+  const sessionRequest = useRef(0)
+  const draftWrite = useRef<Promise<unknown>>(Promise.resolve())
+  const reportError = (cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause))
+  const attempt = async (action: Promise<unknown>) => { try { await action } catch (cause) { reportError(cause) } }
+  const saveDraft = useCallback((id: string, draft: ChatSession['draft']) => {
+    // Keep an older debounce request from overwriting a newer session-switch save.
+    // Each caller reports its own error; a later edit can still retry after failure.
+    const write = draftWrite.current.catch(() => undefined).then(() => api<ChatSession>(`/api/chat/sessions/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ draft }),
+    }))
+    draftWrite.current = write
+    return write
   }, [])
 
-  useEffect(() => {
-    if (open && active && followingOutputRef.current) scrollToLatest()
-  }, [messages, open, active, scrollToLatest])
-
-  useEffect(() => () => abortRef.current?.abort(), [])
-
-  useEffect(() => {
-    if (!sending) return
-    const timer = window.setInterval(() => setClock(Date.now()), 1000)
-    return () => window.clearInterval(timer)
-  }, [sending])
-
-  useEffect(() => {
-    if (connectionState === 'offline') {
-      setQueuePaused(true)
-      abortRef.current?.abort(new ChatConnectionError('网络已断开，已保留收到的回复。'))
-    }
-  }, [connectionState])
-
-  const refreshThreads = useCallback((baseURL = chatBaseURL) => {
-    if (!baseURL) return undefined
-    const controller = new AbortController()
-    setThreadsLoading(true)
-    listChatThreads(baseURL, controller.signal)
-      .then((result) => {
-        if (controller.signal.aborted) return
-        setThreads(result.threads)
-        const selected = workspace.threadId
-          ? result.threads.find((item) => item.thread_id === workspace.threadId)
-          : undefined
-        if (selected?.title && /^会话 \d+$/.test(workspace.title)) {
-          onWorkspaceChange(workspace.id, { title: compactText(selected.title, 18) })
-        }
-        if (result.warnings && result.warnings.length > 0) {
-          setError({
-            message: '部分历史对话暂时无法读取。',
-            detail: result.warnings.map((warning) => {
-              const target = warning.thread_id || warning.file || 'unknown'
-              return `${target}: ${warning.message}`
-            }).join('\n'),
-            at: new Date().toISOString(),
-            recoverable: true,
-          })
-        }
-      })
-      .catch((cause: unknown) => {
-        if (!isAbortError(cause)) {
-          setError({
-            message: '暂时无法读取历史对话。',
-            detail: errorText(cause),
-            at: new Date().toISOString(),
-            recoverable: true,
-          })
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setThreadsLoading(false)
-      })
-    return () => controller.abort()
-  }, [chatBaseURL, onWorkspaceChange, workspace.id, workspace.threadId, workspace.title])
-
-  useEffect(() => {
-    if (!chatBaseURL || connectionState !== 'ready') return
-    return refreshThreads(chatBaseURL)
-  }, [chatBaseURL, connectionState, refreshThreads])
-
-  useEffect(() => {
-    if (!chatBaseURL || connectionState !== 'ready') return
-    if (!threadId) {
-      setHistoryLoading(false)
-      return
-    }
-    if (sending || queue.length > 0 || loadedThreadRef.current === threadId) return
-    const controller = new AbortController()
-    setHistoryLoading(true)
-    getChatHistory(chatBaseURL, threadId, controller.signal)
-      .then((history) => {
-        if (controller.signal.aborted || processingRef.current) return
-        loadedThreadRef.current = threadId
-        followingOutputRef.current = true
-        setMessages(history.messages.map((message) => ({
-          id: makeClientId(message.role),
-          role: message.role,
-          text: message.text,
-          status: 'sent',
-        })))
-        setError(undefined)
-        setDiagnosticOpen(false)
-        setNotice(undefined)
-      })
-      .catch((cause: unknown) => {
-        if (isAbortError(cause)) return
-        if (isMissingChatHistoryError(cause)) {
-          rememberThreadId(null)
-          setMessages([])
-          setError(undefined)
-          setNotice('上次会话已失效，已自动切换到新会话。')
-          return
-        }
-        setError({
-          message: '暂时无法恢复这个会话。',
-          detail: errorText(cause),
-          at: new Date().toISOString(),
-          recoverable: true,
-        })
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setHistoryLoading(false)
-      })
-    return () => controller.abort()
-  }, [chatBaseURL, connectionState, queue.length, rememberThreadId, sending, threadId])
-
-  useEffect(() => {
-    if (open && active) inputRef.current?.focus()
-  }, [active, open])
-
-  useEffect(() => {
-    if (active && !sending && messages.length > 0) inputRef.current?.focus()
-  }, [active, sending, messages.length])
-
-  useEffect(() => {
-    onWorkspaceChange(workspace.id, { busy: historyLoading || sending || queue.length > 0 })
-  }, [historyLoading, onWorkspaceChange, queue.length, sending, workspace.id])
-
-  const currentPageLabel = pageLabel(context)
-  const currentSelectionLabel = context.selection?.label
-  const currentActionLabel = context.active_key === 'biz-okr' && context.view_state.tab === 'agent-flows'
-    ? context.view_state.action_label
-    : undefined
-  const currentQuarter = context.active_key === 'biz-okr' ? context.view_state.quarter : undefined
-  const currentWeek = context.active_key === 'biz-okr' ? context.view_state.week : undefined
-  const currentSelectionType = context.selection
-    ? SELECTION_LABELS[context.selection.kind] ?? '对象'
-    : null
-
-  const suggestions = useMemo(() => {
-    if (context.active_key === 'biz-okr' && context.view_state.tab === 'agent-flows') {
-      const action = currentActionLabel ? `“${currentActionLabel}”` : '当前 OKR Agent'
-      return [
-        `检查${action}的配置和最近执行情况`,
-        `手动执行${action}`,
-        `解释${action}会使用哪些 Prompt 和工具`,
-      ]
-    }
-    if (context.selection) {
-      return [
-        `总结「${context.selection.label}」的当前情况`,
-        `这个${currentSelectionType}下一步最应该做什么？`,
-        `检查这个${currentSelectionType}有没有风险或遗漏`,
-      ]
-    }
-    const defaults = pageSuggestions(agentName)
-    return defaults[pageGroup(context)] ?? defaults.today
-  }, [agentName, context, currentActionLabel, currentSelectionType])
-
-  const queueStatusText = useMemo(() => {
-    if (connectionState === 'offline') return '网络已断开'
-    if (connectionState === 'disconnected') return '连接不可用'
-    if (connectionState === 'connecting') return '正在连接'
-    if (historyLoading) return '正在恢复'
-    if (stopping) return '正在暂停'
-    if (sending) return lastDeltaAtRef.current > 0 && clock - lastDeltaAtRef.current < 2000 ? '正在输入' : '正在处理'
-    if (queue.length > 0 && queuePaused) return `${queue.length} 条待发送`
-    if (queue.length > 0) return `${queue.length} 条排队中`
-    if (paused) return '已暂停'
-    return '就绪'
-  }, [clock, connectionState, historyLoading, paused, queue.length, queuePaused, sending, stopping])
-
-  const stop = useCallback(async () => {
-    const turnID = activeTurnRef.current
-    if (!chatBaseURL || !turnID || stopping) return
-    setStopping(true)
-    setQueuePaused(true)
-    stoppingTurnRef.current = turnID
-    try {
-      // A false result means the stop beat the streaming POST while identity
-      // was still loading. The service keeps a short-lived stop marker; when
-      // the POST arrives it is rejected before the Agent starts.
-      await stopChatTurn(chatBaseURL, turnID, AbortSignal.timeout(20_000))
-      if (activeTurnRef.current === turnID) abortRef.current?.abort()
-    } catch (cause: unknown) {
-      if (activeTurnRef.current === turnID) {
-        stoppingTurnRef.current = null
-        setStopping(false)
-        setError({
-          message: '暂时无法暂停这轮回复。',
-          detail: errorText(cause),
-          at: new Date().toISOString(),
-          recoverable: true,
-        })
-      }
-    }
-  }, [chatBaseURL, stopping])
-
-  const fillSuggestion = useCallback((suggestion: string) => {
-    setInput(suggestion)
-    requestAnimationFrame(() => inputRef.current?.focus())
-  }, [])
-
-  const startNewChat = useCallback(() => {
-    if (sending || queue.length > 0) {
-      setNotice('当前还有消息在处理，完成或清空队列后再新建对话。')
-      return
-    }
-    loadedThreadRef.current = null
-    rememberThreadId(null)
-    setMessages([])
-    setImage(null)
-    setQueue([])
-    setQueuePaused(false)
-    setError(undefined)
-    setDiagnosticOpen(false)
-    setNotice(undefined)
-    setPaused(false)
-    setThreadsOpen(false)
-    inputRef.current?.focus()
-  }, [queue.length, rememberThreadId, sending])
-
-  const attachImage = useCallback((file: File) => {
-    const validationError = chatImageError(file)
-    if (validationError) {
-      setError({ message: validationError, at: new Date().toISOString(), recoverable: true })
-      return
-    }
-    setImage(file)
-    setError(undefined)
-  }, [])
-
-  const selectThread = useCallback((nextThreadID: string) => {
-    if (sending || queue.length > 0) {
-      setNotice('当前还有消息在处理，完成或清空队列后再切换对话。')
-      return
-    }
-    const normalized = nextThreadID.trim()
-    if (!normalized || normalized === threadId) {
-      setThreadsOpen(false)
-      return
-    }
-    loadedThreadRef.current = undefined
-    setMessages([])
-    rememberThreadId(normalized)
-    const selected = threads.find((item) => item.thread_id === normalized)
-    if (selected?.title) onWorkspaceChange(workspace.id, { title: compactText(selected.title, 18) })
-    setImage(null)
-    setError(undefined)
-    setDiagnosticOpen(false)
-    setNotice(undefined)
-    setPaused(false)
-    setThreadsOpen(false)
-  }, [onWorkspaceChange, queue.length, rememberThreadId, sending, threadId, threads, workspace.id])
-
-  const clearQueue = useCallback(() => {
-    setQueue([])
-    setMessages((prev) => prev.filter((message) => message.status !== 'queued'))
-    setQueuePaused(false)
-    setNotice(undefined)
-  }, [])
-
-  const resumeQueue = useCallback(() => {
-    setQueuePaused(false)
-    setPaused(false)
-    setError(undefined)
-    setDiagnosticOpen(false)
-    setNotice(undefined)
-  }, [])
-
-  const enqueueTurn = useCallback((text: string, nextImage: File | null, options?: { reuseMessageId?: string; front?: boolean }) => {
-    const message = text.trim()
-    if (!message) return
-    followingOutputRef.current = true
-    setFollowingOutput(true)
-    const userMessageId = options?.reuseMessageId ?? makeClientId('user')
-    const turn: QueuedChatTurn = {
-      id: makeClientId('turn'),
-      userMessageId,
-      text: message,
-      image: nextImage,
-      pageContext: context,
-      createdAt: Date.now(),
-    }
-    if (options?.reuseMessageId) {
-      setMessages((prev) => prev.map((item) => item.id === userMessageId
-        ? { ...item, status: 'queued', diagnostic: undefined, retryText: undefined, retryImage: undefined }
-        : item))
-    } else {
-      setMessages((prev) => [...prev, {
-        id: userMessageId,
-        role: 'user',
-        text: message,
-        status: sending || queue.length > 0 || queuePaused ? 'queued' : 'sending',
-        imageName: nextImage?.name,
-        retryText: message,
-        retryImage: nextImage,
-      }])
-    }
-    setQueue((prev) => options?.front ? [turn, ...prev] : [...prev, turn])
-    setQueuePaused(false)
-    setPaused(false)
-    setError(undefined)
-    setDiagnosticOpen(false)
-    if (!options?.reuseMessageId && messages.length === 0 && /^会话 \d+$/.test(workspace.title)) {
-      onWorkspaceChange(workspace.id, { title: compactText(message, 18) || workspace.title })
-    }
-  }, [context, messages.length, onWorkspaceChange, queue.length, queuePaused, sending, workspace.id, workspace.title])
-
-  const send = useCallback(() => {
-    const message = input.trim()
-    if (!message) return
-    if (!chatBaseURL || connectionState !== 'ready') {
-      reconnect()
-      setError({
-        message: '对话服务还没有准备好。',
-        detail: 'chat runtime config is not loaded',
-        at: new Date().toISOString(),
-        recoverable: true,
-      })
-      return
-    }
-    const imageToSend = image
-    setInput('')
-    setImage(null)
-    setNotice(undefined)
-    enqueueTurn(message, imageToSend)
-    requestAnimationFrame(() => inputRef.current?.focus())
-  }, [chatBaseURL, connectionState, enqueueTurn, image, input, reconnect])
-
-  const copyDiagnostic = useCallback(async (diagnostic: ChatDiagnostic) => {
-    const lines = [
-      `message: ${diagnostic.message}`,
-      diagnostic.detail ? `detail: ${diagnostic.detail}` : '',
-      diagnostic.logId ? `log_id: ${diagnostic.logId}` : '',
-      `at: ${diagnostic.at}`,
-      threadId ? `thread_id: ${threadId}` : '',
-      `page: ${currentPageLabel}`,
-    ].filter(Boolean)
-    try {
-      if (!navigator.clipboard?.writeText) throw new Error('clipboard API unavailable')
-      await navigator.clipboard.writeText(lines.join('\n'))
-      setNotice('诊断信息已复制。')
-    } catch {
-      setNotice('无法自动复制诊断，可以展开日志后手动复制。')
-    }
-  }, [currentPageLabel, threadId])
-
-  const retryMessage = useCallback((message: ChatMessage) => {
-    const retryText = message.retryText ?? message.text
-    enqueueTurn(retryText, message.retryImage ?? null, { reuseMessageId: message.id, front: true })
-  }, [enqueueTurn])
-
-  const runTurn = useCallback(async (turn: QueuedChatTurn) => {
-    if (!chatBaseURL || processingRef.current) return
-    processingRef.current = true
-    setQueue((prev) => prev.filter((item) => item.id !== turn.id))
-    setError(undefined)
-    setDiagnosticOpen(false)
-    setNotice(undefined)
-    setStopping(false)
-    setPaused(false)
-    startedAtRef.current = Date.now()
-    lastDeltaAtRef.current = 0
-    setClock(Date.now())
-    setSending(true)
-    setMessages((prev) => prev.map((item) => item.id === turn.userMessageId
-      ? { ...item, status: 'sending', diagnostic: undefined }
-      : item))
-    const assistantMessageId = makeClientId('assistant')
-    setMessages((prev) => [...prev, { id: assistantMessageId, role: 'assistant', text: '', status: 'sending' }])
-
-    let pendingText = ''
-    const flushText = () => {
-      if (!pendingText) return
-      const text = pendingText
-      pendingText = ''
-      setClock(Date.now())
-      setMessages((prev) => prev.map((item) => item.id === assistantMessageId
-        ? { ...item, text: item.text + text } : item))
-    }
-    const flushTimer = window.setInterval(flushText, 40)
-
-    const controller = new AbortController()
-    abortRef.current = controller
-    activeTurnRef.current = turn.id
-    const connectionDeadline = window.setTimeout(() => controller.abort(new ChatConnectionError('连接超时，请恢复连接后继续。')), 45_000)
-    const threadAtStart = threadIdRef.current
-    try {
-      // Read the signed-in identity per turn: the person can log in or out
-      // while the conversation stays open.
-      const req: ChatRequest = {
-        message: turn.text,
-        thread_id: threadAtStart,
-        turn_id: turn.id,
-        page_context: turn.pageContext,
-        image: turn.image,
-        user_open_id: await getSignedInOpenID(controller.signal),
-      }
-      controller.signal.throwIfAborted()
-      const form = new FormData()
-      form.append('message', req.message)
-      form.append('turn_id', req.turn_id)
-      if (req.thread_id) form.append('thread_id', req.thread_id)
-      if (req.user_open_id) form.append('user_open_id', req.user_open_id)
-      if (req.page_context) form.append('page_context', JSON.stringify(req.page_context))
-      if (req.image) form.append('image', req.image, req.image.name)
-      const response = await fetch(`${chatBaseURL}/api/chat`, {
-        method: 'POST',
-        body: form,
-        signal: controller.signal,
-      })
-      window.clearTimeout(connectionDeadline)
-      if (!response.ok) {
-        if (response.status >= 500) reconnect()
-        throw await diagnosticFromResponse(response)
-      }
-      if (!response.body) throw new Error('对话响应无数据流（response.body 为空）')
-
-      await readChatStream(response.body, ({ event, data }) => {
-        if (event === 'thread') {
-          const parsed = JSON.parse(data) as ChatThreadEvent
-          // Live turns already own their transcript. Never reload history over
-          // partial output, errors, paused messages or a pending retry.
-          loadedThreadRef.current = parsed.thread_id
-          rememberThreadId(parsed.thread_id)
-          setThreads((prev) => {
-            const withoutCurrent = prev.filter((item) => item.thread_id !== parsed.thread_id)
-            return [threadSummaryFromTurn(parsed.thread_id, turn), ...withoutCurrent].slice(0, CHAT_THREAD_LIST_LIMIT)
-          })
-        } else if (event === 'delta') {
-          const parsed = JSON.parse(data) as ChatDeltaEvent
-          if (typeof parsed.text !== 'string') throw new Error('Invalid chat delta')
-          if (parsed.text) {
-            pendingText += parsed.text
-            lastDeltaAtRef.current = Date.now()
-          }
-        } else if (event === 'error') {
-          throw diagnosticFromEvent(JSON.parse(data) as ChatErrorEvent)
-        }
-      }, controller.signal)
-      flushText()
-      setMessages((prev) => prev.map((item) => {
-        if (item.id === turn.userMessageId || item.id === assistantMessageId) return { ...item, status: 'sent' }
-        return item
-      }))
-      refreshThreads(chatBaseURL)
-      window.dispatchEvent(new Event('jarvis:chat-completed'))
-    } catch (caught: unknown) {
-      flushText()
-      const cause = controller.signal.aborted ? controller.signal.reason : caught
-      if (stoppingTurnRef.current === turn.id || isAbortError(cause)) {
-        setPaused(true)
-        setQueuePaused(true)
-        // Keep any partial reply; drop only a still-empty assistant bubble.
-        setMessages((prev) => {
-          const assistant = prev.find((item) => item.id === assistantMessageId)
-          return prev.flatMap((item) => {
-            if (item.id === turn.userMessageId) return [{ ...item, status: 'sent' as ChatMessageStatus }]
-            if (item.id === assistantMessageId && assistant?.text === '') return []
-            if (item.id === assistantMessageId) return [{ ...item, status: 'paused' as ChatMessageStatus }]
-            return [item]
-          })
-        })
+  const loadModels = useCallback(
+    async (agent: string, force = false) => {
+      if (!force && models[agent]) return models[agent]
+      const result = await api<ListEnvelope<ChatModel>>(`/api/chat/agents/${agent}/models`)
+      setModels((current) => ({ ...current, [agent]: result.items }))
+      return result.items
+    },
+    [models],
+  )
+  const loadSessions = useCallback(
+    async (nextArchived = archived, nextQuery = query) => {
+      const result = await api<ListEnvelope<ChatSession>>(`/api/chat/sessions?archived=${nextArchived}&query=${encodeURIComponent(nextQuery)}`)
+      setSessions(result.items)
+      return result.items
+    },
+    [archived, query],
+  )
+  const openSession = useCallback(
+    async (id: string, closeDrawer = true) => {
+      if (id === activeID.current) {
+        if (closeDrawer) setHistoryOpen(false)
         return
       }
-      const disconnected = cause instanceof ChatConnectionError || cause instanceof TypeError
-      if (disconnected) reconnect()
-      const diagnostic = diagnosticFromCause(cause)
-      if (disconnected) diagnostic.message = '连接中断，本轮回复未完成，已保留收到的内容。'
-      if (isStaleThreadError(`${diagnostic.detail ?? ''} ${diagnostic.message}`) && threadAtStart) {
-        rememberThreadId(null)
-        setNotice('这个会话暂时无法继续，已切换到新对话。你可以继续发送。')
+      const request = ++sessionRequest.current
+      setSwitching(true)
+      window.clearTimeout(draftTimer.current)
+      try {
+        if (activeID.current && activeID.current !== id) {
+          await saveDraft(activeID.current, draftRef.current)
+        }
+        const detail = await api<ChatSession>(`/api/chat/sessions/${id}`)
+        if (request !== sessionRequest.current) return
+        setActive(detail)
+        activeID.current = detail.id
+        setInput(detail.draft?.text || '')
+        setAttachments(detail.pending_attachments || [])
+        setError(undefined)
+        if (pageRef.current.context.active_key === 'chat') pageRef.current.setViewState({ session: detail.id })
+        if (closeDrawer) setHistoryOpen(false)
+        void loadModels(detail.agent).catch(reportError)
+      } finally {
+        if (request === sessionRequest.current) setSwitching(false)
       }
-      setQueuePaused(true)
-      setError(diagnostic)
-      setMessages((prev) => {
-        const assistant = prev.find((item) => item.id === assistantMessageId)
-        return prev.flatMap((item) => {
-          if (item.id === turn.userMessageId) {
-            return [{ ...item, status: 'failed' as ChatMessageStatus, diagnostic, retryText: turn.text, retryImage: turn.image }]
-          }
-          if (item.id === assistantMessageId && assistant?.text === '') return []
-          if (item.id === assistantMessageId) return [{ ...item, status: 'partial' as ChatMessageStatus, diagnostic }]
-          return [item]
+    },
+    [loadModels, saveDraft],
+  )
+  const createSession = useCallback(
+    async (agent?: string, model?: string, fromSessionID?: string) => {
+      setCreating(true)
+      try {
+        const chosenAgent = agent || agents.find((item) => item.default && item.available)?.id || agents.find((item) => item.available)?.id || 'codex'
+        let available = models[chosenAgent] || []
+        if (!available.length) available = await loadModels(chosenAgent)
+        const chosenModel = model || available.find((item) => item.default)?.id || available[0]?.id
+        if (!chosenModel) throw new Error(`${agentLabel(chosenAgent)} 没有可用模型`)
+        const chosen = available.find((item) => item.id === chosenModel)
+        const detail = await api<ChatSession>('/api/chat/sessions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: fromSessionID && active ? `${active.title} · 继续` : '新对话',
+            agent: chosenAgent,
+            model: chosenModel,
+            reasoning_effort: defaultEffort(chosen),
+            sources: [],
+            draft: {},
+            from_session_id: fromSessionID || '',
+          }),
         })
-      })
-    } finally {
-      window.clearTimeout(connectionDeadline)
-      window.clearInterval(flushTimer)
-      abortRef.current = null
-      if (activeTurnRef.current === turn.id) activeTurnRef.current = null
-      if (stoppingTurnRef.current === turn.id) stoppingTurnRef.current = null
-      setStopping(false)
-      setSending(false)
-      processingRef.current = false
-    }
-  }, [chatBaseURL, reconnect, refreshThreads, rememberThreadId])
+        await loadSessions(false, '')
+        setArchived(false)
+        setQuery('')
+        await openSession(detail.id)
+        requestAnimationFrame(() => inputRef.current?.focus())
+        return detail
+      } finally { setCreating(false) }
+    },
+    [active, agents, loadModels, loadSessions, models, openSession],
+  )
 
   useEffect(() => {
-    if (!chatBaseURL || connectionState !== 'ready' || historyLoading || sending || queuePaused || queue.length === 0 || processingRef.current) return
-    void runTurn(queue[0])
-  }, [chatBaseURL, connectionState, historyLoading, queue, queuePaused, runTurn, sending])
+    let alive = true
+    void (async () => {
+      try {
+        const [agentData, sessionData] = await Promise.all([api<ListEnvelope<ChatAgent>>('/api/chat/agents'), api<ListEnvelope<ChatSession>>('/api/chat/sessions?archived=false')])
+        if (!alive) return
+        setAgents(agentData.items)
+        setSessions(sessionData.items)
+        const requested = pageRef.current.context.active_key === 'chat' ? pageRef.current.context.view_state.session : undefined
+        const targetID = requested || sessionData.items[0]?.id
+        if (targetID) await openSession(targetID, false)
+        else {
+          const available = agentData.items.find((item) => item.default && item.available) || agentData.items.find((item) => item.available)
+          if (!available) throw new Error('没有可用的底层 Agent，请先安装并登录 Codex、TRAE 或 Cursor')
+          const discovered = await api<ListEnvelope<ChatModel>>(`/api/chat/agents/${available.id}/models`)
+          if (!alive) return
+          setModels((current) => ({
+            ...current,
+            [available.id]: discovered.items,
+          }))
+          const selected = discovered.items.find((item) => item.default) || discovered.items[0]
+          if (!selected) throw new Error(`${available.name} 没有可用模型`)
+          const created = await api<ChatSession>('/api/chat/sessions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              title: '新对话',
+              agent: available.id,
+              model: selected.id,
+              reasoning_effort: defaultEffort(selected),
+              sources: [],
+              draft: {},
+              from_session_id: '',
+            }),
+          })
+          await openSession(created.id, false)
+          setSessions([created])
+        }
+      } catch (cause) {
+        if (alive) setError(cause instanceof Error ? cause.message : String(cause))
+      } finally {
+        if (alive) setLoading(false)
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const onKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return
-    event.preventDefault()
-    send()
-  }
+  useEffect(() => {
+    if (loading || context.active_key !== 'chat') return
+    const requested = context.view_state.session
+    if (requested && requested !== activeID.current) void attempt(openSession(requested))
+    else if (!requested && activeID.current) setViewState({ session: activeID.current })
+  }, [context.active_key, context.view_state.session, loading]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const onPaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const images = Array.from(event.clipboardData.files).filter((file) => file.type.startsWith('image/'))
-    if (images.length === 0) return
-    event.preventDefault()
-    if (images.length > 1) {
-      setError({ message: '每轮只能附一张截图。', at: new Date().toISOString(), recoverable: true })
+  useEffect(() => {
+    if (!active) return
+    window.clearTimeout(draftTimer.current)
+    draftTimer.current = window.setTimeout(() => {
+      void saveDraft(active.id, { text: input, attachment_ids: attachments.map((item) => item.id) }).catch(reportError)
+    }, 500)
+    return () => window.clearTimeout(draftTimer.current)
+  }, [active?.id, attachments, input])
+  useEffect(() => {
+    const list = listRef.current
+    if (list) list.scrollTop = list.scrollHeight
+  }, [active?.messages, streamText, active?.id])
+
+  const refreshActive = useCallback(
+    async (sessionID: string) => {
+      const detail = await api<ChatSession>(`/api/chat/sessions/${sessionID}`)
+      if (activeID.current === sessionID) setActive(detail)
+      await loadSessions()
+    },
+    [loadSessions],
+  )
+  // Only poll a reply whose stream belongs to an earlier page load/tab.
+  useEffect(() => {
+    if (!active?.running || running.has(active.id)) return
+    const sessionID = active.id
+    let cancelled = false
+    let timer: number
+    const poll = async () => {
+      try {
+        const detail = await api<ChatSession>(`/api/chat/sessions/${sessionID}`)
+        if (cancelled || activeID.current !== sessionID) return
+        setActive(detail)
+        if (!detail.running) return
+      } catch (cause) {
+        if (cancelled) return
+        reportError(cause)
+      }
+      timer = window.setTimeout(() => void poll(), 2000)
+    }
+    timer = window.setTimeout(() => void poll(), 2000)
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [active?.id, active?.running, running])
+  const send = useCallback(async () => {
+    if (!active || active.running || running.has(active.id) || uploading || switching || saving || creating) return
+    const text = input.trim()
+    if (!text && !attachments.length) return
+    const selectedModel = models[active.agent]?.find((item) => item.id === active.model)
+    if (attachments.some((file) => file.mime_type.startsWith('image/')) && !selectedModel?.input_modalities?.includes('image')) {
+      setError(`${agentLabel(active.agent)} 的 ${active.model} 未声明图片输入能力，请换一个支持图片的模型`)
       return
     }
-    attachImage(images[0])
+    const sessionID = active.id
+    setAccepting(sessionID)
+    setError(undefined)
+    setRunning((current) => new Set(current).add(sessionID))
+    setStreamText((current) => ({ ...current, [sessionID]: '' }))
+    try {
+      window.clearTimeout(draftTimer.current)
+      await saveDraft(sessionID, { text: input, attachment_ids: attachments.map((item) => item.id) })
+      const response = await apiFetch(`/api/chat/sessions/${sessionID}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          attachment_ids: attachments.map((item) => item.id),
+          sources: active.sources.map((source) => ({ ...source, label: sourceLabel(source) })),
+        }),
+      })
+      if (!response.ok || !response.body) throw new Error(`对话请求失败：HTTP ${response.status}`)
+      const reader = response.body.getReader(),
+        decoder = new TextDecoder()
+      let buffer = '',
+        streamError = ''
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        let separator: number
+        while ((separator = buffer.indexOf('\n\n')) !== -1) {
+          const block = buffer.slice(0, separator)
+          buffer = buffer.slice(separator + 2)
+          const parsed = parseSSEBlock(block)
+          if (!parsed.data) continue
+          if (parsed.event === 'accepted') {
+            setAccepting(null)
+            if (activeID.current === sessionID) {
+              setInput('')
+              setAttachments([])
+              setActive((current) => current?.id === sessionID ? {
+                ...current,
+                messages: [...(current.messages || []), { id: `local-${Date.now()}`, role: 'user', text, attachments, created_at: new Date().toISOString() }],
+              } : current)
+            }
+          } else if (parsed.event === 'delta') {
+            const delta = (JSON.parse(parsed.data) as { text: string }).text
+            setStreamText((current) => ({
+              ...current,
+              [sessionID]: (current[sessionID] || '') + delta,
+            }))
+          } else if (parsed.event === 'error') streamError = (JSON.parse(parsed.data) as { message: string }).message
+        }
+      }
+      if (streamError) throw new Error(streamError)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      await refreshActive(sessionID).catch(reportError)
+      setAccepting(null)
+      setRunning((current) => {
+        const next = new Set(current)
+        next.delete(sessionID)
+        return next
+      })
+      setStreamText((current) => {
+        const next = { ...current }
+        delete next[sessionID]
+        return next
+      })
+    }
+  }, [active, attachments, context, input, models, refreshActive, running, uploading, switching, saving, creating, saveDraft])
+  const stop = async () => {
+    if (active) await api<{ canceled: boolean }>(`/api/chat/sessions/${active.id}/cancel`, { method: 'POST' })
+  }
+  const uploadFiles = async (files: FileList | File[]) => {
+    if (!active) return
+    const sessionID = active.id
+    const items = Array.from(files)
+    if (attachments.length + items.length > 10) {
+      setError('每条消息最多添加 10 个文件')
+      return
+    }
+    if (items.some((file) => file.size > 25 * 1024 * 1024)) {
+      setError('单个文件不能超过 25 MiB')
+      return
+    }
+    setUploading(true)
+    setError(undefined)
+    try {
+      const uploaded: ChatAttachment[] = []
+      for (const file of items) {
+        const form = new FormData()
+        form.append('file', file)
+        uploaded.push(await api<ChatAttachment>(`/api/chat/sessions/${sessionID}/attachments`, { method: 'POST', body: form }))
+      }
+      if (activeID.current === sessionID) setAttachments((current) => [...current, ...uploaded])
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setUploading(false)
+    }
+  }
+  const removeAttachment = async (file: ChatAttachment) => {
+    if (!active) return
+    try {
+      await api<{ deleted: boolean }>(`/api/chat/sessions/${active.id}/attachments/${file.id}`, { method: 'DELETE' })
+      if (activeID.current === active.id) setAttachments((items) => items.filter((item) => item.id !== file.id))
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+  const updateSession = async (patch: Record<string, unknown>) => {
+    if (!active) return
+    setSaving(true)
+    try {
+      const detail = await api<ChatSession>(`/api/chat/sessions/${active.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+      if (activeID.current === detail.id) setActive(detail)
+      await loadSessions()
+    } finally { setSaving(false) }
+  }
+  const changeAgent = async (agent: string) => {
+    if (!active || agent === active.agent) return
+    if (active.running || running.has(active.id)) {
+      setError('请先停止当前回复，再切换 Agent')
+      return
+    }
+    try {
+      const available = await loadModels(agent),
+        model = available.find((item) => item.default) || available[0]
+      if (!model) throw new Error(`${agentLabel(agent)} 没有可用模型`)
+      if ((active.messages || []).length > 0)
+        Modal.confirm({
+          title: `切换到 ${agentLabel(agent)}`,
+          content: '已有记录会复制到新会话，原会话保持不变。底层工具状态不会迁移。',
+          okText: '携带记录新建',
+          cancelText: '取消',
+          onOk: () => createSession(agent, model.id, active.id),
+        })
+      else
+        await updateSession({
+          agent,
+          model: model.id,
+          reasoning_effort: defaultEffort(model),
+        })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    }
+  }
+  const changeModel = async (model: string) => {
+    if (!active) return
+    const item = models[active.agent]?.find((candidate) => candidate.id === model)
+    await updateSession({
+      model,
+      reasoning_effort: item ? defaultEffort(item) : active.reasoning_effort,
+    })
+  }
+  const doArchive = async () => {
+    if (!active) return
+    const showArchived = !active.archived
+    await updateSession({ archived: showArchived })
+    setArchived(showArchived)
+    await loadSessions(showArchived, '')
+  }
+  const removeSession = async () => {
+    if (!active) return
+    Modal.confirm({
+      title: '永久删除这个会话？',
+      content: '会话记录会从 Jarvis 中删除，已经产生的外部动作不会撤销。',
+      okText: '永久删除',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        await api<{ deleted: boolean }>(`/api/chat/sessions/${active.id}`, {
+          method: 'DELETE',
+        })
+        window.clearTimeout(draftTimer.current)
+        activeID.current = ''
+        const items = await loadSessions()
+        if (items[0]) await openSession(items[0].id)
+        else await createSession()
+      },
+    })
+  }
+  const exportSession = () => {
+    if (!active) return
+    const content = [
+      `# ${active.title}`,
+      '',
+      `Agent: ${agentLabel(active.agent)} / ${active.model}`,
+      '',
+      ...(active.messages || []).flatMap((item) => [`## ${item.role === 'user' ? '用户' : agentName}`, '', item.text, '', ...(item.attachments || []).map((file) => `- 附件：${file.name}`), '']),
+    ].join('\n')
+    const url = URL.createObjectURL(new Blob([content], { type: 'text/markdown' })),
+      link = document.createElement('a')
+    link.href = url
+    link.download = `${active.title.replace(/[\\/:*?"<>|]/g, '-')}.md`
+    link.click()
+    setTimeout(() => URL.revokeObjectURL(url), 30_000)
   }
 
-  const hasPendingQueue = queue.length > 0
-  const canSwitchThread = !sending && !hasPendingQueue && !historyLoading
-
-  return <section className="chat-panel jarvis-chat" aria-label={`${workspace.title} · ${agentName} 对话`}>
-    <header className="chat-header">
-      <div className="chat-title-row">
-        <div className="chat-heading">
-          <Text strong className="chat-title">{agentName}</Text>
-          <span className={`chat-status ${sending ? 'is-running' : ''}`} aria-live="polite">
-            <span aria-hidden="true" />
-            {queueStatusText}
-          </span>
-        </div>
-        <div className="chat-header-actions">
-          <Button type="text" size="small" className="chat-icon-button" icon={<HistoryOutlined />} aria-label="查看历史对话" title="历史对话" onClick={() => setThreadsOpen((value) => !value)} />
-          <Button type="text" size="small" className="chat-icon-button" icon={<PlusOutlined />} disabled={!canSwitchThread} aria-label="新建对话" title="新建对话" onClick={startNewChat} />
-          {workspaceActions}
-        </div>
-      </div>
-      {threadsOpen && <div className="chat-thread-panel" aria-label="历史对话">
-        <div className="chat-thread-panel-head">
-          <span>历史对话</span>
-          <Button type="text" size="small" icon={<ReloadOutlined />} loading={threadsLoading} aria-label="刷新历史对话" onClick={() => refreshThreads()} />
-        </div>
-        {threadsLoading && threads.length === 0 ? <div className="chat-thread-empty">正在读取...</div> : threads.length === 0 ? <div className="chat-thread-empty">暂无历史对话</div> : <div className="chat-thread-list">
-          {threads.map((thread) => (
-            <button
-              key={thread.thread_id}
-              type="button"
-              className={`chat-thread-item ${thread.thread_id === threadId ? 'is-active' : ''}`}
-              disabled={!canSwitchThread}
-              onClick={() => selectThread(thread.thread_id)}
-            >
-              <span className="chat-thread-title">{thread.title || '未命名对话'}</span>
-              <span className="chat-thread-preview">{thread.preview || '暂无摘要'}</span>
-              <span className="chat-thread-time">{formatThreadTime(thread.message_at || thread.updated_at)}</span>
-            </button>
-          ))}
-        </div>}
-      </div>}
-      <div className="chat-context" aria-label="当前对话上下文">
-        <span className="chat-context-page">当前页面：{currentPageLabel}</span>
-        {currentSelectionLabel && <>
-          <span className="chat-context-separator" aria-hidden="true">·</span>
-          <span className="chat-context-selection">{currentSelectionType}：{currentSelectionLabel}</span>
-        </>}
-        {currentActionLabel && <>
-          <span className="chat-context-separator" aria-hidden="true">·</span>
-          <span className="chat-context-selection">流程：{currentActionLabel}</span>
-        </>}
-        {currentQuarter && <>
-          <span className="chat-context-separator" aria-hidden="true">·</span>
-          <span className="chat-context-selection">{currentQuarter.replace('-', ' ')}</span>
-        </>}
-        {currentWeek && <>
-          <span className="chat-context-separator" aria-hidden="true">·</span>
-          <span className="chat-context-selection">{currentWeek}</span>
-        </>}
-      </div>
-    </header>
-    {workspaceBar}
-    <div
-      className="chat-messages"
-      ref={listRef}
-      onScroll={() => {
-        const el = listRef.current
-        if (!el) return
-        const following = el.scrollHeight - el.scrollTop - el.clientHeight < 48
-        followingOutputRef.current = following
-        setFollowingOutput(following)
-      }}
-      role="log"
-      aria-live="polite"
-      aria-relevant="additions text"
-      aria-label="对话记录"
-    >
-      {historyLoading ? <div className="chat-history-loading">正在恢复本地会话…</div> : messages.length === 0 && <div className="chat-empty">
-        <div className="chat-empty-mark" aria-hidden="true">{agentShortName}</div>
-        <Text strong className="chat-empty-title">从当前页面开始</Text>
-        <Text type="secondary" className="chat-empty-description">你可以直接询问，也可以选一个建议填入输入框。</Text>
-        <div className="chat-suggestions" aria-label="建议问题">
-          {suggestions.map((suggestion) => (
-            <button
-              key={suggestion}
-              type="button"
-              className="chat-suggestion"
-              onClick={() => fillSuggestion(suggestion)}
-            >
-              <span>{suggestion}</span>
-              <span className="chat-suggestion-arrow" aria-hidden="true">→</span>
-            </button>
-          ))}
-        </div>
-      </div>}
-      {messages.map((msg) => (
-        <div
-          key={msg.id}
-          className={`chat-bubble-row ${msg.role}`}
-          aria-label={msg.role === 'assistant' ? `${agentName} 的回复` : '你的消息'}
+  const activeRunning = active ? running.has(active.id) || Boolean(active.running) : false
+  const sourcePicker = active && (
+    <div className="chat-source-picker">
+      <Text type="secondary">指定优先查询范围，不自动加载资料正文</Text>
+      {SOURCE_OPTIONS.map((source) => (
+        <Checkbox
+          key={source.kind}
+          disabled={switching || saving || creating}
+          checked={active.sources.some((item) => item.kind === source.kind)}
+          onChange={(event) => {
+            const sources = event.target.checked ? [...active.sources.filter((item) => item.kind !== source.kind), source] : active.sources.filter((item) => item.kind !== source.kind)
+            void attempt(updateSession({ sources }))
+          }}
         >
-          <div className={`chat-bubble ${msg.role} ${msg.status ? `is-${msg.status}` : ''}`}>
-            {msg.imageName && <span className="chat-bubble-attachment">截图：{msg.imageName}</span>}
-            {msg.role === 'assistant' && msg.text === '' && msg.status === 'sending'
-              ? <span className="chat-typing"><span className="chat-typing-dots" aria-hidden="true"><i /><i /><i /></span>{queueStatusText}</span>
-              : <>{msg.text}{msg.role === 'assistant' && msg.status === 'sending' && queueStatusText === '正在输入' && <span className="chat-stream-cursor" aria-hidden="true" />}</>}
-            {(msg.status === 'queued' || msg.status === 'failed' || msg.status === 'partial' || msg.status === 'paused') && <div className="chat-bubble-meta">
-              {msg.status === 'queued' && '等待发送'}
-              {msg.status === 'failed' && '这条消息未完成'}
-              {msg.status === 'partial' && '回复未完成'}
-              {msg.status === 'paused' && '已暂停'}
-              {msg.status === 'failed' && <button type="button" disabled={sending || historyLoading || connectionState !== 'ready'} onClick={() => retryMessage(msg)}>重试</button>}
-              {msg.diagnostic && <button type="button" onClick={() => { setError(msg.diagnostic); setDiagnosticOpen(true) }}>诊断</button>}
-            </div>}
-          </div>
-        </div>
+          {source.label}
+        </Checkbox>
       ))}
     </div>
-    {(sending || !followingOutput || connectionState !== 'ready') && <div className={`chat-activity ${connectionState !== 'ready' ? 'is-disconnected' : ''}`} role="status" aria-live="polite">
-      {connectionState !== 'ready'
-        ? <><LoadingOutlined spin={connectionState === 'connecting'} aria-hidden="true" /><span>{connectionState === 'offline' ? '网络已断开，联网后自动重连' : connectionState === 'disconnected' ? '连接不可用' : '正在连接…'}</span><Button size="small" type="text" onClick={reconnect}>重新连接</Button></>
-        : <>{sending && <><LoadingOutlined spin aria-hidden="true" /><span>{queueStatusText}</span><time aria-live="off">{Math.max(0, Math.floor((clock - startedAtRef.current) / 1000))} 秒</time></>}
-          {!followingOutput && <Button size="small" type="text" icon={<ArrowDownOutlined />} onClick={scrollToLatest}>最新回复</Button>}</>}
-    </div>}
-    {notice && <Alert className="chat-error" type="info" showIcon message="提示" description={notice} closable onClose={() => setNotice(undefined)} />}
-    {error && <div className="chat-error-card" role="status" aria-live="polite">
-      <div className="chat-error-main">
-        <strong>{error.message}</strong>
-        <span>已保留本轮内容。可以补充说明后继续，或重试未完成的消息。</span>
-        {error.logId && <span>日志 ID：{error.logId}</span>}
+  )
+  const menuItems: MenuProps['items'] = [
+    { key: 'export', icon: <DownloadOutlined />, label: '导出 Markdown' },
+    {
+      key: 'archive',
+      icon: <InboxOutlined />,
+      label: active?.archived ? '恢复会话' : '归档会话',
+      disabled: activeRunning,
+    },
+    { type: 'divider' },
+    {
+      key: 'delete',
+      icon: <DeleteOutlined />,
+      danger: true,
+      label: '永久删除',
+      disabled: activeRunning,
+    },
+  ]
+  const grouped = useMemo(() => {
+    const result = new Map<string, ChatSession[]>()
+    for (const session of sessions) {
+      const group = dayGroup(session.updated_at)
+      result.set(group, [...(result.get(group) || []), session])
+    }
+    return result
+  }, [sessions])
+  const currentModels = active ? models[active.agent] || [] : []
+  const currentModel = currentModels.find((model) => model.id === active?.model)
+  const modelOptions = [
+    {
+      label: '推荐浏览',
+      options: currentModels.slice(0, 5).map((model) => ({ value: model.id, label: model.name })),
+    },
+    ...(currentModels.length > 5
+      ? [
+          {
+            label: '全部模型',
+            options: currentModels.slice(5).map((model) => ({ value: model.id, label: model.name })),
+          },
+        ]
+      : []),
+  ]
+  const displayMessages = active?.messages || [],
+    currentStream = active ? streamText[active.id] || (active.running && !running.has(active.id) ? '上一轮仍在回复，完成后自动更新…' : '') : ''
+  if (compact) {
+    const latest = activeRunning
+      ? { id: 'stream', role: 'assistant' as const, text: currentStream || '', created_at: '', agent: active?.agent, model: active?.model }
+      : [...displayMessages].reverse().find((item) => item.role === 'assistant')
+    return <ChatDock
+      active={active} sessions={sessions} agents={agents} models={currentModels}
+      input={input} onInput={setInput} attachments={attachments} uploading={uploading}
+      loading={loading} busy={switching || saving || creating || accepting === active?.id} running={activeRunning}
+      error={error} onDismissError={() => setError(undefined)}
+      replyText={activeRunning ? currentStream || '正在思考…' : latest?.text || (latest?.attachments?.length ? '已生成附件，点击查看' : '')}
+      replyContent={latest && <ChatMessageCard message={latest} agentName={agentName} shortName={shortName} typing={activeRunning} />}
+      sources={sourcePicker}
+      onSend={() => void attempt(send())} onStop={() => void attempt(stop())}
+      onNew={() => void attempt(createSession())}
+      onOpenSession={(id) => void attempt(openSession(id))}
+      onOpenHistory={() => navigate('chat', active ? { session: active.id } : {})}
+      onRefreshSessions={() => { setArchived(false); setQuery(''); void attempt(loadSessions(false, '')) }}
+      onAgent={(value) => void attempt(changeAgent(value))}
+      onModel={(value) => void attempt(changeModel(value))}
+      onRefreshModels={() => { if (active) void attempt(loadModels(active.agent, true)) }}
+      onEffort={(value) => void attempt(updateSession({ reasoning_effort: value }))}
+      onUpload={(files) => void uploadFiles(files)}
+      onRemoveAttachment={(file) => void removeAttachment(file)}
+    />
+  }
+  if (loading)
+    return (
+      <div className="chat-workspace-loading">
+        <Spin />
+        <span>正在加载对话…</span>
       </div>
-      <div className="chat-error-actions">
-        {!sending && <Button size="small" icon={<ReloadOutlined />} onClick={reconnect}>重新连接</Button>}
-        {queuePaused && queue.length > 0 && <Button size="small" onClick={resumeQueue}>继续队列</Button>}
-        {queue.length > 0 && <Button size="small" icon={<DeleteOutlined />} onClick={clearQueue}>清空待发送</Button>}
-        <Button size="small" icon={<CopyOutlined />} onClick={() => void copyDiagnostic(error)}>复制诊断</Button>
-        <Button size="small" type="text" onClick={() => setDiagnosticOpen((value) => !value)}>{diagnosticOpen ? '收起日志' : '查看日志'}</Button>
-        <Button size="small" type="text" icon={<CloseOutlined />} aria-label="关闭错误提示" onClick={() => { setError(undefined); setDiagnosticOpen(false) }} />
-      </div>
-      {diagnosticOpen && <pre className="chat-diagnostic-log">{[
-        error.detail ? `detail: ${error.detail}` : '',
-        error.logId ? `log_id: ${error.logId}` : '',
-        `time: ${error.at}`,
-        threadId ? `thread_id: ${threadId}` : '',
-      ].filter(Boolean).join('\n')}</pre>}
-    </div>}
-    <div className="chat-composer">
-      <input
-        ref={imageInputRef}
-        className="chat-image-input"
-        type="file"
-        accept="image/png,image/jpeg"
-        aria-label="选择截图"
-        onChange={(event) => {
-          const file = event.currentTarget.files?.[0]
-          if (file) attachImage(file)
-          event.currentTarget.value = ''
-        }}
-      />
-      {image && imagePreviewURL && <div className="chat-image-preview" aria-label={`已附加截图 ${image.name}`}>
-        <img src={imagePreviewURL} alt="待发送截图预览" />
-        <span title={image.name}>{image.name}</span>
-        <Button type="text" size="small" icon={<CloseOutlined />} aria-label="移除截图" onClick={() => setImage(null)} />
-      </div>}
-      <Input.TextArea
-        ref={inputRef}
-        className="chat-textarea"
-        value={input}
-        onChange={(event) => setInput(event.target.value)}
-        onKeyDown={onKeyDown}
-        onPaste={onPaste}
-        disabled={historyLoading}
-        autoSize={{ minRows: 1, maxRows: 6 }}
-        maxLength={4000}
-        aria-label={`发送给 ${agentName} 的消息`}
-        aria-describedby="chat-composer-hint"
-        placeholder={`询问 ${agentName}，或者告诉它你想做什么…`}
-      />
-      <div className="chat-composer-footer">
-        <div className="chat-composer-tools">
-          <Button
-            type="text"
-            size="small"
-            icon={<PaperClipOutlined />}
-            disabled={historyLoading}
-            aria-label="附加截图"
-            title="附加 PNG/JPEG 截图（也可直接粘贴）"
-            onClick={() => imageInputRef.current?.click()}
-          >截图</Button>
-          <Text id="chat-composer-hint" type="secondary" className="chat-composer-hint" aria-live="polite" title="Enter 发送 · Shift + Enter 换行 · 可直接粘贴截图">
-            {stopping ? '正在暂停…' : sending ? `可继续补充${queue.length > 0 ? ` · ${queue.length} 条排队` : ''}` : paused ? '已暂停，可继续发送' : hasPendingQueue ? `${queue.length} 条待发送` : 'Enter 发送 · Shift+Enter 换行'}
-          </Text>
+    )
+
+  return (
+    <section className="chat-workspace" aria-label={`${agentName} 对话工作区`}>
+      <aside className="chat-history-pane">
+        <div className="chat-history-heading">
+          <div>
+            <strong>对话</strong>
+            <span>你的思考与行动</span>
+          </div>
         </div>
-        <div className="chat-composer-actions">
-          {sending && <Button size="small" danger icon={<StopOutlined />} disabled={stopping} aria-label={`暂停 ${agentName} 回复`} onClick={stop}>
-            暂停
-          </Button>}
-          {!sending && queuePaused && queue.length > 0 && <Button size="small" icon={<ReloadOutlined />} onClick={resumeQueue}>继续队列</Button>}
-          <Button size="small" type="primary" icon={<SendOutlined />} disabled={historyLoading || connectionState !== 'ready' || !input.trim()} aria-label="发送消息" onClick={send}>{sending || queue.length > 0 ? '加入队列' : '发送'}</Button>
+        <Button className="chat-new-button" icon={<PlusOutlined />} onClick={() => void createSession()}>
+          新对话
+        </Button>
+        <Input
+          allowClear
+          prefix={<SearchOutlined />}
+          value={query}
+          placeholder="搜索会话和消息"
+          onChange={(event) => {
+            setQuery(event.target.value)
+            void loadSessions(archived, event.target.value)
+          }}
+        />
+        <div className="chat-session-list">
+          {Array.from(grouped.entries()).map(([group, items]) => (
+            <div key={group}>
+              <div className="chat-history-group">{group}</div>
+              {items.map((session) => (
+                <button key={session.id} type="button" className={`chat-session-item ${session.id === active?.id ? 'is-active' : ''}`} onClick={() => void openSession(session.id)}>
+                  <strong>{session.title}</strong>
+                  <span>
+                    {agentLabel(session.agent)} · {session.model}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ))}
+          {!sessions.length && <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有匹配的会话" />}
+        </div>
+        <Button
+          type="text"
+          className="chat-archive-toggle"
+          icon={<HistoryOutlined />}
+          onClick={() => {
+            const next = !archived
+            setArchived(next)
+            void loadSessions(next, query)
+          }}
+        >
+          {archived ? '返回最近会话' : '查看已归档会话'}
+        </Button>
+      </aside>
+      <div className="chat-main-pane">
+        <header className="chat-workspace-header">
+          <Button className="chat-mobile-history" type="text" icon={<MenuOutlined />} aria-label="打开会话历史" onClick={() => setHistoryOpen(true)} />
+          <div className="chat-session-heading">
+            {editingTitle && active ? (
+              <Input
+                autoFocus
+                value={active.title}
+                onChange={(event) => setActive({ ...active, title: event.target.value })}
+                onPressEnter={() => {
+                  setEditingTitle(false)
+                  void updateSession({ title: active.title })
+                }}
+                onBlur={() => {
+                  setEditingTitle(false)
+                  void updateSession({ title: active.title })
+                }}
+              />
+            ) : (
+              <button type="button" onClick={() => setEditingTitle(true)}>
+                <strong>{active?.title || '对话'}</strong>
+                <EditOutlined />
+              </button>
+            )}
+            <span>{active?.sources.length ? `按需查询 ${active.sources.map(sourceLabel).join('、')}` : '需要资料时按需查询'}</span>
+          </div>
+          <Tooltip title="导出 Markdown">
+            <Button type="text" icon={<DownloadOutlined />} onClick={exportSession} />
+          </Tooltip>
+          <Dropdown
+            menu={{
+              items: menuItems,
+              onClick: ({ key }) => {
+                if (key === 'export') exportSession()
+                if (key === 'archive') void doArchive()
+                if (key === 'delete') void removeSession()
+              },
+            }}
+          >
+            <Button type="text">•••</Button>
+          </Dropdown>
+        </header>
+        <div className="chat-message-list" ref={listRef} role="log" aria-live="polite">
+          {error && <Alert type="error" showIcon closable title="对话暂时遇到问题" description={error} onClose={() => setError(undefined)} />}
+          {!displayMessages.length && !currentStream && (
+            <div className="chat-welcome">
+              <div className="chat-welcome-mark">✳</div>
+              <h1>今天想一起推进什么？</h1>
+              <p>从一个问题、一份资料，或者一个想做成的结果开始。</p>
+              <div className="chat-welcome-suggestions">
+                {SUGGESTIONS.map(([label, text]) => (
+                  <button
+                    type="button"
+                    key={label}
+                    onClick={() => {
+                      setInput(text)
+                      inputRef.current?.focus()
+                    }}
+                  >
+                    <strong>{label}</strong>
+                    <span>{text}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {displayMessages.map((item) => (
+            <ChatMessageCard key={item.id} message={item} agentName={agentName} shortName={shortName} />
+          ))}
+              {activeRunning && active && (
+            <ChatMessageCard
+              message={{
+                id: 'stream',
+                role: 'assistant',
+                text: currentStream,
+                agent: active.agent,
+                model: active.model,
+                created_at: new Date().toISOString(),
+              }}
+              agentName={agentName}
+              shortName={shortName}
+              typing
+            />
+          )}
+        </div>
+        <div
+          className="chat-composer-area"
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => {
+            event.preventDefault()
+            void uploadFiles(event.dataTransfer.files)
+          }}
+        >
+          <div className="chat-composer-card">
+            {!!active?.sources.length && (
+              <div className="chat-source-chips">
+                {active.sources.map((source) => (
+                  <span key={source.kind}>
+                    {sourceLabel(source)}
+                    <button
+                      type="button"
+                      aria-label={`移除 ${source.label}`}
+                      onClick={() =>
+                        void updateSession({
+                          sources: active.sources.filter((item) => item.kind !== source.kind),
+                        })
+                      }
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            {!!attachments.length && (
+              <div className="chat-pending-files">
+                {attachments.map((file) => (
+                  <FileCard key={file.id} file={file} removable onRemove={() => void removeAttachment(file)} />
+                ))}
+              </div>
+            )}
+            <Input.TextArea
+              ref={inputRef}
+              disabled={switching || creating || accepting === active?.id}
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              autoSize={{ minRows: 2, maxRows: 8 }}
+              placeholder="问一个问题，或告诉我你想推进什么…"
+              onPaste={(event) => {
+                if (event.clipboardData.files.length) {
+                  event.preventDefault()
+                  void uploadFiles(event.clipboardData.files)
+                }
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                  event.preventDefault()
+                  void send()
+                }
+              }}
+            />
+            <div className="chat-composer-actions">
+              <div>
+                <input
+                  ref={fileRef}
+                  hidden
+                  multiple
+                  type="file"
+                  onChange={(event) => {
+                    if (event.target.files) void uploadFiles(event.target.files)
+                    event.target.value = ''
+                  }}
+                />
+                <Tooltip title="添加图片或文件">
+                  <Button loading={uploading} icon={<PaperClipOutlined />} onClick={() => fileRef.current?.click()} />
+                </Tooltip>
+                <Popover content={sourcePicker} trigger="click">
+                  <Button>数据来源</Button>
+                </Popover>
+                <Select
+                  value={active?.agent}
+                  className="chat-agent-select"
+                  disabled={activeRunning}
+                  onChange={(value) => void changeAgent(value)}
+                  options={agents.map((agent) => ({
+                    value: agent.id,
+                    label: agent.available ? agent.name : `${agent.name} · ${agent.error || '不可用'}`,
+                    disabled: !agent.available,
+                  }))}
+                />
+                <Select
+                  showSearch
+                  value={active?.model}
+                  className="chat-model-select"
+                  disabled={activeRunning}
+                  optionFilterProp="label"
+                  loading={!!active && !models[active.agent]}
+                  onOpenChange={(open) => {
+                    if (open && active) void loadModels(active.agent, true).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
+                  }}
+                  onChange={(value) => void changeModel(value)}
+                  options={modelOptions}
+                />
+                {!!currentModel?.reasoning_efforts?.length && (
+                  <Select
+                    value={active?.reasoning_effort}
+                    className="chat-effort-select"
+                    disabled={activeRunning}
+                    onChange={(value) => void updateSession({ reasoning_effort: value })}
+                    options={currentModel.reasoning_efforts.map((value) => ({ value, label: value }))}
+                  />
+                )}
+              </div>
+              {activeRunning ? (
+                <Button danger icon={<StopOutlined />} onClick={() => void stop()}>
+                  停止
+                </Button>
+              ) : (
+                <Button type="primary" icon={<SendOutlined />} disabled={!input.trim() && !attachments.length} onClick={() => void send()}>
+                  发送
+                </Button>
+              )}
+            </div>
+          </div>
+          <div className="chat-composer-hint">Enter 发送 · Shift + Enter 换行 · 可粘贴或拖入文件</div>
         </div>
       </div>
-    </div>
-  </section>
+      <Drawer title="会话历史" placement="left" size="min(320px, 88vw)" open={historyOpen} onClose={() => setHistoryOpen(false)}>
+        <Button block icon={<PlusOutlined />} onClick={() => void createSession()}>
+          新对话
+        </Button>
+        <div className="chat-drawer-sessions">
+          {sessions.map((session) => (
+            <button key={session.id} onClick={() => void openSession(session.id)}>
+              <strong>{session.title}</strong>
+              <span>
+                {agentLabel(session.agent)} · {session.model}
+              </span>
+            </button>
+          ))}
+        </div>
+      </Drawer>
+    </section>
+  )
 }
 
-export default function Chat({ open, expanded, onToggleExpanded, onClose }: ChatProps) {
-  const { name: agentName } = useAgentIdentity()
-  const [workspaces, setWorkspaces] = useState<ChatWorkspace[]>(loadWorkspaces)
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState(() => workspaces[0].id)
-
-  useEffect(() => {
-    const stored = workspaces.map(({ busy: _busy, ...workspace }) => workspace)
-    try {
-      window.localStorage.setItem(CHAT_WORKSPACES_STORAGE_KEY, JSON.stringify(stored))
-      window.localStorage.removeItem(LEGACY_CHAT_THREAD_STORAGE_KEY)
-    } catch {
-      // Browser storage may be unavailable; keep the current conversation usable.
-    }
-  }, [workspaces])
-
-  const updateWorkspace = useCallback((id: string, change: Partial<ChatWorkspace>) => {
-    setWorkspaces((current) => current.map((workspace) => {
-      if (workspace.id !== id) return workspace
-      const next = { ...workspace, ...change }
-      if (next.title === workspace.title && next.threadId === workspace.threadId && next.busy === workspace.busy) return workspace
-      return next
-    }))
-  }, [])
-
-  const addWorkspace = useCallback(() => {
-    const usedNumbers = new Set(workspaces.flatMap((workspace) => {
-      const match = /^会话 (\d+)$/.exec(workspace.title)
-      return match ? [Number(match[1])] : []
-    }))
-    let nextNumber = 1
-    while (usedNumbers.has(nextNumber)) nextNumber += 1
-    const workspace = defaultWorkspace(nextNumber)
-    setWorkspaces((current) => [...current, workspace])
-    setActiveWorkspaceId(workspace.id)
-  }, [workspaces])
-
-  const closeWorkspace = useCallback((id: string) => {
-    const closingIndex = workspaces.findIndex((workspace) => workspace.id === id)
-    const closing = workspaces[closingIndex]
-    if (!closing || closing.busy || workspaces.length === 1) return
-    const remaining = workspaces.filter((workspace) => workspace.id !== id)
-    setWorkspaces(remaining)
-    if (activeWorkspaceId === id) {
-      setActiveWorkspaceId(remaining[Math.min(closingIndex, remaining.length - 1)].id)
-    }
-  }, [activeWorkspaceId, workspaces])
-
-  const workspaceBar = <div className="chat-workspace-bar">
-    <div className="chat-workspace-tabs" role="tablist" aria-label="并行会话">
-      {workspaces.map((workspace) => {
-        const active = workspace.id === activeWorkspaceId
-        return <div key={workspace.id} className={`chat-workspace-tab-shell ${active ? 'is-active' : ''}`}>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={active}
-            className="chat-workspace-tab"
-            title={workspace.title}
-            onClick={() => setActiveWorkspaceId(workspace.id)}
-          >
-            <span className={`chat-workspace-state ${workspace.busy ? 'is-running' : ''}`} aria-hidden="true" />
-            <span>{workspace.title}</span>
-          </button>
-          {workspaces.length > 1 && <button
-            type="button"
-            className="chat-workspace-tab-close"
-            disabled={workspace.busy}
-            aria-label={`关闭${workspace.title}`}
-            title={workspace.busy ? '处理中，完成后可关闭' : '关闭会话'}
-            onClick={() => closeWorkspace(workspace.id)}
-          ><CloseOutlined /></button>}
+function ChatMessageCard({ message, agentName, shortName, typing = false }: { message: ChatHistoryMessage; agentName: string; shortName: string; typing?: boolean }) {
+  return (
+    <article className={`chat-message-card ${message.role}`}>
+      {message.role === 'assistant' && (
+        <div className="chat-assistant-label">
+          <span>{shortName}</span>
+          <strong>{agentName}</strong>
+          <small>
+            {message.agent && agentLabel(message.agent)}
+            {message.model && ` · ${message.model}`}
+          </small>
         </div>
-      })}
-    </div>
-    <Button type="text" size="small" className="chat-workspace-add" icon={<PlusOutlined />} aria-label="新增并行会话" title="新增并行会话" onClick={addWorkspace} />
-  </div>
-
-  const workspaceActions = <div className="chat-workspace-actions">
-    <Button
-      type="text"
-      size="small"
-      className="chat-expand chat-icon-button"
-      icon={expanded ? <CompressOutlined /> : <ExpandOutlined />}
-      aria-label={expanded ? '缩小对话' : '展开对话'}
-      title={expanded ? '缩小' : '展开'}
-      aria-pressed={expanded}
-      onClick={onToggleExpanded}
-    />
-    <Button type="text" size="small" className="chat-close chat-icon-button" icon={<CloseOutlined />} aria-label={`关闭 ${agentName} 对话`} onClick={onClose} />
-  </div>
-
-  return <div className="chat-workspace">
-    <div className="chat-workspace-stack">
-      {workspaces.map((workspace) => {
-        const active = workspace.id === activeWorkspaceId
-        return <div key={workspace.id} className={`chat-workspace-pane ${active ? 'is-active' : ''}`} aria-hidden={!active}>
-          <ChatSession
-            open={open}
-            active={active}
-            workspace={workspace}
-            workspaceBar={active ? workspaceBar : undefined}
-            workspaceActions={active ? workspaceActions : undefined}
-            onWorkspaceChange={updateWorkspace}
-          />
+      )}
+      <div className="chat-message-body">
+        {typing && !message.text ? (
+          <span className="chat-typing">
+            正在思考<span>•••</span>
+          </span>
+        ) : message.role === 'assistant' ? (
+          <MarkdownReport content={message.text} />
+        ) : (
+          <div className="chat-user-text">{message.text}</div>
+        )}
+      </div>
+      {!!message.attachments?.length && (
+        <div className="chat-message-files">
+          {message.attachments.map((file) => (
+            <FileCard key={file.id} file={file} />
+          ))}
         </div>
-      })}
+      )}
+    </article>
+  )
+}
+function FileCard({ file, removable, onRemove }: { file: ChatAttachment; removable?: boolean; onRemove?: () => void }) {
+  const href = `/api/chat/attachments/${file.id}/content`
+  return (
+    <div className="chat-file-card">
+      <a href={href} target="_blank" rel="noreferrer">
+        {file.mime_type.startsWith('image/') ? <img src={href} alt="" /> : <FileOutlined />}
+        <span>
+          <strong>{file.name}</strong>
+          <small>{formatBytes(file.size_bytes)} · 下载</small>
+        </span>
+      </a>
+      {removable && (
+        <button type="button" aria-label={`移除 ${file.name}`} onClick={onRemove}>
+          ×
+        </button>
+      )}
     </div>
-  </div>
+  )
 }

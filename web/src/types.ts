@@ -185,7 +185,6 @@ export interface SetupStatus {
   agent: {
     available: boolean
     authenticated: boolean
-    version?: string
     error?: string
   }
   world_model_ready: boolean
@@ -998,7 +997,7 @@ export interface TextFile {
   key: string
   name: string
   description: string
-  kind: 'system_prompt' | 'approval_policy' | 'message_template' | 'agent_policy' | 'agent_prompt'
+  kind: 'system_prompt' | 'approval_policy' | 'initiative_level' | 'message_template' | 'agent_policy' | 'agent_prompt'
   stage: string
   path: string
   content: string
@@ -1008,9 +1007,12 @@ export interface TextFileInput {
   content: string
 }
 
-export type AgentConfigStage = 'm3' | 'm5'
+export type AgentConfigStage = 'm3' | 'm5' | 'proactive'
+
+export type InitiativeLevel = 'quiet' | 'normal' | 'active'
 
 export interface AgentConfigPreview {
+  initiative_level: InitiativeLevel
   stage: AgentConfigStage
   name: string
   content: string
@@ -1095,7 +1097,6 @@ export interface AgentSkillContentInput {
 }
 
 export type AgentCLI = 'codex' | 'traex'
-export type ChatCLI = AgentCLI | 'cursor-agent'
 export type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
 
 export interface RuntimeSettings {
@@ -1138,9 +1139,7 @@ export interface RuntimeSettings {
   execute_concurrency: number
 
   chat_enabled: boolean
-  chat_cli: ChatCLI
   chat_model: string
-  chat_fast_mode: boolean
   chat_sandbox: 'read-only' | 'workspace-write' | 'danger-full-access'
   chat_reasoning_effort: ReasoningEffort
   chat_timeout_seconds: number
@@ -1326,9 +1325,9 @@ export interface EntityRelation {
   updated_at: string
 }
 
-// --- codex 对话框契约（跨 agent 冻结，A/B/C 共用）---
+// --- 页面上下文与持久对话契约 ---
 
-// PageContext 是右侧对话框对左侧页面的单向感知：当前所在 Tab + 选中项摘要。
+// PageContext 描述当前页面：所在 Tab、筛选条件和选中项摘要。
 // 由各页面写入 PageContext（React Context），发送对话时随请求带给后端注入 prompt。
 export interface PageContext {
   // 当前左侧导航 key；内置模块（如 okr）与插件页也使用同一上下文协议。
@@ -1348,76 +1347,63 @@ export interface PageSelection {
   label: string
 }
 
-// POST /api/chat multipart 请求。thread_id 为空表示新会话；非空表示当前 Agent CLI resume 多轮。
-export interface ChatRequest {
-  message: string
-  thread_id?: string | null
-  // 浏览器为当前执行轮次生成的稳定 ID，用于显式暂停并等待服务端落盘。
-  turn_id: string
-  page_context?: PageContext | null
-  image?: File | null
-  // 当前通过飞书登录的用户，服务端据此取他自己的飞书凭证。
-  user_open_id?: string
+export interface ChatSource {
+  kind: string
+  id?: string
+  label: string
 }
 
-// SSE 事件类型（event 字段）：
-//   'thread'  data={thread_id}         —— 会话建立/恢复，前端记住以便多轮 resume
-//   'delta'   data={text}              —— Agent CLI 增量输出，前端追加渲染
-//   'done'    data={}                  —— 本轮结束，可关闭流
-//   'error'   data={message}           —— 出错（fail-fast，前端直接展示）
-export type ChatEventType = 'thread' | 'delta' | 'done' | 'error'
-
-export interface ChatThreadEvent {
-  thread_id: string
-}
-
-export interface ChatDeltaEvent {
-  text: string
-}
-
-export interface ChatErrorEvent {
-  message: string
-  detail?: string
-  log_id?: string
-  recoverable?: boolean
+export interface ChatAttachment {
+  id: string
+  name: string
+  mime_type: string
+  size_bytes: number
+  created_at: string
 }
 
 export interface ChatHistoryMessage {
+  id: string
   role: 'user' | 'assistant'
   text: string
-  at: string
+  agent?: string
+  model?: string
+  attachments?: ChatAttachment[]
+  created_at: string
 }
 
-export interface ChatHistory {
-  thread_id: string
-  messages: ChatHistoryMessage[]
-}
-
-export interface ChatThreadSummary {
-  thread_id: string
+export interface ChatSession {
+  running?: boolean
+  id: string
   title: string
-  preview: string
-  message_at: string
+  agent: string
+  model: string
+  reasoning_effort: string
+  sources: ChatSource[]
+  draft?: { text?: string; attachment_ids?: string[] }
+  archived: boolean
+  created_at: string
   updated_at: string
+  messages?: ChatHistoryMessage[]
+  pending_attachments?: ChatAttachment[]
 }
 
-export interface ChatHistoryWarning {
-  thread_id?: string
-  file?: string
-  message: string
+export interface ChatAgent {
+  id: 'codex' | 'trae' | 'cursor'
+  name: string
+  available: boolean
+  version?: string
+  error?: string
+  default: boolean
 }
 
-export interface ChatThreadList {
-  threads: ChatThreadSummary[]
-  warnings?: ChatHistoryWarning[]
-}
-
-export interface ChatRuntimeConfig {
-  port: number
-}
-
-export interface WebConfig {
-  public_base_url: string
+export interface ChatModel {
+  id: string
+  name: string
+  description?: string
+  input_modalities?: string[]
+  reasoning_efforts?: string[]
+  default_reasoning_effort?: string
+  default: boolean
 }
 
 export interface Delegation {
@@ -1437,4 +1423,8 @@ export interface DelegationCheck {
   status: TaskStatus
   summary: string | null
   created_at: string
+}
+
+export interface WebConfig {
+  public_base_url: string
 }

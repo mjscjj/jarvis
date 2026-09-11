@@ -789,7 +789,8 @@ func TestJarvisToolsCreateTaskAllowsEveryAgentStageAndRecordsCaller(t *testing.T
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			t.Fatal(err)
 		}
-		if payload["source_type"] != "proactive" {
+		source, _ := payload["source_type"].(string)
+		if source != "manual" && source != "proactive" {
 			t.Fatalf("payload = %#v", payload)
 		}
 		actors = append(actors, payload["actor"].(string))
@@ -798,10 +799,10 @@ func TestJarvisToolsCreateTaskAllowsEveryAgentStageAndRecordsCaller(t *testing.T
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		fmt.Fprint(w, `{"code":0,"data":{"id":19,"source_type":"proactive","status":"pending"}}`)
+		fmt.Fprintf(w, `{"code":0,"data":{"id":19,"source_type":%q,"status":"pending"}}`, source)
 	}))
 	defer server.Close()
-	payload := `{"title":"推进阻塞","action_type":"agent_task","target":"完成目标","background":{"why_now":"条件已满足"},"source_payload":{"instruction":"完成目标"}}`
+	payload := `{"title":"推进阻塞","action_type":"agent_task","target":"完成目标","background":{"why_now":"条件已满足"},"source_payload":{"instruction":"完成目标"},"source_type":"proactive"}`
 	out, err := runJarvisTools(t, server.URL, []string{"JARVIS_AGENT_STAGE=proactive"}, "create-task", "--payload", payload)
 	if err != nil || !strings.Contains(out, `"id":19`) {
 		t.Fatalf("output = %s, error = %v", out, err)
@@ -812,7 +813,11 @@ func TestJarvisToolsCreateTaskAllowsEveryAgentStageAndRecordsCaller(t *testing.T
 	if _, err := runJarvisTools(t, server.URL, nil, "create-task", "--payload", payload); err != nil {
 		t.Fatalf("create-task failed outside an Agent stage: %v", err)
 	}
-	if !reflect.DeepEqual(actors, []string{"proactive", "m5", "user"}) {
+	manual := strings.Replace(payload, `"source_type":"proactive"`, `"source_type":"manual"`, 1)
+	if _, err := runJarvisTools(t, server.URL, nil, "create-task", "--payload", manual); err != nil {
+		t.Fatalf("create manual task: %v", err)
+	}
+	if !reflect.DeepEqual(actors, []string{"proactive", "m5", "user", "user"}) {
 		t.Fatalf("actors = %#v", actors)
 	}
 }

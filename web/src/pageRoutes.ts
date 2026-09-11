@@ -2,6 +2,7 @@ import type { PageSelection } from './types.ts'
 import { isWeeklyShareViewState, WEEKLY_SHARE_SCOPE } from './okr/emily/share.ts'
 
 const pageHashes: Record<string, string> = {
+  chat: '/chat',
   overview: '/today',
   tasks: '/work',
   progress: '/review',

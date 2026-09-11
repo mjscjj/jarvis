@@ -15,7 +15,9 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 
 ```text
 飞书 Bot WebSocket ─> CC Connect
-                       ├─ 接受的私聊/@消息 ─> route claim ─> CC 原生 Agent/session
+                       ├─ 接受的私聊/@消息 ─> route claim ─> CC 前台 Agent/session
+                       │                                  ├─ 即时答复
+                       │                                  └─ manual Task ─> M5
                        └─ 未接受的普通群消息（等待 M2 轮询）
 
 飞书 IM 轮询补偿 ───────────┐
@@ -47,6 +49,7 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 | M1 背景 | principal、项目、关键事项、人物、会话背景、人工资源 | `internal/background/` |
 | M2 采集 | 飞书消息事件、会话发现、增量轮询补偿、principal activity、通用 clue 落库 | `internal/capture/` |
 | M3 提取 | 证据校验、Todo 抽取/合并、上下文快照、语义去重 | `internal/extract/` |
+| CC 前台 | 当前会话即时处理；长期、多步或有副作用的工作创建 manual Task 交给 M5 | `conf/prompts/cc-system-prompt.md`, `integrations/cc-connect/` |
 | Todo 固化 | extracted Todo 按 ID/version 幂等创建 Task，不调用模型 | `internal/execute/materializer.go` |
 | M5 执行 | 调查、执行、提问、等待/续跑、人工回答、结果留痕 | `internal/execute/`, `internal/cardask/` |
 | 事实引擎 | 在关键路径外从 `message`、Todo、Task 通用蒸馏长期事实，并通过通用工具按需维护当前实体、关系和资料 | `internal/factengine/` |
@@ -93,12 +96,13 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 
 `server.addr` 是本实例后端地址的唯一配置。`jarvis-server` 启动时把实际地址、绝对配置路径和本仓库工具目录导出为 `JARVIS_API_BASE`、`JARVIS_CONFIG`、`PATH`，所有 Agent 子进程继承；切换工作目录不会切换实例。通用工具、世界模型工具、OKR/周报工具统一使用 `scripts/jarvis-api-base`：先用继承的 API 地址，否则通过 `scripts/jarvis-instance` 读取选定配置（默认本仓库 `conf/config.yaml` 加运行时覆盖）。配置错误直接失败，不扫描端口。工具需要 Go 和 jq；模块工具的显式 `--base-url` 可以指定其它实例。环境变量统一为 `JARVIS_API_BASE`，不再使用 `JARVIS_BASE_URL`。
 
-启动、重建、健康检查和开发代理也读取同一配置。`scripts/jarvis-instance [CONFIG_PATH]` 输出地址与服务名；服务名按配置文件绝对路径生成，改端口不改服务名，不同配置不会共用 launchd job。Vite 默认从后端相邻端口开始，并在它与 `chat.addr` 相同时再顺延一个端口；端口占用直接报错。两实例仍需分别配置数据库/产物路径，飞书账号、Qdrant collection 等外部资源不会因更换 HTTP 端口自动隔离。
+启动、重建、健康检查和开发代理也读取同一配置。`scripts/jarvis-instance [CONFIG_PATH]` 输出地址与服务名；服务名按配置文件绝对路径生成，改端口不改服务名，不同配置不会共用 launchd job。Vite 默认从后端相邻端口开始；端口占用直接报错。两实例仍需分别配置数据库/产物路径，飞书账号、Qdrant collection 等外部资源不会因更换 HTTP 端口自动隔离。
 
 ## 常见修改入口
 
 - 改 M3 抽取口径：`conf/prompts/m3-system-prompt.md`；改上下文组装：`internal/extract/prompt.go`、`internal/extract/snapshot.go`
 - 改 M5 执行行为：`conf/prompts/m5-system-prompt.md`、`conf/rules/m5.md`
+- 改飞书前台即时处理/转 Task 边界：`conf/prompts/cc-system-prompt.md`
 - 改主动巡视行为：`conf/prompts/proactive-system-prompt.md`；改调度与调用：`internal/proactive/`
 - 改审批尺度：`conf/prompts/m5-approval-policy.md`
 - 改严格输出协议/状态路由：`internal/execute/prompt.go`、`internal/execute/store.go`
@@ -109,7 +113,19 @@ Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞�
 - 改前端页面：`web/src/`
 - 新增插件或拆分插件耦合：[插件扩展与解耦规范](docs/summery/plugin-extension-spec.md)（含当前接入步骤与尚未实施的改造提案）
 
-## 给其他人安装（推荐）
+## 安装方式
+
+macOS 14+ Apple Silicon 用户优先使用 DMG：
+
+- [macOS 安装、覆盖安装与自动更新](docs/reference/macos-install-and-update.md)
+
+0.1.1 及后续版本会从 `jarvisx.bytedance.net` 检查签名更新并自动安装；0.1.0
+及更早版本需要先手动覆盖安装 0.1.1。应用位于 `/Applications/Jarvis.app`，用户数据
+独立保存在 `~/Library/Application Support/Jarvis`，覆盖应用不会删除数据。
+
+### 源码安装
+
+日常打开页面先通过 `/api/setup/bootstrap` 读取本机配置，已安装用户无需等待外部 CLI 验证；`/api/setup/status` 在后台完整检查连接，失败时以顶部提示和授权抽屉处理，不卸载当前页面。首次安装及安装重启恢复仍等待完整检查；此优化不改变网页登录校验，也不缓存授权结果。
 
 当前远端是需要权限的 Code 仓库。使用者先 clone **完整仓库**，再在仓库根目录启动支持 repo-local `.agents/skills/` 的 Agent：
 
@@ -168,7 +184,7 @@ go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
 ./scripts/jarvis-deploy --skip-pull
 ```
 
-它做完整的一轮：`npm ci` + 构建 `web/dist`、编译 `bin/jarvis-server` 和 `bin/jarvis-chat-server`、按当前系统重启服务，最后验证首页、`/healthz` 和 `/readyz`（要求所有依赖为 `ok` 或 `disabled`），任何一步失败都直接退出。`--skip-pull` 表示部署当前工作树，不拉 upstream——本地开发几乎总是要带上它。
+它做完整的一轮：`npm ci` + 构建 `web/dist`、编译 `bin/jarvis-server`、按当前系统重启服务，最后验证首页、`/healthz` 和 `/readyz`（要求所有依赖为 `ok` 或 `disabled`），任何一步失败都直接退出。`--skip-pull` 表示部署当前工作树，不拉 upstream——本地开发几乎总是要带上它。
 
 不是所有改动都需要重新部署：
 
@@ -194,11 +210,11 @@ go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
 实例的地址、服务名和日志路径都由配置派生，不要手写：
 
 ```bash
-./scripts/jarvis-instance conf/config.yaml   # api_base / launchd_label / chat_* / log_files
+./scripts/jarvis-instance conf/config.yaml   # api_base / launchd_label / log_files
 ./scripts/jarvis-api-base                    # 只要后端地址
 ```
 
-当前仓库这份配置解析出的是 `http://127.0.0.1:18802`、服务名 `com.bytedance.jarvis.server.462093b6e0bd71d9`，对话 sidecar 在 `18801`。换配置或换目录这些值都会变，所以脚本读一次比记住可靠。
+当前仓库这份配置解析出的是 `http://127.0.0.1:18802`、服务名 `com.bytedance.jarvis.server.462093b6e0bd71d9`。换配置或换目录这些值都会变，所以脚本读一次比记住可靠。
 
 日常排查（把 `<label>` 换成上面查到的服务名）：
 
@@ -214,7 +230,7 @@ curl "$(./scripts/jarvis-api-base)/healthz"
 curl -s "$(./scripts/jarvis-api-base)/readyz" | jq
 ```
 
-对话 sidecar 是独立服务（`<label>.chat.service`），重建主服务不会打断正在进行的对话；只改对话配置时单独重启它即可。
+对话与主服务共用进程和 `/api/chat/*` 路由；重启主服务会中断当前对话轮次，已保存的会话历史继续保留。
 
 ### 首次安装
 
@@ -270,7 +286,7 @@ macOS 的 `rebuild-server.sh` 会先查询正在执行的 Task；服务已注册
 | 服务 | 端口 | 用途 |
 |---|---:|---|
 | `com.bytedance.jarvis.server.<配置路径摘要>` | `server.addr`（基线 18800） | Hertz API + 生产 `web/dist` + 流水线与 cron |
-| `<实例服务名>.web` | 后端相邻且避开 Chat 的端口 | Vite 开发热更；生产不依赖 |
+| `<实例服务名>.web` | 后端相邻端口 | Vite 开发热更；生产不依赖 |
 | `com.bytedance.jarvis.qdrant` | 6333/6334 | HTTP / gRPC，当前只用于 Todo 语义去重 |
 | `com.cc-connect.service`（macOS）/ `com.bytedance.jarvis.cc-connect`（Linux） | 9810/9820 | 独占同一 Jarvis Bot WebSocket，承载 Agent 入口、文档评论与问题卡 relay |
 
@@ -302,11 +318,15 @@ git diff --check
 
 ## 管理后台
 
-生产访问 `scripts/jarvis-api-base` 输出的地址（仓库基线为 `http://127.0.0.1:18800/`）。主导航围绕工作台、任务、已启用业务模块（如 OKR）、世界、插件、工作设定和系统管理组织。工作台合并当日任务态势与历史回顾；自动化收进「任务」的二级页。
+生产访问 `scripts/jarvis-api-base` 输出的地址（仓库基线为 `http://127.0.0.1:18800/`）。主导航围绕对话、工作台、任务、已启用业务模块（如 OKR）、世界、插件、工作设定和系统管理组织。工作台合并当日任务态势与历史回顾；自动化收进「任务」的二级页。
 
-工作设定按「任务执行」「线索发现」集中维护系统提示词、阶段工作规则、审批策略及生效预览，二级配置使用横向 Tab 切换，其他 Agent 提示词也保留在该页。设置页包含运行配置、系统任务、Skills 和共享记忆。右侧流式对话由独立 `jarvis-chat-server` 提供，可单独配置 Codex/TraeX、模型、Fast Mode 和超时；重建主服务不会终止正在执行的对话。
+「工作设定」顶部提供全局主动程度：安静 / 普通 / 活跃，默认普通。当前选择保存在 `conf/prompts/initiative-level.md`，保存后 M3 后续批次、M5 新执行及等待/人工回答恢复、主动巡视下一轮实时读取，无需重启。M3/M5 三档行为在各自「工作规则」编辑；主动巡视规则与生效预览位于「其他 Agent」。生效预览与运行时共用组装逻辑，包含当前档位、对应规则和 M5 审批策略。
 
-对话执行中持续显示输入/处理状态和用时；上翻阅读历史时停止自动跟随，可点击「最新回复」回到底部。连接异常会保留当前页面的部分回复和队列，，可手动重连，浏览器恢复联网时也会尝试连接；只有收到明确的完成事件才算本轮成功。重连只检查服务可用性，不自动重发执行请求；中断后可补充消息继续或手动重试。刷新整个页面会恢复已落盘的历史，但不会恢复未发送队列或接续原来的输出流。
+档位控制后台准入、可选扩展与通知尺度；明确交办、明确订阅和已有承诺继续履行，不取消已建任务或撤回问题卡。普通档沿用原有行为；安静档优先明确介入，活跃档增加有依据的提前准备。审批、采集和 CC Connect 直接交互继续使用原机制。详细行为见[三档设计](docs/summery/initiative-level-design.md)。
+
+工作设定按「任务执行」「线索发现」集中维护系统提示词、阶段工作规则、审批策略及生效预览，二级配置使用横向 Tab 切换，其他 Agent 提示词也保留在该页；任务下的自动化页面集中管理周期与单次定时任务。设置页包含运行配置、系统任务、Skills 和共享记忆。首个「对话」Tab 使用持久会话 API，并可按会话选择 Codex、TRAE 或 Cursor 及其动态模型目录。
+
+左侧「对话」保留完整历史页；其他页面底部提供紧凑快捷对话，默认可输入，最新回复显示一行，点击可查看全文。会话、模型、Agent、推理强度、上下文引用与附件复用同一套会话 API。`Chat` 在应用内持续挂载，完整页与 `components/ChatDock.tsx` 只切换展示，因此切页不丢草稿、不打断流式回复，也不会覆盖当前工作台的 URL 筛选条件。刷新后的会话通过详情中的 `running` 恢复停止入口，每 2 秒检查后台回复是否结束；不重连旧流，也不自动重发。后端持久化消息和附件后发送 SSE `accepted`，前端收到确认才清空输入，拒绝发送则保留草稿与附件。浏览器交互回归位于 `web/test/chatDock.browser.mjs`：启动 Vite 后执行；可通过 `CHAT_TEST_URL`、`PLAYWRIGHT_MODULE`、`CHROME_EXECUTABLE` 指定测试环境，所有 API 使用隔离测试数据，不调用真实 Agent。
 
 ## 目录
 

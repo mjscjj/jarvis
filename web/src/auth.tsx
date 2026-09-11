@@ -1,8 +1,8 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Button, Result, Spin, Typography } from 'antd'
 import { LinkOutlined, LoginOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
-import { completeByteDanceLogin, getAuthStatus, loginWithByteDance, logoutFromJarvis } from './api'
+import { authEvents, completeByteDanceLogin, getAuthStatus, loginWithByteDance, logoutFromJarvis, setAuthRecoveryHandler } from './api'
 import type { AuthUser, AuthView } from './types'
 import { DeveloperDocumentLinks } from './components/DeveloperDocuments'
 
@@ -25,80 +25,103 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState<AuthView | null>(null)
   const [error, setError] = useState('')
 
-  useEffect(() => {
-    const controller = new AbortController()
-    getAuthStatus(controller.signal)
-      .then(async (view) => {
-        if (controller.signal.aborted) return
-		setEnabled(view.enabled)
-		if (!view.enabled) {
-			setUser(view.user ?? null)
-			setPending(null)
-			return
-		}
-        // Reuse the existing bytedcli login before asking for another click.
-        const next = view.user ? view : await loginWithByteDance()
-        if (controller.signal.aborted) return
-		setEnabled(next.enabled)
-        setUser(next.user ?? null)
-        setPending(next.status === 'pending' ? next : null)
-      })
-      .catch((cause) => { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : String(cause)) })
-      .finally(() => { if (!controller.signal.aborted) setLoading(false) })
-    return () => controller.abort()
+  const inFlight = useRef<Promise<void> | null>(null)
+  const signedOut = useRef(false)
+  const mounted = useRef(false)
+  const pendingRef = useRef<AuthView | null>(null)
+
+  const apply = useCallback((view: AuthView) => {
+    if (!mounted.current || signedOut.current) return
+    setEnabled(view.enabled)
+    setUser(view.user ?? null)
+    const next = view.status === 'pending' ? view : null
+    pendingRef.current = next
+    setPending(next)
   }, [])
+
+  const recover = useCallback((): Promise<void> => {
+    if (inFlight.current) return inFlight.current
+    if (signedOut.current || pendingRef.current) return Promise.resolve()
+    setLoading(true)
+    setError('')
+    const operation = (async () => {
+      try {
+        const status = await getAuthStatus()
+        if (signedOut.current || !mounted.current) return
+        apply(!status.enabled || status.user ? status : await loginWithByteDance())
+      } catch (cause) {
+        if (mounted.current && !signedOut.current) {
+          setUser(null)
+          setError(cause instanceof Error ? cause.message : String(cause))
+        }
+      } finally {
+        inFlight.current = null
+        if (mounted.current) setLoading(false)
+      }
+    })()
+    inFlight.current = operation
+    return operation
+  }, [apply])
+
+  useEffect(() => {
+    mounted.current = true
+    setAuthRecoveryHandler(recover)
+    const expired = () => { void recover() }
+    authEvents.addEventListener('expired', expired)
+    void recover()
+    return () => {
+      mounted.current = false
+      setAuthRecoveryHandler(null)
+      authEvents.removeEventListener('expired', expired)
+    }
+  }, [recover])
 
   useEffect(() => {
     if (!pending?.flow_id) return
     let cancelled = false
-    let timer: number | undefined
-
+    let timer: ReturnType<typeof setTimeout>
     const poll = async () => {
       try {
         const view = await completeByteDanceLogin(pending.flow_id!)
-        if (cancelled) return
+        if (cancelled || signedOut.current) return
         if (view.status === 'authenticated' && view.user) {
-          setUser(view.user)
-          setPending(null)
+          apply(view)
           setError('')
           return
         }
+        timer = setTimeout(poll, 2000)
       } catch (cause) {
-        if (!cancelled) setError(cause instanceof Error ? cause.message : String(cause))
-      }
-      if (!cancelled) timer = window.setTimeout(poll, 2000)
-    }
-
-    timer = window.setTimeout(poll, 1500)
-    return () => {
-      cancelled = true
-      if (timer !== undefined) window.clearTimeout(timer)
-    }
-  }, [pending?.flow_id])
-
-  const login = useCallback(async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const view = await loginWithByteDance()
-      if (view.status === 'authenticated' && view.user) {
-        setUser(view.user)
+        if (cancelled || signedOut.current) return
+        pendingRef.current = null
         setPending(null)
-      } else {
-        setPending(view)
+        setError(cause instanceof Error ? cause.message : String(cause))
       }
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause))
-    } finally {
-      setLoading(false)
     }
-  }, [])
+    timer = setTimeout(poll, 1500)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [pending?.flow_id, apply])
+
+  const login = useCallback(() => {
+    signedOut.current = false
+    pendingRef.current = null
+    setPending(null)
+    return recover()
+  }, [recover])
 
   const logout = useCallback(async () => {
-    await logoutFromJarvis()
-    setUser(null)
+    signedOut.current = true
+    pendingRef.current = null
     setPending(null)
-    setError('')
+    try {
+      // Finish any recovery before invalidating its newly issued cookie.
+      await inFlight.current
+      await logoutFromJarvis()
+      setUser(null)
+      setError('')
+    } catch (cause) {
+      signedOut.current = false
+      throw cause
+    }
   }, [])
 
   const value = useMemo(() => ({

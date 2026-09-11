@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { Alert, Badge, Button, Drawer, Input, Layout, Menu, Modal, Result, Spin, Tooltip, Typography, message } from 'antd'
 import type { MenuProps } from 'antd'
 import {
@@ -35,14 +35,6 @@ import { getAuthStatus as getOKRAuthStatus } from './okr/emily/api'
 import type { Plugin } from './types'
 import jarvisIcon from './assets/jarvis-icon.png'
 import { DeveloperHelpButton } from './components/DeveloperDocuments'
-import {
-  CHAT_PANEL_WIDTH_STORAGE_KEY,
-  DEFAULT_CHAT_PANEL_WIDTH,
-  MIN_CHAT_PANEL_WIDTH,
-  chatPanelWidthFromPointer,
-  clampChatPanelWidth,
-  maxChatPanelWidth,
-} from './chatPanelSizing'
 
 const { Sider, Content } = Layout
 const { Title } = Typography
@@ -60,7 +52,7 @@ const Chat = lazy(() => import('./Chat'))
 const Plugins = lazy(() => import('./Plugins'))
 const SecuritySettings = lazy(() => import('./SecuritySettings'))
 
-const DEFAULT_KEY = 'overview'
+const DEFAULT_KEY = 'chat'
 
 const SIDER_WIDTH = 184
 const SIDER_COLLAPSED_WIDTH = 64
@@ -82,6 +74,7 @@ function enabledModuleChildren(
 }
 
 const pageLabels: Record<string, string> = {
+  chat: '对话',
   overview: '工作台',
   tasks: '任务',
   progress: '工作台',
@@ -102,13 +95,9 @@ function AppShell() {
   const { context, navigate } = usePageContext()
   const weeklyShare = context.active_key === 'biz-okr' && isWeeklyShareViewState(context.view_state)
   const runtimeFailures = useRuntimeFailureCount()
-  const [chatOpen, setChatOpen] = useLocalStorage('jarvis.chatOverlayOpen', false)
-  const [storedChatWidth, setStoredChatWidth] = useLocalStorage(CHAT_PANEL_WIDTH_STORAGE_KEY, DEFAULT_CHAT_PANEL_WIDTH)
-  const [chatLoaded, setChatLoaded] = useState(chatOpen)
-  const [chatExpanded, setChatExpanded] = useState(false)
   const [siderCollapsed, setSiderCollapsed] = useLocalStorage('jarvis.siderCollapsed', false)
   const siderWidth = siderCollapsed ? SIDER_COLLAPSED_WIDTH : SIDER_WIDTH
-  const [openMenuKeys, setOpenMenuKeys] = useState<string[]>(['management', 'plugin-group'])
+  const [openMenuKeys, setOpenMenuKeys] = useState<string[]>(['plugin-group'])
   const [pluginsLoaded, setPluginsLoaded] = useState(false)
   const [mobileSystemOpen, setMobileSystemOpen] = useState(false)
   const [mobileModuleKey, setMobileModuleKey] = useState<string>()
@@ -122,11 +111,6 @@ function AppShell() {
   const [savingName, setSavingName] = useState(false)
   const [modal, modalContext] = Modal.useModal()
   const [messageApi, messageContext] = message.useMessage()
-  const chatRef = useRef<HTMLElement>(null)
-  const chatToggleRef = useRef<HTMLButtonElement>(null)
-  const chatWasOpen = useRef(chatOpen)
-  const chatResizeCleanupRef = useRef<(() => void) | null>(null)
-  const chatWidth = Number.isFinite(storedChatWidth) ? storedChatWidth : DEFAULT_CHAT_PANEL_WIDTH
 
   let managementIcon: React.ReactNode = <SettingOutlined />
   if (runtimeFailures.count && runtimeFailures.count > 0) {
@@ -197,6 +181,7 @@ function AppShell() {
     : null
 
   const menuProps: MenuProps['items'] = [
+    { key: 'chat', label: '对话', icon: <MessageOutlined /> },
     { key: 'overview', label: '工作台', icon: <HomeOutlined /> },
     { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
     ...enabledModules.map((module) => {
@@ -231,6 +216,7 @@ function AppShell() {
   ]
 
   const pages: Record<string, React.ReactNode> = {
+    chat: null,
     overview: <Progress />,
     todos: <Todos refreshKey={0} />,
     tasks: context.view_state.mode === 'delegated' && context.selection?.kind !== 'task' && delegationsEnabled !== false
@@ -296,97 +282,6 @@ function AppShell() {
     setOpenMenuKeys((keys) => keys.includes(activeModule.key) ? keys : [...keys, activeModule.key])
   }, [activeModule, activeModuleChildren.length])
 
-  useEffect(() => {
-    if (chatOpen) setChatLoaded(true)
-  }, [chatOpen])
-
-  useEffect(() => () => chatResizeCleanupRef.current?.(), [])
-
-  useEffect(() => {
-    const onEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      if (chatExpanded) {
-        setChatExpanded(false)
-      } else {
-        setChatOpen(false)
-      }
-    }
-    window.addEventListener('keydown', onEscape)
-    return () => window.removeEventListener('keydown', onEscape)
-  }, [chatExpanded, setChatOpen])
-
-  useEffect(() => {
-    if (chatOpen) {
-      window.requestAnimationFrame(() => {
-        const target = chatRef.current?.querySelector<HTMLElement>('textarea, button, [href], [tabindex]:not([tabindex="-1"])')
-        target?.focus()
-      })
-    } else if (chatWasOpen.current) {
-      chatToggleRef.current?.focus()
-    }
-    chatWasOpen.current = chatOpen
-  }, [chatOpen])
-
-  const handleChatKeyDown = (event: React.KeyboardEvent<HTMLElement>) => {
-    if (event.key !== 'Tab') return
-    const focusable = Array.from(chatRef.current?.querySelectorAll<HTMLElement>(
-      'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
-    ) ?? []).filter((element) => element.offsetParent !== null)
-    if (focusable.length === 0) return
-    const first = focusable[0]
-    const last = focusable[focusable.length - 1]
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault()
-      last.focus()
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault()
-      first.focus()
-    }
-  }
-
-  const resizeChatTo = useCallback((width: number) => {
-    setStoredChatWidth(clampChatPanelWidth(width, window.innerWidth, siderWidth))
-  }, [setStoredChatWidth, siderWidth])
-
-  const startChatResize = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (chatExpanded || window.innerWidth < 768) return
-    event.preventDefault()
-    chatResizeCleanupRef.current?.()
-    document.body.classList.add('is-resizing-chat')
-
-    const onPointerMove = (moveEvent: PointerEvent) => {
-      setStoredChatWidth(chatPanelWidthFromPointer(moveEvent.clientX, window.innerWidth, siderWidth))
-    }
-    const finish = () => {
-      window.removeEventListener('pointermove', onPointerMove)
-      window.removeEventListener('pointerup', finish)
-      window.removeEventListener('pointercancel', finish)
-      document.body.classList.remove('is-resizing-chat')
-      chatResizeCleanupRef.current = null
-    }
-    chatResizeCleanupRef.current = finish
-    window.addEventListener('pointermove', onPointerMove)
-    window.addEventListener('pointerup', finish)
-    window.addEventListener('pointercancel', finish)
-  }, [chatExpanded, setStoredChatWidth, siderWidth])
-
-  const handleChatResizeKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (chatExpanded) return
-    if (event.key === 'ArrowLeft') {
-      event.preventDefault()
-      resizeChatTo(chatWidth + 24)
-    } else if (event.key === 'ArrowRight') {
-      event.preventDefault()
-      resizeChatTo(chatWidth - 24)
-    } else if (event.key === 'Home') {
-      event.preventDefault()
-      resizeChatTo(MIN_CHAT_PANEL_WIDTH)
-    } else if (event.key === 'End') {
-      event.preventDefault()
-      resizeChatTo(maxChatPanelWidth(window.innerWidth, siderWidth))
-    }
-  }, [chatExpanded, chatWidth, resizeChatTo, siderWidth])
-
   const goTo = (key: string) => {
     setMobileSystemOpen(false)
     setMobileModuleKey(undefined)
@@ -405,7 +300,7 @@ function AppShell() {
   const confirmShutdown = () => {
     modal.confirm({
       title: `退出 ${agentName}？`,
-      content: '这会停止当前 Jarvis 实例的主服务和 Chat sidecar，正在执行的任务也会被中断。',
+      content: '这会停止当前 Jarvis 实例的服务，正在执行的任务也会被中断。',
       okText: '退出当前实例',
       cancelText: '取消',
       okButtonProps: { danger: true },
@@ -475,6 +370,7 @@ function AppShell() {
     icon: React.ReactNode
     children?: readonly AppModuleChildDefinition[]
   }> = [
+    { key: 'chat', label: '对话', icon: <MessageOutlined /> },
     { key: 'overview', label: '工作台', icon: <HomeOutlined /> },
     { key: 'tasks', label: '任务', icon: <PlayCircleOutlined /> },
     ...enabledModules.map((module) => ({
@@ -498,10 +394,9 @@ function AppShell() {
 
   return (
     <Layout
-      className={`app-shell ${chatOpen ? 'chat-is-open' : ''} ${chatOpen && chatExpanded ? 'chat-is-expanded' : ''}`}
+      className="app-shell"
       style={{
         '--sider-width': weeklyShare ? '0px' : `${siderWidth}px`,
-        '--chat-width': `${chatWidth}px`,
       } as React.CSSProperties}
     >
       {modalContext}
@@ -565,8 +460,8 @@ function AppShell() {
               ? `plugin:${context.view_state.plugin}`
               : primaryNavigationKey,
           ]}
-          openKeys={openMenuKeys}
-          onOpenChange={(keys) => setOpenMenuKeys(keys.map(String))}
+          openKeys={siderCollapsed ? [] : openMenuKeys}
+          onOpenChange={(keys) => { if (!siderCollapsed) setOpenMenuKeys(keys.map(String)) }}
           items={menuProps}
           onClick={({ key }) => goTo(key)}
           className="app-menu"
@@ -609,72 +504,19 @@ function AppShell() {
         <Button type="text" icon={<MoreOutlined />} aria-label="打开系统导航" onClick={() => setMobileSystemOpen(true)} />
       </header>}
       <Layout>
-        <div className="app-main">
-          <Content className="app-content">
+        <div className={`app-main ${context.active_key === 'chat' ? 'is-chat-page' : ''}`}>
+          <Content className={`app-content ${context.active_key === 'chat' ? 'is-chat-page' : ''}`}>
             {moduleLoadError && <Alert className="app-module-load-error" type="error" showIcon title="功能模块配置读取失败" description={moduleLoadError} />}
             <Suspense fallback={<div className="page-loading"><Spin size="small" /><span>正在加载…</span></div>}>
               {pages[context.active_key]}
             </Suspense>
+            <Suspense fallback={null}>
+              <Chat compact={context.active_key !== 'chat'} />
+            </Suspense>
           </Content>
-          {chatOpen && chatExpanded && (
-            <button
-              type="button"
-              className="chat-modal-backdrop"
-              tabIndex={-1}
-              aria-label="缩小对话"
-              onClick={() => setChatExpanded(false)}
-            />
-          )}
-          <aside
-            ref={chatRef}
-            className={`chat-overlay ${chatOpen ? 'is-open' : ''} ${chatOpen && chatExpanded ? 'is-expanded' : ''}`}
-            aria-hidden={!chatOpen}
-            inert={chatOpen ? undefined : true}
-            onKeyDown={handleChatKeyDown}
-          >
-            <div
-              className="chat-resize-handle"
-              role="separator"
-              aria-label="调整对话框宽度"
-              aria-orientation="vertical"
-              aria-valuemin={MIN_CHAT_PANEL_WIDTH}
-              aria-valuenow={Math.round(chatWidth)}
-              tabIndex={chatOpen && !chatExpanded ? 0 : -1}
-              onPointerDown={startChatResize}
-              onKeyDown={handleChatResizeKeyDown}
-            />
-            {chatLoaded && (
-              <Suspense fallback={<div className="page-loading"><Spin size="small" /><span>正在打开对话…</span></div>}>
-                <Chat
-                  open={chatOpen}
-                  expanded={chatExpanded}
-                  onToggleExpanded={() => setChatExpanded((expanded) => !expanded)}
-                  onClose={() => {
-                    setChatExpanded(false)
-                    setChatOpen(false)
-                  }}
-                />
-              </Suspense>
-            )}
-          </aside>
         </div>
       </Layout>
-      <Tooltip title={chatOpen ? '收起对话' : '打开对话'}>
-        <Button
-          type="primary"
-          shape="circle"
-          size="large"
-          icon={<MessageOutlined />}
-          className={`chat-toggle ${chatOpen ? 'chat-open' : ''}`}
-          ref={chatToggleRef}
-          aria-label={chatOpen ? `关闭 ${agentName} 对话` : `打开 ${agentName} 对话`}
-          onClick={() => {
-            if (chatOpen) setChatExpanded(false)
-            setChatOpen((open) => !open)
-          }}
-        />
-      </Tooltip>
-      {!weeklyShare && <nav className="mobile-bottom-nav" aria-label="主要导航">
+      {!weeklyShare && <nav className="mobile-bottom-nav" aria-label="主要导航" style={{ gridTemplateColumns: `repeat(${mobileNavItems.length}, 1fr)` }}>
         {mobileNavItems.map((item) => (
           <button
             key={item.key}

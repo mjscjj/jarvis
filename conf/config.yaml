@@ -172,18 +172,15 @@ execute:
   timeout_second: 1800                             # 单次执行超时：30 分钟（长任务需要查资料并调用外部工具）
   stale_executing_minute: 45                       # executing 超过此时长仍未结束 → 标 failed（防重启僵尸；须 > timeout）
 
-# 右侧流式对话（SSE /api/chat）。enabled=false 时不注册路由。
-# 独立 Chat sidecar；CLI、模型和生命周期均不再复用 M5。
+# 首个 Tab 的持久流式对话。enabled=false 时不注册 /api/chat/* 路由。
+# 这里只提供新会话默认值；每个会话可选择 Codex、TRAE、Cursor 及其动态模型。
 chat:
   enabled: true
-  bin: "codex"
-  addr: "0.0.0.0:18801"
-  model: "gpt-5.6-sol"
-  fast_mode: false                       # GPT-5.6 约 1.5x 加速，但消耗约 2.5x 标准额度；按部署显式开启
-  timeout_seconds: 900                 # 单轮对话超时；会自跑工具做多跳调查，600s 会把正常长轮次打断
+  model: "gpt-5.5"                     # 与 execute.model 一致
+  timeout_seconds: 600                 # 单轮对话超时（可能自跑工具，放宽）
   sandbox: "danger-full-access"        # 对话场景最大权限
   reasoning_effort: "medium"           # 与 execute.reasoning_effort 一致
-  history_dir: "data/chat"             # 本地 Markdown 会话记录；data/ 已被 Git 忽略
+
 
 # Agent Skills：正文位于仓库文件，启用状态和阶段范围位于 conf/skills.yaml。
 skills:

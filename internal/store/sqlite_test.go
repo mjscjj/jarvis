@@ -60,40 +60,6 @@ func TestOpenSQLiteAndMigrate(t *testing.T) {
 	}
 }
 
-func TestOpenReadOnlySQLiteRejectsWrites(t *testing.T) {
-	t.Parallel()
-	path := filepath.Join(t.TempDir(), "readonly.db")
-	writable, err := OpenSQLite(t.Context(), config.SQLiteConfig{Path: path})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := writable.Exec("CREATE TABLE fixture (id INTEGER PRIMARY KEY, value TEXT)").Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := writable.Exec("INSERT INTO fixture(value) VALUES (?)", "visible").Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := Close(writable); err != nil {
-		t.Fatal(err)
-	}
-
-	readonly, err := OpenReadOnlySQLite(t.Context(), config.SQLiteConfig{Path: path})
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer Close(readonly)
-	var value string
-	if err := readonly.Raw("SELECT value FROM fixture WHERE id = 1").Scan(&value).Error; err != nil {
-		t.Fatal(err)
-	}
-	if value != "visible" {
-		t.Fatalf("value = %q, want visible", value)
-	}
-	if err := readonly.Exec("INSERT INTO fixture(value) VALUES (?)", "forbidden").Error; err == nil {
-		t.Fatal("read-only database unexpectedly accepted a write")
-	}
-}
-
 func TestOpenTrackedSQLiteWritesDirectlyToMainFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "tracked", "okr.db")
 	db, err := OpenTrackedSQLite(t.Context(), config.SQLiteConfig{Path: path})

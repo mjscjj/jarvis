@@ -36,7 +36,3 @@ fi
 
 launchctl bootstrap "gui/$UID" "$agent_plist"
 launchctl print "$service_target"
-
-if jq -e '.chat_enabled == true' >/dev/null <<<"$instance"; then
-  "$script_dir/install-chat-launchd.sh" --config "$config_path"
-fi

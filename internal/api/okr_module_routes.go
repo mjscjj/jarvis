@@ -35,11 +35,6 @@ type BizOKRModuleDependencies struct {
 	Enabled   func(context.Context) (bool, error)
 	// PreviewReview runs the advisory OKR Plan and progress review agent.
 	PreviewReview *okrreview.Service
-	// UserTokens, Tokens and FeishuAppID serve the signed-in user's own Feishu
-	// credentials to the chat sidecar.
-	UserTokens  *okrAuth.UserTokens
-	Tokens      *okrAuth.TokenStore
-	FeishuAppID string
 }
 
 func RegisterOKRModuleRoutes(h *server.Hertz, deps OKRModuleDependencies) error {
@@ -121,9 +116,6 @@ func RegisterBizOKRModuleRoutes(h *server.Hertz, deps BizOKRModuleDependencies) 
 	h.POST("/api/biz-okr/auth/feishu/device", requireEnabled, BeginOKRFeishuDeviceLogin(deps.Identity))
 	h.POST("/api/biz-okr/auth/feishu/device/:login_id/poll", requireEnabled, PollOKRFeishuDeviceLogin(deps.Identity))
 	h.POST("/api/biz-okr/auth/logout", requireEnabled, LogoutOKR(deps.Identity))
-	if deps.UserTokens != nil {
-		h.GET("/api/biz-okr/feishu-identity", requireEnabled, GetOKRFeishuIdentity(deps.UserTokens, deps.Tokens, deps.FeishuAppID))
-	}
 	// Deprecated browser-cache compatibility route; see SearchWorkspacePeople.
 	h.GET("/api/biz-okr/people/search", requireEnabled, SearchWorkspacePeople(deps.People))
 	h.GET("/api/biz-okr/people/avatars", requireEnabled, GetWorkspacePeopleAvatars(deps.People))

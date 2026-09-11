@@ -361,6 +361,17 @@ body {
   transition: margin-right 0.2s ease;
 }
 
+.app-main.is-chat-page,
+.app-content.is-chat-page {
+  height: 100vh;
+  min-height: 0;
+}
+
+.app-content.is-chat-page {
+  padding: 0;
+  overflow: hidden;
+}
+
 .mobile-topbar,
 .mobile-bottom-nav {
   display: none;
@@ -534,159 +545,6 @@ body {
   }
 }
 
-/* Jarvis 对话覆盖在页面之上，不再挤压表格和详情布局。 */
-.chat-overlay {
-  position: fixed;
-  z-index: 180;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  width: var(--chat-width);
-  max-width: calc(100vw - var(--sider-width) - 24px);
-  border-left: 1px solid var(--color-border);
-  background: var(--color-bg-elevated);
-  box-shadow: var(--shadow-lg);
-  overflow: hidden;
-  pointer-events: none;
-  transform: translateX(102%);
-  transition: transform 0.2s ease;
-}
-
-.chat-overlay.is-open {
-  pointer-events: auto;
-  transform: translateX(0);
-}
-
-.chat-resize-handle {
-  position: absolute;
-  z-index: 2;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 8px;
-  cursor: ew-resize;
-  touch-action: none;
-  outline: none;
-}
-
-.chat-resize-handle::after {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 2px;
-  background: var(--color-primary);
-  content: '';
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-
-.chat-resize-handle:hover::after,
-.chat-resize-handle:focus-visible::after,
-.is-resizing-chat .chat-resize-handle::after {
-  opacity: 1;
-}
-
-body.is-resizing-chat {
-  cursor: ew-resize;
-  user-select: none;
-}
-
-.chat-modal-backdrop {
-  position: fixed;
-  z-index: 179;
-  inset: 0;
-  padding: 0;
-  border: 0;
-  background: rgba(16, 20, 24, 0.26);
-  cursor: default;
-}
-
-@media (min-width: 768px) {
-  .chat-overlay.is-open.is-expanded {
-    top: 32px;
-    right: 0;
-    bottom: 32px;
-    left: var(--sider-width);
-    width: min(1120px, calc(100vw - var(--sider-width) - 32px));
-    max-width: none;
-    margin-inline: auto;
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-xl);
-    box-shadow: 0 24px 72px rgba(16, 20, 24, 0.2);
-    transform: none;
-  }
-
-  .chat-overlay.is-expanded .chat-resize-handle {
-    display: none;
-  }
-
-  .app-shell.chat-is-expanded .chat-toggle,
-  .app-shell.chat-is-expanded .okr-help-fab {
-    opacity: 0;
-    pointer-events: none;
-  }
-}
-
-.chat-dock-placeholder {
-  height: 100%;
-  min-height: 240px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px dashed var(--color-border-strong);
-  border-radius: var(--radius-md);
-  color: var(--color-text-secondary);
-  font-size: 13px;
-}
-
-.chat-toggle {
-  position: fixed;
-  right: var(--space-4);
-  bottom: var(--space-4);
-  z-index: 200;
-  box-shadow: var(--shadow-lg);
-  transition: right 0.25s ease;
-}
-
-/* 对话框打开时，FAB 挪到 dock 左侧，避免盖住输入区的发送/停止按钮 */
-.chat-toggle.chat-open {
-  right: calc(var(--chat-width) + var(--space-4));
-}
-
-/* 求助入口叠在对话 FAB 正上方：40px 的球 + 10px 间距 */
-.okr-help-fab {
-  position: fixed;
-  right: var(--space-4);
-  bottom: calc(var(--space-4) + 50px);
-  z-index: 200;
-  transition: right 0.25s ease;
-}
-
-.app-shell.chat-is-open:not(.chat-is-expanded) .okr-help-fab {
-  right: calc(var(--chat-width) + var(--space-4));
-}
-
-.chat-close {
-  margin-inline-start: auto;
-}
-
-@media (min-width: 1600px) {
-  .app-shell.chat-is-open:not(.chat-is-expanded) .app-content {
-    margin-right: var(--chat-width);
-  }
-
-  .app-shell.chat-is-open:not(.chat-is-expanded) .chat-overlay {
-    box-shadow: none;
-  }
-}
-
-@media (max-width: 900px) {
-  .chat-overlay {
-    max-width: calc(100vw - 24px);
-  }
-}
-
 @media (max-width: 767px) {
   body {
     font-size: 14px;
@@ -719,6 +577,15 @@ body.is-resizing-chat {
   .app-content {
     width: 100%;
     padding: 68px var(--space-3) 92px;
+  }
+
+  .app-main.is-chat-page,
+  .app-content.is-chat-page {
+    height: calc(100vh - 120px);
+  }
+
+  .app-content.is-chat-page {
+    padding: 52px 0 68px;
   }
 
   .page-header {
@@ -784,37 +651,6 @@ body.is-resizing-chat {
   .mobile-system-links .ant-btn {
     height: 44px;
     justify-content: flex-start;
-  }
-
-  .chat-overlay {
-    z-index: 300;
-    width: 100vw;
-    max-width: none;
-    border-left: 0;
-  }
-
-  .chat-toggle {
-    right: var(--space-3);
-    bottom: 82px;
-  }
-
-  .chat-is-open .chat-toggle {
-    display: none;
-  }
-
-  .okr-help-fab {
-    right: var(--space-3);
-    bottom: 132px;
-  }
-
-  .chat-is-open .okr-help-fab {
-    display: none;
-  }
-
-  .chat-modal-backdrop,
-  .chat-expand,
-  .chat-resize-handle {
-    display: none !important;
   }
 
   .ant-drawer-content-wrapper {
@@ -2515,6 +2351,16 @@ pre {
   background: #f7f8f9;
 }
 
+.setup-connection-notice {
+  position: sticky; top: 0; z-index: 200;
+  display: flex; align-items: center; gap: 8px; padding: 6px 16px;
+  background: var(--color-warning-bg); color: var(--color-warning);
+  border-bottom: 1px solid var(--color-border); font-size: 12px;
+}
+.setup-connection-notice > span { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.setup-connection-notice > button { flex-shrink: 0; }
+.setup-repair-drawer .setup-page { min-height: 0; padding: 0; background: transparent; }
+
 .world-model-setup {
   position: fixed;
   right: 20px;
@@ -2962,4 +2808,11 @@ pre {
     height: calc(100dvh - 16px);
     max-height: calc(100dvh - 16px);
   }
+}
+
+.okr-help-fab {
+  position: fixed;
+  right: var(--space-4);
+  bottom: 128px;
+  z-index: 200;
 }

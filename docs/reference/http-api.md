@@ -23,6 +23,12 @@
 - `POST /api/auth/login/complete`：轮询并完成 SSO 登录。
 - `POST /api/auth/logout`：只清除 Jarvis 浏览器会话，不清除全机 BytedCLI 授权。
 
+前端由 AuthProvider 统一处理首次登录与会话失效恢复。并发 401 共用一次恢复，
+优先复用 BytedCLI 身份；失败的写请求不自动重放。主动退出后须点击登录才能恢复。
+
+`POST /api/setup/lark/credentials` 接收 `app_secret`，验证并更新当前飞书应用的
+CLI 与已有 CC Connect 配置，随后请求服务重启；不改变 App ID，也不重做首次初始化。
+
 浏览器发起的管理 API 请求需要 Jarvis 会话；健康检查、认证接口、`POST /api/clues`、卡片回调和无浏览器 Fetch Metadata 的本机 Agent/CLI 请求不经过该门禁。
 
 ## 健康与工作项
@@ -115,10 +121,8 @@ Runtime settings 写入后需要重启进程生效；模块开关保存后也需
 - System task runs：`GET /api/system-tasks/runs`
 - 主动巡视运行记录：`GET /api/debug/proactive-runs`、`GET /api/debug/proactive-runs/:run_id`
 - 手工采集：`POST /api/debug/capture/discover|scan-related|scan-chat`
-- 主服务对话发现：`GET /api/chat-config`
-- 前端部署事实：`GET /api/web-config`，返回 `server.public_base_url`。分享链接用它当根地址，作者从 IP 打开页面也能复制出域名链接；配置留空时返回空串，链接沿用当前浏览器地址。
-- 独立 Chat sidecar：`POST /api/chat`（multipart + SSE；`message` 必填，`turn_id` 用于暂停当前轮次，`thread_id`、JSON 字符串 `page_context`、单张 PNG/JPEG `image`、`user_open_id` 可选，图片上限 10 MB）、`POST /api/chat?action=stop&turn_id=...`（取消并等待该轮完成历史落盘）、`GET /api/chat?thread_id=...`、`GET /api/chat?view=threads`。历史列表、暂停与详情共用 `/api/chat` 根路径，以保持同源生产代理契约；sidecar 仍兼容 `GET /api/chat/threads` 与 `GET /api/chat/:thread_id`。
-- 带 `user_open_id` 时，sidecar 向主服务的 `/api/biz-okr/feishu-identity` 取该登录用户的飞书凭证位置，并把「用谁的身份 + token 文件路径 + 单条命令注入用法」写进本轮 prompt，让 Agent 用用户自己的权限读他扔进来的文档；token 本身不进 prompt。凭证不可用时把原因写进同一段落，不中断对话。
+- 前端部署事实：`GET /api/web-config` 返回 `server.public_base_url`，用于生成分享链接。
+- 对话：`GET/POST /api/chat/sessions`；`POST /api/chat/sessions/:session_id/messages`（SSE）；Agent、模型和附件使用 `/api/chat/agents*`、`/api/chat/attachments*`
 
 对话只在 `chat.enabled=true` 且依赖构造成功时注册。
 

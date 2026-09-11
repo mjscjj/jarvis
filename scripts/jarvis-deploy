@@ -7,7 +7,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 CONFIG_PATH="${REPO_ROOT}/conf/config.yaml"
 SKIP_PULL=false
-SKIP_CHAT_RESTART=false
 REMOTE_OKR_DB=false
 FORCE_INTERRUPT=false
 
@@ -19,17 +18,12 @@ Options:
   --config PATH          Select the Jarvis configuration (default: conf/config.yaml).
   --remote-okr-db        Discard the tracked OKR DB runtime diff before pulling.
   --skip-pull            Build and deploy the current working tree without Git pull.
-  --skip-chat-restart    Build and replace the chat binary but leave the running
-                         chat sidecar alone. An Agent running inside the chat
-                         sidecar is in that unit's cgroup, so restarting it
-                         terminates that Agent's current turn. The new chat
-                         binary only goes live on the next restart.
   --force-interrupt-running-tasks
                          Pass the explicit interruption flag to macOS rebuild.
   -h, --help             Show this help.
 
 Darwin uses the existing signed launchd install/rebuild scripts. Linux builds
-the same main/chat binaries and registers config-scoped user systemd services.
+the server binary and registers a config-scoped user systemd service.
 EOF
 }
 
@@ -43,7 +37,6 @@ while (( $# > 0 )); do
     --config) (( $# >= 2 )) || { usage; exit 2; }; CONFIG_PATH="$2"; shift 2 ;;
     --remote-okr-db) REMOTE_OKR_DB=true; shift ;;
     --skip-pull) SKIP_PULL=true; shift ;;
-    --skip-chat-restart) SKIP_CHAT_RESTART=true; shift ;;
     --force-interrupt-running-tasks) FORCE_INTERRUPT=true; shift ;;
     --help|-h) usage; exit 0 ;;
     *) usage; exit 2 ;;
@@ -77,35 +70,21 @@ fi
 INSTANCE="$("${SCRIPT_DIR}/jarvis-instance" "$CONFIG_PATH")"
 CONFIG_PATH="$(jq -er '.config_path' <<<"$INSTANCE")"
 API_BASE="$(jq -er '.api_base' <<<"$INSTANCE")"
-CHAT_API_BASE="$(jq -er '.chat_api_base' <<<"$INSTANCE")"
-CHAT_ENABLED="$(jq -r '.chat_enabled' <<<"$INSTANCE")"
 
 npm --prefix "${REPO_ROOT}/web" ci
 npm --prefix "${REPO_ROOT}/web" run build
 
 deploy_darwin() {
   command -v launchctl >/dev/null 2>&1 || fail "launchctl is required on macOS"
-  local label chat_label target chat_target fresh_install=false
+  local label target
   label="$(jq -er '.launchd_label' <<<"$INSTANCE")"
-  chat_label="$(jq -er '.chat_launchd_label' <<<"$INSTANCE")"
   target="gui/${UID}/${label}"
-  chat_target="gui/${UID}/${chat_label}"
   if launchctl print "$target" >/dev/null 2>&1; then
     rebuild_args=(--config "$CONFIG_PATH")
     [[ "$FORCE_INTERRUPT" != true ]] || rebuild_args+=(--force-interrupt-running-tasks)
     "${SCRIPT_DIR}/rebuild-server.sh" "${rebuild_args[@]}"
   else
     "${SCRIPT_DIR}/jarvis-install" install-server --config "$CONFIG_PATH"
-    fresh_install=true
-  fi
-  if [[ "$CHAT_ENABLED" == true && "$fresh_install" != true ]]; then
-    if [[ "$SKIP_CHAT_RESTART" == true ]] && launchctl print "$chat_target" >/dev/null 2>&1; then
-      printf 'jarvis-deploy: left %s running as requested; the chat sidecar keeps the old build until it is rebuilt\n' "$chat_label" >&2
-    elif launchctl print "$chat_target" >/dev/null 2>&1; then
-      "${SCRIPT_DIR}/rebuild-chat-server.sh" --config "$CONFIG_PATH"
-    else
-      "${SCRIPT_DIR}/install-chat-launchd.sh" --config "$CONFIG_PATH"
-    fi
   fi
 }
 
@@ -155,42 +134,21 @@ deploy_linux() {
   case "$REPO_ROOT$CONFIG_PATH" in *[[:space:]%]*) fail "MVP systemd deployment does not support whitespace or % in repository/config paths" ;; esac
   "${SCRIPT_DIR}/check-build-toolchain.sh"
 
-  local main_unit chat_unit main_bin chat_bin main_next chat_next main_stdout main_stderr
+  local main_unit main_bin main_next main_stdout main_stderr
   main_unit="$(jq -er '.launchd_label' <<<"$INSTANCE").service"
-  chat_unit="$(jq -er '.chat_launchd_label' <<<"$INSTANCE").service"
   main_bin="${REPO_ROOT}/bin/jarvis-server"
-  chat_bin="${REPO_ROOT}/bin/jarvis-chat-server"
   main_next="${main_bin}.next"
-  chat_next="${chat_bin}.next"
   mkdir -p "${REPO_ROOT}/bin" "${REPO_ROOT}/var/log"
-  trap 'rm -f "${REPO_ROOT}/bin/jarvis-server.next" "${REPO_ROOT}/bin/jarvis-chat-server.next"' EXIT
+  trap 'rm -f "${REPO_ROOT}/bin/jarvis-server.next"' EXIT
   go build -o "$main_next" ./cmd/jarvis-server
-  if [[ "$CHAT_ENABLED" == true ]]; then
-    go build -o "$chat_next" ./cmd/jarvis-chat-server
-  fi
   mv "$main_next" "$main_bin"
-  if [[ "$CHAT_ENABLED" == true ]]; then mv "$chat_next" "$chat_bin"; fi
 
   main_stdout="$(absolute_log_path "$(jq -er '.log_files[0]' <<<"$INSTANCE")")"
   main_stderr="$(absolute_log_path "$(jq -er '.log_files[1]' <<<"$INSTANCE")")"
   write_systemd_unit "$main_unit" "Jarvis main server" "$main_bin" "$main_stdout" "$main_stderr"
-  if [[ "$CHAT_ENABLED" == true ]]; then
-    write_systemd_unit "$chat_unit" "Jarvis chat sidecar" "$chat_bin" \
-      "${REPO_ROOT}/var/log/jarvis-chat.log" "${REPO_ROOT}/var/log/jarvis-chat.error.log"
-  fi
   systemctl --user daemon-reload
   systemctl --user enable "$main_unit"
   systemctl --user restart "$main_unit"
-  if [[ "$CHAT_ENABLED" == true ]]; then
-    systemctl --user enable "$chat_unit"
-    if [[ "$SKIP_CHAT_RESTART" == true ]]; then
-      printf 'jarvis-deploy: left %s running as requested; the new chat binary goes live on the next restart\n' "$chat_unit" >&2
-    else
-      systemctl --user restart "$chat_unit"
-    fi
-  else
-    systemctl --user disable --now "$chat_unit" >/dev/null 2>&1 || true
-  fi
 }
 
 case "$(uname -s)" in
@@ -200,7 +158,6 @@ case "$(uname -s)" in
 esac
 
 wait_health backend "$API_BASE"
-if [[ "$CHAT_ENABLED" == true ]]; then wait_health chat "$CHAT_API_BASE"; fi
 curl --fail --silent --show-error --max-time 5 -o /dev/null "$API_BASE/"
 readiness="$(curl --fail --silent --show-error --max-time 8 "$API_BASE/readyz")"
 jq -e '.status == "ok" and ([.dependencies[].status] | all(. == "ok" or . == "disabled"))' >/dev/null <<<"$readiness" || \

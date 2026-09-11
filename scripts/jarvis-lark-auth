@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Shared by desktop onboarding and source installation. These are the scopes
+# used by built-in capabilities; disabling a cron does not disable manual use.
+# Optional external plugins keep their own provider authorization.
+scopes=(
+  # Identity, messages, groups and Bot interaction.
+  auth:user.id:read
+  contact:user.basic_profile:readonly
+  contact:user:search
+  im:chat:read
+  im:chat.members:read
+  im:message:readonly
+  im:message.group_msg:get_as_user
+  im:message.p2p_msg:get_as_user
+  search:message
+  im:resource
+  im:message
+  im:message.reactions:read
+  im:message.reactions:write_only
+  # World model evidence and report creation, including embedded resources.
+  search:docs:read
+  drive:drive.metadata:readonly
+  drive:file:download
+  drive:file:upload
+  docs:document.content:read
+  docx:document:readonly
+  docx:document:create
+  docx:document:write_only
+  docs:document.media:download
+  docs:document.media:upload
+  docs:document.comment:read
+  docs:document.comment:create
+  docs:document.comment:write_only
+  docs:permission.setting:read
+  wiki:space:read
+  wiki:node:read
+  wiki:node:retrieve
+  sheets:spreadsheet:read
+  sheets:spreadsheet.meta:read
+  sheets:spreadsheet:create
+  sheets:spreadsheet:write_only
+  base:app:read
+  base:app:create
+  base:table:read
+  base:table:create
+  base:field:read
+  base:field:create
+  base:record:read
+  base:record:create
+  base:record:update
+  slides:presentation:read
+  board:whiteboard:node:read
+  # Meeting sweep, preparation, meeting recaps, daily/weekly reports and brief.
+  calendar:calendar:read
+  calendar:calendar.event:read
+  calendar:calendar.free_busy:read
+  vc:meeting.search:read
+  vc:record:readonly
+  vc:note:read
+  minutes:minutes:readonly
+  minutes:minutes.basic:read
+  minutes:minutes.artifacts:read
+  minutes:minutes.search:read
+  task:task:read
+  task:task:write
+  task:tasklist:read
+  task:tasklist:write
+)
+
+action=${1:-}
+lark_cli=${2:-lark-cli}
+if (( $# > 2 )); then
+  printf 'usage: jarvis-lark-auth begin|check [lark-cli binary]\n' >&2
+  exit 2
+fi
+case "$action" in
+  begin) exec "$lark_cli" auth login --scope "${scopes[*]}" --no-wait --json ;;
+  check) exec "$lark_cli" auth check --scope "${scopes[*]}" --json ;;
+  *) printf 'usage: jarvis-lark-auth begin|check [lark-cli binary]\n' >&2; exit 2 ;;
+esac

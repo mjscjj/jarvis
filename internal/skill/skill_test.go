@@ -570,6 +570,26 @@ func TestInlineSkillRespectsAvailabilityGate(t *testing.T) {
 	}
 }
 
+func TestRepositoryChatSkillIsReadableWithoutStageInjection(t *testing.T) {
+	svc, err := NewService(filepath.Join("..", "..", ".agents", "skills"), filepath.Join("..", "..", "conf", "skills.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := svc.Content(t.Context(), "jarvis-chat")
+	if err != nil || content == nil || strings.TrimSpace(content.Content) == "" {
+		t.Fatalf("chat Skill must be readable on demand: %v", err)
+	}
+	for _, stage := range []string{StageExtract, StageExecute, StageProactive} {
+		catalog, err := svc.Catalog(t.Context(), stage)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(catalog, "jarvis-chat") {
+			t.Fatalf("chat Skill leaked into %s", stage)
+		}
+	}
+}
+
 func TestRepositoryInstallationSkillsAreStandalone(t *testing.T) {
 	service, err := NewService(
 		filepath.Join("..", "..", ".agents", "skills"),
@@ -830,6 +850,8 @@ func TestJarvisInstallationCompletesDependenciesBeforeStartingMainService(t *tes
 		"CC Connect 是该 Bot WebSocket 的唯一所有者",
 		"install.cc-exclusive-owner",
 		"validate-binding",
+		"./scripts/jarvis-lark-auth check",
+		"./scripts/jarvis-lark-auth begin",
 		"已有 daemon 指向另一 binary/checkout",
 		"初始化只负责“Jarvis 如何理解这个用户的世界”",
 		"不安装或重启服务，也不配置 CC",

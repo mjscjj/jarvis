@@ -95,9 +95,12 @@ Manifest 和 Skill 文件是仓库真源；外部原始事实保存在现有 clu
 
 授权提供者使用代码内固定命令，不从 Manifest 或模型输出执行命令：
 
-- Codebase：`bytedcli` SSO Session
+- Codebase：`bytedcli` ByteCloud 登录态，与 Jarvis 登录复用；设备授权不使用 `--session`
 - Meego：Meego 官方设备授权
 - Oncall：`lark-cli` 当前默认用户的飞书 IM 授权
+
+先检查已有授权，仅在明确缺少授权时发起登录；网络或命令错误直接展示。
+完成授权后重新检查实际能力，通过后才标记已授权。
 
 启用与授权是两个独立状态。插件可以处于“已开启、待授权”，但此时不会创建
 可运行的采集计划。

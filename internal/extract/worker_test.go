@@ -12,6 +12,7 @@ import (
 
 	"jarvis/internal/extract/tools"
 	"jarvis/internal/progress"
+	"jarvis/internal/textstore"
 )
 
 type fakePipelineStore struct {
@@ -32,9 +33,12 @@ type fakePipelineStore struct {
 	batchForLimit func(int) *ChatBatch
 }
 
-type fakeSystemPromptReader struct{}
+type fakeSystemPromptReader struct{ level string }
 
-func (fakeSystemPromptReader) Content(context.Context, string) (string, error) {
+func (f fakeSystemPromptReader) Content(_ context.Context, key string) (string, error) {
+	if key == textstore.InitiativeLevelKey {
+		return f.level, nil
+	}
 	return "fixture M3 system prompt\n{{WORK_RULES}}", nil
 }
 
@@ -529,6 +533,9 @@ func TestWorkerRetriesOnQuoteMismatchThenSucceeds(t *testing.T) {
 	if strings.Contains(model.prompts[0].User, "上一轮抽取校验未通过") {
 		t.Fatalf("first prompt unexpectedly carried feedback: %q", model.prompts[0].User)
 	}
+	if model.prompts[0].System != model.prompts[1].System {
+		t.Fatal("retry changed composed stage instructions")
+	}
 	second := model.prompts[1].User
 	for _, want := range []string{"上一轮抽取校验未通过", "逐字连续复制", "看下当前服务和架构梳理", "当前服务和架构梳理，以及多机房支持"} {
 		if !strings.Contains(second, want) {
@@ -655,6 +662,9 @@ func TestWorkerRetriesOnInventedMessageIDThenSucceeds(t *testing.T) {
 	if store.persistCalls != 1 {
 		t.Fatalf("persistCalls = %d, want 1", store.persistCalls)
 	}
+	if model.prompts[0].System != model.prompts[1].System {
+		t.Fatal("retry changed composed stage instructions")
+	}
 	second := model.prompts[1].User
 	for _, want := range []string{"上一轮抽取校验未通过", "om_does_not_exist", "真实存在的消息 id"} {
 		if !strings.Contains(second, want) {
@@ -731,6 +741,34 @@ func validWorkerOptions() WorkerOptions {
 		WorkRules:     fakeWorkRuleReader{},
 		Skills:        fakeSkillReader{},
 		SharedMemory:  fakeSharedMemoryReader{},
-		SystemPrompts: fakeSystemPromptReader{},
+		SystemPrompts: fakeSystemPromptReader{level: "normal"},
+	}
+}
+
+func TestBatchPromptsUseCurrentInitiativeForAllUnits(t *testing.T) {
+	opts := validWorkerOptions()
+	w := &Worker{opts: opts, facts: &fakeFactReader{}}
+	batch := retryBatch()
+	second := batch.Units[0]
+	second.Key = "second"
+	batch.Units = append(batch.Units, second)
+	for _, level := range []string{"active", "quiet", "normal"} {
+		w.opts.SystemPrompts = fakeSystemPromptReader{level: level}
+		prompts, err := w.buildBatchPrompts(t.Context(), batch, time.Now(), false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(prompts) != 2 {
+			t.Fatalf("got %d units", len(prompts))
+		}
+		for _, prompt := range prompts {
+			if !strings.HasPrefix(prompt.System, "BEGIN_INITIATIVE_LEVEL\n"+level+"\nEND_INITIATIVE_LEVEL") {
+				t.Fatalf("wrong mode: %s", prompt.System)
+			}
+		}
+	}
+	w.opts.SystemPrompts = fakeSystemPromptReader{level: "invalid"}
+	if _, err := w.buildBatchPrompts(t.Context(), batch, time.Now(), false); err == nil {
+		t.Fatal("invalid mode built a batch")
 	}
 }

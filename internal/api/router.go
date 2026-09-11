@@ -11,6 +11,7 @@ import (
 	"jarvis/internal/authn"
 	"jarvis/internal/background"
 	"jarvis/internal/capture"
+	"jarvis/internal/chat"
 	"jarvis/internal/config"
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/delegation"
@@ -81,7 +82,7 @@ type Dependencies struct {
 	FactTimelineLoc    *time.Location      // 事实时间线按自然日分组的时区
 	Debug              *insight.DebugService
 	Logs               *insight.LogReader
-	ChatAddr           string           // 独立 Chat sidecar 地址；主进程只向前端公开端口
+	Chat               *chat.Service
 	PublicBaseURL      string           // 这台部署对外可打开的根地址；分享链接用它替换浏览器地址栏里的 IP
 	Capture            *capture.Service // 调试面板手动采集触发；nil 则不注册 /api/debug/capture/* 路由
 	RuntimeSettings    *config.RuntimeSettingsService
@@ -93,6 +94,7 @@ type Dependencies struct {
 	Readiness          ReadinessTargets  // /readyz 探测的外部依赖；缺失只降级，不影响 /healthz
 	SystemControl      SystemShutdowner
 	Onboarding         *onboarding.Service
+	UpdateRoot         string // 可选：DEV2 发布目录；为空时不注册 /jarvis-updates
 }
 
 // Register 把所有路由挂到 Hertz 实例上。
@@ -223,14 +225,24 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	}
 	h.GET("/healthz", Health(deps.DB))
 	h.GET("/readyz", Readiness(deps.DB, deps.Readiness))
+	if strings.TrimSpace(deps.UpdateRoot) != "" {
+		updateFiles, err := NewUpdateFileHandler(deps.UpdateRoot)
+		if err != nil {
+			return fmt.Errorf("create update file handler: %w", err)
+		}
+		h.GET("/jarvis-updates/:filename", updateFiles)
+		h.HEAD("/jarvis-updates/:filename", updateFiles)
+	}
 	h.GET("/api/auth/status", GetAuthStatus(deps.Auth))
 	h.POST("/api/auth/login", LoginWithByteDance(deps.Auth))
 	h.POST("/api/auth/login/complete", CompleteByteDanceLogin(deps.Auth))
 	h.POST("/api/auth/logout", LogoutFromJarvis(deps.Auth))
 	if deps.Onboarding != nil {
+		h.GET("/api/setup/bootstrap", GetOnboardingBootstrap(deps.Onboarding))
 		h.GET("/api/setup/status", GetOnboardingStatus(deps.Onboarding))
 		h.POST("/api/setup/lark/connect", BeginOnboardingLarkSetup(deps.Onboarding))
 		h.POST("/api/setup/lark/login", BeginOnboardingLarkLogin(deps.Onboarding))
+		h.POST("/api/setup/lark/credentials", RepairOnboardingLarkCredentials(deps.Onboarding))
 		h.POST("/api/setup/agent/login", BeginOnboardingAgentLogin(deps.Onboarding))
 		h.GET("/api/setup/flows/:flow_id", GetOnboardingFlow(deps.Onboarding))
 		h.POST("/api/setup/flows/:flow_id/cancel", CancelOnboardingFlow(deps.Onboarding))
@@ -438,8 +450,20 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.PUT("/api/resources/:resource_id", UpdateResource(deps.Resources))
 	h.POST("/api/resources/:resource_id/touch", TouchResource(deps.Resources))
 	h.DELETE("/api/resources/:resource_id", DeleteResource(deps.Resources))
-	if deps.ChatAddr != "" {
-		h.GET("/api/chat-config", GetChatRuntimeConfig(deps.ChatAddr))
+	// 持久多 Agent 对话（SSE）。未启用（nil）则不注册整组路由。
+	if deps.Chat != nil {
+		h.GET("/api/chat/agents", ListChatAgents(deps.Chat))
+		h.GET("/api/chat/agents/:agent_id/models", ListChatModels(deps.Chat))
+		h.GET("/api/chat/sessions", ListChatSessions(deps.Chat))
+		h.POST("/api/chat/sessions", CreateChatSession(deps.Chat))
+		h.GET("/api/chat/sessions/:session_id", GetChatSession(deps.Chat))
+		h.PATCH("/api/chat/sessions/:session_id", UpdateChatSession(deps.Chat))
+		h.DELETE("/api/chat/sessions/:session_id", DeleteChatSession(deps.Chat))
+		h.POST("/api/chat/sessions/:session_id/messages", StreamChatSession(deps.Chat))
+		h.POST("/api/chat/sessions/:session_id/cancel", CancelChatSession(deps.Chat))
+		h.POST("/api/chat/sessions/:session_id/attachments", UploadChatAttachment(deps.Chat))
+		h.DELETE("/api/chat/sessions/:session_id/attachments/:attachment_id", DeleteChatAttachment(deps.Chat))
+		h.GET("/api/chat/attachments/:attachment_id/content", DownloadChatAttachment(deps.Chat))
 	}
 	h.GET("/api/web-config", GetWebConfig(deps.PublicBaseURL))
 	// 精确 API 路由优先于这个兜底。必须在进程注册根 StaticFS 之前拦住

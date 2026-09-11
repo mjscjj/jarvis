@@ -59,11 +59,13 @@ function formatTime(value: string | null): string {
 
 function pluginStateLabel(item: Plugin): string {
   if (item.kind === 'capability') return item.enabled ? '已启用' : '已关闭'
+  if (item.enabled && item.authorization.status === 'pending') return '检查授权'
   return stateLabels[item.state]
 }
 
 function pluginStateColor(item: Plugin): string {
   if (item.kind === 'capability') return item.enabled ? 'success' : 'default'
+  if (item.enabled && item.authorization.status === 'pending') return 'processing'
   return stateColors[item.state]
 }
 
@@ -250,6 +252,15 @@ export default function Plugins() {
       setItems(pluginResult.items)
       setModules(moduleResult.items)
       setError(undefined)
+      const enabledCollectors = requestedPlugin ? [] : pluginResult.items.filter((item) => item.kind === 'collector' && item.enabled)
+      void Promise.all(enabledCollectors.map(async (item) => {
+        try {
+          const detail = await getPlugin(item.id)
+          setItems((current) => current.map((entry) => entry.id === detail.id ? detail : entry))
+        } catch (cause) {
+          setError(errorText(cause))
+        }
+      }))
     } catch (cause) {
       if (!signal?.aborted) setError(errorText(cause))
     } finally {

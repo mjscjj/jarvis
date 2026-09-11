@@ -55,15 +55,15 @@ DMG / `JARVIS_DESKTOP=1` 的登录、绑定和服务生命周期由应用内 onb
 
 ## 3. 使用默认飞书身份、审计能力并绑定 CC Connect
 
-加载并遵循拆分布局的 `lark-shared`，或 suite 布局中对应的 shared 章节。直接用 `auth status --json --verify` 读回 lark-cli 当前默认身份的 user open_id、Bot 和 token 状态；未配置或未登录时才初始化和登录该默认身份。不为 Jarvis 再选一个 Profile，所有命令都不传 `--profile`。
+加载并遵循拆分布局的 `lark-shared`，或 suite 布局中对应的 shared 章节。直接用 `auth status --json --verify` 读回 lark-cli 当前默认身份的 user open_id、Bot 和 token 状态；未配置时才初始化该默认身份；已有登录也必须检查本次安装所需权限，不能把 token 有效当作权限齐全。不为 Jarvis 再选一个 Profile，所有命令都不传 `--profile`。
 
-飞书授权分成两个不同主体：user OAuth 用 split-flow 取得用户读取能力；Bot/App 的 `im:message:readonly`、机器人能力、`im.message.receive_v1`、`card.action.trigger` 和应用版本发布在飞书开放平台完成。不能用 user OAuth 成功冒充 Bot/App 已配置。首次 user OAuth 仍运行 `lark-cli auth login --recommend --scope "im:message:readonly" --no-wait --json`；把 URL 和二维码展示给用户并结束当前轮，用户确认后在下一轮用该次返回的 `device_code` 执行 `lark-cli auth login --device-code <device_code>`。若已过期就重新发起，不持久化长期复用授权码。
+飞书授权分成两个不同主体：user OAuth 用 split-flow 取得用户读取能力；Bot/App 的 `im:message:readonly`、机器人能力、`im.message.receive_v1`、`card.action.trigger` 和应用版本发布在飞书开放平台完成。不能用 user OAuth 成功冒充 Bot/App 已配置。按 [统一授权说明](references/feishu-authorization.md) 先运行 `./scripts/jarvis-lark-auth check`；未登录或缺少所需权限时，统一运行 `./scripts/jarvis-lark-auth begin` 发起 user OAuth，覆盖当前内置功能所需权限；把 URL 和二维码展示给用户并结束当前轮，用户确认后在下一轮用该次返回的 `device_code` 执行 `lark-cli auth login --device-code <device_code>`。若已过期就重新发起，不持久化长期复用授权码。
 
 一个飞书 App/Bot 是身份根。Jarvis 直接使用 lark-cli 当前默认 App，CC Connect 绑定该 App，不再为 Jarvis 选择第二个 Bot。
 
 绑定前必须让用户确认其他机器或进程不再消费同一 App/Bot 的 WebSocket，并单独勾选 `install.cc-exclusive-owner`。本机检查不能代替这项人工事实；未确认时保持阻塞，不启动 CC Connect。
 
-完成登录读回后，按 `feishu-capability-audit.md` 做只读能力审计，将原始证据和 `evidence/feishu-capabilities.md` 写入当前 `run_dir`。安装初始化不运行 `auth login` 补权限，不打开申请流程：核心读取能力缺失就保留原始错误和未完成项；直属上级、职务、部门路径等高级组织字段缺失只记非阻塞未知项，继续后续安装。企业策略下不加载 `lark-okr`，OKR 只走文档证据。
+完成登录读回后，按 `feishu-capability-audit.md` 做只读能力审计，将原始证据和 `evidence/feishu-capabilities.md` 写入当前 `run_dir`。审计本身只读；发现安装所需 OAuth 权限缺失时，由安装 Agent 返回统一授权步骤一次补齐，再复查。用户未完成授权或应用侧未开放权限时，保留原始错误和未完成项，不能宣称权限已齐全；直属上级、职务、部门路径等高级组织字段缺失只记非阻塞未知项，继续后续安装。企业策略下不加载 `lark-okr`，OKR 只走文档证据。
 
 ```bash
 ./scripts/jarvis-install configure-identity \

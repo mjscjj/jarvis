@@ -58,9 +58,7 @@ type RuntimeSettings struct {
 	ExecuteConcurrency     int    `json:"execute_concurrency"`
 
 	ChatEnabled         bool   `json:"chat_enabled"`
-	ChatCLI             string `json:"chat_cli"`
 	ChatModel           string `json:"chat_model"`
-	ChatFastMode        bool   `json:"chat_fast_mode"`
 	ChatSandbox         string `json:"chat_sandbox"`
 	ChatReasoningEffort string `json:"chat_reasoning_effort"`
 	ChatTimeoutSeconds  int    `json:"chat_timeout_seconds"`
@@ -305,9 +303,7 @@ func runtimeSettingsFromConfig(cfg *Config) RuntimeSettings {
 		ExecuteStaleMinutes:          cfg.Execute.StaleExecutingMinute,
 		ExecuteConcurrency:           cfg.Execute.Concurrency,
 		ChatEnabled:                  cfg.Chat.Enabled,
-		ChatCLI:                      cfg.Chat.Bin,
 		ChatModel:                    cfg.Chat.Model,
-		ChatFastMode:                 cfg.Chat.FastMode,
 		ChatSandbox:                  cfg.Chat.Sandbox,
 		ChatReasoningEffort:          cfg.Chat.ReasoningEffort,
 		ChatTimeoutSeconds:           cfg.Chat.TimeoutSeconds,
@@ -383,9 +379,7 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 	cfg.Execute.StaleExecutingMinute = input.ExecuteStaleMinutes
 	cfg.Execute.Concurrency = input.ExecuteConcurrency
 	cfg.Chat.Enabled = input.ChatEnabled
-	cfg.Chat.Bin = strings.TrimSpace(input.ChatCLI)
 	cfg.Chat.Model = strings.TrimSpace(input.ChatModel)
-	cfg.Chat.FastMode = input.ChatFastMode
 	cfg.Chat.Sandbox = strings.TrimSpace(input.ChatSandbox)
 	cfg.Chat.ReasoningEffort = strings.TrimSpace(input.ChatReasoningEffort)
 	cfg.Chat.TimeoutSeconds = input.ChatTimeoutSeconds
@@ -475,9 +469,7 @@ type runtimeOverride struct {
 	} `yaml:"execute"`
 	Chat struct {
 		Enabled         bool   `yaml:"enabled"`
-		Bin             string `yaml:"bin"`
 		Model           string `yaml:"model"`
-		FastMode        bool   `yaml:"fast_mode"`
 		Sandbox         string `yaml:"sandbox"`
 		ReasoningEffort string `yaml:"reasoning_effort"`
 		TimeoutSeconds  int    `yaml:"timeout_seconds"`
@@ -573,9 +565,7 @@ func runtimeOverrideFromSettings(input RuntimeSettings) runtimeOverride {
 	override.Execute.StaleExecutingMinute = input.ExecuteStaleMinutes
 	override.Execute.Concurrency = input.ExecuteConcurrency
 	override.Chat.Enabled = input.ChatEnabled
-	override.Chat.Bin = strings.TrimSpace(input.ChatCLI)
 	override.Chat.Model = strings.TrimSpace(input.ChatModel)
-	override.Chat.FastMode = input.ChatFastMode
 	override.Chat.Sandbox = strings.TrimSpace(input.ChatSandbox)
 	override.Chat.ReasoningEffort = strings.TrimSpace(input.ChatReasoningEffort)
 	override.Chat.TimeoutSeconds = input.ChatTimeoutSeconds
@@ -655,7 +645,7 @@ func writeRuntimeOverride(path string, override runtimeOverride) error {
 }
 
 // mergeRuntimeOverrideYAML updates only settings-owned leaves. Deployment
-// fields such as server/sqlite, chat.addr/history_dir and execute paths remain
+// fields such as server/sqlite and execute paths remain
 // owned by installation configuration and survive a settings-page save.
 func mergeRuntimeOverrideYAML(current, patch []byte) ([]byte, error) {
 	var existingNode, patchNode yaml.Node

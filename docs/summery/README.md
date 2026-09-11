@@ -15,6 +15,8 @@
 ## 当前内容
 
 - [OKR 与 Jarvis 世界模型整合方案](okr-jarvis-world-model-integration.md)
+- [对话工作区：第一 Tab、多会话与 Agent/模型选择（实现、设计与原型）](chat-workspace/README.md)
+- [主动程度三档设计与验证](initiative-level-design.md)
 - [安装初始化界面预览](installer-ui-preview/README.md)
 - [插件扩展与解耦规范（提案）](plugin-extension-spec.md)
 - [代码提交与评审方案（待对齐）](code-submission-plan.md)

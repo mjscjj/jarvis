@@ -32,6 +32,9 @@ for name in bytedcli codex; do
     fail "missing executable launcher: bin/$name"
 done
 
+[[ -f "$runtime_root/scripts/jarvis-lark-auth" ]] || fail "missing scripts/jarvis-lark-auth"
+bash -n "$runtime_root/scripts/jarvis-lark-auth" || fail "invalid scripts/jarvis-lark-auth"
+
 temporary_home=$(mktemp -d "${TMPDIR:-/tmp}/jarvis-runtime-validation.XXXXXX")
 trap 'rm -rf "$temporary_home"' EXIT
 minimal_path="$runtime_root/bin:/usr/bin:/bin"

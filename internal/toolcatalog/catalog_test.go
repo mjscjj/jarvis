@@ -23,6 +23,8 @@ func TestBackgroundStagesExposeTheSameMachineCapabilities(t *testing.T) {
 			"get-world-progress", "create-world-progress", "update-world-progress",
 			"get-shared-memory", "append-shared-memory", "set-shared-memory", "2000",
 			"对所有 Agent 阶段开放", "JARVIS_AGENT_STAGE", "bytedcli --json <领域> --help", "不要加载全量帮助",
+			"create-task", "source_type=manual|proactive", "supplement-task", "resume-task",
+			"bytedcli --json <领域> --help", "不要加载全量帮助",
 		} {
 			if !strings.Contains(block, required) {
 				t.Fatalf("Block(%q) missing %q:\n%s", stage, required, block)
@@ -30,30 +32,6 @@ func TestBackgroundStagesExposeTheSameMachineCapabilities(t *testing.T) {
 		}
 		if strings.Contains(block, "--all-help") {
 			t.Fatalf("Block(%q) recommends eager bytedcli help:\n%s", stage, block)
-		}
-	}
-}
-
-func TestChatCatalogIsConciseAndPointsToDiscovery(t *testing.T) {
-	t.Parallel()
-	block, err := Block(StageChat)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, required := range []string{
-		"jarvis-tools --help", "lark-cli skills list/read", "bytedcli --json --all-help",
-		"git", "AGENTS.md", "jarvis-deploy --skip-pull", "skip-chat-restart",
-	} {
-		if !strings.Contains(block, required) {
-			t.Fatalf("chat block missing %q:\n%s", required, block)
-		}
-	}
-	for _, verbose := range []string{
-		"同一套工具能力", "query-captured-resources", "create-world-progress",
-		"append-shared-memory", "JARVIS_AGENT_STAGE=proactive",
-	} {
-		if strings.Contains(block, verbose) {
-			t.Fatalf("chat block retained execution manual %q:\n%s", verbose, block)
 		}
 	}
 }

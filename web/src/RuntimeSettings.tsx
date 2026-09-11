@@ -30,10 +30,6 @@ const cliOptions = [
   { value: 'codex', label: 'Codex CLI' },
   { value: 'traex', label: 'TraeX CLI' },
 ]
-const chatCLIOptions = [
-  ...cliOptions,
-  { value: 'cursor-agent', label: 'Cursor CLI' },
-]
 const reasoningOptions = ['minimal', 'low', 'medium', 'high', 'xhigh'].map((value) => ({ value, label: value }))
 const sandboxOptions = [
   { value: 'read-only', label: '只读' },
@@ -134,18 +130,16 @@ function SwitchField({
   label,
   extra,
   help,
-  disabled,
 }: {
   name: FieldName
   label: string
   extra?: string
   help?: string
-  disabled?: boolean
 }) {
   return (
     <SettingCol>
       <Form.Item name={name} label={<FieldLabel label={label} help={help} />} valuePropName="checked" extra={extra}>
-        <Switch disabled={disabled} />
+        <Switch />
       </Form.Item>
     </SettingCol>
   )
@@ -217,7 +211,6 @@ export default function RuntimeSettings() {
   const [overridePath, setOverridePath] = useState('')
   const [liveSettings, setLiveSettings] = useState<RuntimeSettingsInput>()
   const executeAutoEnabled = Form.useWatch('execute_auto_enabled', form)
-  const chatCLI = Form.useWatch('chat_cli', form)
 
   const reload = useCallback(() => {
     const controller = new AbortController()
@@ -288,7 +281,7 @@ export default function RuntimeSettings() {
             <SwitchField name="extract_enabled" label="M3 自动提取" help="从新消息中识别行动线索并生成 Todo。" />
             <SwitchField name="execute_auto_enabled" label="M5 自动执行" help="自动固化 extracted Todo 并执行 Task；关闭后仍可手动执行 Task。" />
             <SwitchField name="proactive_enabled" label="主动巡视" help="启动两分钟后先巡视一次，之后按周期整理世界模型并发现可做之事。" />
-            <SwitchField name="chat_enabled" label="右侧对话" help="启用页面右侧的机器人对话入口。" />
+            <SwitchField name="chat_enabled" label="对话工作区" help="启用对话页面和底部快捷输入栏。" />
           </Section>
           <Section title="M3 Agent" description="M3 选择 Agent CLI 时使用这组 CLI、模型和超时。">
             <SelectField name="analysis_cli" label="M3 CLI" options={cliOptions} help="M3 提取启动的命令行执行器。" />
@@ -299,8 +292,8 @@ export default function RuntimeSettings() {
             <TextField name="model_api_model" label="去重 / 备用提取模型" help="当前使用火山 Ark 模型，不会替代 M5 执行或对话模型。" />
             <NumberField name="model_api_timeout_seconds" label="API 请求超时（秒）" min={10} max={600} step={10} help="Ark Model API 和向量 API 的 HTTP 请求超时。" />
           </Section>
-          <Section title="M5 执行器" description="M5 使用独立 CLI 和模型。">
-            <SelectField name="execute_cli" label="执行 CLI" options={cliOptions} help="仅用于 M5 执行任务。" />
+          <Section title="M5 执行器" description="M5 使用独立 CLI；对话工作区复用该 CLI，但可另选模型。">
+            <SelectField name="execute_cli" label="执行 CLI" options={cliOptions} help="M5 执行任务及对话工作区使用的命令行执行器。" />
             <TextField name="execute_model" label="M5 执行模型" />
             <SelectField name="execute_reasoning_effort" label="M5 推理档位" options={reasoningOptions} />
           </Section>
@@ -361,7 +354,7 @@ export default function RuntimeSettings() {
     },
     {
       key: 'execute',
-      label: <PanelLabel title="M5 · 任务执行与对话" description="Task 执行、并发恢复和右侧对话" />,
+      label: <PanelLabel title="M5 · 任务执行与对话" description="Task 执行、并发恢复和对话工作区" />,
       children: (
         <>
           <Section title="任务执行" description="CLI 和模型在“常用设置”中配置。">
@@ -390,11 +383,9 @@ export default function RuntimeSettings() {
               </Form.Item>
             </SettingCol>
           </Section>
-          <Section title="右侧对话" description="CLI、模型、权限和超时均与 M5 独立。">
-            <SelectField name="chat_cli" label="对话 CLI" options={chatCLIOptions} help="仅用于右侧对话；切换 CLI 后旧会话会自动新建。" />
-            <TextField name="chat_model" label="对话模型" help="Cursor 的思考模式和档位由模型 ID 决定，例如 claude-opus-5-high 表示 High、No Thinking。" />
-            <SwitchField name="chat_fast_mode" label="Fast Mode" disabled={chatCLI === 'cursor-agent'} help="仅用于 Codex/TraeX 对话。GPT-5.6 约快 1.5 倍，但消耗约 2.5 倍标准额度。" />
-            <SelectField name="chat_reasoning_effort" label="推理档位" options={reasoningOptions} help="Codex/TraeX 使用该值；Cursor 使用模型 ID 中的档位。" />
+          <Section title="对话工作区" description="设置新会话默认值；Agent 和模型可在每个会话中选择。">
+            <TextField name="chat_model" label="对话模型" />
+            <SelectField name="chat_reasoning_effort" label="推理档位" options={reasoningOptions} />
             <SelectField name="chat_sandbox" label="文件权限" options={sandboxOptions} />
             <NumberField name="chat_timeout_seconds" label="单轮超时（秒）" min={30} max={3600} step={30} />
           </Section>
@@ -522,10 +513,10 @@ export default function RuntimeSettings() {
         />
         <RuntimeStep
           stage="CHAT"
-          title="右侧对话"
+          title="对话工作区"
           enabled={liveSettings.chat_enabled}
-          primary={`${liveSettings.chat_cli} · ${liveSettings.chat_model}`}
-          secondary={`${liveSettings.chat_reasoning_effort} · ${liveSettings.chat_fast_mode ? 'Fast Mode · ' : ''}${liveSettings.chat_timeout_seconds}s 超时`}
+          primary={`${liveSettings.execute_cli} · ${liveSettings.chat_model}`}
+          secondary={`${liveSettings.chat_reasoning_effort} · ${liveSettings.chat_timeout_seconds}s 超时`}
         />
         <RuntimeStep
           stage="FACT"
@@ -546,10 +537,7 @@ export default function RuntimeSettings() {
         layout="vertical"
         requiredMark={false}
         size="small"
-        onValuesChange={(changedValues: Partial<RuntimeSettingsInput>) => {
-          if (changedValues.chat_cli === 'cursor-agent' && form.getFieldValue('chat_fast_mode')) {
-            form.setFieldValue('chat_fast_mode', false)
-          }
+        onValuesChange={() => {
           setLiveSettings(form.getFieldsValue(true) as RuntimeSettingsInput)
           setDirty(true)
           setSuccess(undefined)

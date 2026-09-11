@@ -84,7 +84,7 @@ func TestBuildPromptDropsContextOnlyWhenOverBudget(t *testing.T) {
 		SubjectType: "group", SubjectID: 1, Label: "研发群", Today: 3, Last7Days: 12,
 	}}
 
-	full, err := BuildPrompt(batch, unit, counts, time.Unix(1_700_000_100, 0), PromptOptions{SystemPrompt: testM3SystemPrompt,
+	full, err := BuildPrompt(batch, unit, counts, time.Unix(1_700_000_100, 0), PromptOptions{InitiativeLevel: "normal", SystemPrompt: testM3SystemPrompt,
 		PrincipalOpenID: "ou_me", Location: time.UTC, MaxChars: 200_000,
 	})
 	if err != nil {
@@ -101,7 +101,7 @@ func TestBuildPromptDropsContextOnlyWhenOverBudget(t *testing.T) {
 	if tight < 2000 {
 		t.Fatalf("unexpected full prompt size %d", tight)
 	}
-	shrunk, err := BuildPrompt(batch, unit, counts, time.Unix(1_700_000_100, 0), PromptOptions{SystemPrompt: testM3SystemPrompt,
+	shrunk, err := BuildPrompt(batch, unit, counts, time.Unix(1_700_000_100, 0), PromptOptions{InitiativeLevel: "normal", SystemPrompt: testM3SystemPrompt,
 		PrincipalOpenID: "ou_me", Location: time.UTC, MaxChars: tight,
 	})
 	if err != nil {

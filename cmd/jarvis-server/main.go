@@ -26,6 +26,7 @@ import (
 	"jarvis/internal/background"
 	"jarvis/internal/capture"
 	"jarvis/internal/cardask"
+	"jarvis/internal/chat"
 	"jarvis/internal/config"
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/dailydigest"
@@ -522,7 +523,6 @@ func main() {
 	var okrActivityStore *okrworkspace.ActivityStore
 	var okrIdentityService *okrAuth.Service
 	var okrTokenStore *okrAuth.TokenStore
-	var okrUserTokens *okrAuth.UserTokens
 	if okrModuleEnabled {
 		okrWorkspaceService, err = okrworkspace.NewService(okrDB)
 		if err != nil {
@@ -565,10 +565,6 @@ func main() {
 			okrTokenStore, err = okrAuth.NewTokenStore(okrModuleConfig.Identity.TokenDir)
 			if err != nil {
 				fatalf("initialize OKR Feishu token store failed: %v", err)
-			}
-			okrUserTokens, err = okrAuth.NewUserTokens(okrTokenStore, okrIdentityProvider)
-			if err != nil {
-				fatalf("initialize OKR Feishu user tokens failed: %v", err)
 			}
 		}
 		okrIdentityService, err = okrAuth.NewService(db, okrModuleConfig.Identity, okrIdentityProvider, okrTokenStore)
@@ -1101,6 +1097,26 @@ func main() {
 		waitPipeline()
 	}()
 
+	// 持久多 Agent 对话服务：enabled 时实例化并注入 Dependencies.Chat；disabled
+	// 时不注册 /api/chat/*。execute.bin/model 只提供新会话的初始默认值。
+	var chatService *chat.Service
+	if cfg.Chat.Enabled {
+		chatService, err = chat.NewService(chat.Options{
+			AgentName:       cfg.Identity.DisplayName,
+			Bin:             cfg.Execute.Bin,
+			Model:           cfg.Chat.Model,
+			Sandbox:         cfg.Chat.Sandbox,
+			ReasoningEffort: cfg.Chat.ReasoningEffort,
+			Timeout:         time.Duration(cfg.Chat.TimeoutSeconds) * time.Second,
+			DB:              db,
+			FilesRoot:       filepath.Join(runtimeRoot, "data", "chat"),
+			Prompts:         runtimePrompts,
+		})
+		if err != nil {
+			fatalf("initialize chat service failed: %v", err)
+		}
+	}
+
 	h := server.Default(
 		server.WithHostPorts(cfg.Server.Addr),
 		// OKR accepts 10 MiB images; keep room for multipart framing so Hertz
@@ -1186,7 +1202,6 @@ func main() {
 			Workspace: okrWorkspaceService, Activity: okrActivityStore, Identity: okrIdentityService, Documents: larkClient, People: resolveService,
 			Enabled:       func(ctx context.Context) (bool, error) { return appModuleService.Enabled(ctx, "biz-okr") },
 			PreviewReview: previewReviewService,
-			UserTokens:    okrUserTokens, Tokens: okrTokenStore, FeishuAppID: okrModuleConfig.Identity.AppID,
 		}
 	}
 	if err := api.Register(h, api.Dependencies{
@@ -1222,12 +1237,7 @@ func main() {
 		MorningBriefs:   morningBriefReader,
 		Worklog:         worklogService,
 		FactTimelineLoc: location,
-		Debug:           debugService, Logs: logReader, ChatAddr: func() string {
-			if cfg.Chat.Enabled {
-				return cfg.Chat.Addr
-			}
-			return ""
-		}(), Capture: captureService,
+		Debug:           debugService, Logs: logReader, Chat: chatService, Capture: captureService,
 		PublicBaseURL:      cfg.Server.PublicBaseURL,
 		RuntimeSettings:    runtimeSettingsService,
 		SecurityAudit:      securityAuditService,
@@ -1238,6 +1248,7 @@ func main() {
 		Readiness:          readinessTargets,
 		SystemControl:      systemControlService,
 		Onboarding:         onboardingService,
+		UpdateRoot:         os.Getenv("JARVIS_UPDATE_ROOT"),
 	}); err != nil {
 		fatalf("register API routes failed: %v", err)
 	}

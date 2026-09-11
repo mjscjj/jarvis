@@ -218,7 +218,7 @@ Principal 回给 Bot 的消息今天既没有事件流、也不会被采集。
 
 第一阶段的推进路径复用现成能力，零新代码：
 
-- 在后台右侧对话里说一句（`POST /api/chat` 已接 `ContextAssembler`，拿的是同一份完整背景）；
+- 在首个「对话」Tab 里说一句（持久会话的消息 SSE 已接 `ContextAssembler`，拿的是同一份完整背景）；
 - 或直接在任务页对已有 Task 操作。
 
 简报正文可以给出一句可直接粘贴到对话框的话，但不定义 `推进 N` 这类编号协议——序号会
@@ -332,7 +332,7 @@ internal/morningbrief/scheduler.go   # cron + SkipIfStillRunning + Recover + 启
 | 依赖 | 换来什么 |
 |---|---|
 | `internal/textstore` 注册 `morning_brief_system_prompt` + `conf/prompts/morning-brief-system-prompt.md` | 提示词是文件真源，`/api/text-files` 已可读写，缺失即 fail-fast（后台「系统提示词」页的 key 列表写死在 `web/src/Background.tsx`，`meeting_sweep` 也还没进去，要在页面上编辑需另加一项） |
-| `internal/toolcatalog` 新增 stage `morning_brief` | 工具说明不复制进提示词；`jarvis-tools` 的 stage 门禁天然挡住 `create-task` |
+| `internal/toolcatalog` 新增 stage `morning_brief` | 工具说明不复制进提示词；是否创建 Task 由晨报系统提示词的职责边界约束，不做 stage 工具门禁 |
 | `execute.CodexRunner.RunTextSandboxAtStage` | 不自己起子进程、不自己管沙箱与超时 |
 | `conf/config.yaml` 一个 `morning_brief` 段 + `internal/config` 一个结构体和一段校验 | 与其它定时 Agent 一致的启动期校验 |
 | `cmd/jarvis-server/main.go` 两处接线 | 与 `meetingsweep` 完全同构 |
@@ -479,7 +479,7 @@ P2 结束后再决定要不要今日页、投递审计和 IM 双向交互。**�
 
 - 每个配置工作日生成一次、投递一次；重跑不重复投递；
 - 生成失败时不发送简报，日志有原始错误；
-- 除给 Principal 发这一条消息外，无任何外部副作用（stage 门禁保证 `create-task` 不可用）；
+- 除给 Principal 发这一条消息外，无任何外部副作用（由晨报系统提示词约束，不把阶段职责做成工具权限）；
 - 运行结束后当天 `99-brief.md` 必然是本轮产物；
 - 进程重启不会导致当天重复投递。
 

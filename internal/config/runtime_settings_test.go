@@ -116,14 +116,10 @@ execute:
   stale_executing_minute: 45
 chat:
   enabled: true
-  bin: "codex"
-  addr: "127.0.0.1:18801"
   model: "chat-model"
-  fast_mode: false
   timeout_seconds: 600
   sandbox: "danger-full-access"
   reasoning_effort: "medium"
-  history_dir: "/tmp/chat-history"
 skills:
   root: ".agents/skills"
 dailydigest:
@@ -157,9 +153,6 @@ lark_cli:
   bin: custom-lark-cli
 dailydigest:
   git_author: initialized@example.com
-chat:
-  addr: 0.0.0.0:19903
-  history_dir: /tmp/preserved-chat-history
 `), 0o600); err != nil {
 		t.Fatalf("write card approval runtime override: %v", err)
 	}
@@ -188,8 +181,6 @@ chat:
 	input.AnalysisCLI = "codex"
 	input.AnalysisModel = "new-analysis-model"
 	input.ExecuteCLI = "traex"
-	input.ChatCLI = "traex"
-	input.ChatFastMode = true
 	input.ExecuteConcurrency = 4
 	input.ExtractSchedule = "@every 2m"
 	input.ExtractConcurrency = 4
@@ -211,7 +202,7 @@ chat:
 	if !reflect.DeepEqual(updated.Settings, input) {
 		t.Fatalf("round-trip settings mismatch:\nupdated=%#v\ninput=%#v", updated.Settings, input)
 	}
-	if updated.Settings.AgentDisplayName != "小贾" || updated.Settings.AnalysisCLI != "codex" || updated.Settings.ExecuteCLI != "traex" || updated.Settings.ChatCLI != "traex" || !updated.Settings.ChatFastMode ||
+	if updated.Settings.AgentDisplayName != "小贾" || updated.Settings.AnalysisCLI != "codex" || updated.Settings.ExecuteCLI != "traex" ||
 		updated.Settings.ExecuteConcurrency != 4 || updated.Settings.ExtractSchedule != "@every 2m" || updated.Settings.ExtractConcurrency != 4 ||
 		updated.Settings.CaptureScanWorkers != 6 || updated.Settings.CaptureP2PWindowMinutes != 25 ||
 		updated.Settings.FactEngineReasoningEffort != "high" || updated.Settings.FactEngineWindowMaxMessages != 80 ||
@@ -234,7 +225,7 @@ chat:
 	if err != nil {
 		t.Fatalf("Load() after update error = %v", err)
 	}
-	if reloaded.Identity.DisplayName != "小贾" || reloaded.Codex.Bin != "codex" || reloaded.Execute.Bin != "traex" || reloaded.Chat.Bin != "traex" || !reloaded.Chat.FastMode ||
+	if reloaded.Identity.DisplayName != "小贾" || reloaded.Codex.Bin != "codex" || reloaded.Execute.Bin != "traex" ||
 		reloaded.Execute.Concurrency != 4 || reloaded.Extract.Schedule != "@every 2m" || reloaded.Extract.Concurrency != 4 ||
 		reloaded.Capture.ScanWorkers != 6 || !reloaded.Capture.P2PScanEnabled || reloaded.Capture.P2PWindowMinutes != 25 ||
 		reloaded.FactEngine.ReasoningEffort != "high" || reloaded.FactEngine.WindowMaxMessages != 80 ||
@@ -261,8 +252,7 @@ chat:
 		reloaded.DailyDigest.GitAuthor != "initialized@example.com" {
 		t.Fatalf("initialization identity config was not preserved: extract=%q lark=%#v dailydigest=%#v", reloaded.Extract.PrincipalOpenID, reloaded.LarkCLI, reloaded.DailyDigest)
 	}
-	if reloaded.Server.Addr != "0.0.0.0:19902" || reloaded.SQLite.Path != "var/jarvis.db" ||
-		reloaded.Chat.Addr != "0.0.0.0:19903" || reloaded.Chat.HistoryDir != "/tmp/preserved-chat-history" {
+	if reloaded.Server.Addr != "0.0.0.0:19902" || reloaded.SQLite.Path != "var/jarvis.db" {
 		t.Fatalf("deployment config was not preserved: server=%#v sqlite=%#v chat=%#v", reloaded.Server, reloaded.SQLite, reloaded.Chat)
 	}
 	restartedService, err := NewRuntimeSettingsService(configPath, reloaded)

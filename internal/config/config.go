@@ -263,18 +263,15 @@ type ExecuteConfig struct {
 	StaleExecutingMinute int    `yaml:"stale_executing_minute"` // executing 超过此时长仍未结束 → 标 failed（防重启僵尸）
 }
 
-// ChatConfig controls the independent local chat sidecar. It deliberately owns
-// its CLI and listener instead of inheriting M5 execute settings or lifecycle.
+// ChatConfig controls the persistent multi-agent chat workspace under /api/chat/*.
+// Enabled=false 时不注册路由。CLI 二进制复用 execute.bin（与 M5 同引擎）；
+// 沙箱固定为对话场景的 danger-full-access + 联网（本地可信环境），reasoning_effort 可调。
 type ChatConfig struct {
 	Enabled         bool   `yaml:"enabled"`
-	Bin             string `yaml:"bin"`
-	Addr            string `yaml:"addr"`
 	Model           string `yaml:"model"`
-	FastMode        bool   `yaml:"fast_mode"`
 	TimeoutSeconds  int    `yaml:"timeout_seconds"`
 	Sandbox         string `yaml:"sandbox"`
 	ReasoningEffort string `yaml:"reasoning_effort"`
-	HistoryDir      string `yaml:"history_dir"`
 }
 
 // SkillsConfig controls the repository skill root scanned into the stage-aware
@@ -348,7 +345,7 @@ func readConfig(path string) (*Config, error) {
 // 不必写死某台机器的用户名和安装位置。
 //
 // 只处理会离开本进程或由运行时持久化的路径：repo_root 会写进交给模型的 prompt，
-// runs_dir 下的产物路径同样要在其它工作目录里可用，chat.history_dir 保存会话记录；而 codex 子进程的工作目录是被改的
+// runs_dir 下的产物路径同样要在其它工作目录里可用；而 codex 子进程的工作目录是被改的
 // 仓库或临时目录，相对值到那里就解析错了。sqlite.path、server.web_root、
 // skills.root 只在本进程内打开，保持相对即可。
 func (c *Config) resolvePaths() error {
@@ -358,7 +355,6 @@ func (c *Config) resolvePaths() error {
 	}{
 		{"execute.repo_root", &c.Execute.RepoRoot},
 		{"execute.runs_dir", &c.Execute.RunsDir},
-		{"chat.history_dir", &c.Chat.HistoryDir},
 	} {
 		absolute, err := filepath.Abs(*item.value)
 		if err != nil {
@@ -598,18 +594,6 @@ func (c *Config) validate() error {
 			return fmt.Errorf("execute.concurrency 必须大于 0")
 		}
 	}
-	if strings.TrimSpace(c.Chat.Bin) == "" {
-		return fmt.Errorf("chat.bin 不能为空")
-	}
-	if c.Chat.FastMode && filepath.Base(strings.TrimSpace(c.Chat.Bin)) == "cursor-agent" {
-		return fmt.Errorf("chat.fast_mode 仅支持 codex / traex，不能与 cursor-agent 同时启用")
-	}
-	if _, err := apiBaseForAddr("chat.addr", c.Chat.Addr); err != nil {
-		return err
-	}
-	if c.Chat.Addr == c.Server.Addr {
-		return fmt.Errorf("chat.addr 不能与 server.addr 相同")
-	}
 	if err := validateCodexSandbox("chat.sandbox", c.Chat.Sandbox); err != nil {
 		return err
 	}
@@ -621,9 +605,6 @@ func (c *Config) validate() error {
 	}
 	if c.Chat.Enabled && c.Chat.Model == "" {
 		return fmt.Errorf("chat 启用时 chat.model 不能为空")
-	}
-	if strings.TrimSpace(c.Chat.HistoryDir) == "" {
-		return fmt.Errorf("chat.history_dir 不能为空")
 	}
 	if c.Skills.Root == "" {
 		return fmt.Errorf("skills.root 不能为空")

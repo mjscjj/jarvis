@@ -25,7 +25,7 @@ Linux 日志仍写配置中的 `server.log_files` 和 `var/log/jarvis-chat*.log`
 | `com.bytedance.jarvis.qdrant` | 6333/6334 | `./scripts/install-qdrant.sh` | `var/log/jarvis-qdrant.log`, `var/log/jarvis-qdrant.error.log` |
 | `com.cc-connect.service`（macOS）/ `com.bytedance.jarvis.cc-connect`（Linux） | 9810/9820 | CC daemon / `install-cc-systemd.sh` | CC 日志或 `journalctl --user` |
 
-`server.addr` 同时托管 API 和生产 `web/dist`；Vite 从后端相邻端口开始，若与 `chat.addr` 冲突则再顺延一个，只用于开发热更。地址都从基础配置与 runtime 覆盖读取，不在脚本中复制端口。
+`server.addr` 同时托管 API 和生产 `web/dist`；Vite 从后端相邻端口开始，只用于开发热更。地址都从基础配置与 runtime 覆盖读取，不在脚本中复制端口。
 
 服务定义由 `deploy/*.plist.template` 或 `deploy/*.service.template` 渲染，`conf/qdrant.yaml` 用相对 `WorkingDirectory` 的路径。移动仓库或换用户后重新安装服务即可，不必改仓库文件。
 
@@ -115,7 +115,7 @@ macOS 底层 `rebuild-server.sh` 会在替换二进制前查询执行中的 Task
 ./scripts/stop-jarvis.sh
 ```
 
-脚本只停止该实例的 Jarvis Server、Chat sidecar 和可选 Vite Web 服务；共享 Qdrant、CC Connect 和其它配置对应的 Jarvis 实例保持运行。退出不会删除配置、数据库、日志或任何业务数据；下次按正常部署流程重新启动即可。
+脚本只停止该实例的 Jarvis Server 和可选 Vite Web 服务；共享 Qdrant、CC Connect 和其它配置对应的 Jarvis 实例保持运行。退出不会删除配置、数据库、日志或任何业务数据；下次按正常部署流程重新启动即可。
 
 ## 状态与日志
 

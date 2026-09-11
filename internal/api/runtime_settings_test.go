@@ -58,12 +58,12 @@ func TestUpdateRuntimeSettings(t *testing.T) {
 	service := &fakeRuntimeSettingsService{view: &config.RuntimeSettingsView{}}
 	h := server.New()
 	h.PUT("/api/runtime-settings", UpdateRuntimeSettings(service))
-	body := []byte(`{"analysis_cli":"codex","analysis_model":"gpt","analysis_timeout_seconds":600,"extract_enabled":true,"extract_engine":"codex","extract_reasoning_effort":"low","execute_auto_enabled":true,"execute_cli":"traex","execute_model":"exec","execute_reasoning_effort":"high","execute_timeout_seconds":1800,"execute_stale_minutes":45,"execute_concurrency":3,"chat_enabled":true,"chat_cli":"codex","chat_model":"chat","chat_fast_mode":true,"chat_reasoning_effort":"medium","chat_timeout_seconds":600,"scheduled_task_enabled":true,"daily_digest_enabled":true}`)
+	body := []byte(`{"analysis_cli":"codex","analysis_model":"gpt","analysis_timeout_seconds":600,"extract_enabled":true,"extract_engine":"codex","extract_reasoning_effort":"low","execute_auto_enabled":true,"execute_cli":"traex","execute_model":"exec","execute_reasoning_effort":"high","execute_timeout_seconds":1800,"execute_stale_minutes":45,"execute_concurrency":3,"chat_enabled":true,"chat_model":"chat","chat_reasoning_effort":"medium","chat_timeout_seconds":600,"scheduled_task_enabled":true,"daily_digest_enabled":true}`)
 	response := ut.PerformRequest(h.Engine, "PUT", "/api/runtime-settings", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
 	if response.StatusCode() != consts.StatusOK {
 		t.Fatalf("status = %d body=%s", response.StatusCode(), response.Body())
 	}
-	if service.update.AnalysisCLI != "codex" || service.update.ExecuteCLI != "traex" || service.update.ChatCLI != "codex" || !service.update.ChatFastMode || service.update.ExecuteReasoningEffort != "high" {
+	if service.update.AnalysisCLI != "codex" || service.update.ExecuteCLI != "traex" || service.update.ExecuteReasoningEffort != "high" {
 		t.Fatalf("update = %#v", service.update)
 	}
 }

@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"jarvis/internal/textstore"
 )
 
 func TestProactiveSystemPromptDefersOptionalModuleSemanticsToSkills(t *testing.T) {
@@ -65,11 +67,17 @@ func (f *fakeRunner) RunTextSandboxAtStage(_ context.Context, prompt, sandbox, r
 }
 
 type fakePromptReader struct {
-	text string
-	err  error
+	text  string
+	err   error
+	level string
 }
 
-func (f fakePromptReader) Content(context.Context, string) (string, error) { return f.text, f.err }
+func (f fakePromptReader) Content(_ context.Context, key string) (string, error) {
+	if key == textstore.InitiativeLevelKey {
+		return f.level, f.err
+	}
+	return f.text, f.err
+}
 
 type fakeMemoryReader struct {
 	text string
@@ -82,7 +90,7 @@ func TestWorkerBuildsHeartbeatPromptAndUsesProactiveStage(t *testing.T) {
 	runner := &fakeRunner{result: "NOTHING：本轮没有值得推进的事项"}
 	recorder := &fakeRecorder{}
 	worker, err := NewWorker(Options{
-		Runner: runner, Recorder: recorder, Prompts: fakePromptReader{text: "system mission"},
+		Runner: runner, Recorder: recorder, Prompts: fakePromptReader{level: "normal", text: "system mission"},
 		SharedMemory: fakeMemoryReader{text: "trusted memory"}, Skills: fakeSkillReader{text: "ENABLED_PLUGIN_MARKER"},
 		Sandbox:       "danger-full-access",
 		WorkspaceRoot: "/tmp/jarvis", Location: time.FixedZone("CST", 8*60*60),
@@ -144,7 +152,7 @@ func TestRepositoryPromptDoesNotCloseTasksByAge(t *testing.T) {
 
 func TestWorkerFailsOnDependencyOrEmptyResult(t *testing.T) {
 	base := Options{
-		Runner: &fakeRunner{result: "ok"}, Recorder: &fakeRecorder{}, Prompts: fakePromptReader{text: "system"},
+		Runner: &fakeRunner{result: "ok"}, Recorder: &fakeRecorder{}, Prompts: fakePromptReader{level: "normal", text: "system"},
 		SharedMemory: fakeMemoryReader{}, Skills: fakeSkillReader{},
 		Sandbox: "danger-full-access", WorkspaceRoot: "/tmp/jarvis", Location: time.UTC,
 		Engine: "traex", Model: "model",
@@ -157,7 +165,7 @@ func TestWorkerFailsOnDependencyOrEmptyResult(t *testing.T) {
 	if _, err := worker.RunOnce(t.Context()); err == nil || !strings.Contains(err.Error(), "read proactive system prompt") {
 		t.Fatalf("prompt error = %v", err)
 	}
-	worker.prompts = fakePromptReader{text: "system"}
+	worker.prompts = fakePromptReader{level: "normal", text: "system"}
 	worker.runner = &fakeRunner{result: "  "}
 	if _, err := worker.RunOnce(t.Context()); err == nil || !strings.Contains(err.Error(), "empty final message") {
 		t.Fatalf("empty result error = %v", err)
@@ -173,3 +181,30 @@ type fakeSkillReader struct {
 }
 
 func (f fakeSkillReader) Catalog(context.Context, string) (string, error) { return f.text, f.err }
+
+func TestWorkerReloadsInitiativeEachHeartbeat(t *testing.T) {
+	runner := &fakeRunner{result: "NOTHING"}
+	recorder := &fakeRecorder{}
+	w, err := NewWorker(Options{
+		Runner: runner, Recorder: recorder, Prompts: fakePromptReader{level: "normal", text: "mission"},
+		SharedMemory: fakeMemoryReader{}, Skills: fakeSkillReader{}, Sandbox: "danger-full-access",
+		WorkspaceRoot: "/tmp/jarvis", Location: time.UTC, Engine: "test", Model: "test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, level := range []string{"active", "quiet", "normal"} {
+		w.prompts = fakePromptReader{level: level, text: "mission"}
+		if _, err := w.RunOnce(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if !strings.HasPrefix(runner.prompt, "BEGIN_INITIATIVE_LEVEL\n"+level+"\nEND_INITIATIVE_LEVEL") || recorder.input != runner.prompt {
+			t.Fatalf("wrong persisted heartbeat: %s", recorder.input)
+		}
+	}
+	runner.prompt = ""
+	w.prompts = fakePromptReader{level: "typo", text: "mission"}
+	if _, err := w.RunOnce(t.Context()); err == nil || runner.prompt != "" {
+		t.Fatal("invalid level reached runner")
+	}
+}

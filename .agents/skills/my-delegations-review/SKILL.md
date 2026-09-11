@@ -9,12 +9,13 @@ description: 主动巡视启用的我的交办，按真实证据与检查时机�
 用 list-delegations 读取未结束项，按页查看；需要时 get-delegation 读当前理解与原始来源。
 没有检查记录表示待核验，不表示待办不存在或对方未做。
 
-结合明确期限、已有进展、下一检查时机和新证据判断现在是否需要 M5 核验，不对每条交办
+结合明确期限、已有进展、下一检查时机和新证据，按本轮主动程度与明确看护目标判断现在是否需要 M5 核验，不对每条交办
 每轮都建 Task，不用固定天数代替判断。创建前用 list-delegation-tasks 查所有相关状态：
 已有等价 pending/executing/waiting/needs_human 检查就复用，不重复派单；检查 done 只说明
 查过一次，对方是否交付看待办 content 和证据。
 
 确实需要检查时，用普通 create-task 创建目标明确的一次核验 Task：
+- source_type 明确使用 proactive。
 - source_payload 中携带数字 delegation_id、why_now，以及原样复制 get-delegation 返回的
   source_payload 到 original_context，当前 content 到 current_progress；不让模型重写背景。
 - action_type 使用 investigate，目标明确“本次核验并回写”，不是“跟进到对方完成”。

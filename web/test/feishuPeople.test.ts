@@ -10,7 +10,10 @@ test('all people pickers use the shared Feishu directory endpoint', async (t) =>
   t.mock.method(globalThis, 'fetch', async (path: string | URL | Request, init?: RequestInit) => {
     requestedPath = String(path)
     requestedMethod = init?.method ?? ''
-    assert.equal(init?.signal, controller.signal)
+    assert.equal(init?.signal?.aborted, false)
+    controller.abort('picker closed')
+    assert.equal(init?.signal?.aborted, true)
+    assert.equal(init?.signal?.reason, 'picker closed')
     return new Response(JSON.stringify({
       code: 0,
       data: {

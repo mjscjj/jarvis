@@ -28,6 +28,17 @@ func GetOnboardingStatus(service *onboarding.Service) app.HandlerFunc {
 	}
 }
 
+func GetOnboardingBootstrap(service *onboarding.Service) app.HandlerFunc {
+	return func(_ context.Context, c *app.RequestContext) {
+		status, err := service.Bootstrap()
+		if err != nil {
+			writeAPIError(c, consts.StatusInternalServerError, 50040, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": status})
+	}
+}
+
 func BeginOnboardingLarkSetup(service *onboarding.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		flow, err := service.BeginLarkSetup(ctx)
@@ -119,5 +130,23 @@ func BootstrapOnboardingWorldModel(service *onboarding.Service) app.HandlerFunc 
 			"task_id": task.ID,
 			"status":  task.Status,
 		}})
+	}
+}
+
+// Credential repair updates the selected app without rerunning installation.
+func RepairOnboardingLarkCredentials(service *onboarding.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		var input struct {
+			AppSecret string `json:"app_secret"`
+		}
+		if err := decodeStrictJSON(c.Request.Body(), &input); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40041, err)
+			return
+		}
+		if err := service.RepairLarkCredentials(ctx, input.AppSecret); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40042, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"saved": true}})
 	}
 }

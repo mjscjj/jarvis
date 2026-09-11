@@ -12,7 +12,7 @@ usage() {
   cat >&2 <<'EOF'
 Usage: ./scripts/stop-jarvis.sh [--config PATH] [--delay-seconds N] [--server-pid PID]
 
-Stops only the main, Chat sidecar, and optional development Web services for
+Stops only the main and optional development Web services for
 the selected configuration. Shared Qdrant and CC Connect services are not stopped.
 EOF
 }
@@ -34,18 +34,17 @@ fi
 
 INSTANCE="$("${SCRIPT_DIR}/jarvis-instance" "$CONFIG_PATH")"
 MAIN_LABEL="$(jq -er '.launchd_label' <<<"$INSTANCE")"
-CHAT_LABEL="$(jq -er '.chat_launchd_label' <<<"$INSTANCE")"
 sleep "$DELAY_SECONDS"
 
 case "$(uname -s)" in
   Darwin)
     UID_VALUE="$(id -u)"
-    for label in "$MAIN_LABEL" "$CHAT_LABEL" "${MAIN_LABEL}.web"; do
+    for label in "$MAIN_LABEL" "${MAIN_LABEL}.web"; do
       launchctl bootout "gui/${UID_VALUE}/${label}" >/dev/null 2>&1 || true
     done
     ;;
   Linux)
-    for unit in "${MAIN_LABEL}.service" "${CHAT_LABEL}.service" "${MAIN_LABEL}.web.service"; do
+    for unit in "${MAIN_LABEL}.service" "${MAIN_LABEL}.web.service"; do
       systemctl --user stop "$unit" >/dev/null 2>&1 || true
     done
     ;;

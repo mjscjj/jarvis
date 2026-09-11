@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Alert, Button, Card, Empty, Flex, Input, Spin, Tabs, Tag, Typography } from 'antd'
+import { Alert, Button, Card, Empty, Flex, Input, Radio, Spin, Tabs, Tag, Typography } from 'antd'
 import {
   getAgentConfigPreview,
   listTextFiles,
@@ -9,13 +9,25 @@ import {
 } from './api'
 import PageHeader from './components/PageHeader'
 import { usePageContext } from './pageContext'
-import type { AgentConfigPreview, AgentConfigStage, TextFile, WorkRule } from './types'
+import type { AgentConfigPreview, AgentConfigStage, InitiativeLevel, TextFile, WorkRule } from './types'
 import './styles/agent-settings.css'
 
 const { Text } = Typography
 
-type AgentSettingsView = AgentConfigStage | 'other'
+type RuleStage = 'm3' | 'm5'
+type AgentSettingsView = RuleStage | 'other'
 type StageSection = 'prompt' | 'rules' | 'approval' | 'preview'
+
+const initiativeKey = 'initiative_level'
+const initiativeLevels: { value: InitiativeLevel, label: string, description: string }[] = [
+  { value: 'quiet', label: '安静', description: '优先处理明确交办和确定需要介入的事，减少主动建议。' },
+  { value: 'normal', label: '普通', description: '按当前方式发现、处理和通知。' },
+  { value: 'active', label: '活跃', description: '更主动发现相关机会、提前准备，并提供可行动的建议。' },
+]
+
+function isOtherPrompt(item: TextFile): boolean {
+  return item.kind !== 'initiative_level' && item.stage !== 'm3' && item.stage !== 'm5'
+}
 
 const dynamicBlockLabels: Record<string, string> = {
   principal_open_id: 'Principal 身份',
@@ -27,6 +39,7 @@ const dynamicBlockLabels: Record<string, string> = {
   phase_instructions: '执行阶段指令',
   task_context: 'Task 上下文',
   output_schema: '输出 Schema',
+  heartbeat: '本轮时间与巡视上下文',
 }
 
 function errorText(cause: unknown): string {
@@ -88,8 +101,9 @@ function EffectivePreview({ preview }: { preview?: AgentConfigPreview }) {
       <div className="agent-config-card-heading">
         <div>
           <Text strong>配置生效预览</Text>
-          <div><Text type="secondary">已展开工作规则和审批规则；下列运行时内容会在真实执行时继续注入。</Text></div>
+          <div><Text type="secondary">使用已保存的主动程度与该阶段配置；工作规则、审批策略按所属阶段展开。下列动态内容在真实运行时注入。</Text></div>
         </div>
+        <Tag>{initiativeLevels.find((item) => item.value === preview.initiative_level)?.label ?? preview.initiative_level}档</Tag>
       </div>
       <Flex gap={6} wrap className="agent-dynamic-blocks">
         {preview.dynamic_blocks.map((block) => <Tag key={block}>{dynamicBlockLabels[block] ?? block}</Tag>)}
@@ -118,26 +132,27 @@ export default function AgentSettings() {
   const [error, setError] = useState<string>()
   const [notice, setNotice] = useState<string>()
   const [otherKey, setOtherKey] = useState<string>()
-  const [stageSections, setStageSections] = useState<Record<AgentConfigStage, StageSection>>({
+  const [stageSections, setStageSections] = useState<Record<RuleStage, StageSection>>({
     m3: 'prompt',
     m5: 'prompt',
   })
 
   const reloadPreviews = useCallback(async () => {
-    const [m3, m5] = await Promise.all([getAgentConfigPreview('m3'), getAgentConfigPreview('m5')])
-    setPreviews({ m3, m5 })
+    setPreviews({})
+    const [m3, m5, proactive] = await Promise.all([getAgentConfigPreview('m3'), getAgentConfigPreview('m5'), getAgentConfigPreview('proactive')])
+    setPreviews({ m3, m5, proactive })
   }, [])
 
   const reload = useCallback(() => {
     setLoading(true)
-    Promise.all([listTextFiles(), listWorkRules(), getAgentConfigPreview('m3'), getAgentConfigPreview('m5')])
-      .then(([fileResult, ruleResult, m3, m5]) => {
+    Promise.all([listTextFiles(), listWorkRules(), getAgentConfigPreview('m3'), getAgentConfigPreview('m5'), getAgentConfigPreview('proactive')])
+      .then(([fileResult, ruleResult, m3, m5, proactive]) => {
         setTextFiles(fileResult.items)
         setWorkRules(ruleResult.items)
         setTextDrafts(Object.fromEntries(fileResult.items.map((item) => [item.key, item.content])))
         setRuleDrafts(Object.fromEntries(ruleResult.items.map((item) => [item.key, item.content])))
-        setPreviews({ m3, m5 })
-        const others = fileResult.items.filter((item) => item.stage !== 'm3' && item.stage !== 'm5')
+        setPreviews({ m3, m5, proactive })
+        const others = fileResult.items.filter(isOtherPrompt)
         setOtherKey((current) => current && others.some((item) => item.key === current) ? current : others[0]?.key)
         setError(undefined)
       })
@@ -152,22 +167,51 @@ export default function AgentSettings() {
     () => Object.fromEntries(workRules.map((item) => [item.key, item])) as Partial<Record<WorkRule['key'], WorkRule>>,
     [workRules],
   )
-  const otherFiles = useMemo(() => textFiles.filter((item) => item.stage !== 'm3' && item.stage !== 'm5'), [textFiles])
+  const otherFiles = useMemo(() => textFiles.filter(isOtherPrompt), [textFiles])
+  const initiative = filesByKey[initiativeKey]
+
+  const refreshSavedPreviews = async () => {
+    try {
+      await reloadPreviews()
+    } catch (cause: unknown) {
+      setError(`配置已保存，但生效预览加载失败：${errorText(cause)}`)
+    }
+  }
+
+  const saveInitiative = async (level: InitiativeLevel) => {
+    if (savingKey || level === initiative?.content) return
+    setSavingKey(`text:${initiativeKey}`)
+    setError(undefined)
+    setNotice(undefined)
+    try {
+      const updated = await updateTextFile(initiativeKey, { content: level })
+      setTextFiles((current) => current.map((item) => item.key === initiativeKey ? updated : item))
+      setTextDrafts((current) => ({ ...current, [initiativeKey]: updated.content }))
+      setNotice('主动程度已保存，后续运行会实时读取，无需重启。')
+      await refreshSavedPreviews()
+    } catch (cause: unknown) {
+      setError(`主动程度未保存：${errorText(cause)}`)
+    } finally {
+      setSavingKey(undefined)
+    }
+  }
 
   const saveText = async (key: string) => {
+    if (savingKey) return
     const content = textDrafts[key] ?? ''
     if (!content.trim()) {
       setError(`${filesByKey[key]?.name ?? key}不能为空`)
       return
     }
     setSavingKey(`text:${key}`)
+    setError(undefined)
+    setNotice(undefined)
     try {
       const updated = await updateTextFile(key, { content })
       setTextFiles((current) => current.map((item) => item.key === key ? updated : item))
       setTextDrafts((current) => ({ ...current, [key]: updated.content }))
-      await reloadPreviews()
       setNotice(`${updated.name}已保存，后续运行会实时读取`)
-      setError(undefined)
+      await refreshSavedPreviews()
     } catch (cause: unknown) {
       setError(errorText(cause))
     } finally {
@@ -176,14 +220,16 @@ export default function AgentSettings() {
   }
 
   const saveRule = async (key: WorkRule['key']) => {
+    if (savingKey) return
     setSavingKey(`rule:${key}`)
+    setError(undefined)
+    setNotice(undefined)
     try {
       const updated = await updateWorkRule(key, { content: ruleDrafts[key] ?? '' })
       setWorkRules((current) => current.map((item) => item.key === key ? updated : item))
       setRuleDrafts((current) => ({ ...current, [key]: updated.content }))
-      await reloadPreviews()
       setNotice(`${updated.name}工作规则已保存，后续运行会实时读取`)
-      setError(undefined)
+      await refreshSavedPreviews()
     } catch (cause: unknown) {
       setError(errorText(cause))
     } finally {
@@ -191,7 +237,7 @@ export default function AgentSettings() {
     }
   }
 
-  const stagePanel = (stage: AgentConfigStage) => {
+  const stagePanel = (stage: RuleStage) => {
     const isM3 = stage === 'm3'
     const stageName = isM3 ? '线索发现' : '任务执行'
     const promptKey = isM3 ? 'm3_system_prompt' : 'm5_system_prompt'
@@ -221,7 +267,7 @@ export default function AgentSettings() {
         children: stageRule ? (
           <MarkdownEditor
             title={`${stageName}工作规则`}
-            description={`只在${stageName}阶段注入；不会与其他 Agent 共享。`}
+            description={`在这里编辑${stageName}的三档行为及共同工作规则；只注入本阶段。生效预览使用已保存的内容。`}
             path={stageRule.path}
             value={ruleDrafts[stageRuleKey] ?? ''}
             saving={savingKey === `rule:${stageRuleKey}`}
@@ -257,7 +303,7 @@ export default function AgentSettings() {
         <Text type="secondary" className="agent-stage-hint">
           {`${stageName}使用真实运行时模板。${isM3
             ? '系统提示词必须保留一个 {{WORK_RULES}}；保存时会严格校验，运行时在该位置展开线索发现工作规则。'
-            : '模板必须各保留一个 {{WORK_RULES}} 和 {{APPROVAL_POLICY}}；execute、apply 和 Session 恢复使用同一套组装逻辑。'}`}
+            : '模板必须各保留一个 {{WORK_RULES}} 和 {{APPROVAL_POLICY}}；初次执行、等待恢复和人工回答恢复使用同一套组装逻辑。'}当前主动程度由运行时自动注入。`}
         </Text>
         <Card className="agent-config-card agent-stage-tabs-card" variant="borderless">
           <Tabs
@@ -277,6 +323,28 @@ export default function AgentSettings() {
       {error && <Alert type="error" showIcon title="工作设定操作失败" description={error} closable onClose={() => setError(undefined)} />}
       {notice && <Alert type="success" showIcon title={notice} closable onClose={() => setNotice(undefined)} />}
       <Spin spinning={loading}>
+        <Card className="agent-config-card agent-initiative-card" variant="borderless">
+          <div className="agent-config-card-heading">
+            <div>
+              <Text strong>主动程度</Text>
+              <Text type="secondary">作用于后台主动发现、执行扩展和通知。明确交办与订阅继续执行；正在处理的工作从下一轮采用新设置。</Text>
+            </div>
+          </div>
+          <Radio.Group
+            aria-label="主动程度"
+            value={initiative?.content}
+            onChange={(event) => void saveInitiative(event.target.value as InitiativeLevel)}
+            disabled={loading || !!savingKey || !initiative}
+            optionType="button"
+            buttonStyle="solid"
+            options={initiativeLevels.map(({ value, label }) => ({ value, label }))}
+          />
+          <div className="agent-initiative-description">
+            <Text type="secondary">{initiativeLevels.find((item) => item.value === initiative?.content)?.description ?? '主动程度未加载'}</Text>
+            {savingKey === `text:${initiativeKey}` && <Spin size="small" />}
+          </div>
+          <Text type="secondary">线索发现和任务执行的档位规则在各自「工作规则」中编辑；主动巡视在「其他 Agent」中编辑和预览。</Text>
+        </Card>
         <Tabs
           activeKey={activeView}
           onChange={(stage) => setViewState({ stage })}
@@ -296,15 +364,18 @@ export default function AgentSettings() {
                       key: item.key,
                       label: item.name,
                       children: (
-                        <MarkdownEditor
-                          title={item.name}
-                          description={item.description}
-                          path={item.path}
-                          value={textDrafts[item.key] ?? ''}
-                          saving={savingKey === `text:${item.key}`}
-                          onChange={(value) => setTextDrafts((current) => ({ ...current, [item.key]: value }))}
-                          onSave={() => saveText(item.key)}
-                        />
+                        <div className="agent-stage-content">
+                          <MarkdownEditor
+                            title={item.name}
+                            description={item.description}
+                            path={item.path}
+                            value={textDrafts[item.key] ?? ''}
+                            saving={savingKey === `text:${item.key}`}
+                            onChange={(value) => setTextDrafts((current) => ({ ...current, [item.key]: value }))}
+                            onSave={() => saveText(item.key)}
+                          />
+                          {item.stage === 'proactive' && <EffectivePreview preview={previews.proactive} />}
+                        </div>
                       ),
                     }))}
                   />

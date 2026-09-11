@@ -56,6 +56,7 @@
 | [通用 OKR 插件与 Biz OKR 拆分](design-okr-plugin-and-biz-okr.md) | phase-1-implemented | 已实施拆分的设计依据与后续阶段；当前维护现状见 `modules/06-okr.md` |
 | [HTTP API](reference/http-api.md) | current | 路由分组；`router.go` 仍为真源 |
 | [运行与部署](reference/operations.md) | current | launchd、端口、签名和重建 |
+| [macOS 安装与自动更新](reference/macos-install-and-update.md) | current | DMG 首装、数据保留、自动更新入口与排障 |
 | [Lark / bytedcli 指南](guide-lark-byted-cli.md) | guide | 当前 CLI 用法，版本变化时需复核 help |
 
 ## 提案与实现中设计

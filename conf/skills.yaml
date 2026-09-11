@@ -11,6 +11,10 @@ skills:
     - name: product-skill-maintain
       enabled: true
       stages: [execute]
+    - name: jarvis-chat
+      enabled: false # 对话按需读取；不注入 M3/M5/proactive 的阶段目录
+      stages:
+        - execute
     - name: feishu-group-daily-summary
       enabled: true
       stages:

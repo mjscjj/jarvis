@@ -24,23 +24,21 @@ Jarvis 是单用户、本地、低频运行的主动式任务数字分身。它�
 ```mermaid
 flowchart LR
     UI["React 管理后台"] --> API["jarvis-server\nGo / Hertz"]
-    UI --> CHAT["jarvis-chat-server\n独立 Chat sidecar"]
     API --> SQLITE[("本机 SQLite\n通用运行状态")]
-    CHAT --> SQLITE
     API --> OKRDB[("data/okr/okr.db\n可选模块产品事实")]
     API --> QDRANT[("Qdrant\nTodo 去重")]
     API --> LARK["lark-cli"]
     API --> AGENT["M3/M5 Agent CLI"]
-    CHAT --> CHATAGENT["独立 Chat Agent CLI"]
+    API --> CHATAGENT["对话 Agent CLI"]
     API --> MODEL["OpenAI-compatible API\n备用 M3 + embedding"]
 ```
 
-- `jarvis-server` 是主进程：HTTP、静态前端、M2/M3/M5、实时协调和补偿 cron 都在同一进程；交互式 Chat 由独立 `jarvis-chat-server` 承载，主服务只公开它的配置地址。
+- `jarvis-server` 是主进程：HTTP、静态前端、M2/M3/M5、实时协调和补偿 cron 都在同一进程；交互式 Chat 也由主服务的 `/api/chat/*` 承载。
 - 本机 SQLite 是 Jarvis 通用运行状态真源；启用 OKR 时，模块产品事实使用随仓库提交的独立 SQLite。两个连接都限制为单连接，串行化各自的数据库操作。
 - Qdrant 当前只服务 Todo 语义去重，不是长期事实真源。
-- M3、M5、Chat、持续世界建模和主动巡视分别读取自己的 CLI、模型和超时配置；Chat 的进程与会话生命周期不受主服务普通重建影响。
+- M3、M5、持续世界建模和主动巡视分别读取自己的 CLI、模型和超时配置；Chat 按持久会话选择 Agent 与模型，重启主服务会中断当前轮次，已保存历史继续保留。
 - `lark-cli` 负责飞书读写；`bytedcli`、`git` 和 `jarvis-tools` 由 Agent 按需调用。
-- 生产前端由 `server.addr` 托管 `web/dist`；Chat 使用 `chat.addr`。Vite 只用于开发，地址由实例配置派生，不能把这些动态端口写成系统协议。
+- 生产前端由 `server.addr` 托管 `web/dist`，对话使用同一地址。Vite 只用于开发，地址由实例配置派生，不能把这些动态端口写成系统协议。
 
 技术依赖版本以 `go.mod`、`web/package.json` 和本机 CLI help 为准，不在本总纲固化补丁版本。
 
@@ -50,7 +48,9 @@ flowchart LR
 flowchart TD
     EVENT["飞书 Bot WebSocket"] --> CC["CC Connect 路由"]
     CC -->|"接受私聊 / @消息"| CLAIM["route claim\nextraction_skipped"]
-    CLAIM --> CCA["CC 原生 Agent / session"]
+    CLAIM --> CCA["CC 前台 Agent / session"]
+    CCA -->|"即时完成"| REPLY["原会话回复"]
+    CCA -->|"长期 / 多步 / 有副作用"| CTASK["manual Task pending"] --> EXEC
     CC -->|"不接受普通群消息"| POLL
     POLL["飞书 IM 轮询补偿"] --> M2
     EXT["外部 Skill / 定时任务"] --> CLUE["POST /api/clues"] --> M2
@@ -85,7 +85,9 @@ M2 有两个事实入口：
 
 M2 保存原文、来源、外部幂等键和资源引用，成功后唤醒 M3。它不解释错误语义、不决定是否值得做、不创建 Todo、不为会议/邮件等来源增加专用状态机。
 
-Jarvis Bot 的飞书长连接由 CC Connect 独占；`jarvis-server` 不启动事件 consumer。CC Connect 完成发送者、会话和 @ 过滤后，对自己接受的消息先同步调用 `/internal/message-routing/claim`：只把当前 `message_id` 标记为 `extraction_skipped`，再继续由 CC 原生 Agent/session 处理。claim 本身不携带历史、不创建 Task、不唤醒 M3，也不修改 `related_group`。群聊 Agent turn 的会话证据在传输层从飞书实时读取：普通群取 chat 中截至当前消息的最近记录，话题/回复取对应 thread，最多 14 条前序消息；这些历史不会写进 Jarvis `message` 表。传输上下文同时提供 `chat_id`，供 Agent 用 `get-context --chat-id` 读取当前群绑定的世界上下文。因为这条连接独占，会议结束这类不产生聊天消息的事件也只能由 CC Connect 转交：命中配置事件类型时它把原始信封 POST 到 `/internal/meeting-sweep/wake`，Jarvis 只把会议巡扫提前触发一次，采集与判断仍归巡扫和 M3/M5。
+Jarvis Bot 的飞书长连接由 CC Connect 独占；`jarvis-server` 不启动事件 consumer。CC Connect 完成发送者、会话和 @ 过滤后，对自己接受的消息先同步调用 `/internal/message-routing/claim`：只把当前 `message_id` 标记为 `extraction_skipped`，再继续由 CC 前台 Agent/session 处理。claim 本身不携带历史、不创建 Task、不唤醒 M3，也不修改 `related_group`。CC 前台行为的唯一真源是 `conf/prompts/cc-system-prompt.md`：简单、可当轮闭环的请求即时回复；长期、多步、需要等待或会产生副作用的请求停止前台执行，通过通用 `create-task` 创建 `source_type=manual` 的普通 Task，由同一个 Submitter 唤醒 M5。来源中冻结原始用户表达和原会话 `reply_target`，明确要求交付时，M5 只有把结果送回该会话才算完成。这条显式交办不再重复经过 M2/M3 准入。
+
+群聊 Agent turn 的会话证据在传输层从飞书实时读取：普通群取 chat 中截至当前消息的最近记录，话题/回复取对应 thread，最多 14 条前序消息；这些历史不会写进 Jarvis `message` 表。传输上下文同时提供 `chat_id`，供 Agent 用 `get-context --chat-id` 读取当前群绑定的世界上下文。因为这条连接独占，会议结束这类不产生聊天消息的事件也只能由 CC Connect 转交：命中配置事件类型时它把原始信封 POST 到 `/internal/meeting-sweep/wake`，Jarvis 只把会议巡扫提前触发一次，采集与判断仍归巡扫和 M3/M5。
 
 M2 按 `scan_schedule` 增量轮询已关联会话并按飞书 `message_id` 幂等落库；普通群和私聊按会话消息流增量读取，话题群按消息自身时间搜索，因此旧话题中的新回复不会受话题根消息水位影响。CC 未接受的普通群消息继续通过这条通用流水线；需要进入 M2 的其它实时外部事实仍只能经明确的本机 fan-out 接口转发，不能恢复第二条同 app 长连接。资源链路只稳定采集引用元数据；通用下载、正文回填和内容哈希复用尚未形成完整生产链路。
 
@@ -102,13 +104,13 @@ M3 默认使用 Agent CLI，model API 是可选引擎。它只调查到足以决
 M3 可以产出：
 
 - `extracted`：存在需要交给 M5 执行 Agent 调查和判断的动作线索；
-- `observing`：值得保留，但当前不需要任何人行动。
+- `observing`：值得保留，但按当前证据与主动程度暂不启动 M5；不表示事项已完成。
 
 M3 可以查询责任归属、当前状态、已有 Todo/Task 和明确项目归属，但证据足够作出准入结论后立即停止。它不制定执行方案、不选择具体副作用、不判断要不要请示，也不为丰富 payload 展开代码、commit、MR 或长文档调查。`payload` 是开放的准入简报，只说明相关性、未闭环状态、责任、已核验证据、准入依据和不确定性。
 
 `Todo.content` 保存创建时证据。消息只保存在 `capture.messages` 一次，不依照提示词长度截断。M5 默认只读经过校验的 `source_message_ids` 对应原文与简短说明，其余按会话、背景或原始消息 ID 读取；实体当前状态仍通过事实页和 fact 查询，不能替代冻结证据。
 
-已结束会议的准入口径由 M3 工作规则维护：Principal 实际参加且尚缺回顾时，整理回顾本身就是可交给 M5 的目标，不以存在行动项为前提。采集 Skill 先按原始线索 ID 查重，只为未知会议补取详情；会议结束事件和既有周期巡扫的调度方式不变。
+已结束会议的准入口径由 M3 工作规则维护：普通档、活跃档以及明确回顾订阅中，Principal 实际参加且尚缺回顾时，整理回顾本身就是可交给 M5 的目标，不以存在行动项为前提；安静档默认要求明确回顾需求或具体决策、承诺价值。采集 Skill 先按原始线索 ID 查重，只为未知会议补取详情；会议结束事件和既有周期巡扫的调度方式不变。
 
 ### 3.3 Todo 固化
 
@@ -176,11 +178,14 @@ KeyMatter 承载需要长期记住和定期回看、但不构成项目也不是�
 
 | 类型             | 真源                                                          | 读取语义                        |
 | ---------------- | ------------------------------------------------------------- | ------------------------------- |
+| 主动程度 | `conf/prompts/initiative-level.md`（textstore key `initiative_level`） | quiet / normal / active，默认 normal；每批/每轮实时读取，非法或缺失 fail-fast |
 | 系统 prompts     | `conf/prompts/*.md`，在 `internal/textstore/defaults.go` 注册 | 缺失/空正文 fail-fast           |
 | 工作 rules       | `conf/rules/m3.md`、`conf/rules/m5.md`                        | M3、M5 分阶段读取；正文允许为空 |
 | Skills           | `.agents/skills/*/SKILL.md` + `conf/skills.yaml`              | 正文与启用阶段分离              |
 | Shared memory    | `data/shared-memory.md`                                       | Principal 明确要求长期记住的行为偏好；最多 2000 字 |
 | Runtime settings | `conf/config.runtime.yaml`                                    | 覆盖基线配置；重启后生效        |
+
+主动程度由 `prompttemplate.Render` 注入当前选择，三档行为分别归 M3/M5 rules 与 proactive 系统提示词维护。M3 每次组装批次读取选择，批次内各 unit 及输出重试保持一致；M5 初次执行、等待恢复、人工回答恢复和 proactive 每轮都读取当前值。选择不冻结到 Task 来源，不驱动固化或消息拦截，也不撤销已有目标、授权和问题卡。M3/M5/proactive 的后台生效预览使用同一组装函数；共享记忆、Skills、工具和业务上下文仍列为动态块。
 
 工具说明由 `internal/toolcatalog` 和 Skills 维护，不复制到每个 prompt。
 
@@ -191,7 +196,9 @@ Skills 默认只把目录摘要注入对应阶段，由 Agent 按需读取正文
 均读取当前 Skills；Task 完成不等于对方交付，关闭插件也不自动关闭既有交办。
 交办原文和背景继续冻结在 Todo.content，每次复查携带原始包，不重建替代。
 
-Shared memory 是 Principal 在运行中明确教给 Jarvis 的个性化行为覆盖层，不保存业务事实或机器控制状态。M3、M5、后台对话、主动巡视和 CC Connect 读取同一份内容，并只在各自阶段职责内执行；主动巡视结合原本就在检查的证据合并明确的新要求、撤回和冲突，不为维护记忆扩大调查。
+Shared memory 是 Principal 在运行中明确教给 Jarvis 的个性化行为覆盖层，不保存业务事实或机器控制状态。M3、M5、主动巡视和 CC Connect 读取同一份内容，并只在各自阶段职责内执行；后台对话不自动注入共享记忆，需要时通过工具读取。主动巡视结合原本就在检查的证据合并明确的新要求、撤回和冲突，不为维护记忆扩大调查。
+
+后台交互对话首轮只注入对话系统指引与工具入口，后续通过原生 Session 续聊，仅追加用户消息、显式选择的数据来源和附件引用；跨 Agent 时继续保留可见会话历史。不自动组装世界模型、资源正文或页面状态，需要工作事实时按 `jarvis-chat` Skill 查询。此约定只属于交互对话，不改变 M3/M5 冻结快照、CC Connect 或定时任务的上下文协议。旧原生 Session 中已存在的背景不会被清除，可新建会话使用轻量输入。
 
 `identity.display_name` 是本机助手名称的唯一真源。初始化必须把用户选择显式写入 runtime overlay；设置页改名同样写该字段并在重启后生效。系统 Prompt、rules 和运行时 Skills 只保留 `{{AGENT_NAME}}`，由 `internal/agentidentity` 的只读装饰器在可信指令进入各 Agent 前统一渲染。事件、Task、Fact 和历史产物不保存或回写名称。`jarvis-tools`、API header、进程 label、路径和数据库键仍是稳定技术标识，不参与改名。
 
@@ -222,7 +229,7 @@ pending -> executing -> done | observing | failed
 - 运行部署：[reference/operations.md](reference/operations.md)
 - 页面真源：`web/src/App.tsx`
 - 当前主导航：今日、任务、回顾、已启用内置模块、世界、自动化、插件、Agent 设置和系统管理
-- 服务名和 main/chat 端口按所选配置解析；脚本和 CC Connect 回调统一通过 `jarvis-instance` / `jarvis-api-base` 获取当前实例，不依赖固定 18800。
+- 服务名和 主服务端口按所选配置解析；脚本和 CC Connect 回调统一通过 `jarvis-instance` / `jarvis-api-base` 获取当前实例，不依赖固定 18800。
 - 飞书提问、审批及关联任务的 Notice 卡片统一通过 `internal/uilink` 优先按 `server.public_url` 生成“查看详情”链接，支持远端域名、反向代理和端口转发的浏览器访问入口。未配置时使用实际监听地址（包含安装包的 `-addr` 覆盖）；具体绑定地址直接使用，通配监听实时解析默认路由对应的本机 IPv4（内网或公网）。回环链接标注“本机访问”，需在打开链接的设备上有本地服务或端口转发。
 
 ## 9. 当前已知实现缺口

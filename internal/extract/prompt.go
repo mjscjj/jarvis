@@ -12,6 +12,7 @@ import (
 )
 
 type PromptOptions struct {
+	InitiativeLevel string
 	PrincipalOpenID string
 	Location        *time.Location
 	MaxChars        int
@@ -111,7 +112,7 @@ func BuildPrompt(batch ChatBatch, unit ConversationUnit, counts []FactCount, now
 
 	trimmed := unit
 	trimmed.Messages = append([]MessageContext(nil), unit.Messages...)
-	system, err := prompttemplate.Render(prompttemplate.StageM3, opts.SystemPrompt, opts.WorkRules, "")
+	system, err := prompttemplate.Render(prompttemplate.StageM3, opts.SystemPrompt, opts.WorkRules, "", opts.InitiativeLevel)
 	if err != nil {
 		return Prompt{}, fmt.Errorf("render M3 system prompt: %w", err)
 	}

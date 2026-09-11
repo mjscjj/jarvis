@@ -91,9 +91,6 @@ import type {
   ProactiveRunDetail,
   MonitoringSnapshot,
   SystemTaskRunList,
-  ChatHistory,
-  ChatRuntimeConfig,
-  ChatThreadList,
   WebConfig,
   AuthView,
   SetupFlow,
@@ -110,6 +107,36 @@ interface RequestOptions {
   signal?: AbortSignal
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   body?: unknown
+  timeoutMs?: number
+}
+
+export const authEvents = new EventTarget()
+
+let authRecoveryHandler: (() => Promise<void>) | null = null
+
+export function setAuthRecoveryHandler(handler: (() => Promise<void>) | null): void {
+  authRecoveryHandler = handler
+}
+
+function isAuthPath(path: string): boolean {
+  return path.startsWith('/api/auth/')
+}
+
+function canRetryAfterAuth(options?: RequestInit): boolean {
+  const method = (options?.method || 'GET').toUpperCase()
+  return method === 'GET' || method === 'HEAD'
+}
+
+export async function apiFetch(path: string, options?: RequestInit): Promise<Response> {
+  const response = await fetch(path, options)
+  if (response.status === 401 && !isAuthPath(path)) {
+    authEvents.dispatchEvent(new Event('expired'))
+    if (authRecoveryHandler && canRetryAfterAuth(options)) {
+      await authRecoveryHandler()
+      if (!options?.signal?.aborted) return fetch(path, options)
+    }
+  }
+  return response
 }
 
 export class APIRequestError extends Error {
@@ -124,71 +151,91 @@ export class APIRequestError extends Error {
   }
 }
 
-export function isMissingChatHistoryError(cause: unknown): boolean {
-  return cause instanceof APIRequestError && cause.status === 404 && cause.code === 40461
-}
-
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const response = await fetch(path, {
-    signal: options.signal,
-    method: options.method || 'GET',
-    headers: { Accept: 'application/json', ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }) },
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
-  })
-  const payload = (await response.json()) as APIResponse<T>
-  if (!response.ok || payload.code !== 0 || payload.data === undefined) {
-    throw new APIRequestError(payload.msg || `请求失败：HTTP ${response.status}`, response.status, payload.code)
+  const controller = new AbortController()
+  const abort = () => controller.abort(options.signal?.reason)
+  if (options.signal?.aborted) abort()
+  else options.signal?.addEventListener('abort', abort, { once: true })
+  const timer = options.timeoutMs
+    ? setTimeout(() => controller.abort(new Error('请求超时，请检查网络后重试')), options.timeoutMs)
+    : undefined
+  try {
+    const response = await apiFetch(path, {
+      signal: controller.signal,
+      method: options.method || 'GET',
+      headers: { Accept: 'application/json', ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    })
+    const payload = (await response.json()) as APIResponse<T>
+    if (!response.ok || payload.code !== 0 || payload.data === undefined) {
+      throw new APIRequestError(payload.msg || `请求失败：HTTP ${response.status}`, response.status, payload.code)
+    }
+    return payload.data
+  } finally {
+    clearTimeout(timer)
+    options.signal?.removeEventListener('abort', abort)
   }
-  return payload.data
 }
 
 export function getAuthStatus(signal?: AbortSignal): Promise<AuthView> {
-  return request<AuthView>('/api/auth/status', { signal })
+  return request<AuthView>('/api/auth/status', { signal, timeoutMs: 25000 })
 }
 
 export function loginWithByteDance(): Promise<AuthView> {
-  return request<AuthView>('/api/auth/login', { method: 'POST' })
+  return request<AuthView>('/api/auth/login', { method: 'POST', timeoutMs: 45000 })
 }
 
 export function completeByteDanceLogin(flowId: string): Promise<AuthView> {
   return request<AuthView>('/api/auth/login/complete', {
     method: 'POST',
     body: { flow_id: flowId },
+    timeoutMs: 45000,
   })
 }
 
 export function logoutFromJarvis(): Promise<AuthView> {
-  return request<AuthView>('/api/auth/logout', { method: 'POST' })
+  return request<AuthView>('/api/auth/logout', { method: 'POST', timeoutMs: 25000 })
 }
 
 export function getSetupStatus(signal?: AbortSignal): Promise<SetupStatus> {
-  return request<SetupStatus>('/api/setup/status', { signal })
+  return request<SetupStatus>('/api/setup/status', { signal, timeoutMs: 30000 })
+}
+
+export function getSetupBootstrap(signal?: AbortSignal): Promise<{ machine_configuration_ready: boolean }> {
+  return request('/api/setup/bootstrap', { signal, timeoutMs: 5000 })
 }
 
 export function beginSetupLarkConnection(): Promise<SetupFlow> {
-  return request<SetupFlow>('/api/setup/lark/connect', { method: 'POST' })
+  return request<SetupFlow>('/api/setup/lark/connect', { method: 'POST', timeoutMs: 30000 })
 }
 
 export function beginSetupLarkLogin(): Promise<SetupFlow> {
-  return request<SetupFlow>('/api/setup/lark/login', { method: 'POST' })
+  return request<SetupFlow>('/api/setup/lark/login', { method: 'POST', timeoutMs: 30000 })
 }
 
 export function beginSetupAgentLogin(): Promise<SetupFlow> {
-  return request<SetupFlow>('/api/setup/agent/login', { method: 'POST' })
+  return request<SetupFlow>('/api/setup/agent/login', { method: 'POST', timeoutMs: 30000 })
 }
 
 export function getSetupFlow(flowId: string, signal?: AbortSignal): Promise<SetupFlow> {
-  return request<SetupFlow>(`/api/setup/flows/${encodeURIComponent(flowId)}`, { signal })
+  return request<SetupFlow>(`/api/setup/flows/${encodeURIComponent(flowId)}`, { signal, timeoutMs: 25000 })
 }
 
 export function cancelSetupFlow(flowId: string): Promise<SetupFlow> {
-  return request<SetupFlow>(`/api/setup/flows/${encodeURIComponent(flowId)}/cancel`, { method: 'POST' })
+  return request<SetupFlow>(`/api/setup/flows/${encodeURIComponent(flowId)}/cancel`, { method: 'POST', timeoutMs: 25000 })
 }
 
 export function finalizeSetup(appSecret: string): Promise<SetupStatus> {
   return request<SetupStatus>('/api/setup/finalize', {
     method: 'POST',
     body: { app_secret: appSecret },
+    timeoutMs: 120000,
+  })
+}
+
+export function repairSetupLarkCredentials(appSecret: string): Promise<{ saved: boolean }> {
+  return request<{ saved: boolean }>('/api/setup/lark/credentials', {
+    method: 'POST', body: { app_secret: appSecret }, timeoutMs: 60000,
   })
 }
 
@@ -250,48 +297,8 @@ export function createTask(body: CreateTaskInput): Promise<CreateTaskResult> {
   return request<CreateTaskResult>('/api/tasks', { method: 'POST', body })
 }
 
-export function getChatRuntimeConfig(signal?: AbortSignal): Promise<ChatRuntimeConfig> {
-  return request<ChatRuntimeConfig>('/api/chat-config', { signal })
-}
-
 export function getWebConfig(signal?: AbortSignal): Promise<WebConfig> {
   return request<WebConfig>('/api/web-config', { signal })
-}
-
-// getSignedInOpenID reports who is signed in through the Biz OKR app's Feishu
-// login, so a conversation can use that person's own Feishu credentials.
-// Returns undefined when the module is disabled or nobody is signed in.
-export async function getSignedInOpenID(signal?: AbortSignal): Promise<string | undefined> {
-  try {
-    const me = await request<{ authenticated: boolean; user?: { open_id: string } }>('/api/biz-okr/me', { signal })
-    if (!me.authenticated) return undefined
-    const openID = me.user?.open_id?.trim()
-    // The placeholder identity used when login is not configured is not a real
-    // Feishu account and has no token of its own.
-    return openID && openID !== 'jarvis' ? openID : undefined
-  } catch {
-    return undefined
-  }
-}
-
-export function resolveChatBaseURL(pageOrigin: string, chatPort: number): string {
-  const endpoint = new URL(pageOrigin)
-  if (endpoint.port !== '') endpoint.port = String(chatPort)
-  return endpoint.origin
-}
-
-export function getChatHistory(baseURL: string, threadID: string, signal?: AbortSignal): Promise<ChatHistory> {
-  const query = new URLSearchParams({ thread_id: threadID })
-  return request<ChatHistory>(`${baseURL}/api/chat?${query}`, { signal })
-}
-
-export function listChatThreads(baseURL: string, signal?: AbortSignal): Promise<ChatThreadList> {
-  return request<ChatThreadList>(`${baseURL}/api/chat?view=threads`, { signal })
-}
-
-export function stopChatTurn(baseURL: string, turnID: string, signal?: AbortSignal): Promise<{ stopped: boolean }> {
-  const query = new URLSearchParams({ action: 'stop', turn_id: turnID })
-  return request<{ stopped: boolean }>(`${baseURL}/api/chat?${query}`, { method: 'POST', signal })
 }
 
 export function finishTask(id: number, expectedVersion: number, status: 'done' | 'failed', result: Record<string, unknown>): Promise<Task> {
@@ -399,7 +406,7 @@ export async function listPages(all = false, signal?: AbortSignal, q = ''): Prom
 }
 
 export async function updatePage(type: PageType, id: number, body: PageUpdateInput): Promise<PageView> {
-  const response = await fetch(`/api/pages/${type}/${id}`, {
+  const response = await apiFetch(`/api/pages/${type}/${id}`, {
     method: 'PUT',
     headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -412,7 +419,7 @@ export async function updatePage(type: PageType, id: number, body: PageUpdateInp
     throw new PageConflictError(payload.data, payload.msg || '页面已被其他人更新')
   }
   if (!response.ok || payload.code !== 0 || payload.data === undefined) {
-    throw new Error(payload.msg || `请求失败：HTTP ${response.status}`)
+    throw new APIRequestError(payload.msg || `请求失败：HTTP ${response.status}`, response.status, payload.code)
   }
   return payload.data
 }
@@ -796,7 +803,7 @@ export function updatePlugin(id: string, enabled: boolean, expectedRevision: num
 }
 
 export function authorizePlugin(id: string): Promise<PluginAuthorization> {
-  return request<PluginAuthorization>(`/api/plugins/${encodeURIComponent(id)}/authorize`, { method: 'POST' })
+  return request<PluginAuthorization>(`/api/plugins/${encodeURIComponent(id)}/authorize`, { method: 'POST', timeoutMs: 45000 })
 }
 
 export function completePluginAuthorization(
@@ -805,7 +812,7 @@ export function completePluginAuthorization(
 ): Promise<{ authorization: PluginAuthorization; plugin: Plugin | null }> {
   return request<{ authorization: PluginAuthorization; plugin: Plugin | null }>(
     `/api/plugins/${encodeURIComponent(id)}/authorize/complete`,
-    { method: 'POST', body: { flow_id: flowId } },
+    { method: 'POST', body: { flow_id: flowId }, timeoutMs: 45000 },
   )
 }
 

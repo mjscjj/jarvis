@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 use tauri::Manager;
+use tauri_plugin_updater::UpdaterExt;
 
 mod runtime_output;
 
@@ -150,19 +151,59 @@ fn monitor_runtime(app: tauri::AppHandle) {
             let mut child = state.child.lock().unwrap();
             match child.as_mut() {
                 Some(process) => match process.try_wait() {
-                    Ok(Some(_)) | Err(_) => {
+                    Ok(Some(status)) => {
                         child.take();
-                        true
+                        Some(format!("本地服务意外退出：{status}"))
                     }
-                    Ok(None) => false,
+                    Err(error) => {
+                        // Keep the child handle so quitting still cleans it up.
+                        Some(format!("无法读取本地服务状态：{error}"))
+                    }
+                    Ok(None) => None,
                 },
-                None => true,
+                None => return,
             }
         };
-        if exited {
-            app.exit(0);
+        if let Some(error) = exited {
+            show_startup_error(&app, &format!(
+                "{error}\n请查看 ~/Library/Application Support/Jarvis/logs 中的日志，修正问题后退出并重新打开 Jarvis。数据无需删除。"
+            ));
             return;
         }
+    });
+}
+
+fn check_for_update(app: tauri::AppHandle) {
+    if cfg!(debug_assertions) {
+        return;
+    }
+    tauri::async_runtime::spawn(async move {
+        let update = match app.updater() {
+            Ok(updater) => match updater.check().await {
+                Ok(update) => update,
+                Err(error) => {
+                    eprintln!("jarvis-desktop: update check failed: {error}");
+                    return;
+                }
+            },
+            Err(error) => {
+                eprintln!("jarvis-desktop: initialize updater failed: {error}");
+                return;
+            }
+        };
+        let Some(update) = update else {
+            return;
+        };
+        eprintln!(
+            "jarvis-desktop: installing update {} -> {}",
+            app.package_info().version,
+            update.version
+        );
+        if let Err(error) = update.download_and_install(|_, _| {}, || {}).await {
+            eprintln!("jarvis-desktop: update installation failed: {error}");
+            return;
+        }
+        app.restart();
     });
 }
 
@@ -175,12 +216,14 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(RuntimeState::default())
         .setup(|app| {
             match spawn_runtime(app.handle()) {
                 Ok(child) => {
                     *app.state::<RuntimeState>().child.lock().unwrap() = Some(child);
                     monitor_runtime(app.handle().clone());
+                    check_for_update(app.handle().clone());
                 }
                 Err(error) => show_startup_error(app.handle(), &error),
             }

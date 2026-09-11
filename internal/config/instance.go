@@ -12,21 +12,14 @@ import (
 // Instance is the local process identity used by launchd and development tools.
 // The label is stable when the port changes and distinct for each config file.
 type Instance struct {
-	ConfigPath       string   `json:"config_path"`
-	APIBase          string   `json:"api_base"`
-	LaunchdLabel     string   `json:"launchd_label"`
-	LogFiles         []string `json:"log_files"`
-	ChatAPIBase      string   `json:"chat_api_base"`
-	ChatLaunchdLabel string   `json:"chat_launchd_label"`
-	ChatEnabled      bool     `json:"chat_enabled"`
+	ConfigPath   string   `json:"config_path"`
+	APIBase      string   `json:"api_base"`
+	LaunchdLabel string   `json:"launchd_label"`
+	LogFiles     []string `json:"log_files"`
 }
 
 func (s ServerConfig) APIBase() (string, error) {
 	return apiBaseForAddr("server.addr", s.Addr)
-}
-
-func (c ChatConfig) APIBase() (string, error) {
-	return apiBaseForAddr("chat.addr", c.Addr)
 }
 
 func apiBaseForAddr(name, addr string) (string, error) {
@@ -61,14 +54,9 @@ func InspectInstance(configPath string) (*Instance, error) {
 		return nil, err
 	}
 	digest := sha256.Sum256([]byte(absolute))
-	chatAPIBase, err := cfg.Chat.APIBase()
-	if err != nil {
-		return nil, err
-	}
 	label := fmt.Sprintf("com.bytedance.jarvis.server.%x", digest[:8])
 	return &Instance{
 		ConfigPath: absolute, APIBase: apiBase, LogFiles: cfg.Server.LogFiles, LaunchdLabel: label,
-		ChatAPIBase: chatAPIBase, ChatLaunchdLabel: label + ".chat", ChatEnabled: cfg.Chat.Enabled,
 	}, nil
 }
 

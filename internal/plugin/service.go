@@ -92,7 +92,11 @@ func (s *Service) List(ctx context.Context) ([]View, error) {
 	manifests := s.registry.List()
 	items := make([]View, 0, len(manifests))
 	for _, manifest := range manifests {
-		view, err := s.view(ctx, manifest)
+		authorization := AuthStatus{Status: AuthPending}
+		if manifest.Kind == KindCapability {
+			authorization.Status = AuthAuthorized
+		}
+		view, err := s.viewWithAuthorization(ctx, manifest, authorization)
 		if err != nil {
 			return nil, err
 		}
@@ -170,7 +174,7 @@ func (s *Service) Update(ctx context.Context, id string, input UpdateInput) (*Vi
 	if err := s.reconcile(ctx, manifest, authorization, trigger); err != nil {
 		return nil, err
 	}
-	return s.view(ctx, manifest)
+	return s.viewWithAuthorization(ctx, manifest, authorization)
 }
 
 func (s *Service) BeginAuthorization(ctx context.Context, id string) (*AuthStatus, error) {
@@ -209,7 +213,7 @@ func (s *Service) CompleteAuthorization(ctx context.Context, id, flowID string) 
 			return nil, nil, err
 		}
 	}
-	view, err := s.view(ctx, manifest)
+	view, err := s.viewWithAuthorization(ctx, manifest, status)
 	return view, &status, err
 }
 
@@ -246,7 +250,7 @@ func (s *Service) Trigger(ctx context.Context, id string) (*View, error) {
 	if _, err := s.schedules.Trigger(ctx, *installation.ScheduledTaskID); err != nil {
 		return nil, fmt.Errorf("trigger plugin %s: %w", manifest.ID, err)
 	}
-	return s.view(ctx, manifest)
+	return s.viewWithAuthorization(ctx, manifest, authorization)
 }
 
 func (s *Service) SkillEnabled(ctx context.Context, name string) (bool, error) {
@@ -262,11 +266,17 @@ func (s *Service) SkillEnabled(ctx context.Context, name string) (bool, error) {
 }
 
 func (s *Service) view(ctx context.Context, manifest Manifest) (*View, error) {
+	if manifest.Kind == KindCapability {
+		return s.viewWithAuthorization(ctx, manifest, AuthStatus{Status: AuthAuthorized})
+	}
+	return s.viewWithAuthorization(ctx, manifest, s.authorizer.Probe(ctx, manifest.Provider))
+}
+
+func (s *Service) viewWithAuthorization(ctx context.Context, manifest Manifest, authorization AuthStatus) (*View, error) {
 	var installation domain.PluginInstallation
 	if err := s.db.WithContext(ctx).First(&installation, "plugin_id = ?", manifest.ID).Error; err != nil {
 		return nil, fmt.Errorf("load plugin %s: %w", manifest.ID, err)
 	}
-	authorization := s.authorization(ctx, manifest)
 	config, err := effectiveConfig(manifest, json.RawMessage(installation.Config))
 	if err != nil {
 		return nil, fmt.Errorf("load plugin %s config: %w", manifest.ID, err)

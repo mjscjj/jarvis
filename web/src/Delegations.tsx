@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Alert, Button, Checkbox, Input, Modal, Space, Spin, Table, Tabs, Tag, Typography, message } from 'antd'
+import { Alert, Button, Checkbox, Input, Modal, Select, Space, Spin, Table, Tabs, Tag, Typography, message } from 'antd'
 import type { TableColumnsType } from 'antd'
 import { createTask, getDelegation, listDelegations, listDelegationTasks, updateDelegation } from './api'
 import type { Delegation, DelegationCheck } from './types'
@@ -31,13 +31,21 @@ export default function Delegations() {
   const [note, setNote] = useState('')
   const [closed, setClosed] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [savingStatusID, setSavingStatusID] = useState<number>()
   const [messageApi, messageContext] = message.useMessage()
 
   useEffect(() => {
     const controller = new AbortController()
     setLoading(true)
     listDelegations(state, query, page, controller.signal)
-      .then(result => { setItems(result.items); setTotal(result.total); setError(undefined) })
+      .then(result => {
+        const lastPage = Math.max(1, Math.ceil(result.total / 20))
+        if (page > lastPage) {
+          setViewState({ mode: 'delegated', state, page: lastPage, delegation: selectedID ?? undefined })
+          return
+        }
+        setItems(result.items); setTotal(result.total); setError(undefined)
+      })
       .catch(e => { if (!controller.signal.aborted) setError(errorText(e)) })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
     return () => controller.abort()
@@ -56,6 +64,19 @@ export default function Delegations() {
   }, [selectedID, refresh])
 
   const select = (id?: number) => setViewState({ mode: 'delegated', state, page, delegation: id })
+
+  async function changeStatus(row: Delegation, next: 'open' | 'closed') {
+    if (savingStatusID !== undefined || Boolean(row.closed_at) === (next === 'closed')) return
+    setSavingStatusID(row.id)
+    setError(undefined)
+    try {
+      // List rows only contain a preview; preserve the complete current progress.
+      const latest = await getDelegation(row.id)
+      await updateDelegation(latest.id, latest.version, latest.content ?? null, next === 'closed')
+      setRefresh(v => v + 1)
+      messageApi.success(next === 'closed' ? '交办已结束，可在“已结束”中查看' : '已恢复跟踪，可在“未结束”中查看')
+    } catch (e) { setError(errorText(e)) } finally { setSavingStatusID(undefined) }
+  }
 
   async function save() {
     if (!detail || !note.trim()) return
@@ -88,7 +109,16 @@ export default function Delegations() {
   const columns: TableColumnsType<Delegation> = [
     { title: '原始交办', dataIndex: 'title', render: (title: string, row) => <Button type="link" onClick={() => select(row.id)}>{title}</Button> },
     { title: '当前进展', dataIndex: 'summary', render: (value: string) => value || '待核验' },
-    { title: '跟踪状态', render: (_, row) => <Tag color={row.closed_at ? 'default' : 'blue'}>{row.closed_at ? '已结束' : '未结束'}</Tag> },
+    { title: '跟踪状态', width: 130, render: (_, row) => <Select<'open' | 'closed'>
+      aria-label={`修改交办“${row.title}”的跟踪状态`}
+      size="small"
+      style={{ width: 104 }}
+      value={row.closed_at ? 'closed' : 'open'}
+      options={[{ value: 'open', label: '未结束' }, { value: 'closed', label: '已结束' }]}
+      loading={savingStatusID === row.id}
+      disabled={savingStatusID !== undefined || loading}
+      onChange={next => changeStatus(row, next)}
+    /> },
     { title: '最近更新', dataIndex: 'updated_at', render: (value: string) => new Date(value).toLocaleString() },
   ]
 

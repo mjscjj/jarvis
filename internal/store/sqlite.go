@@ -32,46 +32,6 @@ func OpenTrackedSQLite(ctx context.Context, cfg config.SQLiteConfig) (*gorm.DB, 
 	return openSQLite(ctx, cfg, "DELETE", "FULL")
 }
 
-// OpenReadOnlySQLite gives the chat sidecar live context without making it a
-// second business-data writer. Mutations continue to go through the main API.
-func OpenReadOnlySQLite(ctx context.Context, cfg config.SQLiteConfig) (*gorm.DB, error) {
-	path := strings.TrimSpace(cfg.Path)
-	if path == "" {
-		return nil, fmt.Errorf("open read-only sqlite: path is empty")
-	}
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		return nil, fmt.Errorf("resolve sqlite path %q: %w", path, err)
-	}
-	dsn := (&url.URL{
-		Scheme: "file",
-		Path:   filepath.ToSlash(absolute),
-		RawQuery: url.Values{
-			"mode":          []string{"ro"},
-			"_busy_timeout": []string{"5000"},
-			"_foreign_keys": []string{"on"},
-		}.Encode(),
-	}).String()
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{
-		Logger:         logger.Default.LogMode(logger.Warn),
-		TranslateError: true,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("open read-only sqlite %q: %w", absolute, err)
-	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		return nil, fmt.Errorf("get read-only sqlite sql.DB: %w", err)
-	}
-	sqlDB.SetMaxOpenConns(1)
-	sqlDB.SetMaxIdleConns(1)
-	if err := sqlDB.PingContext(ctx); err != nil {
-		_ = sqlDB.Close()
-		return nil, fmt.Errorf("ping read-only sqlite %q: %w", absolute, err)
-	}
-	return db, nil
-}
-
 func openSQLite(ctx context.Context, cfg config.SQLiteConfig, journalMode, synchronous string) (*gorm.DB, error) {
 	path := strings.TrimSpace(cfg.Path)
 	if path == "" {
@@ -138,6 +98,7 @@ func Migrate(db *gorm.DB) error {
 	models = append(models, domain.PluginModels()...)
 	models = append(models, &domain.DelegationProgress{})
 	models = append(models, domain.SecurityModels()...)
+	models = append(models, domain.ChatModels()...)
 	if err := db.AutoMigrate(models...); err != nil {
 		return fmt.Errorf("migrate schema: %w", err)
 	}

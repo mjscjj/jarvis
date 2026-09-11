@@ -21,7 +21,7 @@ const CONTACTS = [
 const DESIGNER = { openId: 'ou_0a60892810f8dc26f1a5156b352198c9', name: '李潇琳 (Claire Li)' }
 
 /**
- * 右下角的求助入口，叠在 Jarvis 对话悬浮球上方。
+ * 右下角的飞书求助入口，位于快捷对话栏上方。
  *
  * 面板向上展开：按钮本身贴着视口底部，向下没有空间。
  */

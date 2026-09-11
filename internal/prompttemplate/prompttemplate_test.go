@@ -38,6 +38,7 @@ func TestRenderExpandsEachSourceExactlyOnce(t *testing.T) {
 		"role\n{{WORK_RULES}}\npolicy follows\n{{APPROVAL_POLICY}}\nend",
 		"BEGIN_WORK_RULES\nrule\nEND_WORK_RULES",
 		"send needs approval",
+		"normal",
 	)
 	if err != nil {
 		t.Fatalf("Render() error = %v", err)
@@ -56,20 +57,44 @@ func TestRenderExpandsEachSourceExactlyOnce(t *testing.T) {
 }
 
 func TestRenderAllowsEmptyWorkRulesButRejectsEmptyM5Policy(t *testing.T) {
-	if _, err := Render(StageM3, "role\n{{WORK_RULES}}", "", ""); err != nil {
+	if _, err := Render(StageM3, "role\n{{WORK_RULES}}", "", "", "normal"); err != nil {
 		t.Fatalf("Render(M3 empty rules) error = %v", err)
 	}
-	if _, err := Render(StageM5, "role\n{{WORK_RULES}}\n{{APPROVAL_POLICY}}", "", " "); !errors.Is(err, ErrInvalidTemplate) {
+	if _, err := Render(StageM5, "role\n{{WORK_RULES}}\n{{APPROVAL_POLICY}}", "", " ", "normal"); !errors.Is(err, ErrInvalidTemplate) {
 		t.Fatalf("Render(M5 empty policy) error = %v", err)
 	}
 }
 
 func TestRenderDoesNotInterpretPlaceholdersInsideIncludedRules(t *testing.T) {
-	rendered, err := Render(StageM3, "role\n{{WORK_RULES}}", "模板示例：{{VALUE}}", "")
+	rendered, err := Render(StageM3, "role\n{{WORK_RULES}}", "模板示例：{{VALUE}}", "", "normal")
 	if err != nil {
 		t.Fatalf("Render() error = %v", err)
 	}
 	if !strings.Contains(rendered, "{{VALUE}}") {
 		t.Fatalf("Render() changed included rule content: %q", rendered)
+	}
+}
+
+func TestRenderRequiresCurrentInitiativeForEveryStage(t *testing.T) {
+	for _, stage := range []string{StageM3, StageM5, StageProactive} {
+		template := "role"
+		if stage != StageProactive {
+			template += "\n{{WORK_RULES}}"
+		}
+		if stage == StageM5 {
+			template += "\n{{APPROVAL_POLICY}}"
+		}
+		for _, level := range []string{"quiet", "normal", "active", "", "invalid", "normal\nactive"} {
+			rendered, err := Render(stage, template, "rules", "policy", level)
+			if level == "" || level == "invalid" || level == "normal\nactive" {
+				if !errors.Is(err, ErrInvalidTemplate) {
+					t.Fatalf("Render(%s, %q) = %v", stage, level, err)
+				}
+				continue
+			}
+			if err != nil || !strings.HasPrefix(rendered, "BEGIN_INITIATIVE_LEVEL\n"+level+"\nEND_INITIATIVE_LEVEL\n") {
+				t.Fatalf("Render(%s, %s) = %q, %v", stage, level, rendered, err)
+			}
+		}
 	}
 }

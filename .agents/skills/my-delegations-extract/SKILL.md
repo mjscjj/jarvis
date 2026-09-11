@@ -9,7 +9,7 @@ description: 在 M3 识别 principal 交给他人的待办，保存完整来源�
 负责人只能确认姓名时保留姓名，不猜 open_id；没有期限不编造期限。
 
 首次发现独立交办时输出 `action_type=delegated_followup` 的 candidate。它落盘后的 Todo
-就是交办主体，ID 长期不变，“我的交办”在 M5 运行前即可展示它。尚需核验的写 extracted；
+就是交办主体，ID 长期不变，“我的交办”在 M5 运行前即可展示它。记录交办不因主动程度减少；是否现在核验服从当前 M3 工作规则及明确看护目标。普通档、活跃档尚需核验的写 extracted；安静档没有当前核验必要时先写 observing；
 是否完成属于交办进展，不能用 Todo 的 extracted/materialized/observing 表示。
 title 描述原始交办，target 明确为“核验这条交办的当前进展并写回待办”；annotation.brief
 说明这是一次交办核验，不能把“替负责人完成交付物”写成 M5 的目标。

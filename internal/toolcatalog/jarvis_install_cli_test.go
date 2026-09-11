@@ -64,7 +64,7 @@ func TestJarvisInstallIsProjectOwnedAndAgentDriven(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"源码安装的唯一用户入口", "operator-guide.md", "内部调用 `$bootstrap-jarvis-world-model`"} {
+	for _, want := range []string{"源码安装的唯一用户入口", "operator-guide.md", "内部调用 `$bootstrap-jarvis-world-model`", "不转为 clone 仓库、安装工具链或注册 launchd 服务"} {
 		if !strings.Contains(string(installSkill), want) {
 			t.Fatalf("install skill missing unified-entry contract %q", want)
 		}
@@ -441,7 +441,8 @@ printf '%s' '{"code":0,"msg":"ok","tenant_access_token":"tenant-ready"}'
 		"PATH=" + binDir + ":" + os.Getenv("PATH"),
 	}, "bind-cc", "--cc-config", ccConfigPath)
 	if err != nil {
-		t.Fatal(err)
+		failedConfig, _ := os.ReadFile(ccConfigPath)
+		t.Fatalf("bind-cc failed: %v\n%s\nconfig:\n%s", err, out, failedConfig)
 	}
 	var result struct {
 		Ready  bool `json:"ready"`
@@ -467,7 +468,7 @@ printf '%s' '{"code":0,"msg":"ok","tenant_access_token":"tenant-ready"}'
 		`name = "keep-me"`, `name = "jarvis-codex"`, `inject_sender = true`, `app_id = "cli_app_ready"`,
 		`allow_from = "ou_ready"`,
 		`mode = "yolo"`, `cmd = "codex"`, `scripts/jarvis-tools get-context --chat-id`, `scripts/jarvis-tools get-shared-memory`,
-		`agent_identity.display_name`, `overrides any different name in prior session history`, `prior_messages`,
+		`agent_identity.display_name`, `prior_messages`, `scripts/jarvis-tools create-task`, `source_type=manual`, `delivery_required`,
 		`jarvis_approval_url = "http://127.0.0.1:19452/internal/card-approval/callback"`,
 		`jarvis_route_claim_url = "http://127.0.0.1:19452/internal/message-routing/claim"`,
 		`jarvis_event_relay_url = "http://127.0.0.1:19452/internal/meeting-sweep/wake"`,

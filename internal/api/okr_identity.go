@@ -87,42 +87,6 @@ func LogoutOKR(service *okrAuth.Service) app.HandlerFunc {
 	}
 }
 
-// GetOKRFeishuIdentity refreshes one person's Feishu token if needed and
-// reports where it now lives. It deliberately returns the file path instead of
-// the token: the chat sidecar only needs to hand a location to its Agent, and
-// only this process holds the app secret required to refresh.
-func GetOKRFeishuIdentity(tokens *okrAuth.UserTokens, store *okrAuth.TokenStore, appID string) app.HandlerFunc {
-	return func(ctx context.Context, c *app.RequestContext) {
-		openID := strings.TrimSpace(c.Query("open_id"))
-		if openID == "" {
-			writeAPIError(c, consts.StatusBadRequest, 40081, fmt.Errorf("open_id is required"))
-			return
-		}
-		stored, err := tokens.Ensure(ctx, openID)
-		if err != nil {
-			switch {
-			case errors.Is(err, okrAuth.ErrNoUserToken), errors.Is(err, okrAuth.ErrUserTokenUnusable):
-				writeAPIError(c, consts.StatusNotFound, 40481, err)
-			default:
-				writeAPIError(c, consts.StatusBadGateway, 50281, err)
-			}
-			return
-		}
-		path, err := store.Path(openID)
-		if err != nil {
-			writeAPIError(c, consts.StatusInternalServerError, 50084, err)
-			return
-		}
-		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{
-			"open_id":    stored.OpenID,
-			"name":       stored.Name,
-			"app_id":     appID,
-			"token_path": path,
-			"expires_at": stored.ExpiresAt,
-		}})
-	}
-}
-
 func RequireOKRIdentity(service *okrAuth.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		user := jarvisOKRUser

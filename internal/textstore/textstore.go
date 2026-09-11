@@ -164,10 +164,17 @@ func (s *Service) Update(ctx context.Context, key string, input Input) (*View, e
 func validateContent(item definition, content string) error {
 	var stage string
 	switch item.key {
+	case InitiativeLevelKey:
+		if err := prompttemplate.ValidateInitiativeLevel(content); err != nil {
+			return fmt.Errorf("%w: key=%s: %v", ErrInvalidInput, item.key, err)
+		}
+		return nil
 	case SystemPromptM3Key:
 		stage = prompttemplate.StageM3
 	case SystemPromptM5Key:
 		stage = prompttemplate.StageM5
+	case SystemPromptProactiveKey:
+		stage = prompttemplate.StageProactive
 	default:
 		return nil
 	}

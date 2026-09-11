@@ -15,12 +15,11 @@ repo_dir=${script_dir:h}
 template="$repo_dir/deploy/$label.plist.template"
 agents_dir="$HOME/Library/LaunchAgents"
 instance=''
-if [[ $label == com.bytedance.jarvis.server || $label == com.bytedance.jarvis.web || $label == com.bytedance.jarvis.chat ]]; then
+if [[ $label == com.bytedance.jarvis.server || $label == com.bytedance.jarvis.web ]]; then
   template_label=$label
   instance=$("$script_dir/jarvis-instance" "${2:-$repo_dir/conf/config.yaml}")
   label=$(jq -er .launchd_label <<<"$instance")
   [[ $template_label != com.bytedance.jarvis.web ]] || label="$label.web"
-  [[ $template_label != com.bytedance.jarvis.chat ]] || label=$(jq -er .chat_launchd_label <<<"$instance")
 fi
 target="$agents_dir/$label.plist"
 
@@ -45,8 +44,6 @@ if instance:
     if config['Label'] == 'com.bytedance.jarvis.web':
         config['Label'] = settings['launchd_label'] + '.web'
         config['EnvironmentVariables']['JARVIS_CONFIG'] = settings['config_path']
-    elif config['Label'] == 'com.bytedance.jarvis.chat':
-        config['Label'] = settings['chat_launchd_label']
         config['ProgramArguments'][-1] = settings['config_path']
     else:
         config['Label'] = settings['launchd_label']
