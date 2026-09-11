@@ -64,12 +64,12 @@ func TestJarvisInstallIsProjectOwnedAndAgentDriven(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"用户唯一需要触发的安装入口", "operator-guide.md", "内部调用 `$bootstrap-jarvis-world-model`"} {
+	for _, want := range []string{"源码安装的唯一用户入口", "operator-guide.md", "内部调用 `$bootstrap-jarvis-world-model`", "不转为 clone 仓库、安装工具链或注册 launchd 服务"} {
 		if !strings.Contains(string(installSkill), want) {
 			t.Fatalf("install skill missing unified-entry contract %q", want)
 		}
 	}
-	for _, want := range []string{"会要求用户处理的操作", "一条恢复路径", "原因：阻塞：", "macOS `.app`"} {
+	for _, want := range []string{"会要求用户处理的操作", "一条恢复路径", "原因：阻塞：", "DMG 已有应用内安装入口"} {
 		if !strings.Contains(string(operatorGuide), want) {
 			t.Fatalf("operator guide missing %q", want)
 		}

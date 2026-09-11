@@ -184,7 +184,7 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
     {(error || status.lark.error || status.agent.error) && <Alert type="error" showIcon message="本次操作未完成" description={error || status.lark.error || status.agent.error} />}
     {!locked && <Button type="link" onClick={() => void refresh()}>重新检查</Button>}
     <details className="setup-help"><summary>连接说明与帮助</summary>
-      <p>全程使用 lark-cli 已连接的同一个飞书应用。Bot 是它的聊天身份；个人授权也是授权给这个应用，不是第二个 Bot。已完成的授权和配置自动跳过。</p>
+      <p>全程使用 lark-cli 已连接的同一个飞书应用。安装时统一申请消息、文档、日历、会议、妙记及待办等内置功能所需权限；已有登录也会检查权限是否齐全。Bot 是它的聊天身份，个人授权也是授权给这个应用。</p>
       <p>若提示机器人或权限未就绪，在<a href="https://open.feishu.cn/app" target="_blank" rel="noreferrer">飞书开发者后台</a>检查当前应用：启用机器人、开通消息权限、使用长连接订阅 im.message.receive_v1 和 card.action.trigger，再发布版本。没有操作权限时请联系管理员。</p>
       <p>默认助手名称为 Jarvis，之后可在设置中修改。服务就绪后即可使用，工作背景在后台初始化；等待或失败不会挡住主界面。</p>
       <p>同一个 Bot 不应同时在其他机器运行聊天长连接；若此前装过，请先停止旧实例。完成后可在飞书给这个 Bot 发一条消息验证回复。</p>

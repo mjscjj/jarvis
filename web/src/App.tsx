@@ -149,7 +149,7 @@ function AppShell() {
   ]
 
   const pages: Record<string, React.ReactNode> = {
-    chat: <Chat />,
+    chat: null,
     overview: <Progress />,
     todos: <Todos refreshKey={0} />,
     tasks: context.view_state.mode === 'delegated' && context.selection?.kind !== 'task' && delegationsEnabled !== false
@@ -370,6 +370,9 @@ function AppShell() {
           <Content className={`app-content ${context.active_key === 'chat' ? 'is-chat-page' : ''}`}>
             <Suspense fallback={<div className="page-loading"><Spin size="small" /><span>正在加载…</span></div>}>
               {pages[context.active_key]}
+            </Suspense>
+            <Suspense fallback={null}>
+              <Chat compact={context.active_key !== 'chat'} />
             </Suspense>
           </Content>
         </div>

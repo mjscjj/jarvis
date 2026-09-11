@@ -105,6 +105,14 @@ interface RequestOptions {
 
 export const authEvents = new EventTarget()
 
+export async function apiFetch(path: string, options?: RequestInit): Promise<Response> {
+  const response = await fetch(path, options)
+  if (response.status === 401 && !path.startsWith('/api/auth/')) {
+    authEvents.dispatchEvent(new Event('expired'))
+  }
+  return response
+}
+
 async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const controller = new AbortController()
   const abort = () => controller.abort(options.signal?.reason)
@@ -114,15 +122,12 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
     ? setTimeout(() => controller.abort(new Error('请求超时，请检查网络后重试')), options.timeoutMs)
     : undefined
   try {
-    const response = await fetch(path, {
+    const response = await apiFetch(path, {
       signal: controller.signal,
       method: options.method || 'GET',
       headers: { Accept: 'application/json', ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }) },
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
     })
-    if (response.status === 401 && !path.startsWith('/api/auth/')) {
-      authEvents.dispatchEvent(new Event('expired'))
-    }
     const payload = (await response.json()) as APIResponse<T>
     if (!response.ok || payload.code !== 0 || payload.data === undefined) {
       throw new Error(payload.msg || `请求失败：HTTP ${response.status}`)

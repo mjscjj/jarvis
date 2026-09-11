@@ -18,6 +18,9 @@ import (
 
 func TestConnectingExistingLarkAppNeverCreatesAnother(t *testing.T) {
 	service := &Service{runner: commandFunc(func(ctx context.Context, bin string, args []string, input string) ([]byte, error) {
+		if bin == "bash" && len(args) == 3 && args[1] == "check" && filepath.Base(args[0]) == "jarvis-lark-auth" {
+			return []byte(`{"ok":true}`), nil
+		}
 		if args[0] != "auth" {
 			t.Fatal("attempted to reconfigure an existing app")
 		}

@@ -18,7 +18,7 @@
 | 主服务构建与注册 | `scripts/install-launchd.sh` / `scripts/install-systemd.sh` | 配置完成后通过 `install-server` 按平台调用 |
 | 既有 checkout 的主服务安全重建或服务恢复 | `scripts/rebuild-server.sh` | 确认复用决定和 checkout 归属后调用；注册缺失时按平台恢复，不重新执行完整安装 |
 | 飞书默认身份登录和本机 identity | `$install-jarvis` | 在服务启动前配置并读回 |
-| 飞书初始化能力与权限缺口 | `$install-jarvis` + `feishu-capability-audit.md` | 首次 App 登录申请推荐权限及卡片回调必需的 `im:message:readonly`；随后只读审计核心、可选增强、条件能力和不使用，不在审计中追加权限 |
+| 飞书初始化能力与权限缺口 | `$install-jarvis` + `feishu-capability-audit.md` | 统一使用 `scripts/jarvis-lark-auth begin/check` 申请和检查内置功能所需权限；已有登录也检查。只读审计发现缺口后回到安装授权步骤处理 |
 | 近 7 天业务证据与世界模型工作稿 | `$bootstrap-jarvis-world-model` | 服务就绪后转交同一个 install run；世界模型 Skill 只更新清单 E 区 |
 | PrincipalProfile、项目、人物、重点事项、群监听 | M1/M2 现有接口 | 只由 `$bootstrap-jarvis-world-model` 编排 |
 | 未内置安装动作的缺失依赖 | 用户的 Agent | 按机器选择，不为未知工具在脚本中猜包管理器 |
@@ -50,7 +50,7 @@
 
 - 依赖可能已由 Homebrew、npm、公司环境管理器或手工安装提供；只验证能力，不强制来源。
 - lark-cli 可以存在多个 profile，但 Jarvis 只消费当前默认身份，不在项目内建立第二套 profile 选择。
-- 首次 App 登录只申请推荐权限和 Jarvis 卡片回调必需的 `im:message:readonly`；之后只审计当前飞书能力，不自动追加其它缺失 scope。核心能力缺失如实阻塞相关阶段，可选高级通讯录字段缺失则记录未知并继续。
+- 首次安装统一申请内置功能所需权限，源码与桌面复用 `scripts/jarvis-lark-auth`；已有 token 有效也不能跳过权限检查。只读审计发现 OAuth 缺口后由安装流程补齐；应用侧或资源侧无权保留具体阻塞，不反复发起无效 OAuth。可选高级通讯录字段缺失记录未知并继续。
 - CC Connect 的 model、display、admin 和群回复策略仍由 Agent 与用户按场景决定；`allow_from` 必须只允许 Principal 本人，App 身份和 relay 绑定不可自由漂移。
 - 初始化证据不足时可继续调查或保留未知，不为填满字段编造内容。
 - 项目、关键人物、重点事项和监听群数量没有固定下限；由证据决定，高影响歧义再交给用户。

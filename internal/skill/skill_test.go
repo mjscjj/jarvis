@@ -596,7 +596,7 @@ func TestJarvisInstallationCompletesDependenciesBeforeStartingMainService(t *tes
 	}
 	combined := string(installSkill) + "\n" + string(boundaries) + "\n" + string(binding) + "\n" + string(worldModelSkill)
 	for _, want := range []string{
-		"本 Skill 是从完整仓库 checkout 到最终可用的安装流程所有者",
+		"本 Skill 是从完整仓库 checkout 到最终可用的源码安装流程所有者",
 		"仓库与安装运行 → 机器事实 → 全部依赖 → `validate-dependencies`",
 		"./scripts/jarvis-install start",
 		"run_dir/INSTALL_CHECKLIST.md",
@@ -610,9 +610,11 @@ func TestJarvisInstallationCompletesDependenciesBeforeStartingMainService(t *tes
 		"CC Connect 是该 Bot WebSocket 的唯一所有者",
 		"install.cc-exclusive-owner",
 		"validate-binding",
+		"./scripts/jarvis-lark-auth check",
+		"./scripts/jarvis-lark-auth begin",
 		"已有 daemon 指向另一 binary/checkout",
 		"初始化只负责“Jarvis 如何理解这个用户的世界”",
-		"不安装或重启 daemon，也不配置 CC",
+		"本 Skill 不安装或重启服务，也不配置 CC",
 		"只更新清单 E 区",
 		"./scripts/jarvis-install status --run-dir <run_dir>",
 		"第二次运行同一命令",

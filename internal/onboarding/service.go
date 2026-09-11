@@ -284,11 +284,7 @@ func (s *Service) BeginLarkSetup(ctx context.Context) (*Flow, error) {
 func (s *Service) BeginLarkLogin(ctx context.Context) (*Flow, error) {
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	output, err := s.runner.Run(ctx, s.options.LarkCLIBin, []string{
-		"auth", "login",
-		"--recommend", "--scope", "im:message:readonly",
-		"--no-wait", "--json",
-	}, "")
+	output, err := s.larkAuthorization(ctx, "begin")
 	if err != nil {
 		return nil, commandError("发起飞书授权", output, err)
 	}
@@ -310,6 +306,12 @@ func (s *Service) BeginLarkLogin(ctx context.Context) (*Flow, error) {
 	result := cloneFlow(flow)
 	go s.completeLarkLogin(flowID, deviceCode)
 	return result, nil
+}
+
+func (s *Service) larkAuthorization(ctx context.Context, action string) ([]byte, error) {
+	return s.runner.Run(ctx, "bash", []string{
+		filepath.Join(s.options.RuntimeRoot, "scripts", "jarvis-lark-auth"), action, s.options.LarkCLIBin,
+	}, "")
 }
 
 func (s *Service) BeginAgentLogin(ctx context.Context) (*Flow, error) {
@@ -724,6 +726,12 @@ func (s *Service) larkStatus(ctx context.Context) LarkStatus {
 	}
 	if secretErr != nil {
 		status.Error = secretErr.Error()
+	}
+	if status.User.Verified {
+		if output, err := s.larkAuthorization(ctx, "check"); err != nil {
+			status.User.Verified = false
+			status.Error = commandError("检查安装所需飞书权限，请在安装页重新授权当前应用", output, err).Error()
+		}
 	}
 	return status
 }

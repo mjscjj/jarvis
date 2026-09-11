@@ -10,7 +10,7 @@
 
 以下 `jarvis-install` 与 daemon 命令仅供完整 checkout 安装使用。DMG 由应用内 onboarding 写入桌面 CC 配置、supervisor 管理进程；后台建模只读取现有绑定，不执行此处的重新绑定或服务安装。
 
-1. 加载 `lark-shared`，用不带 `--profile` 的 `auth status --json --verify` 确认 lark-cli 当前默认身份的 user 与 bot。未配置时才初始化；未登录时使用 split-flow 完成 user OAuth。Bot/App 的权限、事件订阅和应用发布属于开放平台配置，不能用 user OAuth 成功代替。
+1. 加载 `lark-shared`，用不带 `--profile` 的 `auth status --json --verify` 确认 lark-cli 当前默认身份的 user 与 bot。未配置时才初始化；使用 `scripts/jarvis-lark-auth check` 检查权限，未登录或缺权限时按统一授权说明通过 `scripts/jarvis-lark-auth begin` 完成 user OAuth。Bot/App 的权限、事件订阅和应用发布属于开放平台配置，不能用 user OAuth 成功代替。
 2. 用登录 user 的 app-scoped open_id 和已确认 Git author 写机器 identity：
 
    ```bash

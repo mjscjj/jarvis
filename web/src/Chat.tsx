@@ -5,7 +5,9 @@ import type { MenuProps } from 'antd'
 import type { TextAreaRef } from 'antd/es/input/TextArea'
 import { useAgentIdentity } from './agentIdentity'
 import { usePageContext } from './pageContext'
+import { apiFetch } from './api'
 import MarkdownReport from './components/MarkdownReport'
+import ChatDock from './components/ChatDock'
 import type { ChatAgent, ChatAttachment, ChatHistoryMessage, ChatModel, ChatSession, ChatSource } from './types'
 import './styles/chat.css'
 
@@ -32,7 +34,7 @@ const SUGGESTIONS = [
 ]
 
 async function api<T>(url: string, options?: RequestInit): Promise<T> {
-  const response = await fetch(url, options)
+  const response = await apiFetch(url, options)
   const payload = (await response.json()) as APIEnvelope<T>
   if (!response.ok || payload.code !== 0 || payload.data === undefined) throw new Error(payload.msg || `请求失败：HTTP ${response.status}`)
   return payload.data
@@ -68,9 +70,9 @@ function defaultEffort(model?: ChatModel): string {
   return model?.default_reasoning_effort || model?.reasoning_efforts?.find((value) => value === 'medium') || model?.reasoning_efforts?.[0] || 'medium'
 }
 
-export default function Chat() {
+export default function Chat({ compact = false }: { compact?: boolean }) {
   const { name: agentName, shortName } = useAgentIdentity()
-  const { context, setViewState } = usePageContext()
+  const { context, setViewState, navigate } = usePageContext()
   const [sessions, setSessions] = useState<ChatSession[]>([])
   const [active, setActive] = useState<ChatSession | null>(null)
   const [agents, setAgents] = useState<ChatAgent[]>([])
@@ -86,11 +88,33 @@ export default function Chat() {
   const [streamText, setStreamText] = useState<Record<string, string>>({})
   const [error, setError] = useState<string>()
   const [editingTitle, setEditingTitle] = useState(false)
+  const [switching, setSwitching] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [creating, setCreating] = useState(false)
   const inputRef = useRef<TextAreaRef>(null),
     fileRef = useRef<HTMLInputElement>(null),
     listRef = useRef<HTMLDivElement>(null)
   const activeID = useRef('')
   const draftTimer = useRef<number | undefined>(undefined)
+  // The chat stays mounted across pages. Async results must use the current route,
+  // never the route captured when a request started.
+  const pageRef = useRef({ context, setViewState })
+  pageRef.current = { context, setViewState }
+  const draftRef = useRef({ text: input, attachment_ids: attachments.map((item) => item.id) })
+  draftRef.current = { text: input, attachment_ids: attachments.map((item) => item.id) }
+  const sessionRequest = useRef(0)
+  const draftWrite = useRef<Promise<unknown>>(Promise.resolve())
+  const reportError = (cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause))
+  const attempt = async (action: Promise<unknown>) => { try { await action } catch (cause) { reportError(cause) } }
+  const saveDraft = useCallback((id: string, draft: ChatSession['draft']) => {
+    // Keep an older debounce request from overwriting a newer session-switch save.
+    // Each caller reports its own error; a later edit can still retry after failure.
+    const write = draftWrite.current.catch(() => undefined).then(() => api<ChatSession>(`/api/chat/sessions/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ draft }),
+    }))
+    draftWrite.current = write
+    return write
+  }, [])
 
   const loadModels = useCallback(
     async (agent: string, force = false) => {
@@ -111,45 +135,63 @@ export default function Chat() {
   )
   const openSession = useCallback(
     async (id: string, closeDrawer = true) => {
-      const detail = await api<ChatSession>(`/api/chat/sessions/${id}`)
-      setActive(detail)
-      activeID.current = detail.id
-      setInput(detail.draft?.text || '')
-      setAttachments(detail.pending_attachments || [])
-      setError(undefined)
-      setViewState({ session: detail.id })
-      if (closeDrawer) setHistoryOpen(false)
-      void loadModels(detail.agent).catch(() => undefined)
+      if (id === activeID.current) {
+        if (closeDrawer) setHistoryOpen(false)
+        return
+      }
+      const request = ++sessionRequest.current
+      setSwitching(true)
+      window.clearTimeout(draftTimer.current)
+      try {
+        if (activeID.current && activeID.current !== id) {
+          await saveDraft(activeID.current, draftRef.current)
+        }
+        const detail = await api<ChatSession>(`/api/chat/sessions/${id}`)
+        if (request !== sessionRequest.current) return
+        setActive(detail)
+        activeID.current = detail.id
+        setInput(detail.draft?.text || '')
+        setAttachments(detail.pending_attachments || [])
+        setError(undefined)
+        if (pageRef.current.context.active_key === 'chat') pageRef.current.setViewState({ session: detail.id })
+        if (closeDrawer) setHistoryOpen(false)
+        void loadModels(detail.agent).catch(reportError)
+      } finally {
+        if (request === sessionRequest.current) setSwitching(false)
+      }
     },
-    [loadModels, setViewState],
+    [loadModels, saveDraft],
   )
   const createSession = useCallback(
     async (agent?: string, model?: string, fromSessionID?: string) => {
-      const chosenAgent = agent || agents.find((item) => item.default && item.available)?.id || agents.find((item) => item.available)?.id || 'codex'
-      let available = models[chosenAgent] || []
-      if (!available.length) available = await loadModels(chosenAgent)
-      const chosenModel = model || available.find((item) => item.default)?.id || available[0]?.id
-      if (!chosenModel) throw new Error(`${agentLabel(chosenAgent)} 没有可用模型`)
-      const chosen = available.find((item) => item.id === chosenModel)
-      const detail = await api<ChatSession>('/api/chat/sessions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: fromSessionID && active ? `${active.title} · 继续` : '新对话',
-          agent: chosenAgent,
-          model: chosenModel,
-          reasoning_effort: defaultEffort(chosen),
-          sources: [{ kind: 'workspace', label: '自动参考工作上下文' }],
-          draft: {},
-          from_session_id: fromSessionID || '',
-        }),
-      })
-      await loadSessions(false, '')
-      setArchived(false)
-      setQuery('')
-      await openSession(detail.id)
-      requestAnimationFrame(() => inputRef.current?.focus())
-      return detail
+      setCreating(true)
+      try {
+        const chosenAgent = agent || agents.find((item) => item.default && item.available)?.id || agents.find((item) => item.available)?.id || 'codex'
+        let available = models[chosenAgent] || []
+        if (!available.length) available = await loadModels(chosenAgent)
+        const chosenModel = model || available.find((item) => item.default)?.id || available[0]?.id
+        if (!chosenModel) throw new Error(`${agentLabel(chosenAgent)} 没有可用模型`)
+        const chosen = available.find((item) => item.id === chosenModel)
+        const detail = await api<ChatSession>('/api/chat/sessions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: fromSessionID && active ? `${active.title} · 继续` : '新对话',
+            agent: chosenAgent,
+            model: chosenModel,
+            reasoning_effort: defaultEffort(chosen),
+            sources: [{ kind: 'workspace', label: '自动参考工作上下文' }],
+            draft: {},
+            from_session_id: fromSessionID || '',
+          }),
+        })
+        await loadSessions(false, '')
+        setArchived(false)
+        setQuery('')
+        await openSession(detail.id)
+        requestAnimationFrame(() => inputRef.current?.focus())
+        return detail
+      } finally { setCreating(false) }
     },
     [active, agents, loadModels, loadSessions, models, openSession],
   )
@@ -162,8 +204,9 @@ export default function Chat() {
         if (!alive) return
         setAgents(agentData.items)
         setSessions(sessionData.items)
-        const target = sessionData.items.find((item) => item.id === context.view_state.session) || sessionData.items[0]
-        if (target) await openSession(target.id, false)
+        const requested = pageRef.current.context.active_key === 'chat' ? pageRef.current.context.view_state.session : undefined
+        const targetID = requested || sessionData.items[0]?.id
+        if (targetID) await openSession(targetID, false)
         else {
           const available = agentData.items.find((item) => item.default && item.available) || agentData.items.find((item) => item.available)
           if (!available) throw new Error('没有可用的底层 Agent，请先安装并登录 Codex、TRAE 或 Cursor')
@@ -203,19 +246,17 @@ export default function Chat() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if (loading || context.active_key !== 'chat') return
+    const requested = context.view_state.session
+    if (requested && requested !== activeID.current) void attempt(openSession(requested))
+    else if (!requested && activeID.current) setViewState({ session: activeID.current })
+  }, [context.active_key, context.view_state.session, loading]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
     if (!active) return
     window.clearTimeout(draftTimer.current)
     draftTimer.current = window.setTimeout(() => {
-      void api<ChatSession>(`/api/chat/sessions/${active.id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          draft: {
-            text: input,
-            attachment_ids: attachments.map((item) => item.id),
-          },
-        }),
-      }).catch(() => undefined)
+      void saveDraft(active.id, { text: input, attachment_ids: attachments.map((item) => item.id) }).catch(reportError)
     }, 500)
     return () => window.clearTimeout(draftTimer.current)
   }, [active?.id, attachments, input])
@@ -233,7 +274,7 @@ export default function Chat() {
     [loadSessions],
   )
   const send = useCallback(async () => {
-    if (!active || running.has(active.id)) return
+    if (!active || running.has(active.id) || uploading || switching || saving || creating) return
     const text = input.trim()
     if (!text && !attachments.length) return
     const selectedModel = models[active.agent]?.find((item) => item.id === active.model)
@@ -265,7 +306,7 @@ export default function Chat() {
         : current,
     )
     try {
-      const response = await fetch(`/api/chat/sessions/${sessionID}/messages`, {
+      const response = await apiFetch(`/api/chat/sessions/${sessionID}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -315,12 +356,13 @@ export default function Chat() {
       })
       await refreshActive(sessionID).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
     }
-  }, [active, attachments, context, input, models, refreshActive, running])
+  }, [active, attachments, context, input, models, refreshActive, running, uploading, switching, saving, creating])
   const stop = async () => {
     if (active) await api<{ canceled: boolean }>(`/api/chat/sessions/${active.id}/cancel`, { method: 'POST' })
   }
   const uploadFiles = async (files: FileList | File[]) => {
     if (!active) return
+    const sessionID = active.id
     const items = Array.from(files)
     if (attachments.length + items.length > 10) {
       setError('每条消息最多添加 10 个文件')
@@ -337,9 +379,9 @@ export default function Chat() {
       for (const file of items) {
         const form = new FormData()
         form.append('file', file)
-        uploaded.push(await api<ChatAttachment>(`/api/chat/sessions/${active.id}/attachments`, { method: 'POST', body: form }))
+        uploaded.push(await api<ChatAttachment>(`/api/chat/sessions/${sessionID}/attachments`, { method: 'POST', body: form }))
       }
-      setAttachments((current) => [...current, ...uploaded])
+      if (activeID.current === sessionID) setAttachments((current) => [...current, ...uploaded])
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -350,20 +392,23 @@ export default function Chat() {
     if (!active) return
     try {
       await api<{ deleted: boolean }>(`/api/chat/sessions/${active.id}/attachments/${file.id}`, { method: 'DELETE' })
-      setAttachments((items) => items.filter((item) => item.id !== file.id))
+      if (activeID.current === active.id) setAttachments((items) => items.filter((item) => item.id !== file.id))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     }
   }
   const updateSession = async (patch: Record<string, unknown>) => {
     if (!active) return
-    const detail = await api<ChatSession>(`/api/chat/sessions/${active.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(patch),
-    })
-    setActive(detail)
-    await loadSessions()
+    setSaving(true)
+    try {
+      const detail = await api<ChatSession>(`/api/chat/sessions/${active.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      })
+      if (activeID.current === detail.id) setActive(detail)
+      await loadSessions()
+    } finally { setSaving(false) }
   }
   const changeAgent = async (agent: string) => {
     if (!active || agent === active.agent) return
@@ -419,6 +464,8 @@ export default function Chat() {
         await api<{ deleted: boolean }>(`/api/chat/sessions/${active.id}`, {
           method: 'DELETE',
         })
+        window.clearTimeout(draftTimer.current)
+        activeID.current = ''
         const items = await loadSessions()
         if (items[0]) await openSession(items[0].id)
         else await createSession()
@@ -449,10 +496,11 @@ export default function Chat() {
       {SOURCE_OPTIONS.map((source) => (
         <Checkbox
           key={source.kind}
+          disabled={switching || saving || creating}
           checked={active.sources.some((item) => item.kind === source.kind)}
           onChange={(event) => {
             const sources = event.target.checked ? [...active.sources.filter((item) => item.kind !== source.kind), source] : active.sources.filter((item) => item.kind !== source.kind)
-            void updateSession({ sources })
+            void attempt(updateSession({ sources }))
           }}
         >
           {source.label}
@@ -503,6 +551,31 @@ export default function Chat() {
   ]
   const displayMessages = active?.messages || [],
     currentStream = active ? streamText[active.id] : ''
+  if (compact) {
+    const latest = activeRunning
+      ? { id: 'stream', role: 'assistant' as const, text: currentStream || '', created_at: '', agent: active?.agent, model: active?.model }
+      : [...displayMessages].reverse().find((item) => item.role === 'assistant')
+    return <ChatDock
+      active={active} sessions={sessions} agents={agents} models={currentModels}
+      input={input} onInput={setInput} attachments={attachments} uploading={uploading}
+      loading={loading} busy={switching || saving || creating} running={activeRunning}
+      error={error} onDismissError={() => setError(undefined)}
+      replyText={activeRunning ? currentStream || '正在思考…' : latest?.text || (latest?.attachments?.length ? '已生成附件，点击查看' : '')}
+      replyContent={latest && <ChatMessageCard message={latest} agentName={agentName} shortName={shortName} typing={activeRunning} />}
+      sources={sourcePicker}
+      onSend={() => void attempt(send())} onStop={() => void attempt(stop())}
+      onNew={() => void attempt(createSession())}
+      onOpenSession={(id) => void attempt(openSession(id))}
+      onOpenHistory={() => navigate('chat', active ? { session: active.id } : {})}
+      onRefreshSessions={() => { setArchived(false); setQuery(''); void attempt(loadSessions(false, '')) }}
+      onAgent={(value) => void attempt(changeAgent(value))}
+      onModel={(value) => void attempt(changeModel(value))}
+      onRefreshModels={() => { if (active) void attempt(loadModels(active.agent, true)) }}
+      onEffort={(value) => void attempt(updateSession({ reasoning_effort: value }))}
+      onUpload={(files) => void uploadFiles(files)}
+      onRemoveAttachment={(file) => void removeAttachment(file)}
+    />
+  }
   if (loading)
     return (
       <div className="chat-workspace-loading">

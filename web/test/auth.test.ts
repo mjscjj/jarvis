@@ -1,6 +1,19 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { authEvents, getAuthStatus, getSetupStatus, repairSetupLarkCredentials } from '../src/api.ts'
+import { apiFetch, authEvents, getAuthStatus, getSetupStatus, repairSetupLarkCredentials } from '../src/api.ts'
+
+test('chat requests share session expiry handling without consuming or replaying the response', async (t) => {
+  let expired = 0
+  const listener = () => { expired++ }
+  authEvents.addEventListener('expired', listener)
+  t.after(() => authEvents.removeEventListener('expired', listener))
+  const response = new Response('session expired', { status: 401 })
+  const fetchMock = t.mock.method(globalThis, 'fetch', async () => response)
+  assert.equal(await apiFetch('/api/chat/sessions/s1/messages', { method: 'POST' }), response)
+  assert.equal(response.bodyUsed, false)
+  assert.equal(expired, 1)
+  assert.equal(fetchMock.mock.callCount(), 1)
+})
 
 test('401 notifies session owner without replaying a write; auth endpoints do not recurse', async (t) => {
   const calls: string[] = []
