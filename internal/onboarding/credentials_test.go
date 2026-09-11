@@ -66,8 +66,23 @@ func TestCredentialValidationFailsClosed(t *testing.T) {
 func TestExistingChannelSecretIsReusedWithoutLeakingToBrowser(t *testing.T) {
 	service := &Service{options: Options{StateRoot: t.TempDir()}, runner: onboardingRunnerStub{}}
 	path := filepath.Join(service.options.StateRoot, "cc-connect", "config.toml")
-	if err := writeCCConfig(path, "/runtime", "traex", "cli_test", "test-secret", "ou_principal", "relay-secret"); err != nil {
+	runtimeRoot := t.TempDir()
+	promptPath := filepath.Join(runtimeRoot, "conf", "prompts", "cc-system-prompt.md")
+	if err := os.MkdirAll(filepath.Dir(promptPath), 0o755); err != nil {
 		t.Fatal(err)
+	}
+	if err := os.WriteFile(promptPath, []byte("CC prompt at {{REPO_ROOT}}\ncreate-task source_type=manual delivery_required\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeCCConfig(path, runtimeRoot, "traex", "cli_test", "test-secret", "ou_principal", "relay-secret"); err != nil {
+		t.Fatal(err)
+	}
+	configured, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(configured), "CC prompt at "+runtimeRoot) || strings.Contains(string(configured), "{{REPO_ROOT}}") {
+		t.Fatalf("CC prompt was not loaded and rendered from runtime: %s", configured)
 	}
 	secret, err := service.savedSecret("cli_test")
 	if err != nil || secret != "test-secret" {
