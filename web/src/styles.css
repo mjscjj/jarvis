@@ -2239,6 +2239,16 @@ pre {
   background: #f7f8f9;
 }
 
+.setup-connection-notice {
+  position: sticky; top: 0; z-index: 200;
+  display: flex; align-items: center; gap: 8px; padding: 6px 16px;
+  background: var(--color-warning-bg); color: var(--color-warning);
+  border-bottom: 1px solid var(--color-border); font-size: 12px;
+}
+.setup-connection-notice > span { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.setup-connection-notice > button { flex-shrink: 0; }
+.setup-repair-drawer .setup-page { min-height: 0; padding: 0; background: transparent; }
+
 .world-model-setup {
   position: fixed;
   right: 20px;

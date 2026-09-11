@@ -117,6 +117,9 @@ func StreamChatSession(service *chat.Service) app.HandlerFunc {
 			}
 		}()
 		emit := func(ev chat.Event) error {
+			if ev.Kind == chat.EventAccepted {
+				return w.WriteEvent("accepted", []byte(`{}`))
+			}
 			if ev.Kind == chat.EventThread {
 				raw, _ := json.Marshal(map[string]string{"thread_id": ev.ThreadID})
 				return w.WriteEvent("thread", raw)

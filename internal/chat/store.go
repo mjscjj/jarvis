@@ -34,6 +34,7 @@ type SessionView struct {
 	Sources            []Source         `json:"sources"`
 	Draft              json.RawMessage  `json:"draft,omitempty"`
 	Archived           bool             `json:"archived"`
+	Running            bool             `json:"running"`
 	CreatedAt          time.Time        `json:"created_at"`
 	UpdatedAt          time.Time        `json:"updated_at"`
 	Messages           []MessageView    `json:"messages,omitempty"`
@@ -261,7 +262,9 @@ func (s *Service) ListSessions(ctx context.Context, query string, archived bool)
 	}
 	result := make([]SessionView, 0, len(rows))
 	for _, row := range rows {
-		result = append(result, *sessionView(row))
+		view := sessionView(row)
+		view.Running = s.sessionRunning(row.ID)
+		result = append(result, *view)
 	}
 	return result, nil
 }
@@ -282,6 +285,7 @@ func (s *Service) GetSession(ctx context.Context, id string) (*SessionView, erro
 		return nil, fmt.Errorf("get chat session: %w", err)
 	}
 	view := sessionView(row)
+	view.Running = s.sessionRunning(row.ID)
 	var messages []domain.ChatMessage
 	if err := s.db.WithContext(ctx).Where("session_id = ?", row.ID).Order("created_at ASC, rowid ASC").Find(&messages).Error; err != nil {
 		return nil, fmt.Errorf("list chat messages: %w", err)

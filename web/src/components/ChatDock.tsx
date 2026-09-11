@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { ArrowUpOutlined, CheckOutlined, CloseOutlined, DownOutlined, ExpandAltOutlined, MessageOutlined, MoreOutlined, PlusOutlined, StopOutlined } from '@ant-design/icons'
 import { Alert, Button, Input, Popover, Select, Spin, Tooltip } from 'antd'
+import type { TextAreaRef } from 'antd/es/input/TextArea'
 import type { ChatAgent, ChatAttachment, ChatModel, ChatSession } from '../types'
 import '../styles/chat-dock.css'
 
@@ -39,14 +40,16 @@ interface ChatDockProps {
 // Presentation only: both chat surfaces are driven by the same mounted Chat.
 export default function ChatDock(props: ChatDockProps) {
   const [expanded, setExpanded] = useState(true)
-  const [panel, setPanel] = useState<'sessions' | 'model' | 'settings' | 'reply' | null>(null)
+  const [panel, setPanel] = useState<'sessions' | 'agent' | 'model' | 'settings' | 'reply' | null>(null)
   const dockRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<TextAreaRef>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const { active, models, running, busy, loading, uploading } = props
   const disabled = loading || busy || !active
   const settingsDisabled = disabled || running || uploading
   const model = models.find((item) => item.id === active?.model)
   const modelName = model?.name || active?.model || '选择模型'
+  const agentName = props.agents.find((agent) => agent.id === active?.agent)?.name || active?.agent || 'Agent'
   const sessionID = active?.id
 
   useEffect(() => { setPanel(null) }, [sessionID])
@@ -61,6 +64,7 @@ export default function ChatDock(props: ChatDockProps) {
 
   const popover = (name: NonNullable<typeof panel>) => ({
     trigger: 'click' as const,
+    classNames: { root: 'chat-dock-popover' },
     open: panel === name,
     onOpenChange: (open: boolean) => {
       setPanel(open ? name : null)
@@ -68,6 +72,15 @@ export default function ChatDock(props: ChatDockProps) {
       if (open && name === 'model') props.onRefreshModels()
     },
   })
+  const agentPicker = <div className="chat-dock-agents">
+    <div className="chat-dock-panel-caption">选择 Agent</div>
+    {props.agents.map((agent) => <button type="button" key={agent.id} className="chat-dock-agent-option"
+      aria-pressed={active?.agent === agent.id} disabled={settingsDisabled || !agent.available}
+      onClick={() => { setPanel(null); props.onAgent(agent.id) }}>
+      <span>{agent.name}</span>{!agent.available ? <small>不可用</small> : active?.agent === agent.id && <CheckOutlined />}
+    </button>)}
+    <div className="chat-dock-panel-caption">切换 Agent 后，模型随之更新</div>
+  </div>
   const sessions = <div className="chat-dock-sessions">
     <Button type="text" block icon={<PlusOutlined />} disabled={disabled || uploading} onClick={() => { setPanel(null); props.onNew() }}>新对话</Button>
     <div className="chat-dock-panel-caption">最近会话</div>
@@ -79,8 +92,6 @@ export default function ChatDock(props: ChatDockProps) {
     <Button type="text" block icon={<ExpandAltOutlined />} onClick={props.onOpenHistory}>全部会话与历史</Button>
   </div>
   const settings = <div className="chat-dock-settings">
-    <label>Agent<Select aria-label="底部对话 Agent" value={active?.agent} disabled={settingsDisabled} onChange={props.onAgent}
-      options={props.agents.map((agent) => ({ value: agent.id, label: agent.available ? agent.name : `${agent.name} · 不可用`, disabled: !agent.available }))} /></label>
     {!!model?.reasoning_efforts?.length && <label>推理强度<Select aria-label="底部对话推理强度" value={active?.reasoning_effort} disabled={settingsDisabled}
       options={model.reasoning_efforts.map((value) => ({ value, label: value }))} onChange={props.onEffort} /></label>}
     <div className="chat-dock-panel-caption">上下文引用</div>{props.sources}
@@ -104,7 +115,10 @@ export default function ChatDock(props: ChatDockProps) {
         </button>
       </Popover>}
       <span className="chat-dock-live" role="status">{running ? '正在回复，可打开全文查看' : ''}</span>
-      {!expanded ? <button type="button" className="chat-dock-handle" aria-label="展开底部对话输入" aria-expanded="false" onClick={() => setExpanded(true)}><span /></button> :
+      {!expanded ? <button type="button" className="chat-dock-handle" aria-label="展开底部对话输入" aria-expanded="false" onClick={() => {
+        setExpanded(true)
+        requestAnimationFrame(() => inputRef.current?.focus({ cursor: 'end' }))
+      }}><span /></button> :
         <div className="chat-dock-composer" onDragOver={(event) => event.preventDefault()} onDrop={(event) => {
           event.preventDefault()
           if (!disabled && !uploading) props.onUpload(event.dataTransfer.files)
@@ -113,9 +127,9 @@ export default function ChatDock(props: ChatDockProps) {
             <span title={file.name}>{file.name}</span><button type="button" disabled={disabled || uploading} aria-label={`移除 ${file.name}`} onClick={() => props.onRemoveAttachment(file)}><CloseOutlined /></button>
           </span>)}</div>}
           <div className="chat-dock-entry">
-            <Input.TextArea value={props.input} onChange={(event) => props.onInput(event.target.value)}
+            <Input.TextArea ref={inputRef} value={props.input} onChange={(event) => props.onInput(event.target.value)}
               aria-label="底部对话输入" autoSize={{ minRows: 1, maxRows: 4 }} disabled={disabled}
-              placeholder={loading ? '正在加载对话…' : '问一句，或交代一件事…'}
+              placeholder={loading ? '正在加载对话…' : running ? '可先输入下一条，回复结束后发送…' : '问一句，或交代一件事…'}
               onPaste={(event) => {
                 if (event.clipboardData.files.length && !disabled && !uploading) { event.preventDefault(); props.onUpload(event.clipboardData.files) }
               }}
@@ -123,15 +137,20 @@ export default function ChatDock(props: ChatDockProps) {
                 if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); if (!running && !uploading && !disabled) props.onSend() }
               }} />
             {running ? <button type="button" className="chat-dock-send" aria-label="停止回复" onClick={props.onStop}><StopOutlined /></button> :
-              <button type="button" className="chat-dock-send" aria-label="发送消息" disabled={disabled || uploading || (!props.input.trim() && !props.attachments.length)} onClick={props.onSend}><ArrowUpOutlined /></button>}
+              <button type="button" className="chat-dock-send" aria-label="发送消息" title="Enter 发送 · Shift+Enter 换行" disabled={disabled || uploading || (!props.input.trim() && !props.attachments.length)} onClick={props.onSend}><ArrowUpOutlined /></button>}
           </div>
           <div className="chat-dock-toolbar">
             <input type="file" hidden multiple ref={fileRef} onChange={(event) => { if (event.target.files) props.onUpload(event.target.files); event.target.value = '' }} />
             <Tooltip title="添加图片或文件"><button type="button" className="chat-dock-icon" aria-label="添加图片或文件" disabled={disabled || uploading} onClick={() => fileRef.current?.click()}>{uploading ? <Spin size="small" /> : <PlusOutlined />}</button></Tooltip>
             <Popover {...popover('sessions')} placement="topLeft" content={sessions}>
-              <button type="button" className="chat-dock-session-trigger" aria-label="切换会话" disabled={loading || busy || uploading}><MessageOutlined /><span>{active?.title || '会话'}</span><DownOutlined /></button>
+              <button type="button" className="chat-dock-session-trigger" aria-label="切换会话" title={active?.title || '切换会话'} disabled={loading || busy || uploading}><MessageOutlined /><span>{active?.title || '会话'}</span><DownOutlined /></button>
             </Popover>
             <div className="chat-dock-toolbar-spacer" />
+            <Popover {...popover('agent')} placement="topRight" content={agentPicker}>
+              <button type="button" className="chat-dock-agent-trigger" aria-label={`切换 Agent：${agentName}`} title={`当前 Agent：${agentName}`} disabled={settingsDisabled}>
+                <span>{agentName}</span><DownOutlined />
+              </button>
+            </Popover>
             <Popover {...popover('model')} placement="topRight" content={<div className="chat-dock-model-picker"><div className="chat-dock-panel-caption">模型</div><Select
               aria-label="底部对话模型" showSearch optionFilterProp="label" value={active?.model} loading={!models.length}
               disabled={settingsDisabled} options={models.map((item) => ({ value: item.id, label: item.name }))}

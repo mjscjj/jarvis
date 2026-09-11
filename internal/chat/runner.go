@@ -27,6 +27,8 @@ import (
 type EventKind string
 
 const (
+	// EventAccepted confirms that StreamSession has persisted the user's input.
+	EventAccepted EventKind = "accepted"
 	// EventThread 携带 codex 的 thread_id（会话建立/恢复），尽早发一次。
 	EventThread EventKind = "thread"
 	// EventDelta 携带 codex 的增量文本，逐条发。

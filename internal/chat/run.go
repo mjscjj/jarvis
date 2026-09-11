@@ -82,12 +82,15 @@ func (s *Service) StreamSession(ctx context.Context, sessionID string, input Sen
 			return fmt.Errorf("attach files to message: %w", err)
 		}
 	}
-	updates := map[string]any{"updated_at": time.Now(), "sources": metaSources(input.Sources)}
+	updates := map[string]any{"updated_at": time.Now(), "sources": metaSources(input.Sources), "draft": datatypes.JSON([]byte(`{}`))}
 	if session.Title == "新对话" {
 		updates["title"] = deriveTitle(message, attachmentViews)
 	}
 	if err := s.db.WithContext(ctx).Model(&domain.ChatSession{}).Where("id = ?", sessionID).Updates(updates).Error; err != nil {
 		return fmt.Errorf("update chat session before run: %w", err)
+	}
+	if err := emit(Event{Kind: EventAccepted}); err != nil {
+		return err
 	}
 
 	var row domain.ChatSession

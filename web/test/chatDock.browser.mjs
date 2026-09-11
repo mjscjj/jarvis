@@ -32,7 +32,7 @@ try {
     calls.push({ path: url.pathname, method, body })
     let data
     if (url.pathname === '/api/agent-identity') data = { display_name: 'Jarvis' }
-    else if (url.pathname === '/api/chat/agents') data = { items: [{ id: 'trae', name: 'TRAE', available: true, default: true }, { id: 'codex', name: 'Codex', available: true, default: false }] }
+    else if (url.pathname === '/api/chat/agents') data = { items: [{ id: 'trae', name: 'TRAE', available: true, default: true }, { id: 'codex', name: 'Codex', available: true, default: false }, { id: 'cursor', name: 'Cursor', available: false, default: false }] }
     else if (url.pathname.endsWith('/models')) data = { items: models }
     else if (url.pathname === '/api/chat/sessions') {
       if (method === 'POST') { data = makeSession(`s${sessions.size + 1}`, body.title, { ...body, messages: [] }); sessions.set(data.id, data) }
@@ -54,7 +54,7 @@ try {
         data = { id: 'file1', name: 'note.txt', mime_type: 'text/plain', size_bytes: 5, created_at: new Date().toISOString() }
         session.pending_attachments.push(data)
       } else if (tail.startsWith('/attachments/')) { session.pending_attachments = []; data = { deleted: true } }
-      else if (tail === '/cancel') data = { canceled: true }
+      else if (tail === '/cancel') { session.running = false; data = { canceled: true } }
       else assert.fail(`Unexpected API: ${url.pathname}`)
     }
     await route.fulfill({ json: { code: 0, data } })
@@ -67,9 +67,11 @@ try {
         window.__chatSends.push(JSON.parse(options.body))
         const encoder = new TextEncoder()
         return Promise.resolve(new Response(new ReadableStream({ start(controller) {
+          window.__chatAccept = () => controller.enqueue(encoder.encode('event: accepted\ndata: {}\n\n'))
+          window.__chatReject = () => { controller.enqueue(encoder.encode('event: error\ndata: {"message":"chat state conflict: this chat session is already generating a reply"}\n\n')); controller.close() }
           window.__chatDelta = text => controller.enqueue(encoder.encode(`event: delta\ndata: ${JSON.stringify({ text })}\n\n`))
           window.__chatFinish = () => { controller.enqueue(encoder.encode('event: done\ndata: {}\n\n')); controller.close() }
-          window.__chatDelta('正在检查当前进展。')
+          if (!window.__deferAcceptance) { window.__chatAccept(); window.__chatDelta('正在检查当前进展。') }
         } }), { headers: { 'Content-Type': 'text/event-stream' } }))
       }
       return originalFetch(url, options)
@@ -96,6 +98,13 @@ try {
   assert.equal(new URL(page.url()).hash, '#/work?mode=delegated&page=2&state=open')
   const initialHeight = await page.locator('.chat-dock-composer').evaluate(el => el.getBoundingClientRect().height)
   assert.ok(initialHeight <= 82, `Composer too tall: ${initialHeight}`)
+  assert.equal(await page.locator('.chat-dock-composer').evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(255, 255, 255)')
+  await page.getByRole('button', { name: '切换 Agent：TRAE', exact: true }).click()
+  assert.equal(await page.getByRole('button', { name: 'Cursor 不可用', exact: true }).isDisabled(), true)
+  await page.getByRole('button', { name: 'Codex', exact: true }).click()
+  await page.getByRole('button', { name: /^取\s*消$/ }).click()
+  assert.equal(sessions.get('s1').agent, 'trae')
+  assert.equal(await page.getByRole('button', { name: '切换 Agent：TRAE', exact: true }).isVisible(), true)
   await input.fill('跨页面保留的草稿')
   await page.getByRole('button', { name: '对话入口', exact: true }).click()
   await page.getByPlaceholder('问一个问题，或告诉我你想推进什么…').waitFor()
@@ -107,6 +116,8 @@ try {
 
   await input.fill('点击当前会话也保留')
   await page.getByRole('button', { name: '切换会话', exact: true }).click()
+  assert.equal(await page.locator('.chat-dock-session[aria-current="true"]').count(), 1)
+  assert.notEqual(await page.locator('.chat-dock-session[aria-current="true"]').evaluate(el => getComputedStyle(el).backgroundColor), await page.locator('.chat-dock-session:not([aria-current="true"])').first().evaluate(el => getComputedStyle(el).backgroundColor))
   await page.locator('.chat-dock-session').filter({ hasText: '今日工作安排' }).click()
   assert.equal(await input.inputValue(), '点击当前会话也保留')
   await input.fill('慢保存的旧草稿')
@@ -146,6 +157,7 @@ try {
   await input.fill('检查工作台上下文')
   await input.press('Enter')
   await page.getByRole('button', { name: '停止回复', exact: true }).waitFor()
+  assert.equal(await page.getByRole('button', { name: '切换 Agent：TRAE', exact: true }).isDisabled(), true)
   assert.equal((await page.evaluate(() => window.__chatSends))[0].page_context.view_state.mode, 'delegated')
   await page.getByRole('button', { name: '对话入口', exact: true }).click()
   await page.getByText('正在检查当前进展。', { exact: true }).waitFor()
@@ -173,11 +185,16 @@ try {
     const geometry = await page.locator('.chat-dock-composer').evaluate(el => ({ left: el.getBoundingClientRect().left, right: el.getBoundingClientRect().right, scroll: el.scrollWidth, width: el.clientWidth }))
     assert.ok(geometry.left >= 0 && geometry.right <= width, JSON.stringify({ width, geometry }))
     assert.ok(geometry.scroll <= geometry.width + 1, JSON.stringify({ width, geometry }))
+    assert.equal(await page.getByRole('button', { name: '切换 Agent：TRAE', exact: true }).isVisible(), true)
   }
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.getByRole('button', { name: '收起底部对话输入', exact: true }).click()
   await page.getByRole('button', { name: '展开底部对话输入', exact: true }).click()
   await input.waitFor()
+  await page.waitForFunction(() => document.activeElement?.getAttribute('aria-label') === '底部对话输入')
+  await input.fill('第一行')
+  await input.press('Shift+Enter')
+  assert.equal(await input.inputValue(), '第一行\n')
   // An archived deep link isn't in the recent list but must still load directly.
   await page.evaluate(() => { window.location.hash = '/chat?session=s3' })
   await page.locator('.chat-session-heading strong').filter({ hasText: '归档的讨论' }).waitFor()
@@ -185,15 +202,51 @@ try {
   await page.getByRole('button', { name: '切换会话', exact: true }).click()
   await page.locator('.chat-dock-sessions .ant-btn').filter({ hasText: '新对话' }).click()
   await page.waitForFunction(() => document.querySelector('.chat-dock-session-trigger')?.textContent.includes('新对话'))
-  await page.getByRole('button', { name: '更多对话设置', exact: true }).click()
-  await page.getByRole('combobox', { name: '底部对话 Agent' }).click()
-  await page.locator('.ant-select-item-option').filter({ hasText: /^Codex$/ }).click()
+  await page.getByRole('button', { name: '切换 Agent：TRAE', exact: true }).click()
+  await page.getByRole('button', { name: 'Codex', exact: true }).click()
   await page.waitForFunction(() => !document.querySelector('[aria-label="底部对话输入"]').disabled)
   assert.equal(sessions.get('s4').agent, 'codex')
-  await page.getByRole('button', { name: '更多对话设置', exact: true }).click()
+  await page.getByRole('button', { name: '切换 Agent：Codex', exact: true }).waitFor()
+  await page.evaluate(() => { window.__deferAcceptance = true })
+  await input.fill('冲突时保留输入')
+  await page.locator('.chat-dock input[type=file]').setInputFiles({ name: 'note.txt', mimeType: 'text/plain', buffer: Buffer.from('hello') })
+  await page.getByRole('button', { name: '移除 note.txt', exact: true }).waitFor()
+  await input.press('Enter')
+  await page.waitForFunction(() => document.querySelector('[aria-label="底部对话输入"]').disabled)
+  assert.equal(await input.inputValue(), '冲突时保留输入')
+  assert.equal(sessions.get('s4').draft.text, '冲突时保留输入')
+  sessions.get('s4').running = true
+  await page.evaluate(() => window.__chatReject())
+  await page.getByText('chat state conflict: this chat session is already generating a reply', { exact: true }).waitFor()
+  await page.waitForFunction(() => !document.querySelector('[aria-label="底部对话输入"]').disabled)
+  assert.equal(await input.inputValue(), '冲突时保留输入')
+  assert.equal(await page.getByRole('button', { name: '移除 note.txt', exact: true }).count(), 1)
+  assert.equal(sessions.get('s4').messages.length, 0)
+  await page.getByRole('button', { name: '停止回复', exact: true }).waitFor()
+  await page.getByRole('button', { name: '停止回复', exact: true }).click()
+  await page.getByRole('button', { name: '发送消息', exact: true }).waitFor()
+  assert.equal(await input.inputValue(), '冲突时保留输入')
+
+  // A reloaded full chat must recover the backend state and poll completion.
+  sessions.get('s4').running = true
+  await page.goto(`${base}/__chat-test#/chat?session=s4`)
+  await page.reload()
+  await page.getByText('上一轮仍在回复，完成后自动更新…', { exact: true }).waitFor()
+  assert.equal(await page.getByPlaceholder('问一个问题，或告诉我你想推进什么…').inputValue(), '冲突时保留输入')
+  sessions.get('s4').messages.push({ id: 'recovered', role: 'assistant', text: '后台回复完成', created_at: new Date().toISOString() })
+  sessions.get('s4').running = false
+  await page.getByText('后台回复完成', { exact: true }).waitFor()
+  await page.getByRole('button', { name: '工作台入口', exact: true }).click()
+  await input.waitFor()
+  await input.fill('接收后清空')
+  await input.press('Enter')
+  await page.waitForFunction(() => document.querySelector('[aria-label="底部对话输入"]').value === '')
+  assert.equal(await page.getByRole('button', { name: '移除 note.txt', exact: true }).count(), 0)
+  await page.evaluate(() => window.__chatFinish())
+  await page.getByRole('button', { name: '发送消息', exact: true }).waitFor()
   if (process.env.CHAT_TEST_SCREENSHOT) await page.screenshot({ path: process.env.CHAT_TEST_SCREENSHOT })
   assert.deepEqual(errors, [])
-  console.log(JSON.stringify({ result: 'passed', composerHeight: initialHeight, checks: ['draft across pages', 'draft on fast session switch', 'serialized autosaves', 'same-session draft', 'model and effort', 'sources', 'file upload/remove', 'stream across pages', 'stop', 'reply detail', 'visible API errors', '320–1280px layout', 'collapse/expand', 'archived deep link', 'new session', 'Agent selection'], apiCalls: calls.length }))
+  console.log(JSON.stringify({ result: 'passed', composerHeight: initialHeight, checks: ['draft across pages', 'draft on fast session switch', 'serialized autosaves', 'same-session draft', 'model and effort', 'sources', 'file upload/remove', 'stream across pages', 'stop', 'reply detail', 'visible API errors', '320–1280px layout', 'collapse/expand focus', 'archived deep link', 'new session', 'visible Agent selection', 'unavailable Agent disabled', 'Agent switch cancellation', 'light theme', 'selected session styling', 'Shift+Enter newline', 'rejected input and attachments retained', 'remote reply stop', 'refresh and completion polling', 'clear only after acceptance'], apiCalls: calls.length }))
 } catch (error) {
   console.error(JSON.stringify({ errors, body: (await page.locator('body').innerText()).slice(0, 2000) }))
   if (process.env.CHAT_TEST_SCREENSHOT) await page.screenshot({ path: process.env.CHAT_TEST_SCREENSHOT })

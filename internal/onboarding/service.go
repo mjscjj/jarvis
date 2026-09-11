@@ -212,6 +212,20 @@ func NewService(options Options) (*Service, error) {
 	return &Service{options: options, runner: options.Runner, flows: make(map[string]*Flow), runtimeID: runtimeID}, nil
 }
 
+// Bootstrap reads only the local installation boundary. It does not claim that
+// external credentials are valid; Status remains the full connection check.
+func (s *Service) Bootstrap() (*BootstrapStatus, error) {
+	configuration, err := config.InspectInitialization(s.options.ConfigPath)
+	if err != nil {
+		return nil, err
+	}
+	return &BootstrapStatus{MachineConfigurationReady: configuration.MachineConfigurationReady}, nil
+}
+
+type BootstrapStatus struct {
+	MachineConfigurationReady bool `json:"machine_configuration_ready"`
+}
+
 func (s *Service) Status(ctx context.Context) (*Status, error) {
 	configuration, err := config.InspectInitialization(s.options.ConfigPath)
 	if err != nil {

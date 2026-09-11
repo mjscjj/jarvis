@@ -116,6 +116,8 @@ macOS 14+ Apple Silicon 用户优先使用 DMG：
 
 ### 源码安装
 
+日常打开页面先通过 `/api/setup/bootstrap` 读取本机配置，已安装用户无需等待外部 CLI 验证；`/api/setup/status` 在后台完整检查连接，失败时以顶部提示和授权抽屉处理，不卸载当前页面。首次安装及安装重启恢复仍等待完整检查；此优化不改变网页登录校验，也不缓存授权结果。
+
 当前远端是需要权限的 Code 仓库。使用者先 clone **完整仓库**，再在仓库根目录启动支持 repo-local `.agents/skills/` 的 Agent：
 
 ```bash
@@ -273,7 +275,7 @@ git diff --check
 
 工作设定和自动化都是最外层入口：工作设定按「任务执行」「线索发现」集中维护系统提示词、阶段工作规则、审批策略及生效预览，二级配置使用横向 Tab 切换，其他 Agent 提示词也保留在该页；自动化集中管理周期与单次定时任务。设置页包含运行配置、系统任务、Skills 和共享记忆。首个「对话」Tab 使用持久会话 API，并可按会话选择 Codex、TRAE 或 Cursor 及其动态模型目录。
 
-左侧「对话」保留完整历史页；其他页面底部提供紧凑快捷对话，默认可输入，最新回复显示一行，点击可查看全文。会话、模型、Agent、推理强度、上下文引用与附件复用同一套会话 API。`Chat` 在应用内持续挂载，完整页与 `components/ChatDock.tsx` 只切换展示，因此切页不丢草稿、不打断流式回复，也不会覆盖当前工作台的 URL 筛选条件。浏览器交互回归位于 `web/test/chatDock.browser.mjs`：启动 Vite 后执行；可通过 `CHAT_TEST_URL`、`PLAYWRIGHT_MODULE`、`CHROME_EXECUTABLE` 指定测试环境，所有 API 使用隔离测试数据，不调用真实 Agent。
+左侧「对话」保留完整历史页；其他页面底部提供紧凑快捷对话，默认可输入，最新回复显示一行，点击可查看全文。会话、模型、Agent、推理强度、上下文引用与附件复用同一套会话 API。`Chat` 在应用内持续挂载，完整页与 `components/ChatDock.tsx` 只切换展示，因此切页不丢草稿、不打断流式回复，也不会覆盖当前工作台的 URL 筛选条件。刷新后的会话通过详情中的 `running` 恢复停止入口，每 2 秒检查后台回复是否结束；不重连旧流，也不自动重发。后端持久化消息和附件后发送 SSE `accepted`，前端收到确认才清空输入，拒绝发送则保留草稿与附件。浏览器交互回归位于 `web/test/chatDock.browser.mjs`：启动 Vite 后执行；可通过 `CHAT_TEST_URL`、`PLAYWRIGHT_MODULE`、`CHROME_EXECUTABLE` 指定测试环境，所有 API 使用隔离测试数据，不调用真实 Agent。
 
 ## 目录
 

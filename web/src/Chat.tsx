@@ -85,6 +85,7 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
   const [attachments, setAttachments] = useState<ChatAttachment[]>([])
   const [uploading, setUploading] = useState(false)
   const [running, setRunning] = useState<Set<string>>(new Set())
+  const [accepting, setAccepting] = useState<string | null>(null)
   const [streamText, setStreamText] = useState<Record<string, string>>({})
   const [error, setError] = useState<string>()
   const [editingTitle, setEditingTitle] = useState(false)
@@ -273,8 +274,29 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
     },
     [loadSessions],
   )
+  // Only poll a reply whose stream belongs to an earlier page load/tab.
+  useEffect(() => {
+    if (!active?.running || running.has(active.id)) return
+    const sessionID = active.id
+    let cancelled = false
+    let timer: number
+    const poll = async () => {
+      try {
+        const detail = await api<ChatSession>(`/api/chat/sessions/${sessionID}`)
+        if (cancelled || activeID.current !== sessionID) return
+        setActive(detail)
+        if (!detail.running) return
+      } catch (cause) {
+        if (cancelled) return
+        reportError(cause)
+      }
+      timer = window.setTimeout(() => void poll(), 2000)
+    }
+    timer = window.setTimeout(() => void poll(), 2000)
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [active?.id, active?.running, running])
   const send = useCallback(async () => {
-    if (!active || running.has(active.id) || uploading || switching || saving || creating) return
+    if (!active || active.running || running.has(active.id) || uploading || switching || saving || creating) return
     const text = input.trim()
     if (!text && !attachments.length) return
     const selectedModel = models[active.agent]?.find((item) => item.id === active.model)
@@ -283,29 +305,13 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
       return
     }
     const sessionID = active.id
-    setInput('')
-    setAttachments([])
+    setAccepting(sessionID)
     setError(undefined)
     setRunning((current) => new Set(current).add(sessionID))
     setStreamText((current) => ({ ...current, [sessionID]: '' }))
-    setActive((current) =>
-      current
-        ? {
-            ...current,
-            messages: [
-              ...(current.messages || []),
-              {
-                id: `local-${Date.now()}`,
-                role: 'user',
-                text,
-                attachments,
-                created_at: new Date().toISOString(),
-              },
-            ],
-          }
-        : current,
-    )
     try {
+      window.clearTimeout(draftTimer.current)
+      await saveDraft(sessionID, { text: input, attachment_ids: attachments.map((item) => item.id) })
       const response = await apiFetch(`/api/chat/sessions/${sessionID}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -331,7 +337,17 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
           buffer = buffer.slice(separator + 2)
           const parsed = parseSSEBlock(block)
           if (!parsed.data) continue
-          if (parsed.event === 'delta') {
+          if (parsed.event === 'accepted') {
+            setAccepting(null)
+            if (activeID.current === sessionID) {
+              setInput('')
+              setAttachments([])
+              setActive((current) => current?.id === sessionID ? {
+                ...current,
+                messages: [...(current.messages || []), { id: `local-${Date.now()}`, role: 'user', text, attachments, created_at: new Date().toISOString() }],
+              } : current)
+            }
+          } else if (parsed.event === 'delta') {
             const delta = (JSON.parse(parsed.data) as { text: string }).text
             setStreamText((current) => ({
               ...current,
@@ -344,6 +360,8 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
+      await refreshActive(sessionID).catch(reportError)
+      setAccepting(null)
       setRunning((current) => {
         const next = new Set(current)
         next.delete(sessionID)
@@ -354,9 +372,8 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
         delete next[sessionID]
         return next
       })
-      await refreshActive(sessionID).catch((cause) => setError(cause instanceof Error ? cause.message : String(cause)))
     }
-  }, [active, attachments, context, input, models, refreshActive, running, uploading, switching, saving, creating])
+  }, [active, attachments, context, input, models, refreshActive, running, uploading, switching, saving, creating, saveDraft])
   const stop = async () => {
     if (active) await api<{ canceled: boolean }>(`/api/chat/sessions/${active.id}/cancel`, { method: 'POST' })
   }
@@ -412,7 +429,7 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
   }
   const changeAgent = async (agent: string) => {
     if (!active || agent === active.agent) return
-    if (running.has(active.id)) {
+    if (active.running || running.has(active.id)) {
       setError('请先停止当前回复，再切换 Agent')
       return
     }
@@ -489,7 +506,7 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
     setTimeout(() => URL.revokeObjectURL(url), 30_000)
   }
 
-  const activeRunning = active ? running.has(active.id) : false
+  const activeRunning = active ? running.has(active.id) || Boolean(active.running) : false
   const sourcePicker = active && (
     <div className="chat-source-picker">
       <Text type="secondary">优先参考这些资料，必要时补充查证</Text>
@@ -550,7 +567,7 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
       : []),
   ]
   const displayMessages = active?.messages || [],
-    currentStream = active ? streamText[active.id] : ''
+    currentStream = active ? streamText[active.id] || (active.running && !running.has(active.id) ? '上一轮仍在回复，完成后自动更新…' : '') : ''
   if (compact) {
     const latest = activeRunning
       ? { id: 'stream', role: 'assistant' as const, text: currentStream || '', created_at: '', agent: active?.agent, model: active?.model }
@@ -558,7 +575,7 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
     return <ChatDock
       active={active} sessions={sessions} agents={agents} models={currentModels}
       input={input} onInput={setInput} attachments={attachments} uploading={uploading}
-      loading={loading} busy={switching || saving || creating} running={activeRunning}
+      loading={loading} busy={switching || saving || creating || accepting === active?.id} running={activeRunning}
       error={error} onDismissError={() => setError(undefined)}
       replyText={activeRunning ? currentStream || '正在思考…' : latest?.text || (latest?.attachments?.length ? '已生成附件，点击查看' : '')}
       replyContent={latest && <ChatMessageCard message={latest} agentName={agentName} shortName={shortName} typing={activeRunning} />}
@@ -758,6 +775,7 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
             )}
             <Input.TextArea
               ref={inputRef}
+              disabled={switching || creating || accepting === active?.id}
               value={input}
               onChange={(event) => setInput(event.target.value)}
               autoSize={{ minRows: 2, maxRows: 8 }}

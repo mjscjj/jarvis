@@ -163,6 +163,10 @@ export function getSetupStatus(signal?: AbortSignal): Promise<SetupStatus> {
   return request<SetupStatus>('/api/setup/status', { signal, timeoutMs: 30000 })
 }
 
+export function getSetupBootstrap(signal?: AbortSignal): Promise<{ machine_configuration_ready: boolean }> {
+  return request('/api/setup/bootstrap', { signal, timeoutMs: 5000 })
+}
+
 export function beginSetupLarkConnection(): Promise<SetupFlow> {
   return request<SetupFlow>('/api/setup/lark/connect', { method: 'POST', timeoutMs: 30000 })
 }

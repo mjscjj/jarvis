@@ -1317,6 +1317,7 @@ export interface ChatHistoryMessage {
 }
 
 export interface ChatSession {
+  running?: boolean
   id: string
   title: string
   agent: string
