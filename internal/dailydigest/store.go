@@ -1,6 +1,6 @@
 // Package dailydigest 生成并缓存「每日进度总结」：个人（我）和关键群
 // （is_key_group=1）都用 codex agent 调查并综合。一天一个 scope 一行，重算
-// upsert 覆盖（见 docs/design-daily-digest.md）。
+// upsert 覆盖（见 docs/modules/06-insight.md）。
 package dailydigest
 
 import (

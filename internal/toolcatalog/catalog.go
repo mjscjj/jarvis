@@ -50,7 +50,7 @@ func Block(stage string) (string, error) {
 		"- 查本地已采集对话先用 `query-messages`，已知数据库 ID 时用 `get-message`；查附件与文档引用先用 `query-captured-resources`，命中后再用 `get-captured-resource` 加载正文。",
 		"- `query-messages --message-ids ID,ID,... --limit 100` 按原始消息 ID 批量精确查询，只返回已存在记录的 id/message_id；每批最多 100 个，不依赖正文关键词或 Task 是否存在。",
 		"- `yield-until` 需要 Task runner 注入 `JARVIS_TASK_ID`，创建归属当前 Task 的恢复触发；`create-scheduled-task` 创建独立触发。",
-		"- `create-task` 创建 `source_type=manual|proactive` 的普通 Task 并交给 M5；`supplement-task` 给现有 Task 追加上下文但不启动，`resume-task` 回答 `needs_human` 问题并续跑原 M5 Session。`create-task` / `start-task` / `update-task` / `close-task` 对所有 Agent 阶段开放；是否调用由当前阶段提示词决定，服务端仍校验参数、状态与乐观锁版本，并按 `JARVIS_AGENT_STAGE` 留痕。",
+		"- `create-task` 创建 `source_type=manual|proactive` 的普通 Task 并交给 M5；`supplement-task` 给现有 Task 追加上下文但不启动，`resume-task` 回答 `needs_human` 问题并续跑原 M5 Session。`start-task` / `update-task` / `close-task` 管理既有 Task，对所有 Agent 阶段开放；stage 只用于上下文和留痕，不是权限身份。CLI 默认从 `JARVIS_AGENT_STAGE` 取得调用阶段。",
 		"- lark-cli：查询或操作飞书。先用 `lark-cli skills list` 查看能力目录并选定域，再用 `lark-cli skills read <域名>` 查工作流、`lark-cli schema <method>` 查单 API 参数；匹配到飞书 Skill 时先读取 Skill。",
 		"- lark-cli 默认用本机已登录的身份（`--as user` 是机器所有者，`--as bot` 是 Jarvis Bot）。给单条命令设 `LARKSUITE_CLI_APP_ID` + `LARKSUITE_CLI_USER_ACCESS_TOKEN` 可改用指定用户的 access token，此时该命令绕过本机凭证。这两个变量一旦进入 shell 环境，lark-cli 即进入 user strict 模式，同环境下所有 `--as bot` 命令都会被拒绝，因此只作单条命令前缀使用，不要 export。",
 		"- bytedcli：查询内部代码、commit、MR、issue 等研发信息。先用 `bytedcli --help` 查看领域，再用 `bytedcli --json <领域> --help` 查看该领域命令，最后用 `bytedcli --json <子命令路径> --help` 查看参数；不要加载全量帮助。",

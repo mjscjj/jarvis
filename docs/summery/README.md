@@ -1,28 +1,26 @@
 # 重要架构图与文章
 
-本目录统一保存 Jarvis 的重要架构图、绘制说明、可编辑源文件、导出图片和文章稿件，避免内容散落在 `docs/` 根目录或临时目录。
+> Status: deliverable index
+> Authority: non-normative
+> Last reviewed: 2026-09-11
 
-这里是**表达与交付目录**，不是架构事实的权威来源。图文涉及项目目标、当前架构或实现状态时，必须先以 [`goal.md`](../../goal.md)、[`docs/00-overview.md`](../00-overview.md) 和当前代码为依据，再更新这里的表达。
+本目录保存正式表达、交付和明确要求保留的原始材料，不是架构事实真源。涉及当前行为时，以 [`goal.md`](../../goal.md)、[`docs/00-overview.md`](../00-overview.md) 和代码为准。
 
-## 文件约定
+## 当前交付
 
-- 文章或绘制说明：`<topic>.md`
-- 可编辑图源：`<topic>.svg`
-- 发布或预览图：`<topic>.png`
-- 同一主题的说明、图源和导出图使用相同 basename，放在同一目录。
-- 重要图必须保留可编辑源文件，不只提交不可修改的截图。
+- [可迭代世界观章节](jarvis-worldview/README.md)：正文、三张最终图及 SVG 源。
+- [主动式数字分身总架构图](jarvis-proactive-digital-twin-architecture.md)：绘制说明、SVG 和 PNG。
+- [三个评审群 PRD 原始材料](group-prd-comments/raw-comments.md)及[归纳分析](group-prd-comments/analysis.md)：原始正文、评论、相关背景和采集证据；结构化数据保存在同目录 `evidence/`。
+- [本人评论补充样本](prd-review-comments/raw-comments.md)及[初步分析](prd-review-comments/analysis.md)：含非 PRD 样本，使用时保留范围边界。
 
-## 当前内容
+## 方案与历史材料
 
-- [OKR 与 Jarvis 世界模型整合方案](okr-jarvis-world-model-integration.md)
-- [对话工作区：第一 Tab、多会话与 Agent/模型选择（实现、设计与原型）](chat-workspace/README.md)
-- [主动程度三档设计与验证](initiative-level-design.md)
-- [安装初始化界面预览](installer-ui-preview/README.md)
-- [插件扩展与解耦规范（提案）](plugin-extension-spec.md)
-- [代码提交与评审方案（待对齐）](code-submission-plan.md)
-- [Jarvis 主动式数字分身架构图绘制说明](jarvis-proactive-digital-twin-architecture.md)
-- [SVG 可编辑源图](jarvis-proactive-digital-twin-architecture.svg)
-- [PNG 预览图](jarvis-proactive-digital-twin-architecture.png)
-- [Jarvis 主动式任务数字分身演示](jarvis-proactive-digital-twin/README.md)
-- [演示配套技术产品方案](jarvis-proactive-digital-twin/proposal.md)
-- [M5 飞书消息工具化与结果协议解耦方案](m5-message-delivery-ownership.md)
+- [OKR 与 Jarvis 世界模型整合方案](okr-jarvis-world-model-integration.md)：历史方案，当前边界见 [OKR 模块](../modules/06-okr.md)。
+- [网页 SSO 登录接入](sso-web-login.md)：方案与官方接入证据，尚未完成实现和真实验收。
+
+## 保留规则
+
+- 每个表达主题保留一个 README、可编辑源和一个最终导出；必要时保留最终 PDF。
+- 不提交版本化中间图、contact sheet、视觉测试快照或可重新生成的预览。
+- 方案、审查记录和实施计划分别进入 `docs/proposals/`、`docs/research/` 或 Git 历史。
+- 已采集的原始材料完整保留，归纳与原文分开；稳定评审方法沉淀到对应 Skill，不以本目录分析稿作为运行时规则。

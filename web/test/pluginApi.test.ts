@@ -9,7 +9,7 @@ test('plugin list and authorization detail use separate reads', async (t) => {
     const data = path === '/api/plugins/oncall'
       ? { id: 'oncall', authorization: { status: 'authorized' } }
       : { items: [{ id: 'oncall', authorization: { status: 'pending' } }] }
-    return new Response(JSON.stringify({ code: 0, data }), { status: 200 })
+    return Response.json({ code: 0, data })
   })
 
   const list = await listPlugins()

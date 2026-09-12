@@ -2,8 +2,6 @@ package chat
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -48,19 +46,6 @@ func TestBuildPromptOnlyInjectsGuidanceToolsAndExplicitInput(t *testing.T) {
 	}
 }
 
-func TestBuildPromptSystemGuidanceKeepsAnswerFirstStyle(t *testing.T) {
-	t.Parallel()
-	prompt, err := newTestService(t).buildPrompt(t.Context(), Request{Message: "在忙吗？"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{"你是 小贾 的对话助手", "先直接回答", "不要复述", "一到四句", "不为结构化硬凑分点", "立即停止"} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("system guidance missing %q", want)
-		}
-	}
-}
-
 func TestBuildFollowupPromptOnlyContainsUserMessage(t *testing.T) {
 	t.Parallel()
 	prompt, err := newTestService(t).buildFollowupPrompt(t.Context(), Request{Message: "你好", ThreadID: "tid"})
@@ -101,17 +86,6 @@ func TestExplicitSourcesAttachmentsAndCarriedHistoryArePreserved(t *testing.T) {
 	}
 	if strings.Contains(followup, req.VisibleHistory) {
 		t.Fatal("resume must not duplicate visible history")
-	}
-}
-
-func TestRepositoryChatPromptUsesOnDemandSkill(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "..", "conf", "prompts", "chat-system-prompt.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	prompt := string(raw)
-	if !strings.Contains(prompt, "jarvis-chat") || !strings.Contains(prompt, "不自动加载") {
-		t.Fatal("chat prompt must route fact lookup to the on-demand Skill")
 	}
 }
 

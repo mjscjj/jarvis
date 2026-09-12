@@ -530,31 +530,33 @@ EOF
 usage: jarvis-tools start-task --id ID [--config PATH]
 
 Start one existing pending Task with the strong M5 executor. This command is
-available to every Jarvis Agent stage. It returns after M5 claims the Task; use
-get-task later to inspect and verify the result.
+available to every trusted Jarvis Agent. It returns after M5 claims the Task;
+use get-task later to inspect and verify the result.
 EOF
       ;;
     update-task) cat <<'EOF'
-usage: jarvis-tools update-task --id ID [--payload JSON|-] [--config PATH]
+usage: jarvis-tools update-task --id ID [--payload JSON|-] [--actor NAME] [--config PATH]
 
 Update the mutable current surface of one non-terminal Task. This command is
-available to every Jarvis Agent stage. The payload requires expected_version,
+available to every trusted Jarvis Agent. The payload requires expected_version,
 reason, and at least one of title, target, summary or instruction. source_payload
 remains frozen. instruction is appended for M5 rather than rewriting source
 evidence. A needs_human Task only accepts summary updates so an Agent cannot
 silently change the goal behind a question the principal is already looking at.
+Actor defaults to JARVIS_AGENT_STAGE; outside an Agent process, pass --actor.
 
 example:
   jarvis-tools update-task --id 42 --payload '{"expected_version":2,"summary":"权限申请仍有效，等待 owner 审批","instruction":"恢复后先重新核验权限，再继续转换文档","reason":"跨日后等待条件仍有效，补充最新状态而不是关闭"}'
 EOF
       ;;
     close-task) cat <<'EOF'
-usage: jarvis-tools close-task --id ID [--payload JSON|-] [--config PATH]
+usage: jarvis-tools close-task --id ID [--payload JSON|-] [--actor NAME] [--config PATH]
 
-Close one existing non-terminal Task. This command is available to every Jarvis
-Agent stage. The payload must contain expected_version and a non-empty result
-object. Put the close result in result.summary and optional supporting data in
-result.evidence; the server records the actual calling stage as the actor.
+Close one existing non-terminal Task. This command is available to every
+trusted Jarvis Agent. The payload must contain expected_version and a non-empty
+result object. Put the close result in result.summary and optional supporting
+data in result.evidence.
+Actor defaults to JARVIS_AGENT_STAGE; outside an Agent process, pass --actor.
 
 example:
   jarvis-tools close-task --id 42 --payload '{"expected_version":2,"result":{"summary":"关闭结果","evidence":"支持材料"}}'
@@ -1081,8 +1083,8 @@ require_command_flag() {
     list-task-runs) allowed+=" --id --page --limit" ;;
     get-task-run) allowed+=" --id --include-prompt" ;;
     start-task) allowed+=" --id" ;;
-    update-task) allowed+=" --id --payload" ;;
-    close-task) allowed+=" --id --payload" ;;
+    update-task) allowed+=" --id --payload --actor" ;;
+    close-task) allowed+=" --id --payload --actor" ;;
     list-scheduled-tasks) allowed+=" --status --limit" ;;
     get-scheduled-task) allowed+=" --id" ;;
     create-scheduled-task) allowed+=" --payload" ;;
@@ -2820,8 +2822,7 @@ cmd_update_task() {
   consume_flags "$@"
   [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "update-task requires positive --id"
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
-  local actor payload body
-  actor="$(task_actor)"
+  local payload body actor
   if [[ "$PAYLOAD" == "-" ]]; then
     payload="$(cat)"
   else
@@ -2837,7 +2838,9 @@ cmd_update_task() {
     ((has("summary") | not) or (.summary | type == "string" and length > 0)) and
     ((has("instruction") | not) or (.instruction | type == "string" and length > 0))
   ' >/dev/null 2>&1 || fail "update-task payload requires expected_version, reason and at least one mutable Task field"
-  payload="$(printf '%s' "$payload" | jq -c --arg actor "$actor" '. + {actor:$actor}')"
+  actor="${ACTOR:-${JARVIS_AGENT_STAGE:-}}"
+  [[ -n "$actor" ]] || fail "update-task requires JARVIS_AGENT_STAGE or explicit --actor"
+  payload="$(printf '%s' "$payload" | jq -c --arg actor "$actor" '. + {actor_type: $actor}')"
   body="$(api_write PATCH "/api/tasks/${ID}" "$payload")"
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }
@@ -2847,8 +2850,7 @@ cmd_close_task() {
   consume_flags "$@"
   [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "close-task requires positive --id"
   API_BASE="$(resolve_api_base "$CONFIG_PATH")"
-  local actor payload body
-  actor="$(task_actor)"
+  local payload body actor
   if [[ "$PAYLOAD" == "-" ]]; then
     payload="$(cat)"
   else
@@ -2859,7 +2861,9 @@ cmd_close_task() {
     (.expected_version | type == "number" and . >= 0 and floor == .) and
     (.result | type == "object" and (.summary | type == "string" and length > 0))
   ' >/dev/null 2>&1 || fail "close-task payload requires non-negative expected_version and non-empty result.summary"
-  payload="$(printf '%s' "$payload" | jq -c --arg actor "$actor" '. + {actor:$actor}')"
+  actor="${ACTOR:-${JARVIS_AGENT_STAGE:-}}"
+  [[ -n "$actor" ]] || fail "close-task requires JARVIS_AGENT_STAGE or explicit --actor"
+  payload="$(printf '%s' "$payload" | jq -c --arg actor "$actor" '. + {actor_type: $actor}')"
   body="$(api_write POST "/api/tasks/${ID}/close" "$payload")"
   emit "$(printf '%s' "$body" | jq -c '.data')"
 }

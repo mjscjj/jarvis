@@ -27,7 +27,7 @@ async function openApp(seed = {}) {
     else if (path === '/api/setup/status') data = {
       onboarding_required: false, runtime_id: 'sidebar-test', app_ready: true, world_model_ready: true,
       configuration: { machine_configuration_ready: true, agent_name_configured: true },
-      lark: { available: true, app_id: 'test', credential_available: true, bot: { status: 'ready', verified: true }, user: { status: 'ready', verified: true } },
+      lark: { available: true, app_id: 'test', application_checks: [{ event: 'im.message.receive_v1', ready: true }, { event: 'card.action.trigger', ready: true }], credential_available: true, bot: { status: 'ready', verified: true }, user: { status: 'ready', verified: true } },
       agent: { available: true, authenticated: true },
     }
     else if (path === '/api/app-modules') data = { items: ['okr', 'biz-okr'].map(key => ({ key, is_enabled: true })) }

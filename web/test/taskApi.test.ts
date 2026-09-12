@@ -11,7 +11,7 @@ test('task detail and paged run index use separate reads from run bodies', async
       : path.includes('/task-runs/')
         ? { id: 5, output: { summary: '完整运行结果' }, effects: [{ kind: 'custom' }] }
         : { id: 9, execution_result: { question: { title: '问题', body: '完整正文' } } }
-    return new Response(JSON.stringify({ code: 0, data }), { status: 200 })
+    return new Response(JSON.stringify({ code: 0, data }), { status: 200, headers: { 'Content-Type': 'application/json' } })
   })
   const task = await getTask(9)
   assert.equal((task.execution_result?.question as { body: string }).body, '完整正文')
@@ -31,7 +31,7 @@ test('task list forwards action type and plugin ownership filters', async (t) =>
     return new Response(JSON.stringify({
       code: 0,
       data: { total: 0, page: 1, page_size: 20, items: [] },
-    }), { status: 200 })
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
   })
 
   await listTasks(['waiting'], 1, 20, undefined, { actionType: 'delegated_followup' })

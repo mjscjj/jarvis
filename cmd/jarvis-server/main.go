@@ -1097,7 +1097,7 @@ func main() {
 	}()
 
 	// 持久多 Agent 对话服务：enabled 时实例化并注入 Dependencies.Chat；disabled
-	// 时不注册 /api/chat/*。execute.bin/model 只提供新会话的初始默认值。
+	// 时不注册 /api/chat/*。execute.bin 提供默认 Agent，chat 段提供新会话默认值和执行边界。
 	var chatService *chat.Service
 	if cfg.Chat.Enabled {
 		chatService, err = chat.NewService(chat.Options{

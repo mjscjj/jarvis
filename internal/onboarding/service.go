@@ -154,13 +154,14 @@ type IdentityStatus struct {
 }
 
 type LarkStatus struct {
-	Available           bool           `json:"available"`
-	AppID               string         `json:"app_id,omitempty"`
-	AppName             string         `json:"app_name,omitempty"`
-	Bot                 IdentityStatus `json:"bot"`
-	User                IdentityStatus `json:"user"`
-	Error               string         `json:"error,omitempty"`
-	CredentialAvailable bool           `json:"credential_available"`
+	Available           bool               `json:"available"`
+	AppID               string             `json:"app_id,omitempty"`
+	AppName             string             `json:"app_name,omitempty"`
+	Bot                 IdentityStatus     `json:"bot"`
+	User                IdentityStatus     `json:"user"`
+	Error               string             `json:"error,omitempty"`
+	CredentialAvailable bool               `json:"credential_available"`
+	ApplicationChecks   []ApplicationCheck `json:"application_checks"`
 }
 
 type AgentStatus struct {
@@ -268,6 +269,10 @@ func (s *Service) Status(ctx context.Context) (*Status, error) {
 	agentResult := make(chan AgentStatus, 1)
 	go func() { agentResult <- s.agentStatus(ctx) }()
 	lark := s.larkStatus(ctx)
+	lark.ApplicationChecks = []ApplicationCheck{}
+	if lark.Bot.Verified && lark.Bot.Status == "ready" {
+		lark.ApplicationChecks = s.botEventChecks(ctx)
+	}
 	agent := <-agentResult
 	if s.options.Desktop && !lark.CredentialAvailable {
 		configuration.MachineConfigurationReady = false
@@ -291,11 +296,8 @@ func (s *Service) Status(ctx context.Context) (*Status, error) {
 		AgentName:          agentName,
 		RuntimeID:          s.runtimeID,
 	}
-	// Desktop installation must finish and apply its saved configuration. Source
-	// deployments use their existing configuration and CLI credentials; missing
-	// desktop initialization markers do not mean those connections are broken.
 	result.AppReady = (!s.options.Desktop || (s.runtimeConfigured && configuration.MachineConfigurationReady)) && identityMatches &&
-		lark.Bot.Status == "ready" && lark.Bot.Verified && lark.User.Status == "ready" && lark.User.Verified &&
+		lark.Bot.Status == "ready" && lark.Bot.Verified && lark.User.Status == "ready" && lark.User.Verified && botEventsError(lark.ApplicationChecks) == nil &&
 		agent.Authenticated
 	result.Completed = result.AppReady && result.WorldModelReady
 	return result, nil
@@ -314,12 +316,19 @@ func (s *Service) BeginLarkSetup(ctx context.Context) (*Flow, error) {
 		return nil, err
 	}
 	s.mu.Lock()
+	if s.flows == nil {
+		s.flows = make(map[string]*Flow)
+	}
 	for _, flow := range s.flows {
 		if flow.Status == flowPending {
 			if flow.kind == "lark_setup" {
-				result := cloneFlow(flow)
-				s.mu.Unlock()
-				return result, nil
+				if flow.VerificationURL == "" {
+					result := cloneFlow(flow)
+					s.mu.Unlock()
+					return result, nil
+				}
+				s.failPendingFlowLocked(flow, "已重新生成连接链接；上一流程已停止")
+				continue
 			}
 			s.mu.Unlock()
 			return nil, fmt.Errorf("请先完成或取消当前连接")
@@ -351,17 +360,24 @@ func (s *Service) BeginLarkLogin(ctx context.Context) (*Flow, error) {
 	if err != nil {
 		return nil, err
 	}
-	flow := &Flow{ID: flowID, Status: flowPending, VerificationURL: verifyURL, UserCode: userCode}
+	flow := &Flow{
+		ID: flowID, Status: flowPending, VerificationURL: verifyURL, UserCode: userCode,
+		kind: "lark_login",
+	}
 	s.mu.Lock()
+	if s.flows == nil {
+		s.flows = make(map[string]*Flow)
+	}
+	s.cancelPendingFlowsLocked("lark_login", "已重新生成授权链接；上一流程已停止")
 	s.flows[flowID] = flow
-	s.mu.Unlock()
 	result := cloneFlow(flow)
+	s.mu.Unlock()
 	go s.completeLarkLogin(flowID, deviceCode)
 	return result, nil
 }
 
 func (s *Service) larkAuthorization(ctx context.Context, action string) ([]byte, error) {
-	return s.runner.Run(ctx, "bash", []string{
+	return s.runner.RunJSON(ctx, "bash", []string{
 		filepath.Join(s.options.RuntimeRoot, "scripts", "jarvis-lark-auth"), action, s.options.LarkCLIBin,
 	}, "")
 }
@@ -375,11 +391,15 @@ func (s *Service) BeginAgentLogin(ctx context.Context) (*Flow, error) {
 	if err != nil {
 		return nil, err
 	}
-	flow := &Flow{ID: flowID, Status: flowPending}
+	flow := &Flow{ID: flowID, Status: flowPending, kind: "agent_login"}
 	s.mu.Lock()
+	if s.flows == nil {
+		s.flows = make(map[string]*Flow)
+	}
+	s.cancelPendingFlowsLocked("agent_login", "已重新生成登录链接；上一流程已停止")
 	s.flows[flowID] = flow
-	s.mu.Unlock()
 	result := cloneFlow(flow)
+	s.mu.Unlock()
 	go s.completeAgentLogin(flowID)
 	return result, nil
 }
@@ -520,29 +540,6 @@ func (s *Service) BootstrapWorldModel(ctx context.Context) (*domain.Task, error)
 		ActorType:     "user",
 		EventDetail:   map[string]any{"channel": "desktop_onboarding"},
 	})
-}
-
-func (s *Service) checkBotEvents(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, 40*time.Second)
-	defer cancel()
-	for _, event := range []string{"im.message.receive_v1", "card.action.trigger"} {
-		output, err := s.runner.Run(ctx, s.options.LarkCLIBin, []string{"event", "consume", event, "--as", "bot", "--dry-run"}, "")
-		if err != nil {
-			return commandError("检查飞书应用事件 "+event, output, err)
-		}
-		var result struct {
-			OK   bool `json:"ok"`
-			Data struct {
-				Decision struct {
-					Status string `json:"status"`
-				} `json:"decision"`
-			} `json:"data"`
-		}
-		if json.Unmarshal(output, &result) != nil || !result.OK || result.Data.Decision.Status != "ready" {
-			return fmt.Errorf("当前飞书应用的 %s 尚未就绪，请检查消息权限、事件订阅和版本发布后重试", event)
-		}
-	}
-	return nil
 }
 
 func (s *Service) ensurePrincipalProfile(ctx context.Context, identity IdentityStatus) error {
@@ -729,9 +726,26 @@ func (s *Service) CancelFlow(id string) (*Flow, error) {
 	return cloneFlow(flow), nil
 }
 
+func (s *Service) cancelPendingFlowsLocked(kind, reason string) {
+	for _, flow := range s.flows {
+		if flow == nil || flow.Status != flowPending || flow.kind != kind {
+			continue
+		}
+		s.failPendingFlowLocked(flow, reason)
+	}
+}
+
+func (s *Service) failPendingFlowLocked(flow *Flow, reason string) {
+	flow.Status = flowFailed
+	flow.Error = reason
+	if flow.cancel != nil {
+		flow.cancel()
+	}
+}
+
 func (s *Service) larkStatus(ctx context.Context) LarkStatus {
 	statusCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	output, err := s.runner.Run(statusCtx, s.options.LarkCLIBin, []string{"auth", "status", "--json", "--verify"}, "")
+	output, err := s.runner.RunJSON(statusCtx, s.options.LarkCLIBin, []string{"auth", "status", "--json", "--verify"}, "")
 	cancel()
 	if err != nil {
 		var failure struct {
@@ -819,7 +833,6 @@ func enableDesktopRuntime(ctx context.Context, configPath string) error {
 	settings := view.Settings
 	settings.ExtractEnabled = true
 	settings.ExecuteAutoEnabled = true
-	settings.ChatEnabled = true
 	settings.FactEngineEnabled = true
 	settings.ProactiveEnabled = true
 	settings.ScheduledTaskEnabled = true

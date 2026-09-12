@@ -43,6 +43,7 @@ type SessionView struct {
 
 type MessageView struct {
 	Status      string           `json:"status,omitempty"`
+	Error       string           `json:"error,omitempty"`
 	ID          string           `json:"id"`
 	Role        string           `json:"role"`
 	Text        string           `json:"text"`
@@ -304,11 +305,13 @@ func (s *Service) GetSession(ctx context.Context, id string) (*SessionView, erro
 		if len(message.Meta) > 0 {
 			var meta struct {
 				Status string `json:"status"`
+				Error  string `json:"error"`
 			}
 			if err := json.Unmarshal(message.Meta, &meta); err != nil {
 				return nil, fmt.Errorf("read chat message status: %w", err)
 			}
 			mv.Status = meta.Status
+			mv.Error = meta.Error
 			if mv.Status == "streaming" && (!view.Running || index != len(messages)-1) {
 				mv.Status = "interrupted"
 			}

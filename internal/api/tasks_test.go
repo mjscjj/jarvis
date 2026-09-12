@@ -274,28 +274,28 @@ func TestFinishTaskFailedTagsManualStage(t *testing.T) {
 	}
 }
 
-func TestCloseTaskRecordsCallingAgentActorAndStage(t *testing.T) {
+func TestCloseTaskPreservesCallerAuditAndLooseResult(t *testing.T) {
 	service := &fakeTaskService{}
 	h := server.New()
 	h.POST("/api/tasks/:task_id/close", CloseTask(service))
-	body := []byte(`{"expected_version":4,"actor":"m5","result":{"summary":"已过期，关闭","evidence":"截止时间早于今天"}}`)
+	body := []byte(`{"expected_version":4,"actor_type":"execute","result":{"summary":"已过期，关闭","evidence":"截止时间早于今天"}}`)
 	response := ut.PerformRequest(h.Engine, "POST", "/api/tasks/8/close", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
 	if response.StatusCode() != consts.StatusOK {
 		t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())
 	}
-	if service.close.TaskID != 8 || service.close.ExpectedVersion != 4 || service.close.ActorType != "m5" {
+	if service.close.TaskID != 8 || service.close.ExpectedVersion != 4 || service.close.ActorType != "execute" {
 		t.Fatalf("close input = %#v", service.close)
 	}
-	if !bytes.Contains(service.close.Result, []byte(`"stage":"m5_closed"`)) {
-		t.Fatalf("close result missing caller stage: %s", service.close.Result)
+	if !bytes.Contains(service.close.Result, []byte(`"evidence":"截止时间早于今天"`)) {
+		t.Fatalf("close result lost caller fields: %s", service.close.Result)
 	}
 }
 
-func TestUpdateTaskRecordsCallingAgentAndPreservesLooseFields(t *testing.T) {
+func TestUpdateTaskPreservesCallerAuditAndLooseFields(t *testing.T) {
 	service := &fakeTaskService{}
 	h := server.New()
 	h.PATCH("/api/tasks/:task_id", UpdateTask(service))
-	body := []byte(`{"expected_version":4,"summary":"权限仍在等待","instruction":"恢复后先核验权限","reason":"等待条件仍有效","actor":"factengine"}`)
+	body := []byte(`{"expected_version":4,"actor_type":"factengine","summary":"权限仍在等待","instruction":"恢复后先核验权限","reason":"等待条件仍有效"}`)
 	response := ut.PerformRequest(h.Engine, "PATCH", "/api/tasks/8", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
 	if response.StatusCode() != consts.StatusOK {
 		t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())

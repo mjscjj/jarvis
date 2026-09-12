@@ -104,10 +104,53 @@ func TestLarkLoginUsesSharedEntryAndCompletesSameDeviceFlow(t *testing.T) {
 	if err != nil || flow.VerificationURL != "https://example.test/authorize" {
 		t.Fatalf("begin: %v, %v", flow, err)
 	}
+
 	select {
 	case <-completed:
 	case <-time.After(time.Second):
 		t.Fatal("device flow was not completed with the same code")
+	}
+}
+
+func TestLarkLoginRefreshCancelsPreviousPendingLogin(t *testing.T) {
+	var beginCalls int
+	service := &Service{options: Options{RuntimeRoot: "/runtime", LarkCLIBin: "lark-cli"}, flows: map[string]*Flow{
+		"old": {ID: "old", Status: flowPending, kind: "lark_login", VerificationURL: "https://example.test/old"},
+	}}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	if !service.registerFlowCancel("old", cancel) {
+		t.Fatal("cancel registration failed")
+	}
+	service.runner = commandFunc(func(_ context.Context, bin string, args []string, _ string) ([]byte, error) {
+		if bin == "bash" && reflect.DeepEqual(args, []string{"/runtime/scripts/jarvis-lark-auth", "begin", "lark-cli"}) {
+			beginCalls++
+			return []byte(`{"device_code":"new-device","verification_url":"https://example.test/new"}`), nil
+		}
+		if bin == "lark-cli" && reflect.DeepEqual(args, []string{"auth", "login", "--device-code", "new-device"}) {
+			return []byte(`{"ok":true}`), nil
+		}
+		return nil, errors.New("unexpected command")
+	})
+	flow, err := service.BeginLarkLogin(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if flow.Status != flowPending || flow.VerificationURL != "https://example.test/new" || flow.ID == "old" {
+		t.Fatalf("new flow = %+v", flow)
+	}
+	if beginCalls != 1 {
+		t.Fatalf("begin calls = %d", beginCalls)
+	}
+	if ctx.Err() == nil {
+		t.Fatal("previous pending login was not cancelled")
+	}
+	old, err := service.Flow("old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if old.Status != flowFailed || !strings.Contains(old.Error, "重新生成") {
+		t.Fatalf("old flow = %+v", old)
 	}
 }
 

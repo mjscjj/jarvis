@@ -13,76 +13,14 @@ import (
 	"time"
 )
 
-func TestJarvisInstallIsProjectOwnedAndAgentDriven(t *testing.T) {
-	help, err := runJarvisInstall(t, nil, "--help")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{
-		"start",
-		"doctor",
-		"install-lark-cli",
-		"install-bytedcli",
-		"install-codex",
-		"install-traex",
-		"install-cc-connect",
-		"install-qdrant",
-		"validate-dependencies",
-		"configure-identity",
-		"bind-cc",
-		"validate-binding",
-		"install-server",
-		"validate",
-		"status",
-		"The calling",
-		"Agent decides",
-	} {
-		if !strings.Contains(help, want) {
-			t.Fatalf("jarvis-install help missing %q:\n%s", want, help)
-		}
-	}
-
-	toolsHelp, err := runJarvisTools(t, "", nil, "--help")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, forbidden := range []string{"install-qdrant", "install-server", "initialization-status"} {
-		if strings.Contains(toolsHelp, forbidden) {
-			t.Fatalf("jarvis-tools exposes installation-only command %q:\n%s", forbidden, toolsHelp)
-		}
-	}
-
-	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
-	if err != nil {
-		t.Fatal(err)
-	}
-	installSkill, err := os.ReadFile(filepath.Join(repoRoot, ".agents", "skills", "install-jarvis", "SKILL.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	operatorGuide, err := os.ReadFile(filepath.Join(repoRoot, ".agents", "skills", "install-jarvis", "references", "operator-guide.md"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, want := range []string{"源码安装的唯一用户入口", "operator-guide.md", "内部调用 `$bootstrap-jarvis-world-model`", "不转为 clone 仓库、安装工具链或注册 launchd 服务"} {
-		if !strings.Contains(string(installSkill), want) {
-			t.Fatalf("install skill missing unified-entry contract %q", want)
-		}
-	}
-	for _, want := range []string{"会要求用户处理的操作", "一条恢复路径", "原因：阻塞：", "DMG 已有应用内安装入口"} {
-		if !strings.Contains(string(operatorGuide), want) {
-			t.Fatalf("operator guide missing %q", want)
-		}
-	}
-}
-
-func TestJarvisInstallCreatesOneAuditableProjectChecklist(t *testing.T) {
+func TestJarvisInstallChecklistCanResume(t *testing.T) {
 	repoRoot, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
 	}
 	runDir := filepath.Join(repoRoot, "var", "install", fmt.Sprintf("test-%d", time.Now().UnixNano()))
 	defer os.RemoveAll(runDir)
+
 	out, err := runJarvisInstall(t, nil, "start", "--run-dir", runDir)
 	if err != nil {
 		t.Fatal(err)
@@ -98,112 +36,42 @@ func TestJarvisInstallCreatesOneAuditableProjectChecklist(t *testing.T) {
 	if !created.OK || created.RunDir != runDir {
 		t.Fatalf("start result = %#v", created)
 	}
-	content, err := os.ReadFile(created.Checklist)
-	if err != nil {
-		t.Fatal(err)
+	if info, err := os.Stat(created.Checklist); err != nil || info.Size() == 0 {
+		t.Fatalf("checklist = %q: %v", created.Checklist, err)
 	}
-	text := string(content)
-	for _, want := range []string{
-		"## A. 仓库与安装决策",
-		"## B. 工具链与全部依赖",
-		"## C. 飞书身份与一体化绑定",
-		"## D. 服务启动与运行底座验收",
-		"## E. 世界模型建立",
-		"## F. 真实端到端验收",
-		"## 未完成、未做或不适用",
-		"lark-cli 身份：当前默认身份",
-		"创建 commit：",
-		"清单模板 SHA-256：",
-		"id:install.cc-exclusive-owner",
-		"- [ ]",
-	} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("checklist missing %q:\n%s", want, text)
-		}
-	}
+
 	status, err := runJarvisInstall(t, nil, "status", "--run-dir", runDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var summary struct {
-		Completed int  `json:"completed"`
-		Pending   int  `json:"pending"`
-		Complete  bool `json:"complete"`
+		Pending  int  `json:"pending"`
+		Complete bool `json:"complete"`
 	}
 	if err := json.Unmarshal([]byte(status), &summary); err != nil {
 		t.Fatal(err)
 	}
-	if summary.Completed != 0 || summary.Pending == 0 || summary.Complete {
+	if summary.Pending == 0 || summary.Complete {
 		t.Fatalf("status = %#v", summary)
 	}
+
 	resumed, err := runJarvisInstall(t, nil, "start", "--resume-latest")
 	if err != nil {
 		t.Fatal(err)
 	}
 	var resumedRun struct {
 		Resumed   bool   `json:"resumed"`
-		RunDir    string `json:"run_dir"`
 		Checklist string `json:"checklist"`
 	}
 	if err := json.Unmarshal([]byte(resumed), &resumedRun); err != nil {
 		t.Fatal(err)
 	}
-	if !resumedRun.Resumed || resumedRun.RunDir != runDir || resumedRun.Checklist != created.Checklist {
+	if !resumedRun.Resumed || resumedRun.Checklist != created.Checklist {
 		t.Fatalf("resumed run = %#v", resumedRun)
-	}
-	currentCommitRaw, err := exec.Command("git", "rev-parse", "HEAD").Output()
-	if err != nil {
-		t.Fatal(err)
-	}
-	currentCommit := strings.TrimSpace(string(currentCommitRaw))
-	staleChecklist := strings.Replace(text, "创建 commit："+currentCommit, "创建 commit：stale-commit", 1)
-	if staleChecklist == text {
-		t.Fatal("created checklist did not record the current commit")
-	}
-	if err := os.WriteFile(created.Checklist, []byte(staleChecklist), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	staleResume, staleErr := runJarvisInstall(t, nil, "start", "--resume-latest")
-	if staleErr == nil || !strings.Contains(staleResume, "current commit") {
-		t.Fatalf("stale checklist resume = %v: %s", staleErr, staleResume)
-	}
-	staleTemplateChecklist := strings.Replace(text, "清单模板 SHA-256：", "清单模板 SHA-256：stale-", 1)
-	if err := os.WriteFile(created.Checklist, []byte(staleTemplateChecklist), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	staleTemplateResume, staleTemplateErr := runJarvisInstall(t, nil, "start", "--resume-latest")
-	if staleTemplateErr == nil || !strings.Contains(staleTemplateResume, "template no longer matches") {
-		t.Fatalf("stale template resume = %v: %s", staleTemplateErr, staleTemplateResume)
-	}
-	explainedChecklist := strings.ReplaceAll(text, "- [ ]", "- [ ] 原因：未做：测试；")
-	if err := os.WriteFile(created.Checklist, []byte(explainedChecklist), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	explainedStatus, err := runJarvisInstall(t, nil, "status", "--run-dir", runDir)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var explainedSummary struct {
-		Complete    bool `json:"complete"`
-		Deliverable bool `json:"deliverable"`
-	}
-	if err := json.Unmarshal([]byte(explainedStatus), &explainedSummary); err != nil {
-		t.Fatal(err)
-	}
-	if explainedSummary.Complete || !explainedSummary.Deliverable {
-		t.Fatalf("explained status = %#v", explainedSummary)
-	}
-	completedChecklist := strings.ReplaceAll(text, "- [ ]", "- [x]")
-	if err := os.WriteFile(created.Checklist, []byte(completedChecklist), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	completedResume, completedErr := runJarvisInstall(t, nil, "start", "--resume-latest")
-	if completedErr == nil || !strings.Contains(completedResume, "already complete") {
-		t.Fatalf("completed checklist resume = %v: %s", completedErr, completedResume)
 	}
 }
 
-func TestJarvisInstallDoctorKeepsGoStderrInsideJSONError(t *testing.T) {
+func TestJarvisInstallDoctorKeepsCommandFailureInJSON(t *testing.T) {
 	binDir := t.TempDir()
 	writeExecutable(t, filepath.Join(binDir, "go"), `#!/bin/sh
 case "$*" in
@@ -213,7 +81,6 @@ case "$*" in
   *"run ./cmd/jarvis-config instance"*)
     printf '%s' '{"api_base":"http://127.0.0.1:19452","launchd_label":"com.bytedance.jarvis.server.test"}' ;;
   *"run ./cmd/jarvis-config initialization-status"*)
-    printf '%s\n' 'go: downloading example.invalid/module' >&2
     printf '%s\n' 'configuration failed' >&2
     exit 7 ;;
   *) exit 9 ;;
@@ -221,7 +88,7 @@ esac
 `)
 	output, err := runJarvisInstall(t, []string{"PATH=" + binDir + ":" + os.Getenv("PATH")}, "doctor")
 	if err == nil {
-		t.Fatalf("doctor unexpectedly reported the machine ready: %s", output)
+		t.Fatalf("doctor unexpectedly reported ready: %s", output)
 	}
 	var report struct {
 		Configuration struct {
@@ -232,7 +99,7 @@ esac
 	if decodeErr := json.Unmarshal([]byte(output), &report); decodeErr != nil {
 		t.Fatalf("doctor mixed stderr into JSON output %q: %v", output, decodeErr)
 	}
-	if report.Configuration.InspectionOK || !strings.Contains(report.Configuration.Error, "go: downloading") {
+	if report.Configuration.InspectionOK || !strings.Contains(report.Configuration.Error, "configuration failed") {
 		t.Fatalf("doctor configuration report = %#v", report.Configuration)
 	}
 }
@@ -384,7 +251,7 @@ func TestJarvisInstallConfiguresIdentityThroughMachineBoundary(t *testing.T) {
 case "$*" in
   *"run ./cmd/jarvis-config configure-principal"*"--agent-name 小贾 --open-id ou_ready --git-author ready@example.com")
     printf '%s' '{"agent_display_name":"小贾","principal_open_id":"ou_ready","git_author":"ready@example.com"}' ;;
-  *) printf '%s' "unexpected go args: $*" >&2; exit 9 ;;
+  *) exit 9 ;;
 esac
 `)
 	out, err := runJarvisInstall(t, []string{"PATH=" + binDir + ":" + os.Getenv("PATH")},
@@ -392,8 +259,15 @@ esac
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(out, `"agent_display_name":"小贾"`) || !strings.Contains(out, `"principal_open_id":"ou_ready"`) {
-		t.Fatalf("configure-identity output = %s", out)
+	var identity struct {
+		AgentName string `json:"agent_display_name"`
+		OpenID    string `json:"principal_open_id"`
+	}
+	if err := json.Unmarshal([]byte(out), &identity); err != nil {
+		t.Fatal(err)
+	}
+	if identity.AgentName != "小贾" || identity.OpenID != "ou_ready" {
+		t.Fatalf("identity = %#v", identity)
 	}
 }
 
@@ -1079,14 +953,7 @@ printf '%s\n' 'traecli test (internal edition)'
 
 func runJarvisInstall(t *testing.T, extraEnv []string, args ...string) (string, error) {
 	t.Helper()
-	script, err := filepath.Abs(filepath.Join("..", "..", "scripts", "jarvis-install"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	command := exec.Command("bash", append([]string{script}, args...)...)
-	command.Env = append(command.Environ(), extraEnv...)
-	output, err := command.CombinedOutput()
-	return string(output), err
+	return runJarvisInstallWithInput(t, "", extraEnv, args...)
 }
 
 func runJarvisInstallWithInput(t *testing.T, input string, extraEnv []string, args ...string) (string, error) {

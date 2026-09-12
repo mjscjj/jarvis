@@ -42,10 +42,6 @@ func New(options Options) (*Supervisor, error) {
 	}, nil
 }
 
-func (s *Supervisor) Layout() Layout {
-	return s.layout
-}
-
 func (s *Supervisor) Run(ctx context.Context, output io.Writer) error {
 	if ctx == nil {
 		return fmt.Errorf("app service context is nil")

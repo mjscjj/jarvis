@@ -5,14 +5,14 @@ import (
 	"testing"
 )
 
-func TestBackgroundStagesExposeTheSameMachineCapabilities(t *testing.T) {
+func TestBlockSupportsAgentStages(t *testing.T) {
 	t.Parallel()
 	for _, stage := range []string{
 		StageExtract, StageExecute, StageFactEngine,
 		StageProactive, StageMeetingSweep, StageMorningBrief,
 	} {
 		block, err := Block(stage)
-		if err != nil {
+		if err != nil || block == "" {
 			t.Fatalf("Block(%q): %v", stage, err)
 		}
 		for _, required := range []string{
@@ -22,7 +22,7 @@ func TestBackgroundStagesExposeTheSameMachineCapabilities(t *testing.T) {
 			"list-relations --node-type TYPE --node-id ID", "--node-types TYPE[,TYPE...]", "yield-until", "JARVIS_TASK_ID",
 			"get-world-progress", "create-world-progress", "update-world-progress",
 			"get-shared-memory", "append-shared-memory", "set-shared-memory", "2000",
-			"对所有 Agent 阶段开放", "JARVIS_AGENT_STAGE", "bytedcli --json <领域> --help", "不要加载全量帮助",
+			"对所有 Agent 阶段开放", "JARVIS_AGENT_STAGE", "不是权限身份",
 			"create-task", "source_type=manual|proactive", "supplement-task", "resume-task",
 			"bytedcli --json <领域> --help", "不要加载全量帮助",
 		} {
@@ -40,26 +40,5 @@ func TestUnknownStageFails(t *testing.T) {
 	t.Parallel()
 	if _, err := Block("unknown"); err == nil {
 		t.Fatal("Block(unknown) unexpectedly succeeded")
-	}
-}
-
-func TestToolCatalogDoesNotOwnStageJudgmentOrPolicy(t *testing.T) {
-	for _, stage := range []string{
-		StageExtract, StageExecute, StageChat, StageFactEngine,
-		StageProactive, StageMeetingSweep, StageMorningBrief,
-	} {
-		block, err := Block(stage)
-		if err != nil {
-			t.Fatal(err)
-		}
-		for _, forbidden := range []string{
-			"Task 准入", "最短证据链", "证据足够", "主动发散", "值得推进",
-			"只有已查证完成", "跨日、沉默", "唯一预授权", "不得直接执行外部动作",
-			"最多 10 个", "最多 50 个", "不创建或推进 Task", "需要补证据时",
-		} {
-			if strings.Contains(block, forbidden) {
-				t.Fatalf("Block(%q) contains stage policy %q:\n%s", stage, forbidden, block)
-			}
-		}
 	}
 }

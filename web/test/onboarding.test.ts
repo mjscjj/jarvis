@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { readFileSync } from 'node:fs'
-import { setupAction, setupCanEnter, worldModelProgress } from '../src/onboardingState.ts'
+import { setupAction, setupCanEnter, setupSecretVisible, worldModelProgress } from '../src/onboardingState.ts'
 import { beginSetupLarkConnection, cancelSetupFlow, finalizeSetup, repairSetupLarkCredentials, rerunTask } from '../src/api.ts'
 import type { SetupStatus, Task } from '../src/types.ts'
 
@@ -10,7 +9,7 @@ const ready = (): SetupStatus => ({
   runtime_id: 'test-runtime',
   app_ready: false,
   configuration: { machine_configuration_ready: false, agent_name_configured: false },
-  lark: { available: true, app_id: 'cli_test', bot: { status: 'ready', verified: true }, user: { status: 'ready', verified: true } },
+  lark: { available: true, app_id: 'cli_test', application_checks: [{ event: 'im.message.receive_v1', ready: true }, { event: 'card.action.trigger', ready: true }], bot: { status: 'ready', verified: true }, user: { status: 'ready', verified: true } },
   agent: { available: true, authenticated: true }, world_model_ready: false, completed: false,
 })
 
@@ -24,7 +23,7 @@ test('only missing actions are shown; existing connections and login are skipped
   status.lark.user.verified = false
   assert.equal(setupAction(status), 'authorize')
   status.lark.bot.verified = false
-  assert.equal(setupAction(status), 'repair')
+  assert.equal(setupAction(status), 'application')
   status.lark.app_id = ''
   assert.equal(setupAction(status), 'connect')
 })
@@ -66,29 +65,40 @@ test('retry addresses the original task rather than creating initialization agai
   const calls: Array<{ path: string; method: string }> = []
   t.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
     calls.push({ path, method: options.method! })
-    return new Response(JSON.stringify({ code: 0, data: { task_id: 456, status: 'executing' } }))
+    return Response.json({ code: 0, data: { task_id: 456, status: 'executing' } })
   })
   await rerunTask(456)
   assert.deepEqual(calls, [{ path: '/api/tasks/456/rerun', method: 'POST' }])
 })
 
-test('secret editor lifecycle depends on edit mode and saved credential, not draft length', () => {
-  const source = readFileSync(new URL('../src/Onboarding.tsx', import.meta.url), 'utf8')
-  assert.match(source, /const secretEditorVisible = action === 'repair' \|\| editingSecret \|\| \(!status\.configuration\.machine_configuration_ready && !status\.lark\.credential_available\)/)
-  assert.doesNotMatch(source, /\{!appSecret\s*&&/)
-  assert.match(source, /label htmlFor="setup-secret">App Secret/)
-  assert.doesNotMatch(source, /<Steps|setup-app-id|setAppId|setSelected/)
-  assert.doesNotMatch(source, /<details[^>]*\bopen[\s=>]/)
-  assert.doesNotMatch(source, /localStorage\.setItem\([^\n]*[Ss]ecret/)
-  assert.match(source, /无法读取安装状态/)
-  assert.match(source, /https:\/\/open.feishu.cn\/app/)
+test('a new user identifies the app and authorizes before entering its chat secret', () => {
+  const status = ready()
+  status.lark.user.verified = false
+  assert.equal(setupAction(status), 'authorize')
+  assert.equal(setupSecretVisible(status, false), false)
+  status.lark.user.verified = true
+  assert.equal(setupSecretVisible(status, false), true)
+  status.lark.credential_available = true
+  assert.equal(setupSecretVisible(status, false), false)
+  assert.equal(setupSecretVisible(status, true), true)
+  status.lark.app_id = ''
+  assert.equal(setupSecretVisible(status, true), false)
+})
+
+test('event failures direct users to application configuration, never secret repair', () => {
+  const status = ready()
+  status.lark.application_checks[1] = { event: 'card.action.trigger', ready: false, error: 'console_event_published missing' }
+  assert.equal(setupAction(status), 'application')
+  assert.equal(setupSecretVisible(status, false), false)
+  status.lark.application_checks[1].ready = true
+  assert.equal(setupAction(status), 'start')
 })
 
 test('frontend never chooses another App ID; only a missing secret is submitted', async (t) => {
   const calls: Array<{ path: string; body: unknown }> = []
   t.mock.method(globalThis, 'fetch', async (path: string, options: RequestInit) => {
     calls.push({ path, body: options.body ? JSON.parse(String(options.body)) : undefined })
-    return new Response(JSON.stringify({ code: 0, data: {} }))
+    return Response.json({ code: 0, data: {} })
   })
   await beginSetupLarkConnection()
   await finalizeSetup('')

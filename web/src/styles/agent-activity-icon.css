@@ -1,0 +1,87 @@
+.agent-activity-icon {
+  position: relative;
+  display: inline-flex;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  border: 0;
+  padding: 0;
+  border-radius: 13px;
+  background: none;
+  cursor: pointer;
+}
+
+.agent-activity-icon:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 4px;
+}
+
+.agent-activity-icon > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+}
+
+.agent-activity-particles {
+  position: absolute;
+  inset: -7px;
+  width: calc(100% + 14px);
+  height: calc(100% + 14px);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 500ms ease-out;
+}
+
+.agent-activity-swarm {
+  transform-origin: 50px 50px;
+  animation: agent-core-orbit 8s linear infinite;
+}
+
+.agent-activity-swarm-reverse {
+  animation-duration: 5s;
+  animation-direction: reverse;
+}
+
+.agent-activity-spark {
+  animation: agent-particle-shimmer 1.8s ease-in-out infinite;
+  animation-delay: var(--spark-delay);
+}
+
+.agent-activity-icon[data-state='running'] .agent-activity-particles {
+  opacity: 1;
+  transition-duration: 300ms;
+}
+
+.agent-activity-icon:not([data-state='running']) .agent-activity-swarm,
+.agent-activity-icon:not([data-state='running']) .agent-activity-spark {
+  animation-play-state: paused;
+}
+
+.agent-activity-error {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  display: grid;
+  place-items: center;
+  width: 12px;
+  height: 12px;
+  border: 1px solid var(--color-bg-elevated);
+  border-radius: 50%;
+  background: var(--color-warning);
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+@keyframes agent-core-orbit { to { transform: rotate(360deg); } }
+@keyframes agent-particle-shimmer {
+  0%, 100% { opacity: .35; }
+  50% { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-activity-particles { transition: none; }
+  .agent-activity-swarm, .agent-activity-spark { animation: none; }
+}

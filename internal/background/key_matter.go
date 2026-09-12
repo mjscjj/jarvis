@@ -195,14 +195,6 @@ func (s *KeyMatterService) Delete(ctx context.Context, id uint64) error {
 	return nil
 }
 
-func (s *KeyMatterService) ListAll(ctx context.Context) ([]KeyMatterView, error) {
-	items := make([]domain.KeyMatter, 0)
-	if err := s.openQuery(ctx).Preload("Project").Order(keyMatterOrder).Find(&items).Error; err != nil {
-		return nil, fmt.Errorf("list all key matters: %w", err)
-	}
-	return toKeyMatterViews(items), nil
-}
-
 func (s *KeyMatterService) List(ctx context.Context, filter KeyMatterFilter) (*KeyMatterList, error) {
 	if err := filter.ListFilter.validate(); err != nil {
 		return nil, invalid(err)

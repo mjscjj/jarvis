@@ -6,7 +6,6 @@ use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 use tauri::Manager;
-use tauri_plugin_updater::UpdaterExt;
 
 mod runtime_output;
 
@@ -173,40 +172,6 @@ fn monitor_runtime(app: tauri::AppHandle) {
     });
 }
 
-fn check_for_update(app: tauri::AppHandle) {
-    if cfg!(debug_assertions) {
-        return;
-    }
-    tauri::async_runtime::spawn(async move {
-        let update = match app.updater() {
-            Ok(updater) => match updater.check().await {
-                Ok(update) => update,
-                Err(error) => {
-                    eprintln!("jarvis-desktop: update check failed: {error}");
-                    return;
-                }
-            },
-            Err(error) => {
-                eprintln!("jarvis-desktop: initialize updater failed: {error}");
-                return;
-            }
-        };
-        let Some(update) = update else {
-            return;
-        };
-        eprintln!(
-            "jarvis-desktop: installing update {} -> {}",
-            app.package_info().version,
-            update.version
-        );
-        if let Err(error) = update.download_and_install(|_, _| {}, || {}).await {
-            eprintln!("jarvis-desktop: update installation failed: {error}");
-            return;
-        }
-        app.restart();
-    });
-}
-
 fn main() {
     let application = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
@@ -216,6 +181,8 @@ fn main() {
             }
         }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_process::init())
+        // The web UI owns the update prompt and installs only on user request.
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(RuntimeState::default())
         .setup(|app| {
@@ -223,7 +190,6 @@ fn main() {
                 Ok(child) => {
                     *app.state::<RuntimeState>().child.lock().unwrap() = Some(child);
                     monitor_runtime(app.handle().clone());
-                    check_for_update(app.handle().clone());
                 }
                 Err(error) => show_startup_error(app.handle(), &error),
             }

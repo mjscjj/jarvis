@@ -77,7 +77,7 @@ type TodoView struct {
 	Project          *TodoProjectView `json:"project"`
 	// Resolution / Content are the M3-frozen project inference trace and
 	// background, so the UI can show "why this project/repo" and M5 can query the
-	// full creation-time context on demand (docs/design-context-pipeline.md §5/§6).
+	// full creation-time context on demand (docs/decisions/context-snapshot.md).
 	Resolution json.RawMessage `json:"resolution"`
 	Content    json.RawMessage `json:"content"`
 }

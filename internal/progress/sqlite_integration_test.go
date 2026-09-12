@@ -1,5 +1,3 @@
-//go:build integration
-
 package progress_test
 
 import (

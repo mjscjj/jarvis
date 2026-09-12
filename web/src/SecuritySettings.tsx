@@ -29,6 +29,7 @@ import type {
   AccessAuditOperation,
   SecuritySettingsView,
 } from './types'
+import './styles/security-settings.css'
 
 const { Text, Title } = Typography
 
@@ -213,14 +214,7 @@ export default function SecuritySettings() {
               unCheckedChildren="禁止"
             />
           </Flex>
-          <Alert
-            className="security-policy-note"
-            type="info"
-            showIcon
-            title="不影响 CC Connect 转发"
-            description="关闭后，自动扫描、批量扫描和手动指定单聊扫描都会停止；CC Connect 已接管消息的转发与落库保持原样。"
-          />
-          <Flex justify="flex-end">
+          <Flex className="security-policy-actions" justify="flex-end">
             <Button type="primary" disabled={!dirty} loading={saving} onClick={save}>保存设置</Button>
           </Flex>
         </Card>

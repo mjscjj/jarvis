@@ -2503,7 +2503,13 @@ pre {
 }
 
 .setup-simple { width: min(600px, 100%); line-height: 1.7; }
-.setup-connected { color: #5b6470; margin: 0 0 18px; }
+.setup-connected { display: flex; flex-direction: column; gap: 8px; color: #5b6470; margin: 0 0 18px; padding: 16px; background: #f5f8f6; border-radius: 8px; overflow-wrap: anywhere; }
+.setup-application { display: flex; flex-direction: column; gap: 10px; }
+.setup-application ol { margin: 0; padding-left: 22px; }
+.setup-application li { margin: 8px 0; }
+.setup-application-check { padding: 10px 0; border-bottom: 1px solid #e8eaed; overflow-wrap: anywhere; }
+.setup-application-check pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+.setup-application-check summary { cursor: pointer; }
 .setup-form, .setup-field { display: flex; flex-direction: column; gap: 10px; align-items: stretch; }
 .setup-form { margin: 20px 0; max-width: 600px; gap: 18px; }
 .setup-field label { font-weight: 600; }

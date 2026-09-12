@@ -490,13 +490,13 @@ func writeScript(t *testing.T, body string) string {
 	return path
 }
 
+func shellQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+}
+
 func testOptions(bin string, timeout time.Duration) Options {
 	return Options{
 		Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: timeout,
 		Timezone: "Asia/Shanghai",
 	}
-}
-
-func shellQuote(value string) string {
-	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }

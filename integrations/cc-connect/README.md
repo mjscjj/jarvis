@@ -1,5 +1,9 @@
 # CC Connect integration
 
+> Status: current
+> Authority: operational integration reference; `manifest.sh`, patch and `manage.sh` are source of truth
+> Last verified: 2026-09-11
+
 This directory is the product-owned integration between Jarvis and CC Connect. It is independent of the Agent Skills that orchestrate installation.
 
 - `manifest.sh`: pinned upstream repository, base commit, Jarvis version and patch identity.

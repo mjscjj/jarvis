@@ -28,7 +28,7 @@ test('all people pickers use the shared Feishu directory endpoint', async (t) =>
         }],
         has_more: false,
       },
-    }), { status: 200 })
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })
   })
 
   const result = await searchFeishuPeople('张 三@example.com', controller.signal)

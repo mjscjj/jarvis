@@ -1,348 +1,156 @@
 # Jarvis · 主动式任务数字分身
 
-Jarvis 是运行在本地 Mac 可信环境中的个人任务 Agent。它从飞书消息和外部线索中保留原始证据，抽取 Todo，并由执行 Agent 判断是否值得推进、调用工具完成工作、处理等待、需要时在飞书上问你一句，并留下结果。
+Jarvis 是运行在本地可信环境中的个人任务 Agent。它持续接收工作事实，维护世界状态，判断哪些事情值得推进，调用工具完成工作，并把结果沉淀回来。
 
-系统另有两类后台 Agent：factengine 以持续世界建模为主要任务；主动巡视默认每小时读取世界模型、看护未闭环工作，并可在调查过程中顺手维护明确变化。任何需要改变外部世界的动作都只创建 Task，交给强 M5 执行。
+## 阅读入口
 
-先读：
+1. [项目目标](goal.md)：稳定愿景与成功标准
+2. [Agent 开发规范](AGENTS.md)：语义所有权、MVP 和实现约束
+3. [当前架构](docs/00-overview.md)：跨模块数据流与硬边界
+4. [文档导航](docs/README.md)：当前文档、提案、研究与交付物
+5. [OKR 模块当前实现](docs/modules/06-okr.md)：通用 OKR、Biz OKR 与世界模型的维护边界
 
-1. [项目目标](goal.md)
-2. [Agent 开发规范](AGENTS.md)
-3. [当前架构](docs/00-overview.md)
-4. [文档导航与状态](docs/README.md)
-
-## 当前链路
+## 核心链路
 
 ```text
 飞书 Bot WebSocket ─> CC Connect
-                       ├─ 接受的私聊/@消息 ─> route claim ─> CC 前台 Agent/session
-                       │                                  ├─ 即时答复
-                       │                                  └─ manual Task ─> M5
-                       └─ 未接受的普通群消息（等待 M2 轮询）
+                       ├─ 当前会话可直接完成 ─> 即时回复
+                       └─ 长期、多步或有副作用 ─> manual Task ─┐
 
-飞书 IM 轮询补偿 ───────────┐
-                           ├─> M2 capture ─> message ─> M3 extract
-外部 Skill / 定时任务 ─> /api/clues ────────┘             │
-                                                            ├─ observing：保留观察，不创建 Task
-                                                            └─ extracted
-                                                                 │
-                                               机械固化：Todo=materialized + Task
-                                                                 │
-                                                               M5 执行 Agent
-                                                         ├─ completed -> Task=done
-                                                         ├─ observing -> Task/Todo=observing
-                                                         ├─ waiting   -> 到期续跑同一 Session
-                                                         ├─ needs_human -> 问题卡 -> 回答续跑同一 Session
-                                                         └─ failed
+飞书轮询 / 外部 Skill ─> M2 原始事实 ─> M3 准入 ─> Todo ────┤
+                                                            v
+                                                     M5 执行 Agent
+                                         调查 ─> 动作 ─> 验证 ─> 沉淀
 ```
 
-`extracted` Todo 不再经过模型判断，固化步骤只负责按 Todo ID/version 幂等创建 Task。M5 执行 Agent 持有全部语义判断权：调查真实状态、判断是否值得推进、选择动作并完成工作，或把来源 Todo 置回 `observing`。
+- **M2 机械采集**：保留原始事实，不解释错误、不判断价值。
+- **M3 最短准入**：只调查到足以决定 `extracted` 或 `observing`。
+- **Todo 固化**：`extracted` Todo 按 ID/version 幂等创建 Task，不再经过模型闸门。
+- **M5 完整执行**：调查现实、调整目标、选择工具、处理等待和人工问题，直到得到真实结果。
+- **世界模型**：实体页回答“现在是什么”，Fact 指向“发生过什么”的原始证据；EntityRelation 保存可查询的明确映射，WorldProgress 保存证据化周期判断。
+- **主动巡视**：看护未闭环工作；需要改变外部世界时创建普通 Task 交给 M5。
 
-要不要先问 principal 不是固定流水线阶段，也不由 `action_type` 决定。M5 根据即将发生的具体副作用和 [`conf/prompts/m5-approval-policy.md`](conf/prompts/m5-approval-policy.md) 判断：不用问就直接完成，要问就返回 `needs_human` 加一份 `question`，停在 `needs_human` 等回答。代码修改也没有类型级豁免。
+请示副作用不是固定流程阶段。M5 根据即将发生的具体动作判断是否需要询问 principal；需要时统一返回 `needs_human + question`，回答恢复同一个 Agent Session。
 
-请示副作用和补充信息用的是同一个机制：`question` 自带按钮、下拉、多选、输入框和链接，runtime 只负责把它渲染成飞书卡片、把回答原样交回同一个 Codex Session。答案怎么理解由那个 Session 判断，Jarvis 不解释、也没有单独的批准/驳回接口。
-
-## 核心边界
-
-| 模块 | 当前职责 | 代码入口 |
-|---|---|---|
-| M1 背景 | principal、项目、关键事项、人物、会话背景、人工资源 | `internal/background/` |
-| M2 采集 | 飞书消息事件、会话发现、增量轮询补偿、principal activity、通用 clue 落库 | `internal/capture/` |
-| M3 提取 | 证据校验、Todo 抽取/合并、上下文快照、语义去重 | `internal/extract/` |
-| CC 前台 | 当前会话即时处理；长期、多步或有副作用的工作创建 manual Task 交给 M5 | `conf/prompts/cc-system-prompt.md`, `integrations/cc-connect/` |
-| Todo 固化 | extracted Todo 按 ID/version 幂等创建 Task，不调用模型 | `internal/execute/materializer.go` |
-| M5 执行 | 调查、执行、提问、等待/续跑、人工回答、结果留痕 | `internal/execute/`, `internal/cardask/` |
-| 事实引擎 | 在关键路径外从 `message`、Todo、Task 通用蒸馏长期事实，并通过通用工具按需维护当前实体、关系和资料 | `internal/factengine/` |
-| 主动巡视 | 周期读取世界模型、看护未闭环工作、按需维护内部认知、为外部行动创建普通 Task | `internal/proactive/` |
-| 会议巡扫 | 采集已结束会议和未来 24 小时日程，分别触发会后整理与逐场处理判断 | `internal/meetingsweep/` |
-| 晨间简报 | 工作日开工对齐：Skill 取证写稿，定时/手动触发，产物在本地 Markdown | `internal/morningbrief/` |
-| 定时任务 | 周期/单次 Task，以及等待 Session 的未来唤醒 | `internal/scheduledtask/`, `internal/taskcreate/` |
-| 插件 | 按需启用外部来源或阶段能力；采集插件通过定时任务 + Skill 投递 clue，能力插件复用现有 M3/M5 与 Task 链路 | `internal/plugin/`, [`docs/plugin-system.md`](docs/plugin-system.md) |
-| 实时协调 | 按持久化 ID/version 推进 M3→M5，cron 负责补偿 | `internal/pipeline/` |
-| 背景事实 | 实体长期事实页 `summary`（整体读写、有上限、页内引用）与自然语言 Fact | `internal/background/`, `internal/progress/`, `internal/knowledge/` |
-| 后台与观测 | Overview、日报、worklog、运行状态、日志 | `internal/insight/`, `internal/dailydigest/`, `internal/observability/` |
-| Agent 配置面 | prompts、rules、Skills、shared memory、工具目录 | `internal/textstore/`, `internal/workrule/`, `internal/skill/`, `internal/sharedmem/`, `internal/toolcatalog/` |
-
-三条不可破坏的规则：
-
-- M2 只记录事实。错误原文也是事实，错误语义和下一步交给模型判断。
-- 新来源通过 `source + Skill/定时任务 + POST /api/clues` 接入，不在 Go 中新增来源专用流水线。
-- M3 冻结 `Todo.content`（原始来源、冻结事实和模型说明），固化到 `Task.source_payload`；M5 默认读触发原文与现场摘要，其余按需下钻；下游可补证据，但不重建一份“看起来等价”的背景。
-- factengine 是持续世界建模的主要 Agent；主动巡视以看护和推进为主，但调查中可直接维护明确、有用的内部认知，也可把原始证据送入统一线索入口。外部行动统一创建 `source_type=proactive` 的 Task 交给 M5。
-
-各模块的当前实现详见 [`docs/modules/`](docs/README.md#当前实现)；OKR 维护入口见 [OKR 模块当前实现](docs/modules/06-okr.md)。
-
-## Source of truth
-
-不要从文档复制容易漂移的字段、路由或数值：
+## Source Of Truth
 
 | 主题 | 权威来源 |
 |---|---|
 | 项目目标 | `goal.md` |
-| Agent 行为和开发约束 | `AGENTS.md`, `conf/prompts/`, `conf/rules/`, `.agents/skills/` |
-| 数据模型与迁移 | `internal/domain/*.go`, `internal/store/sqlite.go` |
+| 开发和架构约束 | `AGENTS.md` |
+| 当前跨模块架构 | `docs/00-overview.md` |
+| 数据模型与迁移 | `internal/domain/`, `internal/store/sqlite.go` |
+| OKR 产品模块 | `internal/okrworkspace/`, `internal/okrreview/`, `conf/okr-module.yaml`, `data/okr/` |
 | HTTP 路由 | `internal/api/router.go` |
-| 基线配置 | `conf/config.yaml` |
-| 本机运行时覆盖 | `conf/config.runtime.yaml` |
-| 页面入口 | `web/src/App.tsx` |
+| 基线与本机配置 | `conf/config.yaml`, `conf/config.runtime.yaml` |
+| Agent 行为 | `conf/prompts/`, `conf/rules/`, `.agents/skills/` |
 | Agent 工具 | `internal/toolcatalog/`, `scripts/jarvis-tools` |
-| 飞书应用与登录身份 | [docs/design-dual-app-identity.md](docs/design-dual-app-identity.md)，配置真源是 `conf/okr-module.yaml` 与 `conf/okr-feishu-scopes.txt` |
+| 飞书应用与登录身份 | [双飞书应用身份](docs/design-dual-app-identity.md)，`conf/okr-module.yaml` 与 `conf/okr-feishu-scopes.txt` |
+| 页面入口 | `web/src/App.tsx` |
+| 安装动作 | `scripts/jarvis-install`, `.agents/skills/install-jarvis/` |
 
-网页登录与白名单接入见 [网页 SSO 登录接入](docs/summery/sso-web-login.md)。采用字节云官方个人 JWT SDK；当前仍待域名接入确认、代码实现与真实登录验收。
+文档不复制完整 DDL、路由、CLI help 或本机有效配置。
 
-有效配置是 `conf/config.yaml` 与同目录 `conf/config.runtime.yaml` 的合并结果：runtime 文件按叶子 key 覆盖基线，未出现的 key 保留基线值，两个文件都拒绝未知字段。
+有效配置是 `conf/config.yaml` 与同目录 `conf/config.runtime.yaml` 的合并结果：runtime 按叶子 key 覆盖基线，未出现的 key 保留基线值，两个文件都拒绝未知字段。**本机参数、身份和密钥写 runtime 文件，不改仓库基线。** runtime 文件不进 Git，权限保持 `600`。后台保存后需要重启；prompts、rules 和 Skills 按各自 reader 实时读取。
 
-**改本机运行参数改 `conf/config.runtime.yaml`，不要改 `conf/config.yaml`。** 后台设置页保存时会把整份可调参数快照写进 runtime 文件，此后基线里的同名 key 永久失效——这是「改了 `conf/config.yaml` 没有任何效果」的典型原因。基线只负责仓库默认值和 runtime 未覆盖的键（`sqlite.path`、`server.*`、`capture.hot_age_hours` 等）；身份与密钥（`extract.principal_open_id`、`card_approval.relay_secret`）只写 runtime 文件，它不进 Git、权限保持 `600`。Jarvis 本体的飞书身份直接使用 lark-cli 当前默认身份，也就是权限最大、只服务 principal 一人的主应用。OKR 模块的页面登录是**另一个**低敏应用，见 [双飞书应用身份设计](docs/design-dual-app-identity.md)。
+Jarvis 本体使用 lark-cli 当前默认身份，只服务 principal；OKR 页面登录使用独立低敏应用。网页登录与白名单接入见 [网页 SSO 登录接入](docs/summery/sso-web-login.md)：个人 JWT SDK 方案已查证，域名接入、代码实现与真实登录验收尚未完成。
 
-后台保存 runtime settings 后需要重启服务；文档中的配置数值只代表仓库基线，不代表当前进程一定正在使用该值。
+`server.addr` 是实例后端监听地址的配置真源。主进程向 Agent 子进程导出 `JARVIS_API_BASE`、`JARVIS_CONFIG` 和仓库工具 PATH；切换工作目录不会切换实例。通用、世界模型、OKR/周报工具统一用 `scripts/jarvis-api-base`，优先采用继承地址，否则读取选定配置；配置错误直接失败，不扫描端口。模块工具的显式 `--base-url` 可指定其它实例。
 
-`server.addr` 是本实例后端地址的唯一配置。`jarvis-server` 启动时把实际地址、绝对配置路径和本仓库工具目录导出为 `JARVIS_API_BASE`、`JARVIS_CONFIG`、`PATH`，所有 Agent 子进程继承；切换工作目录不会切换实例。通用工具、世界模型工具、OKR/周报工具统一使用 `scripts/jarvis-api-base`：先用继承的 API 地址，否则通过 `scripts/jarvis-instance` 读取选定配置（默认本仓库 `conf/config.yaml` 加运行时覆盖）。配置错误直接失败，不扫描端口。工具需要 Go 和 jq；模块工具的显式 `--base-url` 可以指定其它实例。环境变量统一为 `JARVIS_API_BASE`，不再使用 `JARVIS_BASE_URL`。
-
-启动、重建、健康检查和开发代理也读取同一配置。`scripts/jarvis-instance [CONFIG_PATH]` 输出地址与服务名；服务名按配置文件绝对路径生成，改端口不改服务名，不同配置不会共用 launchd job。Vite 默认从后端相邻端口开始；端口占用直接报错。两实例仍需分别配置数据库/产物路径，飞书账号、Qdrant collection 等外部资源不会因更换 HTTP 端口自动隔离。
+服务名由配置文件绝对路径生成；改端口不改服务名，不同配置不共用服务。多实例仍需分开配置数据库与产物路径，外部账号、Qdrant collection 和 Bot 长连接不会自动隔离。给用户的页面与卡片链接优先使用 `server.public_base_url`。
 
 ## 常见修改入口
 
-- 改 M3 抽取口径：`conf/prompts/m3-system-prompt.md`；改上下文组装：`internal/extract/prompt.go`、`internal/extract/snapshot.go`
-- 改 M5 执行行为：`conf/prompts/m5-system-prompt.md`、`conf/rules/m5.md`
-- 改飞书前台即时处理/转 Task 边界：`conf/prompts/cc-system-prompt.md`
-- 改主动巡视行为：`conf/prompts/proactive-system-prompt.md`；改调度与调用：`internal/proactive/`
-- 改审批尺度：`conf/prompts/m5-approval-policy.md`
-- 改严格输出协议/状态路由：`internal/execute/prompt.go`、`internal/execute/store.go`
-- 改工具说明：`internal/toolcatalog/` 或对应 Skill，不把工具手册复制进系统提示词
-- 改调度、并发、超时等运行参数：`conf/config.runtime.yaml` 或后台设置页，改基线 `conf/config.yaml` 对已被 runtime 覆盖的 key 无效
-- 加 HTTP 接口：`internal/api/`，并在 `internal/api/router.go` 注册
-- 改表或字段：`internal/domain/` 与 `internal/store/sqlite.go`
-- 改前端页面：`web/src/`
-- 新增插件或拆分插件耦合：[插件扩展与解耦规范](docs/summery/plugin-extension-spec.md)（含当前接入步骤与尚未实施的改造提案）
+- M3 行为：`conf/prompts/m3-system-prompt.md`, `conf/rules/m3.md`, `internal/extract/`
+- M5 行为：`conf/prompts/m5-system-prompt.md`, `conf/rules/m5.md`, `internal/execute/`
+- 请示尺度：`conf/prompts/m5-approval-policy.md`
+- CC 前台交互：`conf/prompts/cc-system-prompt.md`, `integrations/cc-connect/`
+- 世界模型：`internal/background/`, `internal/progress/`, `internal/factengine/`
+- 主动巡视：`conf/prompts/proactive-system-prompt.md`, `internal/proactive/`
+- 插件：`internal/plugin/`, `conf/skills.yaml`, 对应 Skill
+- OKR：`internal/okrworkspace/`, `internal/okrreview/`, `web/src/okr/`；生命周期由 `internal/appmodule/` 管理
+- 运行配置：后台“系统设置”或 `conf/config.runtime.yaml`
+- Web：`web/src/`
 
-## 安装方式
+各模块的稳定契约见 [docs/modules](docs/README.md#当前实现)。
 
-macOS 14+ Apple Silicon 用户优先使用 DMG：
+## 安装与运行
 
-- [macOS 安装、覆盖安装与自动更新](docs/reference/macos-install-and-update.md)
+macOS 14+ Apple Silicon 用户优先使用 [DMG 安装与更新](docs/reference/macos-install-and-update.md)。
 
-0.1.1 及后续版本会从 `jarvisx.bytedance.net` 检查签名更新并自动安装；0.1.0
-及更早版本需要先手动覆盖安装 0.1.1。应用位于 `/Applications/Jarvis.app`，用户数据
-独立保存在 `~/Library/Application Support/Jarvis`，覆盖应用不会删除数据。
-
-### 源码安装
-
-日常打开页面先通过 `/api/setup/bootstrap` 读取本机配置，已安装用户无需等待外部 CLI 验证；`/api/setup/status` 在后台完整检查连接，失败时以顶部提示和授权抽屉处理，不卸载当前页面。首次安装及安装重启恢复仍等待完整检查；此优化不改变网页登录校验，也不缓存授权结果。
-
-当前远端是需要权限的 Code 仓库。使用者先 clone **完整仓库**，再在仓库根目录启动支持 repo-local `.agents/skills/` 的 Agent：
-
-```bash
-git clone git@code.byted.org:chujiejie.1/jarvis_bot.git
-cd jarvis_bot
-```
-
-然后直接告诉 Agent：
+源码安装从完整 checkout 开始，在仓库根目录让 Agent 执行：
 
 ```text
 使用 $install-jarvis 检查这台机器并完成 Jarvis 首次安装和验收。
 ```
 
-`$install-jarvis` 是用户唯一需要触发的整个项目安装流程：先创建或恢复 `var/install/<run-id>/INSTALL_CHECKLIST.md`，再报告机器、配置、旧实例和服务事实，由用户的 Agent 选择依赖安装方式和旧实例处理方式。它先安装全部依赖并通过 `validate-dependencies`，然后把 lark-cli 当前默认 App 绑定到 CC Connect，启动并验收运行底座；服务就绪后内部调用 `$bootstrap-jarvis-world-model` 建立人物、项目、资料、重点事项和监听群，最后完成消息与 CC 对话的真实端到端验收。独立重建世界模型时才单独使用后者。
+该 Skill 负责依赖、飞书身份、CC Connect、服务、世界模型和真实端到端验收。不要绕过依赖门、身份和 CC 绑定，在 fresh clone 上直接注册服务。安装清单记录在 `var/install/<run-id>/INSTALL_CHECKLIST.md`。
 
-repo-local Skill 会让 Agent 安装并验收 lark-cli、Lark Agent Skills、bytedcli、Codex、仓库配置使用的 Agent CLI、补丁版 CC Connect 和 Qdrant：
+要求 Go 1.26.4 或更高版本、C 编译器、满足 Vite engines 的 Node（`^20.19.0` 或 `>=22.12.0`）/npm、jq、git、lark-cli、有效配置选定的 Agent CLI 和 Qdrant。SQLite 驱动依赖 CGO，构建脚本通过 `scripts/check-build-toolchain.sh` 检查。通用运行数据库在本机创建；可选 OKR 模块的产品数据库及资源随仓库保存在 `data/okr/`。
 
-```bash
-./scripts/jarvis-install install-lark-cli
-./scripts/jarvis-install install-bytedcli
-./scripts/jarvis-install install-codex
-./scripts/jarvis-install install-traex
-./scripts/jarvis-install install-cc-connect
-./scripts/jarvis-install install-qdrant
-./scripts/jarvis-install validate-dependencies
-```
+`bind-cc` 会立即验证 App ID/Secret。已有 Feishu `allow_from` 不是 Principal 本人时会停止，明确确认替换后才可使用 `--replace-allow-from`；`validate-binding` 拒绝缺失或通配的白名单。首次安装动作和 CLI 参数以安装 Skill、脚本 help 为准。
 
-lark-cli 首装使用 larksuite 官方 npm installer，已有版本低于 `1.0.93` 或 Skills/协议不完整时通过 `lark-cli update --json` 同步；Codex 通过官方 `@openai/codex` npm 包安装；traex 使用其 updater 公布的 Code 内网 stable installer。安装后都要读回版本，Codex 与 traex 还必须分别完成登录。CC Connect 的版本、upstream commit 和补丁位于 `integrations/cc-connect/`，由 `scripts/install-cc-connect.sh` 构建，只安装 binary，不在依赖阶段启动。Qdrant 是可以在此时启动的依赖服务。内置服务安装支持 macOS arm64 与 Linux x86_64。
+### 改完代码怎么生效
 
-## 本地运行
-
-要求 Go 1.26.4 或更高版本、C 编译器（macOS 装 Xcode Command Line Tools）、满足 Vite engines 的 Node（`^20.19.0` 或 `>=22.12.0`）/npm、`jq`、`git`、`lark-cli`、配置中实际选择的 Agent CLI（仓库基线是 `traex`，可改成其他兼容 CLI）和 Qdrant。doctor 会从合并后的配置读取应检查的 binary，不把 `traex` 写死成安装协议。`conf/config.yaml` 使用本机明文密钥，权限保持 `600`；请注意仓库配置可能包含真实凭证。本机运行 SQLite 会自动创建；可选 OKR 模块的产品数据库随仓库位于 `data/okr/okr.db`。
-
-C 编译器是硬依赖：持久层用 `gorm.io/driver/sqlite`，它包装 `mattn/go-sqlite3` 走 CGO。缺了它 `go build` 仍会成功并链接一个 stub，直到启动打开数据库才报 `go-sqlite3 requires cgo to work`，所以两个构建脚本都先跑 `scripts/check-build-toolchain.sh` 把问题挡在构建前。`jq` 供 `scripts/jarvis-tools` 和构建脚本解析 API 响应。
-
-构建期只依赖公网：HTTP 框架用开源 `github.com/cloudwego/hertz`，`go.mod` 里没有 `code.byted.org` 模块，不需要内网 GOPROXY；`web/package-lock.json` 里的 `resolved` 全部指向 `registry.npmjs.org`，`npm ci` 不需要内网镜像。运行期仍然需要内部 CLI（`traex`、`lark-cli`），它们靠 PATH 查找。
-
-只执行迁移或一次性动作：
-
-```bash
-go run ./cmd/jarvis-server -config conf/config.yaml -migrate-only
-go run ./cmd/jarvis-server -config conf/config.yaml -discover-once
-go run ./cmd/jarvis-server -config conf/config.yaml -scan-chat oc_xxx
-go run ./cmd/jarvis-server -config conf/config.yaml -extract-facts-once
-go run ./cmd/jarvis-server -config conf/config.yaml -extract-once
-```
-
-全部一次性 flags 以 `go run ./cmd/jarvis-server -h` 为准。
-
-### 改完代码怎么生效（日常回路）
-
-**改完任何代码，跑这一条就够，两个系统通用：**
+两个系统统一执行：
 
 ```bash
 ./scripts/jarvis-deploy --skip-pull
 ```
 
-它做完整的一轮：`npm ci` + 构建 `web/dist`、编译 `bin/jarvis-server`、按当前系统重启服务，最后验证首页、`/healthz` 和 `/readyz`（要求所有依赖为 `ok` 或 `disabled`），任何一步失败都直接退出。`--skip-pull` 表示部署当前工作树，不拉 upstream——本地开发几乎总是要带上它。
+它安装并构建前端、编译主服务、按当前系统重启选定实例，最后验证首页、`/healthz` 与 `/readyz`。macOS 走稳定签名与 launchd，Linux 走 user systemd。`scripts/rebuild-server.sh` 是 macOS 底层脚本，不能在 Linux 使用，也不要裸 `go build` 覆盖运行二进制后重启。
 
-不是所有改动都需要重新部署：
+`--skip-pull` 部署当前工作树；不带时先要求工作树干净并 fast-forward pull。`--remote-okr-db` 只用于明确放弃本机 OKR 数据库改动、使用 Git 版本的场景；通常必须保留并提交 OKR 产品数据。
 
-| 改了什么 | 需要做什么 |
-|---|---|
-| Go 代码 | `./scripts/jarvis-deploy --skip-pull` |
-| 只改前端 | `npm --prefix web run build`，刷新页面即可，后端直接读 `web/dist` 目录 |
-| `conf/prompts/*.md`、`conf/rules/*.md` | 什么都不用做。`textstore` 和 `workrule` 每次调用都从磁盘读，下一次 Agent 运行就是新内容 |
-| `conf/*.yaml`（含 `config.runtime.yaml`、`okr-module.yaml`、`modules.yaml`） | 只需重启服务，不必重新编译，见下面的重启命令 |
-
-不带 `--skip-pull` 时它会先要求工作树干净、拉 `--ff-only`，然后用相同流程部署；`--remote-okr-db` 用于明确以 Git 中的 OKR 数据库覆盖本机改动。
-
-**不要按操作系统各自发挥。** 两个系统的差别 `jarvis-deploy` 已经处理掉了：
-
-| | macOS | Linux（本机） |
-|---|---|---|
-| 服务管理 | launchd（`launchctl`） | 无需 root 的 user systemd |
-| 底层重建脚本 | `scripts/rebuild-server.sh`（zsh + 稳定签名 + `launchctl kickstart`） | 无独立脚本，逻辑在 `jarvis-deploy` 的 `deploy_linux` 里 |
-| 单独重启 | `launchctl kickstart -k gui/$UID/<label>` | `systemctl --user restart <label>.service` |
-
-`scripts/rebuild-server.sh` 只在 macOS 可用（它依赖 zsh、`codesign`、`launchctl`、`plutil`），**在 Linux 上跑不通，不要试**。同理 `internal/toolcatalog` 里两个安装用例在 Linux 上必然因缺 `plutil` 失败，属于已知的平台差异，不是回归。
-
-实例的地址、服务名和日志路径都由配置派生，不要手写：
+重启前查询 `/api/tasks?status=executing`。macOS 底层脚本会拒绝中断执行中 Task，API 不可达也会 fail-fast；Linux 没有这道检查，重启会打断当前执行子进程。Chat 与主服务共用进程和 `/api/chat/*`，重启会中断当前轮次，已保存的历史保留。
 
 ```bash
-./scripts/jarvis-instance conf/config.yaml   # api_base / launchd_label / log_files
-./scripts/jarvis-api-base                    # 只要后端地址
+./scripts/jarvis-instance conf/config.yaml
+./scripts/jarvis-api-base
+curl --fail "$(./scripts/jarvis-api-base)/healthz"
+curl --fail "$(./scripts/jarvis-api-base)/readyz" | jq
 ```
 
-当前仓库这份配置解析出的是 `http://127.0.0.1:18802`、服务名 `com.bytedance.jarvis.server.462093b6e0bd71d9`。换配置或换目录这些值都会变，所以脚本读一次比记住可靠。
+服务名、地址、日志从配置派生，不手写固定值。Linux unit 会被部署脚本重新生成，实例额外环境变量（如 OKR 登录应用密钥）放同名 `.d/` 目录的 drop-in。完整服务管理、前端开发、退出和恢复见 [运行与部署](docs/reference/operations.md)。
 
-日常排查（把 `<label>` 换成上面查到的服务名）：
-
-```bash
-# 只重启，不重新编译（改了 conf/*.yaml 或 conf/prompts/*.md 之后）
-systemctl --user restart <label>.service            # Linux
-launchctl kickstart -k "gui/$UID/<label>"           # macOS
-
-systemctl --user status <label>.service --no-pager
-tail -f var/log/jarvis-server.error.log
-
-curl "$(./scripts/jarvis-api-base)/healthz"
-curl -s "$(./scripts/jarvis-api-base)/readyz" | jq
-```
-
-对话与主服务共用进程和 `/api/chat/*` 路由；重启主服务会中断当前对话轮次，已保存的会话历史继续保留。
-
-升级时部署脚本会删除旧聊天的 `bin`、`addr`、`fast_mode`、`history_dir` 配置，停用并删除对应实例的旧 sidecar 服务定义、二进制和日志。旧 Markdown 对话不迁入新会话。聊天附件单个上限为 12 MiB，HTTP 层另预留 64 KiB 上传封装空间。
-
-### 首次安装
+## 开发验证
 
 ```bash
-# clone 后的第一个项目动作：恢复最近的安装状态页；不存在时新建
-./scripts/jarvis-install start --resume-latest
-
-# 推荐让 Agent 先取得事实；fresh clone 的 identity 配置不完整是正常状态
-./scripts/jarvis-install doctor
-
-# 按 doctor 结果安装运行 CLI；已有且可用时是无修改的验证
-./scripts/jarvis-install install-lark-cli
-./scripts/jarvis-install install-bytedcli
-./scripts/jarvis-install install-codex
-./scripts/jarvis-install install-traex
-./scripts/jarvis-install install-cc-connect
-
-# 安装/确认 Qdrant，然后通过全部依赖验收门
-./scripts/jarvis-install install-qdrant
-./scripts/jarvis-install validate-dependencies
-
-# 依赖门通过后登录 lark-cli 当前默认身份，再写本机 identity、绑定 CC：
-./scripts/jarvis-install configure-identity --agent-name <name> --open-id <open_id> --git-author <author>
-printf '%s\n' '<App Secret>' | ./scripts/jarvis-install bind-cc
-./scripts/jarvis-install validate-binding
-
-`bind-cc` 会立即验证 App ID/Secret。已有 CC Connect Feishu `allow_from` 不是 Principal 本人时命令会停止；用户确认替换后才可加 `--replace-allow-from`。`validate-binding` 会拒绝缺失或通配的访问白名单。需要临时开放给其他人时，应作为当前机器的显式运行决策处理。
-
-# 启动补丁版 CC Connect 后，fresh clone 安装主服务（Linux 可用
-# scripts/install-cc-systemd.sh <独立配置路径> 避免覆盖别的 CC 项目）：
-./bin/cc-connect-jarvis daemon install --config "$HOME/.cc-connect/config.toml"
-# Linux 改用：./scripts/install-cc-systemd.sh "$HOME/.cc-connect/config.toml"
-./scripts/jarvis-install install-server
-
-# 系统级验收
-./scripts/jarvis-install validate
-
-# 把同一个 run_dir 交给 $bootstrap-jarvis-world-model 完成安装清单 E 区
-# 再完成监听群新消息和绑定 Bot 对话的真实端到端验收，最后读回总状态
-./scripts/jarvis-install status --run-dir <run_dir>
-```
-
-装完之后的日常回路回到上一节的 `./scripts/jarvis-deploy --skip-pull`。
-
-不要在 fresh clone 上提前运行 `install-launchd.sh`、`rebuild-server.sh` 或 `install-server`：必须先通过 `validate-dependencies`，再完成 identity 与 CC 绑定。世界模型初始化在服务就绪后执行，不是启动前置条件，但属于整体项目安装的一部分。`var/install/<run-id>/INSTALL_CHECKLIST.md` 从 checkout 一直记录到端到端验收，逐项标记完成、未做、阻塞或不适用及其原因。
-
-在 macOS 上不要裸 `go build` 覆盖 `bin/jarvis-server` 后直接重启，否则会破坏 TCC 的稳定签名——这正是那里必须走 `rebuild-server.sh` 的原因。Linux 没有签名要求，`jarvis-deploy` 直接构建再换二进制。
-
-macOS 的 `rebuild-server.sh` 会先查询正在执行的 Task；服务已注册但 API 不可达时会 fail-fast，`--force-interrupt-running-tasks` 也不会绕过这项检查。先确认没有活跃执行，再做故障恢复。Linux 路径没有这道 Task 检查，重启会打断正在执行的 Task 子进程，忙的时候先看一眼 `/api/tasks?status=executing`。
-
-### 服务与端口
-
-| 服务 | 端口 | 用途 |
-|---|---:|---|
-| `com.bytedance.jarvis.server.<配置路径摘要>` | `server.addr`（基线 18800） | Hertz API + 生产 `web/dist` + 流水线与 cron |
-| `<实例服务名>.web` | 后端相邻端口 | Vite 开发热更；生产不依赖 |
-| `com.bytedance.jarvis.qdrant` | 6333/6334 | HTTP / gRPC，当前只用于 Todo 语义去重 |
-| `com.cc-connect.service`（macOS）/ `com.bytedance.jarvis.cc-connect`（Linux） | 9810/9820 | 独占同一 Jarvis Bot WebSocket，承载 Agent 入口、文档评论与问题卡 relay |
-
-服务名按配置文件绝对路径生成，所以同一台机器上多份配置各自独立，改端口不改服务名。
-
-macOS：仓库没有 Web launchd 安装脚本，首次启用当前实例的 Vite 开发服务时先 `./scripts/render-launchd-plist.sh com.bytedance.jarvis.web`，再对渲染出的 plist 执行 `launchctl bootstrap`。launchd 不接受相对路径，所以 `deploy/` 只存 `*.plist.template`，安装脚本用 `scripts/render-launchd-plist.sh` 把 `__JARVIS_ROOT__` 和 `__HOME__` 展开到 `~/Library/LaunchAgents/`。仓库换目录或换用户后重新渲染即可，不需要改仓库文件。
-
-Linux：unit 文件写在 `~/.config/systemd/user/<label>.service`，每次 `jarvis-deploy` 都会按当前仓库路径重新生成，所以不要手改它——要加环境变量（例如 OKR 模块登录应用的 `JARVIS_OKR_EMILY_APP_SECRET`）请放进同名 `.d/` 目录下的 drop-in，它不会被覆盖。仓库路径、配置路径和日志路径都不支持空格或 `%`。
-
-详细运维说明见 [docs/reference/operations.md](docs/reference/operations.md)。
-
-## 测试
-
-```bash
-go test ./...
-npm --prefix web run typecheck
+go test ./cmd/... ./internal/...
 npm --prefix web test
-npm --prefix web run build
+npm --prefix web run typecheck
 git diff --check
 ```
 
-依赖真实模型、Agent CLI 或完整配置的测试使用 `integration` tag；缺少依赖时应 fail-fast，不用 `t.Skip` 伪装通过。
+需要真实外部服务或凭证的测试单独运行：
 
-## HTTP 与 Agent 工具
+```bash
+go test -tags=integration ./internal/...
+```
 
-完整 HTTP 分组见 [docs/reference/http-api.md](docs/reference/http-api.md)，注册真源仍是 `internal/api/router.go`。
-
-`scripts/jarvis-tools` 不直连数据库，而是用 `curl + jq` 调用正在运行的 jarvis-server。它默认从 `conf/config.yaml` 读取 `server.addr`，也可用 `JARVIS_API_BASE` 覆盖；服务不在线时命令会失败。
+前端改动还需启动开发服务并执行浏览器回归。一次性迁移、扫描和抽取 flags 以 `go run ./cmd/jarvis-server -h` 为准。
 
 ## 管理后台
 
-生产访问 `scripts/jarvis-api-base` 输出的地址（仓库基线为 `http://127.0.0.1:18800/`）。主导航围绕对话、工作台、任务、已启用业务模块（如 OKR）、世界、插件、工作设定和系统管理组织。导航分组首次默认全部收起，之后在当前浏览器记住各分组的展开选择；切页、刷新或收起整条侧栏不会重置选择。工作台合并当日任务态势与历史回顾；自动化收进「任务」的二级页。
+主导航围绕对话、工作台、任务、已启用业务模块（如 OKR）、世界、插件、工作设定和系统管理组织。导航分组默认收起，之后在当前浏览器记住选择；工作台合并当日任务态势与历史回顾，自动化收进任务的二级页。
 
-「工作设定」顶部提供全局主动程度：安静 / 普通 / 活跃，默认普通。当前选择保存在 `conf/prompts/initiative-level.md`，保存后 M3 后续批次、M5 新执行及等待/人工回答恢复、主动巡视下一轮实时读取，无需重启。M3/M5 三档行为在各自「工作规则」编辑；主动巡视规则与生效预览位于「其他 Agent」。生效预览与运行时共用组装逻辑，包含当前档位、对应规则和 M5 审批策略。
+工作设定按任务执行、线索发现维护系统提示词、阶段规则、请示策略和生效预览。系统设置包含运行、调度、Skills、共享记忆、功能模块和应用版本。对话拥有独立持久会话与默认 Agent、模型、推理档位和执行边界，不复用 M3/M5 阶段语义；每个会话可单独选择。
 
-档位控制后台准入、可选扩展与通知尺度；明确交办、明确订阅和已有承诺继续履行，不取消已建任务或撤回问题卡。普通档沿用原有行为；安静档优先明确介入，活跃档增加有依据的提前准备。审批、采集和 CC Connect 直接交互继续使用原机制。详细行为见[三档设计](docs/summery/initiative-level-design.md)。
-
-工作设定按「任务执行」「线索发现」集中维护系统提示词、阶段工作规则、审批策略及生效预览，二级配置使用横向 Tab 切换，其他 Agent 提示词也保留在该页；任务下的自动化页面集中管理周期与单次定时任务。设置页包含运行配置、系统任务、Skills 和共享记忆。首个「对话」Tab 使用持久会话 API，并可按会话选择 Codex、TRAE 或 Cursor 及其动态模型目录。
-
-左侧「对话」保留完整历史页；其他页面底部提供紧凑快捷对话，默认可输入，最新回复显示一行，点击可查看全文。会话、模型、Agent、推理强度、上下文引用与附件复用同一套会话 API。`Chat` 在应用内持续挂载，完整页与 `components/ChatDock.tsx` 只切换展示，因此切页不丢草稿、不打断流式回复，也不会覆盖当前工作台的 URL 筛选条件。刷新后的会话通过详情中的 `running` 恢复停止入口，每 2 秒检查后台回复是否结束；请求失败即显示错误并停止轮询，不重连旧流，也不自动重发。收到的回复片段先保存再推送，刷新可读取已保存内容；中断回复明确标记，不自动重放。后端持久化消息和附件后发送 SSE `accepted`，前端收到确认才清空输入，拒绝发送则保留草稿与附件。浏览器交互回归位于 `web/test/chatDock.browser.mjs`：启动 Vite 后执行；可通过 `CHAT_TEST_URL`、`PLAYWRIGHT_MODULE`、`CHROME_EXECUTABLE` 指定测试环境，所有 API 使用隔离测试数据，不调用真实 Agent。
+完整 HTTP 能力分组见 [HTTP API](docs/reference/http-api.md)。
 
 ## 目录
 
 ```text
-cmd/jarvis-server/   主入口与一次性 CLI
+cmd/                 进程入口
 internal/            后端模块
 web/                 React + Vite 管理后台
-conf/                基线配置、prompts、rules、Skills 配置
-deploy/              launchd / systemd 服务模板
-scripts/             安装、签名、重建、jarvis-tools
-docs/                当前架构、模块文档、提案、研究和历史索引
-data/                生成的日报/周报，以及随仓库提交的 OKR 模块数据库与资源
+conf/                基线配置、prompts、rules、Skills 和模块配置
+.agents/skills/      Jarvis 领域 Skills
+integrations/        外部集成与补丁
+deploy/              服务模板
+scripts/             安装、部署和 Agent 工具
+docs/                当前架构、参考、提案、研究和正式交付物
+data/                生成报告及随仓库提交的 OKR 产品数据库与资源
 runs/                Agent 执行产物
-var/                 日志、数据库侧车数据和运行时文件
+var/                 本机日志、数据库与运行状态
 ```

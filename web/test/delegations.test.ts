@@ -29,7 +29,7 @@ test('commitment API updates progress independently from Task completion', async
   const calls: Array<{ path: string; method: string; body: unknown }> = []
   t.mock.method(globalThis, 'fetch', async (path: string, init: RequestInit = {}) => {
     calls.push({ path, method: init.method || 'GET', body: init.body ? JSON.parse(String(init.body)) : undefined })
-    return new Response(JSON.stringify({ code: 0, data: { id: 7, version: 1, items: [] } }))
+    return Response.json({ code: 0, data: { id: 7, version: 1, items: [] } })
   })
   await listDelegations('open', '张三', 2)
   await getDelegation(7)

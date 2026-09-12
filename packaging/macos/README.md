@@ -216,19 +216,6 @@ Jarvis 主服务仅在发布机配置 `JARVIS_UPDATE_ROOT` 时托管更新文件
 网关边界见[运行与部署](../../docs/reference/operations.md#自动更新文件托管)。修改主
 服务配置后的构建或重启使用 `./scripts/rebuild-server.sh`。
 
-## 耗时说明
-
-这是完整自包含应用构建，不是只编译 Web。主要耗时来自：
-
-- 重新组装、校验和签名完整 runtime。
-- 重新执行 npm 安装、Web 构建和三个 Go binary 构建。
-- Rust/Tauri release 编译、应用归档和高压缩比 DMG 创建。
-
-2026-09-11 在当前开发机上测得 runtime 约 874 MB，完整构建约 11 分钟，其中 Rust
-release 编译约 8 分钟。该数据只用于判断数量级，不是构建约束。
-`Compiling jarvis-desktop` 长时间无新日志通常仍在编译或链接；应以进程退出和最终
-`hdiutil ... is VALID` 为准。
-
 ## 常见失败
 
 - `missing updater private key`：发布时没有找到私钥文件。检查默认密钥路径或设置
@@ -255,16 +242,3 @@ release 编译约 8 分钟。该数据只用于判断数量级，不是构建约
 
 因此当前脚本只适合内部安装。外部分发需要单独改造最终应用签名、Developer ID、
 entitlements 和 notarization 流程，不能只设置 `JARVIS_APP_SIGN_IDENTITY`。
-
-## 已验证发布基线
-
-2026-09-11 的历史验收使用本机 Python 静态服务（18992），覆盖 `0.1.1 → 0.1.2`
-客户端下载、验签、安装、自动重启和数据保留；错误签名会被拒绝。该记录不代表
-`publish-update.sh` 或 Go 托管加网关的完整发布链路已验收。历史已发布文件的 SHA-256 为：
-
-```text
-Jarvis_0.1.2_aarch64.app.tar.gz  c63b4d6b7908a78b8fcb5cfdf3c0c21e3a13c9032eda093be3ca31ed517de5aa
-Jarvis_0.1.2_aarch64.dmg         d04b51ef2e3063fcf4224d1926617d34148c96230904a5ccd4507d6579a512b8
-```
-
-本地重新构建会因归档元数据等因素产生不同摘要，不能用以上值校验新构建。

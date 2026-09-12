@@ -178,6 +178,7 @@ export interface SetupStatus {
     app_id?: string
     app_name?: string
     credential_available?: boolean
+    application_checks: Array<{ event: string; ready: boolean; error?: string }>
     bot: SetupIdentityStatus
     user: SetupIdentityStatus
     error?: string
@@ -1118,8 +1119,6 @@ export interface RuntimeSettings {
   extract_context_messages: number
   extract_context_window_minutes: number
   extract_open_todo_limit: number
-  extract_fact_limit: number
-  extract_key_person_limit: number
   extract_recent_task_limit: number
   extract_max_prompt_chars: number
   extract_semantic_threshold: number
@@ -1138,7 +1137,6 @@ export interface RuntimeSettings {
   execute_stale_minutes: number
   execute_concurrency: number
 
-  chat_enabled: boolean
   chat_model: string
   chat_sandbox: 'read-only' | 'workspace-write' | 'danger-full-access'
   chat_reasoning_effort: ReasoningEffort
@@ -1325,10 +1323,7 @@ export interface EntityRelation {
   updated_at: string
 }
 
-// --- 页面上下文与持久对话契约 ---
-
-// PageContext 描述当前页面：所在 Tab、筛选条件和选中项摘要。
-// 由各页面写入 PageContext（React Context），发送对话时随请求带给后端注入 prompt。
+// PageContext carries navigation and explicit conversation source selection.
 export interface PageContext {
   // 当前左侧导航 key；内置模块（如 okr）与插件页也使用同一上下文协议。
   active_key: string
@@ -1363,6 +1358,7 @@ export interface ChatAttachment {
 
 export interface ChatHistoryMessage {
   status?: string
+  error?: string
   id: string
   role: 'user' | 'assistant'
   text: string

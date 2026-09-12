@@ -115,7 +115,7 @@ card_approval:
   relay_secret: ""  # 只写进 Git 忽略的 config.runtime.yaml
 
 # 底层 agent CLI：仅供 extract(M3) 使用。
-# 与 execute/chat 独立——M5 与右侧对话分别使用自己的 bin/model。
+# 与 execute/chat 独立；Task 使用 execute.bin/model，对话工作区按会话选择 Agent 和模型。
 codex:
   bin: "traex"
   model: "DeepSeek-V4-Flash"
@@ -168,7 +168,7 @@ execute:
   concurrency: 5                                    # 自动执行的 M5 Task 并发上限；每个 Task 仍靠状态/version 防重复抢占
   repo_root: ".."                                  # code_change 的 repo_ref 基目录（相对仓库根，加载时展开成绝对路径）
   runs_dir: "runs"                                 # diff/产物落盘
-  bin: "traex"                                     # 与 M3 可不同；仅供 M5 与依赖 M5 的日报使用
+  bin: "traex"                                   # M5/日报 CLI，也提供 Chat 默认 Agent；会话独立保存 Agent、模型与推理档位
   model: "gpt-5.5"                                 # 执行质量足够且配额更稳；5.6-sol 曾整段打满配额把 Task 全判失败
   reasoning_effort: "medium"                       # 覆盖用户全局 xhigh，执行质量与耗时折中
   timeout_second: 1800                             # 单次执行超时：30 分钟（长任务需要查资料并调用外部工具）

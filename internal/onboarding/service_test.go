@@ -25,6 +25,9 @@ type streamingRunnerStub struct {
 type onboardingRunnerStub struct{}
 
 func (onboardingRunnerStub) Run(_ context.Context, _ string, args []string, _ string) ([]byte, error) {
+	if len(args) > 0 && args[0] == "event" {
+		return []byte(`{"ok":true,"data":{"decision":{"status":"ready"}}}`), nil
+	}
 	if strings.Join(args, " ") == "auth status --json --verify" {
 		return []byte(`{
 			"appId":"cli_test",

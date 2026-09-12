@@ -339,7 +339,7 @@ export default function WorldMap() {
       setSelectedId(key)
       setSelectedPage(page)
       setSelectedNode(undefined)
-      setFocusGraph(buildFocusGraph(page, activeIndex, fullIndex, 'relation', 'standard'))
+      setFocusGraph(buildFocusGraph(page, activeIndex, fullIndex))
       if (lens === 'world' && (switchToFocus || !activeGraph.nodes.some((node) => node.id === key))) setScope('focus')
       setQuery('')
       setError(undefined)
@@ -363,7 +363,7 @@ export default function WorldMap() {
 
   useEffect(() => {
     if (!selectedPage) return
-    setFocusGraph(buildFocusGraph(selectedPage, activeIndex, fullIndex, 'relation', 'standard'))
+    setFocusGraph(buildFocusGraph(selectedPage, activeIndex, fullIndex))
   }, [activeIndex, fullIndex, selectedPage])
 
   const clearSelection = useCallback(() => {

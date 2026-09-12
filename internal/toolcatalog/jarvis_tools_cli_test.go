@@ -88,7 +88,7 @@ func TestJarvisToolsCloseTaskHelpContainsOnlyMachineContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, required := range []string{"available to every Jarvis", "expected_version", "result.summary", "actual calling stage"} {
+	for _, required := range []string{"trusted Jarvis Agent", "expected_version", "result.summary", "JARVIS_AGENT_STAGE", "--actor"} {
 		if !strings.Contains(out, required) {
 			t.Fatalf("close-task help missing machine contract %q:\n%s", required, out)
 		}
@@ -855,7 +855,7 @@ func TestJarvisToolsDateUsesConfiguredTimezoneAndFailsBeforeRequest(t *testing.T
 	}
 }
 
-func TestJarvisToolsAgentsCanStartUpdateAndCloseExistingTasks(t *testing.T) {
+func TestJarvisToolsCanStartUpdateAndCloseTasksFromAnyStage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
@@ -871,15 +871,15 @@ func TestJarvisToolsAgentsCanStartUpdateAndCloseExistingTasks(t *testing.T) {
 			var payload struct {
 				ExpectedVersion int            `json:"expected_version"`
 				Result          map[string]any `json:"result"`
-				Actor           string         `json:"actor"`
+				ActorType       string         `json:"actor_type"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 				t.Fatal(err)
 			}
-			if payload.ExpectedVersion != 3 || payload.Result["evidence"] != "会议已结束" || payload.Actor != "m5" {
+			if payload.ExpectedVersion != 3 || payload.Result["evidence"] != "会议已结束" || payload.ActorType != "execute" {
 				t.Fatalf("close payload = %#v", payload)
 			}
-			fmt.Fprint(w, `{"code":0,"data":{"id":20,"status":"done","resolution":{"actor_type":"m5"}}}`)
+			fmt.Fprint(w, `{"code":0,"data":{"id":20,"status":"done","resolution":{"actor_type":"execute"}}}`)
 		case "/api/tasks/21":
 			if r.Method != http.MethodPatch {
 				t.Fatalf("update method = %s", r.Method)
@@ -889,12 +889,12 @@ func TestJarvisToolsAgentsCanStartUpdateAndCloseExistingTasks(t *testing.T) {
 				Summary         string `json:"summary"`
 				Instruction     string `json:"instruction"`
 				Reason          string `json:"reason"`
-				Actor           string `json:"actor"`
+				ActorType       string `json:"actor_type"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 				t.Fatal(err)
 			}
-			if payload.ExpectedVersion != 2 || payload.Summary == "" || payload.Instruction == "" || payload.Reason == "" || payload.Actor != "m5" {
+			if payload.ExpectedVersion != 2 || payload.Summary == "" || payload.Instruction == "" || payload.Reason == "" || payload.ActorType != "execute" {
 				t.Fatalf("update payload = %#v", payload)
 			}
 			fmt.Fprint(w, `{"code":0,"data":{"id":21,"status":"waiting","version":3}}`)
@@ -908,7 +908,7 @@ func TestJarvisToolsAgentsCanStartUpdateAndCloseExistingTasks(t *testing.T) {
 		t.Fatalf("start output = %s, error = %v", out, err)
 	}
 	payload := `{"expected_version":3,"result":{"summary":"过期关闭","evidence":"会议已结束"}}`
-	if out, err := runJarvisTools(t, server.URL, env, "close-task", "--id", "20", "--payload", payload); err != nil || !strings.Contains(out, `"actor_type":"m5"`) {
+	if out, err := runJarvisTools(t, server.URL, env, "close-task", "--id", "20", "--payload", payload); err != nil || !strings.Contains(out, `"actor_type":"execute"`) {
 		t.Fatalf("close output = %s, error = %v", out, err)
 	}
 	updatePayload := `{"expected_version":2,"summary":"权限仍在等待","instruction":"恢复后先核验权限","reason":"等待条件仍有效"}`

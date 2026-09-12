@@ -18,7 +18,8 @@ type SendInput struct {
 }
 
 func (s *Service) StreamSession(ctx context.Context, sessionID string, input SendInput, emit func(Event) error) error {
-	session, err := s.GetSession(ctx, sessionID)
+	workCtx := context.WithoutCancel(ctx)
+	session, err := s.GetSession(workCtx, sessionID)
 	if err != nil {
 		return err
 	}
@@ -26,7 +27,7 @@ func (s *Service) StreamSession(ctx context.Context, sessionID string, input Sen
 	if message == "" && len(input.AttachmentIDs) == 0 {
 		return fmt.Errorf("%w: chat message or attachment is required", ErrInvalidInput)
 	}
-	attachments, err := s.attachmentRecords(ctx, sessionID, input.AttachmentIDs)
+	attachments, err := s.attachmentRecords(workCtx, sessionID, input.AttachmentIDs)
 	if err != nil {
 		return err
 	}
@@ -49,7 +50,7 @@ func (s *Service) StreamSession(ctx context.Context, sessionID string, input Sen
 		s.activeMu.Unlock()
 		return fmt.Errorf("%w: this chat session is already generating a reply", ErrConflict)
 	}
-	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	runCtx, cancel := context.WithCancel(workCtx)
 	s.active[sessionID] = cancel
 	s.activeMu.Unlock()
 	defer func() { cancel(); s.activeMu.Lock(); delete(s.active, sessionID); s.activeMu.Unlock() }()
@@ -73,11 +74,11 @@ func (s *Service) StreamSession(ctx context.Context, sessionID string, input Sen
 		return err
 	}
 	user := domain.ChatMessage{ID: userID, SessionID: sessionID, Role: "user", Text: message, Meta: meta}
-	if err := s.db.WithContext(ctx).Create(&user).Error; err != nil {
+	if err := s.db.WithContext(workCtx).Create(&user).Error; err != nil {
 		return fmt.Errorf("save user chat message: %w", err)
 	}
 	if len(input.AttachmentIDs) > 0 {
-		if err := s.db.WithContext(ctx).Model(&domain.ChatAttachment{}).Where("id IN ?", input.AttachmentIDs).Update("message_id", userID).Error; err != nil {
+		if err := s.db.WithContext(workCtx).Model(&domain.ChatAttachment{}).Where("id IN ?", input.AttachmentIDs).Update("message_id", userID).Error; err != nil {
 			return fmt.Errorf("attach files to message: %w", err)
 		}
 	}
@@ -85,26 +86,30 @@ func (s *Service) StreamSession(ctx context.Context, sessionID string, input Sen
 	if session.Title == "新对话" {
 		updates["title"] = deriveTitle(message, attachmentViews)
 	}
-	if err := s.db.WithContext(ctx).Model(&domain.ChatSession{}).Where("id = ?", sessionID).Updates(updates).Error; err != nil {
+	if err := s.db.WithContext(workCtx).Model(&domain.ChatSession{}).Where("id = ?", sessionID).Updates(updates).Error; err != nil {
 		return fmt.Errorf("update chat session before run: %w", err)
 	}
+	// Once the user input is durable, a broken browser SSE connection is only
+	// a lost observer. Keep the agent turn running so a refresh can recover it
+	// from the persisted session state.
+	streamOpen := true
 	if err := emit(Event{Kind: EventAccepted}); err != nil {
-		return err
+		streamOpen = false
 	}
 
 	var row domain.ChatSession
-	if err := s.db.WithContext(ctx).First(&row, "id = ?", sessionID).Error; err != nil {
+	if err := s.db.WithContext(workCtx).First(&row, "id = ?", sessionID).Error; err != nil {
 		return err
 	}
 	var response strings.Builder
 	visibleHistory := ""
 	if row.NativeThreadID == nil {
 		var prior []domain.ChatMessage
-		if err := s.db.WithContext(ctx).Where("session_id = ? AND id <> ?", sessionID, userID).Order("created_at ASC, rowid ASC").Find(&prior).Error; err != nil {
+		if err := s.db.WithContext(workCtx).Where("session_id = ? AND id <> ?", sessionID, userID).Order("created_at ASC, rowid ASC").Find(&prior).Error; err != nil {
 			return fmt.Errorf("read carried chat history: %w", err)
 		}
 		var priorFiles []domain.ChatAttachment
-		if err := s.db.WithContext(ctx).Where("session_id = ? AND message_id IS NOT NULL AND message_id <> ?", sessionID, userID).Order("created_at ASC").Find(&priorFiles).Error; err != nil {
+		if err := s.db.WithContext(workCtx).Where("session_id = ? AND message_id IS NOT NULL AND message_id <> ?", sessionID, userID).Order("created_at ASC").Find(&priorFiles).Error; err != nil {
 			return fmt.Errorf("read carried chat attachments: %w", err)
 		}
 		filesByMessage := map[string][]domain.ChatAttachment{}
@@ -146,14 +151,14 @@ func (s *Service) StreamSession(ctx context.Context, sessionID string, input Sen
 	}
 	agent, model := row.Agent, row.Model
 	assistant := domain.ChatMessage{ID: assistantID, SessionID: sessionID, Role: "assistant", Agent: &agent, Model: &model, Meta: streamingMeta}
-	persist := s.db.WithContext(context.WithoutCancel(ctx))
+	persist := s.db.WithContext(workCtx)
 	if err := persist.Create(&assistant).Error; err != nil {
 		return fmt.Errorf("save assistant chat message: %w", err)
 	}
 	runErr := s.Stream(runCtx, req, func(event Event) error {
 		if event.Kind == EventThread && strings.TrimSpace(event.ThreadID) != "" {
 			thread := strings.TrimSpace(event.ThreadID)
-			if err := s.db.WithContext(context.WithoutCancel(ctx)).Model(&domain.ChatSession{}).Where("id = ?", sessionID).Update("native_thread_id", thread).Error; err != nil {
+			if err := s.db.WithContext(workCtx).Model(&domain.ChatSession{}).Where("id = ?", sessionID).Update("native_thread_id", thread).Error; err != nil {
 				return fmt.Errorf("save native chat thread: %w", err)
 			}
 		}
@@ -164,13 +169,23 @@ func (s *Service) StreamSession(ctx context.Context, sessionID string, input Sen
 				return fmt.Errorf("save assistant chat text: %w", err)
 			}
 		}
-		return emit(event)
+		if !streamOpen {
+			return nil
+		}
+		if err := emit(event); err != nil {
+			streamOpen = false
+		}
+		return nil
 	})
 	status := "completed"
 	if runErr != nil {
 		status = "interrupted"
 	}
-	assistantMeta, err := encodeJSON(map[string]any{"status": status})
+	resultMeta := map[string]any{"status": status}
+	if runErr != nil {
+		resultMeta["error"] = runErr.Error()
+	}
+	assistantMeta, err := encodeJSON(resultMeta)
 	if err != nil {
 		return err
 	}

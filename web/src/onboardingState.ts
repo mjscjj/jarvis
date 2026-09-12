@@ -1,12 +1,17 @@
 import type { SetupStatus, Task } from './types.ts'
 
 // Only missing human actions are shown; these are not wizard steps.
-export function setupAction(status: SetupStatus): 'connect' | 'repair' | 'authorize' | 'agent' | 'start' {
+export function setupAction(status: SetupStatus): 'connect' | 'application' | 'authorize' | 'agent' | 'start' {
   if (!status.lark.app_id) return 'connect'
-  if (status.lark.bot.status !== 'ready' || !status.lark.bot.verified) return 'repair'
+  if (status.lark.bot.status !== 'ready' || !status.lark.bot.verified ||
+      status.lark.application_checks.some(check => !check.ready)) return 'application'
   if (status.lark.user.status !== 'ready' || !status.lark.user.verified) return 'authorize'
   if (!status.agent.authenticated) return 'agent'
   return 'start'
+}
+
+export function setupSecretVisible(status: SetupStatus, editing: boolean): boolean {
+  return Boolean(status.lark.app_id) && (editing || (setupAction(status) === 'start' && !status.lark.credential_available))
 }
 
 export function setupCanEnter(status: SetupStatus, restartFrom: string | null): boolean {

@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: normative module guide
-> Last verified: 2026-09-10
+> Last verified: 2026-09-11
 > Code source: `internal/execute/`, `internal/taskcreate/`, `internal/scheduledtask/`, `internal/effectops/`
 
 执行环节接管 `pending` Task：调查真实状态、确定目标和动作、判断具体副作用要不要先问 principal，并把事项推进到真实结果、等待或明确阻塞。
@@ -77,6 +77,21 @@ pending -> executing
 
 `needs_human` 也保存 Session。principal 回复写入 execution supplements 后，从暂停点继续，回答问题不自动等于批准副作用。
 
+`ExecutionRun` 表示一次进程级执行，Codex Session 表示跨 Run 的连续上下文。同一个
+Task 可以产生多次 Run，但等待或提问前后的 `codex_session_id` 必须一致：
+
+```text
+Task
+  ├─ Run A / Session S -> waiting
+  ├─ resume_task ScheduledTask -> 到期唤醒
+  └─ Run B / Session S -> 继续执行
+```
+
+`yield-until` 创建的 ScheduledTask 先进入 `binding`，本轮 Run 和 Session 成功落库后
+再激活，避免定时器先于 Session 绑定触发。恢复时校验 Task、来源 Run、Session 和
+ScheduledTask 四者一致；缺失或陈旧时明确失败，不创建新 Session 兜底。秒级等待可以
+在当前命令短暂轮询，分钟级及以上等待必须释放执行进程。
+
 ## 6. 进度、运行与 effects
 
 - Task `summary` / `last_progress_at`：整个事项目前进展；summary 未变化时不伪造“有新进展”。
@@ -87,7 +102,11 @@ pending -> executing
 
 飞书消息同样是 M5 显式选择并执行的工具动作：普通一对一或群聊会话消息读取 `feishu-send-message`，面向多个独立收件人的通知读取 `feishu-broadcast`，后者固定使用专用通知 Bot 直接私聊而不建助手群。M5 先确定受众、位置和完整文案，再按审批策略判断这一次具体发送要不要先问 principal。普通或个性化直发以真实 `om_...` 和读回结果为准，同文案批量广播以 `bm-...` 和发送进度为准；runtime 不根据来源会话、outcome 或 execution output 字段自动发送消息。
 
-`internal/taskfeedback` 只负责在 execute 和 resume 开始时，尝试给来源飞书消息添加 `OnIt` reaction。它是 best-effort 的开始确认：Bot 不在来源会话时失败只记日志，不影响 M5；它不承载业务结果，也不提供文字 fallback。问题卡是另一条机器协议，仍由 runtime 在 `question`、`needs_human` 和 Task version 持久化后投递。
+`internal/taskfeedback` 在 execute 和 resume 开始时尝试给来源飞书消息添加 `OnIt`
+reaction，并把 `message_id/reaction_id` 写入本轮 effects。本轮离开 `executing` 后
+runtime best-effort 删除该 reaction；删除失败只告警，不反向改变 Task 结果。它只是
+运行中确认，不承载业务结果，也不提供文字 fallback。问题卡是另一条机器协议，仍由
+runtime 在 `question`、`needs_human` 和 Task version 持久化后投递。
 
 factengine 从 `message`、TodoEvent 和 TaskEvent 三类材料蒸馏 Fact；来源清单由服务启动层显式装配，Worker 不依赖 GORM Store 提供注册表。ExecutionRun 本身仍不作为独立来源。
 

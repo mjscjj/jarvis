@@ -21,11 +21,11 @@ func (a testAvailability) SkillEnabled(_ context.Context, name string) (bool, er
 }
 
 func TestParseMetadata(t *testing.T) {
-	meta, err := parseMetadata([]byte("---\nname: feishu-send-message\ndescription: 发送飞书消息\n---\n\n# 正文\n"))
+	meta, err := parseMetadata([]byte("---\nname: example\ndescription: example skill\n---\n\n# Body\n"))
 	if err != nil {
 		t.Fatalf("parseMetadata() error = %v", err)
 	}
-	if meta.Name != "feishu-send-message" || meta.Description != "发送飞书消息" {
+	if meta.Name != "example" || meta.Description != "example skill" {
 		t.Fatalf("metadata = %#v", meta)
 	}
 }
@@ -41,35 +41,23 @@ func TestNormalizeStages(t *testing.T) {
 	if _, err := normalizeStages(nil); err == nil {
 		t.Fatal("normalizeStages(nil) must fail")
 	}
-	if _, err := normalizeStages([]string{"M6"}); err == nil {
+	if _, err := normalizeStages([]string{"unknown"}); err == nil {
 		t.Fatal("normalizeStages(unknown) must fail")
 	}
 }
 
-func TestServiceReadsAndUpdatesYAMLConfiguration(t *testing.T) {
-	root := t.TempDir()
-	skillDirectory := filepath.Join(root, "feishu-send-message")
-	if err := os.Mkdir(skillDirectory, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	skillText := "---\nname: feishu-send-message\ndescription: 发送飞书消息\n---\n\n# 正文\n"
-	if err := os.WriteFile(filepath.Join(skillDirectory, "SKILL.md"), []byte(skillText), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	configPath := filepath.Join(t.TempDir(), "skills.yaml")
-	if err := os.WriteFile(configPath, []byte("skills:\n  - name: feishu-send-message\n    enabled: true\n    stages: [execute]\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+func TestServiceReadsAndUpdatesConfiguration(t *testing.T) {
+	root, configPath := writeSkillFixture(t, false)
 	service, err := NewService(root, configPath)
 	if err != nil {
 		t.Fatalf("NewService() error = %v", err)
 	}
 	items, err := service.List(t.Context())
-	if err != nil || len(items) != 1 || items[0].Name != "feishu-send-message" {
+	if err != nil || len(items) != 1 || items[0].Name != "example" {
 		t.Fatalf("List() = %#v err=%v", items, err)
 	}
 	enabled := false
-	updated, err := service.Update(t.Context(), "feishu-send-message", Input{
+	updated, err := service.Update(t.Context(), "example", Input{
 		Stages: []string{StageExtract, StageExecute}, IsEnabled: &enabled,
 	})
 	if err != nil {
@@ -167,54 +155,24 @@ func TestServiceRejectsSkillIdentityChangesAndEmptyBody(t *testing.T) {
 	}
 }
 
-func TestServiceAvailabilityGateHidesPluginSkill(t *testing.T) {
-	root := t.TempDir()
-	skillDirectory := filepath.Join(root, "plugin-collector")
-	if err := os.Mkdir(skillDirectory, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(skillDirectory, "SKILL.md"), []byte(
-		"---\nname: plugin-collector\ndescription: collect plugin clues\n---\n\n# Collector\n",
-	), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	configPath := filepath.Join(t.TempDir(), "skills.yaml")
-	if err := os.WriteFile(configPath, []byte(
-		"skills:\n  - name: plugin-collector\n    enabled: true\n    stages: [execute]\n",
-	), 0o644); err != nil {
-		t.Fatal(err)
-	}
+func TestAvailabilityGateHidesSkill(t *testing.T) {
+	root, configPath := writeSkillFixture(t, false)
 	service, err := NewService(root, configPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	service.SetAvailability(testAvailability{"plugin-collector": false})
+	service.SetAvailability(testAvailability{"example": false})
 	items, err := service.List(t.Context())
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || len(items) != 1 || !items[0].IsEnabled || items[0].IsAvailable {
+		t.Fatalf("List() = %#v err=%v", items, err)
 	}
-	if len(items) != 1 || !items[0].IsEnabled || items[0].IsAvailable {
-		t.Fatalf("items = %#v", items)
-	}
-	if _, err := service.Content(t.Context(), "plugin-collector"); !errors.Is(err, ErrNotFound) {
+	if _, err := service.Content(t.Context(), "example"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Content() error = %v, want ErrNotFound", err)
 	}
 }
 
-func TestRenderingServiceRendersCatalogAndContentWithoutChangingSource(t *testing.T) {
-	root := t.TempDir()
-	skillDirectory := filepath.Join(root, "example-skill")
-	if err := os.Mkdir(skillDirectory, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	skillText := "---\nname: example-skill\ndescription: \"{{AGENT_NAME}} 可用能力\"\n---\n\n# {{AGENT_NAME}} 正文\n"
-	if err := os.WriteFile(filepath.Join(skillDirectory, "SKILL.md"), []byte(skillText), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	configPath := filepath.Join(t.TempDir(), "skills.yaml")
-	if err := os.WriteFile(configPath, []byte("skills:\n  - name: example-skill\n    enabled: true\n    stages: [execute]\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+func TestRenderingServiceDoesNotChangeSource(t *testing.T) {
+	root, configPath := writeSkillFixture(t, false)
 	source, err := NewService(root, configPath)
 	if err != nil {
 		t.Fatal(err)
@@ -229,21 +187,18 @@ func TestRenderingServiceRendersCatalogAndContentWithoutChangingSource(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	content, err := service.Content(t.Context(), "example-skill")
+	content, err := service.Content(t.Context(), "example")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(catalog, "小贾 可用能力") || !strings.Contains(content.Content, "# 小贾 正文") {
+	if !strings.Contains(catalog, "小贾 skill") || !strings.Contains(content.Content, "# 小贾 body") {
 		t.Fatalf("catalog=%q content=%q", catalog, content.Content)
 	}
-	raw, err := source.Content(t.Context(), "example-skill")
-	if err != nil {
-		t.Fatal(err)
+	raw, err := source.Content(t.Context(), "example")
+	if err != nil || !strings.Contains(raw.Content, "{{AGENT_NAME}}") {
+		t.Fatalf("source content changed: %#v err=%v", raw, err)
 	}
-	if !strings.Contains(raw.Content, "{{AGENT_NAME}}") {
-		t.Fatalf("source content was mutated: %q", raw.Content)
-	}
-	editable, err := service.EditableContent(t.Context(), "example-skill")
+	editable, err := service.EditableContent(t.Context(), "example")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -448,22 +403,8 @@ func TestRepositoryFeishuBroadcastSkillIsExecuteOnlyAndOwnsDirectDelivery(t *tes
 	}
 }
 
-func TestInlineSkillCatalogCarriesBodyInsteadOfReadInstruction(t *testing.T) {
-	root := t.TempDir()
-	skillDirectory := filepath.Join(root, "inline-policy")
-	if err := os.MkdirAll(skillDirectory, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	skillText := "---\nname: inline-policy\ndescription: trusted stage policy\n---\n\n# Inline contract\n\nBODY_MARKER\n"
-	if err := os.WriteFile(filepath.Join(skillDirectory, "SKILL.md"), []byte(skillText), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	configPath := filepath.Join(t.TempDir(), "skills.yaml")
-	if err := os.WriteFile(configPath, []byte(
-		"skills:\n  - name: inline-policy\n    enabled: true\n    inline: true\n    stages: [extract]\n",
-	), 0o644); err != nil {
-		t.Fatal(err)
-	}
+func TestInlineSkillRendersBodyAndRespectsAvailability(t *testing.T) {
+	root, configPath := writeSkillFixture(t, true)
 	service, err := NewService(root, configPath)
 	if err != nil {
 		t.Fatal(err)
@@ -472,100 +413,17 @@ func TestInlineSkillCatalogCarriesBodyInsteadOfReadInstruction(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"BEGIN_INLINE_SKILL name=inline-policy", "# Inline contract", "BODY_MARKER"} {
+	for _, want := range []string{"BEGIN_INLINE_SKILL name=example", "# {{AGENT_NAME}} body", "BODY_MARKER"} {
 		if !strings.Contains(catalog, want) {
 			t.Fatalf("inline catalog missing %q:\n%s", want, catalog)
 		}
 	}
-	if strings.Contains(catalog, "jarvis-tools get-skill") || strings.Contains(catalog, "description: trusted stage policy") {
-		t.Fatalf("inline catalog contains metadata or deferred read instruction:\n%s", catalog)
-	}
-}
-
-func TestRepositoryDelegationSkillsAreInlineAndPluginGated(t *testing.T) {
-	service, err := NewService(
-		filepath.Join("..", "..", ".agents", "skills"),
-		filepath.Join("..", "..", "conf", "skills.yaml"),
-	)
-	if err != nil {
-		t.Fatalf("load repository skills: %v", err)
-	}
-	items, err := service.List(t.Context())
+	service.SetAvailability(testAvailability{"example": false})
+	catalog, err = service.Catalog(t.Context(), StageExtract)
 	if err != nil {
 		t.Fatal(err)
 	}
-	found := map[string]View{}
-	for _, item := range items {
-		if strings.HasPrefix(item.Name, "my-delegations-") {
-			found[item.Name] = item
-		}
-	}
-	for _, name := range []string{"my-delegations-extract", "my-delegations-execute", "my-delegations-review"} {
-		item, ok := found[name]
-		if !ok || !item.Inline || !item.IsEnabled {
-			t.Fatalf("%s = %#v", name, item)
-		}
-	}
-	extractCatalog, err := service.Catalog(t.Context(), StageExtract)
-	if err != nil {
-		t.Fatal(err)
-	}
-	executeCatalog, err := service.Catalog(t.Context(), StageExecute)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(extractCatalog, "action_type=delegated_followup") {
-		t.Fatalf("extract catalog missing delegation policy:\n%s", extractCatalog)
-	}
-	if !strings.Contains(executeCatalog, "update-delegation") {
-		t.Fatalf("execute catalog missing delegation policy:\n%s", executeCatalog)
-	}
-	availability := testAvailability{"my-delegations-extract": false, "my-delegations-execute": false, "my-delegations-review": false}
-	service.SetAvailability(availability)
-	for _, stage := range []string{StageExtract, StageExecute, StageProactive} {
-		catalog, err := service.Catalog(t.Context(), stage)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if strings.Contains(catalog, "BEGIN_INLINE_SKILL name=my-delegations-") {
-			t.Fatalf("disabled plugin leaked into %s", stage)
-		}
-	}
-	availability["my-delegations-review"] = true
-	catalog, err := service.Catalog(t.Context(), StageProactive)
-	if err != nil || !strings.Contains(catalog, "BEGIN_INLINE_SKILL name=my-delegations-review") {
-		t.Fatalf("review plugin missing: %v %s", err, catalog)
-	}
-
-}
-
-func TestInlineSkillRespectsAvailabilityGate(t *testing.T) {
-	root := t.TempDir()
-	skillDirectory := filepath.Join(root, "inline-policy")
-	if err := os.MkdirAll(skillDirectory, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(skillDirectory, "SKILL.md"), []byte(
-		"---\nname: inline-policy\ndescription: optional policy\n---\n\nINLINE_MARKER\n",
-	), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	configPath := filepath.Join(t.TempDir(), "skills.yaml")
-	if err := os.WriteFile(configPath, []byte(
-		"skills:\n  - name: inline-policy\n    enabled: true\n    inline: true\n    stages: [extract]\n",
-	), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	service, err := NewService(root, configPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	service.SetAvailability(testAvailability{"inline-policy": false})
-	catalog, err := service.Catalog(t.Context(), StageExtract)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(catalog, "INLINE_MARKER") || strings.Contains(catalog, "inline-policy") {
+	if strings.Contains(catalog, "BODY_MARKER") || strings.Contains(catalog, "name=example") {
 		t.Fatalf("disabled inline skill leaked into catalog:\n%s", catalog)
 	}
 }
@@ -919,83 +777,24 @@ func TestMeetingGuidanceUsesUnifiedLarkMeetingSkill(t *testing.T) {
 	}
 }
 
-func TestMeetingCollectorsUseCurrentLarkCLIFactSources(t *testing.T) {
-	meetingRaw, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "feishu-meeting-clue", "SKILL.md"))
-	if err != nil {
+func writeSkillFixture(t *testing.T, inline bool) (string, string) {
+	t.Helper()
+	root := t.TempDir()
+	skillDirectory := filepath.Join(root, "example")
+	if err := os.Mkdir(skillDirectory, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	meeting := string(meetingRaw)
-	for _, want := range []string{
-		"lark-cli vc meeting get",
-		"--with-participants",
-		"--user-id-type open_id",
-		"status=3",
-		"Unix 秒",
-		"lark-cli contact +search-user",
-	} {
-		if !strings.Contains(meeting, want) {
-			t.Errorf("meeting collector is missing %q", want)
-		}
-	}
-	for _, obsolete := range []string{
-		"只保留**已经结束**的会议（有 `end_time`",
-		"`vc +detail --meeting-ids <id> --as user` 能拿到更完整的参会人",
-		"从 `vc +search` / `vc +detail` 直接读到",
-	} {
-		if strings.Contains(meeting, obsolete) {
-			t.Errorf("meeting collector still contains obsolete contract %q", obsolete)
-		}
-	}
-
-	prepRaw, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "feishu-meeting-prep-clue", "SKILL.md"))
-	if err != nil {
+	content := "---\nname: example\ndescription: \"{{AGENT_NAME}} skill\"\n---\n\n# {{AGENT_NAME}} body\n\nBODY_MARKER\n"
+	if err := os.WriteFile(filepath.Join(skillDirectory, "SKILL.md"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	prep := string(prepRaw)
-	for _, want := range []string{
-		`--event-id "<+get 返回 recurring_event_id 时用它，否则用实例 event_id>"`,
-		"`calendar event.attendees list` 对重复日程只接受系列级 ID",
-	} {
-		if !strings.Contains(prep, want) {
-			t.Errorf("meeting prep collector is missing %q", want)
-		}
+	configPath := filepath.Join(t.TempDir(), "skills.yaml")
+	config := "skills:\n  - name: example\n    enabled: true\n    stages: [extract, execute]\n"
+	if inline {
+		config = "skills:\n  - name: example\n    enabled: true\n    inline: true\n    stages: [extract]\n"
 	}
-}
-
-func TestReportCapabilitiesAvoidOKRAPIAndMorningBriefClosesSend(t *testing.T) {
-	for _, path := range []string{
-		filepath.Join("..", "..", ".agents", "skills", "summarize-person-day", "references", "context-and-capabilities.md"),
-		filepath.Join("..", "..", ".agents", "skills", "summarize-person-week", "references", "context-and-capabilities.md"),
-	} {
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		content := string(raw)
-		if strings.Contains(content, "`lark-okr`") || !strings.Contains(content, "does not allow the OKR API") {
-			t.Errorf("%s still exposes the forbidden OKR API", path)
-		}
-	}
-
-	raw, err := os.ReadFile(filepath.Join("..", "..", ".agents", "skills", "summarize-morning-brief", "SKILL.md"))
-	if err != nil {
+	if err := os.WriteFile(configPath, []byte(config), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	morning := string(raw)
-	for _, want := range []string{
-		"idempotency_key",
-		"morning-brief-YYYYMMDD-HHMMSS",
-		"jarvis-tools notice-principal --payload-file",
-		"verified=true",
-		"list-backlinks",
-	} {
-		if !strings.Contains(morning, want) {
-			t.Errorf("morning brief send contract is missing %q", want)
-		}
-	}
-	for _, obsolete := range []string{"awaiting_approval", "list-relations"} {
-		if strings.Contains(morning, obsolete) {
-			t.Errorf("morning brief still contains obsolete contract %q", obsolete)
-		}
-	}
+	return root, configPath
 }

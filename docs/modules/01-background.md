@@ -2,8 +2,8 @@
 
 > Status: current
 > Authority: normative module guide
-> Last verified: 2026-09-06 @ `250bbdb`
-> Code source: `internal/background/`, `internal/domain/models.go`, `internal/progress/`
+> Last verified: 2026-09-11
+> Code source: `internal/background/`, `internal/domain/models.go`, `internal/domain/progress.go`, `internal/progress/`, `internal/factengine/`
 
 M1 维护 principal 的稳定工作背景，供 M3/M5 和日报读取。SQLite 是真源；不向向量库同步背景，也没有 memory sidecar。
 
@@ -20,7 +20,7 @@ M1 维护 principal 的稳定工作背景，供 M3/M5 和日报读取。SQLite �
 
 ```mermaid
 erDiagram
-	PROJECT ||--o{ KEY_MATTER : "project_id"
+    PROJECT ||--o{ KEY_MATTER : "project_id"
     PROJECT ||--o{ GROUP : "project_id"
     PROJECT ||--o{ MANAGED_RESOURCE : "project_id"
     PERSON ||--o{ MANAGED_RESOURCE : "person_id"
@@ -44,11 +44,18 @@ Task 是独立执行单元，只保留可选 `project_id`，不直接关联 KeyM
 
 ## 4. Fact、Page 与 EntityRelation
 
-- `summary` Page 保存实体当前长期认知，`Fact` 保存发生过的事情；Fact 可通过 API 写入。
-- factengine 从 message、TodoEvent 和 TaskEvent 持续蒸馏 Fact，并通过通用工具维护当前背景、关系和资料。
-- EntityRelation 保存两个既有实体之间带证据、需要程序查询的跨模块映射；叙述性关系使用 `summary` 中的实体引用表达，读取走 page/backlink API。
+- `summary` 保存实体当前最佳认知，整体读写、有字符上限，更新使用 CAS 防止并发覆盖。
+- 自然语言关系写成 `[名称](type:id)` 页内引用；写入时校验目标存在，反查使用 backlinks。
+- EntityRelation 保存两个既有实体之间带证据、需要程序查询的跨模块映射，不替代叙述性引用。
+- WorldProgress 保存指定主体在一个周期内的证据化判断；项目进展与 OKR 世界投影使用同一服务，但不替代 OKR 产品的正式 Progress。
+- `Fact` 是追加式证据索引，不是第二份知识正文。它保存简短锚点、业务发生时间和原始材料指针；需要判断时沿 `source_kind/source_id` 读取原文。
+- Fact 可以指向 `message`、`todo_event`、`task_event`、`execution_run` 和 `resource`；程序自身的状态变化使用 `source_kind=system`，不携带 `source_id`。FactEngine 当前自动消费的来源只有 Message、TodoEvent 和 TaskEvent。
+- `PageRevision` 保存实体页被改写前的完整正文。它记录“认知笔记怎样变化”，不是“现实发生了什么”，因此不进入 Fact。
+- factengine 消费 Message、TodoEvent 和 TaskEvent 的独立游标，把一批完整材料交给同一个 Agent。Agent 使用通用工具维护页面、资料和 Fact；整轮成功后才推进游标，失败则重放。
 - M1 不负责从会话批量蒸馏事实。
 - 外部证据先进入 Message/Clue，再由 Agent 写入最小的 Project、KeyMatter 或其它通用实体；Page 继续使用 CAS，Fact 保留来源追溯。
+
+实体页回答“现在是什么”，Fact 帮助定位“发生了什么”，PageRevision 回答“我们的认知怎样被改写”。三者不能互相替代。
 
 ## 5. API 与初始化
 
@@ -61,3 +68,4 @@ Projects、Key matters、Persons、Groups、Profile、Managed resources、Facts�
 - 多仓库 Project 由模型结合 Task 上下文选择 repo。
 - Person 停用依赖人工维护。
 - Project 与 Person 目前没有结构化成员关系表。
+- 旧 Fact 可能没有可追溯指针；新写入按当前服务校验，历史数据不伪造迁移。

@@ -9,7 +9,7 @@ test('scheduled task list and detail use separate reads', async (t) => {
     const data = path === '/api/scheduled-tasks/7'
       ? { id: 7, title: 'timer', context_snapshot: { project_id: 9 }, dispatch_payload: { reason: 'wait' } }
       : { items: [{ id: 7, title: 'timer', instruction: 'run' }] }
-    return new Response(JSON.stringify({ code: 0, data }), { status: 200 })
+    return Response.json({ code: 0, data })
   })
 
   const list = await listScheduledTasks()

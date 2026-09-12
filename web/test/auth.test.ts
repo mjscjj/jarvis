@@ -28,7 +28,7 @@ test('401 notifies session owner without replaying a write; auth endpoints do no
   })
   t.mock.method(globalThis, 'fetch', async (path: string) => {
     calls.push(path)
-    return new Response(JSON.stringify({ code: 401, msg: 'session expired' }), { status: 401 })
+    return Response.json({ code: 401, msg: 'session expired' }, { status: 401 })
   })
   await assert.rejects(repairSetupLarkCredentials('test-secret'), /session expired/)
   assert.equal(expired, 1)
@@ -53,9 +53,9 @@ test('readonly requests wait for session recovery and retry once', async (t) => 
   t.mock.method(globalThis, 'fetch', async (path: string) => {
     calls.push(path)
     if (calls.length === 1) {
-      return new Response(JSON.stringify({ code: 401, msg: 'session expired' }), { status: 401 })
+      return Response.json({ code: 401, msg: 'session expired' }, { status: 401 })
     }
-    return new Response(JSON.stringify({ code: 0, data: { ok: true } }), { status: 200 })
+    return Response.json({ code: 0, data: { ok: true } })
   })
 
   assert.deepEqual(await getSetupStatus(), { ok: true })
@@ -81,6 +81,6 @@ test('status timeout aborts its pending request and exposes an actionable error'
       options.signal!.addEventListener('abort', () => reject(options.signal!.reason), { once: true })
     }))
   const pending = assert.rejects(getSetupStatus(), /请求超时/)
-  t.mock.timers.tick(30000)
+  t.mock.timers.tick(60000)
   await pending
 })

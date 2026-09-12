@@ -85,6 +85,9 @@ func TestStatusChecksIndependentLoginsConcurrently(t *testing.T) {
 		if bin == "bash" && len(args) == 3 && args[1] == "check" && filepath.Base(args[0]) == "jarvis-lark-auth" {
 			return []byte(`{"ok":true}`), nil
 		}
+		if len(args) > 0 && args[0] == "event" {
+			return (onboardingRunnerStub{}).Run(ctx, bin, args, input)
+		}
 		var other <-chan struct{}
 		switch strings.Join(args, " ") {
 		case "login status":

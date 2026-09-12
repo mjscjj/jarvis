@@ -21,6 +21,7 @@ import {
   SafetyCertificateOutlined,
   UserOutlined,
 } from '@ant-design/icons'
+import { AppUpdateProvider } from './AppUpdate'
 import { AgentIdentityProvider, useAgentIdentity } from './agentIdentity'
 import { AuthGate, AuthProvider, useAuth } from './auth'
 import { OnboardingGate } from './Onboarding'
@@ -33,8 +34,9 @@ import type { AppModuleChildDefinition, AppModuleDefinition } from './modules/re
 import { isWeeklyShareViewState } from './okr/emily/share'
 import { getAuthStatus as getOKRAuthStatus } from './okr/emily/api'
 import type { AuthUser as OKRAuthUser } from './okr/emily/types'
+import { useExecutingTaskCount } from './hooks/useExecutingTaskCount'
 import type { Plugin } from './types'
-import jarvisIcon from './assets/jarvis-icon.png'
+import { AgentActivityIcon } from './components/AgentActivityIcon'
 import { DeveloperHelpButton } from './components/DeveloperDocuments'
 
 const { Sider, Content } = Layout
@@ -96,6 +98,7 @@ function AppShell() {
   const { context, navigate } = usePageContext()
   const weeklyShare = context.active_key === 'biz-okr' && isWeeklyShareViewState(context.view_state)
   const runtimeFailures = useRuntimeFailureCount()
+  const executingTasks = useExecutingTaskCount()
   const [siderCollapsed, setSiderCollapsed] = useLocalStorage('jarvis.siderCollapsed', false)
   const siderWidth = siderCollapsed ? SIDER_COLLAPSED_WIDTH : SIDER_WIDTH
   // Preserve an existing main-branch plugin choice when initializing the
@@ -414,7 +417,7 @@ function AppShell() {
       {messageContext}
       {!weeklyShare && <Sider className="app-sider" width={SIDER_WIDTH} collapsedWidth={SIDER_COLLAPSED_WIDTH} collapsed={siderCollapsed} theme="light">
         <div className={`sider-brand ${siderCollapsed ? 'is-collapsed' : ''}`}>
-          <img className="sider-brand-icon" src={jarvisIcon} alt={`${agentName} 图标`} />
+          <AgentActivityIcon name={agentName} {...executingTasks} onActivate={() => navigate('settings', { view: 'about' })} />
           {!siderCollapsed && (
             <div className="sider-brand-copy">
               <div className="sider-name-row">
@@ -596,11 +599,14 @@ function AppShell() {
 
 export default function App() {
   return (
-    <AgentIdentityProvider>
-      <AuthProvider>
-        <AuthenticatedApp />
-      </AuthProvider>
-    </AgentIdentityProvider>
+    // The update prompt is independent of login and onboarding state.
+    <AppUpdateProvider>
+      <AgentIdentityProvider>
+        <AuthProvider>
+          <AuthenticatedApp />
+        </AuthProvider>
+      </AgentIdentityProvider>
+    </AppUpdateProvider>
   )
 }
 

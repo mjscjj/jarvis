@@ -1,17 +1,18 @@
 package execute
 
 import (
-	"jarvis/internal/contextsnap"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"jarvis/internal/contextsnap"
 	"jarvis/internal/datatypes"
 	"jarvis/internal/domain"
 	"jarvis/internal/prompttemplate"
 	"jarvis/internal/skill"
+	"jarvis/internal/toolcatalog"
 	"jarvis/internal/workrule"
 )
 
@@ -64,6 +65,10 @@ func TestRepositoryM5EffectivePromptUsesExplicitMessageTool(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encode prompt fixture: %v", err)
 	}
+	tools, err := toolcatalog.Block(toolcatalog.StageExecute)
+	if err != nil {
+		t.Fatalf("render repository M5 tool catalog: %v", err)
+	}
 	prompt, err := buildExecutionPrompt(executionPromptInput{InitiativeLevel: "normal",
 		SystemPrompt:   read("conf/prompts/m5-system-prompt.md"),
 		ApprovalPolicy: read("conf/prompts/m5-approval-policy.md"),
@@ -71,7 +76,7 @@ func TestRepositoryM5EffectivePromptUsesExplicitMessageTool(t *testing.T) {
 			ID: 1, Title: "通知相关人", ActionType: "agent_task",
 			SourcePayload: frozenTestContent(`{"request":"通知相关人"}`, string(background)),
 		},
-		ToolCatalog: testToolCatalog,
+		ToolCatalog: tools,
 		WorkRules:   ruleBlock,
 		Skills:      skillCatalog,
 	})
@@ -268,8 +273,6 @@ func TestBuildExecutionPromptForwardsSourcePayloadVerbatim(t *testing.T) {
 		}
 	}
 }
-
-func stringPtr(value string) *string { return &value }
 
 func uint64Ptr(value uint64) *uint64 { return &value }
 

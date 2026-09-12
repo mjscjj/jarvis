@@ -181,6 +181,7 @@ dailydigest:
 	input.AnalysisCLI = "codex"
 	input.AnalysisModel = "new-analysis-model"
 	input.ExecuteCLI = "traex"
+	input.ChatModel = "new-chat-model"
 	input.ExecuteConcurrency = 4
 	input.ExtractSchedule = "@every 2m"
 	input.ExtractConcurrency = 4
@@ -203,6 +204,7 @@ dailydigest:
 		t.Fatalf("round-trip settings mismatch:\nupdated=%#v\ninput=%#v", updated.Settings, input)
 	}
 	if updated.Settings.AgentDisplayName != "小贾" || updated.Settings.AnalysisCLI != "codex" || updated.Settings.ExecuteCLI != "traex" ||
+		updated.Settings.ChatModel != "new-chat-model" ||
 		updated.Settings.ExecuteConcurrency != 4 || updated.Settings.ExtractSchedule != "@every 2m" || updated.Settings.ExtractConcurrency != 4 ||
 		updated.Settings.CaptureScanWorkers != 6 || updated.Settings.CaptureP2PWindowMinutes != 25 ||
 		updated.Settings.FactEngineReasoningEffort != "high" || updated.Settings.FactEngineWindowMaxMessages != 80 ||
@@ -226,6 +228,7 @@ dailydigest:
 		t.Fatalf("Load() after update error = %v", err)
 	}
 	if reloaded.Identity.DisplayName != "小贾" || reloaded.Codex.Bin != "codex" || reloaded.Execute.Bin != "traex" ||
+		!reloaded.Chat.Enabled || reloaded.Chat.Model != "new-chat-model" ||
 		reloaded.Execute.Concurrency != 4 || reloaded.Extract.Schedule != "@every 2m" || reloaded.Extract.Concurrency != 4 ||
 		reloaded.Capture.ScanWorkers != 6 || !reloaded.Capture.P2PScanEnabled || reloaded.Capture.P2PWindowMinutes != 25 ||
 		reloaded.FactEngine.ReasoningEffort != "high" || reloaded.FactEngine.WindowMaxMessages != 80 ||

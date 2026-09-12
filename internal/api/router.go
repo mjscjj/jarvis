@@ -240,6 +240,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	if deps.Onboarding != nil {
 		h.GET("/api/setup/bootstrap", GetOnboardingBootstrap(deps.Onboarding))
 		h.GET("/api/setup/status", GetOnboardingStatus(deps.Onboarding))
+		h.GET("/api/setup/lark/permissions", GetOnboardingPermissionConfig(deps.Onboarding))
 		h.POST("/api/setup/lark/connect", BeginOnboardingLarkSetup(deps.Onboarding))
 		h.POST("/api/setup/lark/login", BeginOnboardingLarkLogin(deps.Onboarding))
 		h.POST("/api/setup/lark/credentials", RepairOnboardingLarkCredentials(deps.Onboarding))

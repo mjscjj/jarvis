@@ -281,7 +281,6 @@ export default function RuntimeSettings() {
             <SwitchField name="extract_enabled" label="M3 自动提取" help="从新消息中识别行动线索并生成 Todo。" />
             <SwitchField name="execute_auto_enabled" label="M5 自动执行" help="自动固化 extracted Todo 并执行 Task；关闭后仍可手动执行 Task。" />
             <SwitchField name="proactive_enabled" label="主动巡视" help="启动两分钟后先巡视一次，之后按周期整理世界模型并发现可做之事。" />
-            <SwitchField name="chat_enabled" label="对话工作区" help="启用对话页面和底部快捷输入栏。" />
           </Section>
           <Section title="M3 Agent" description="M3 选择 Agent CLI 时使用这组 CLI、模型和超时。">
             <SelectField name="analysis_cli" label="M3 CLI" options={cliOptions} help="M3 提取启动的命令行执行器。" />
@@ -292,8 +291,8 @@ export default function RuntimeSettings() {
             <TextField name="model_api_model" label="去重 / 备用提取模型" help="当前使用火山 Ark 模型，不会替代 M5 执行或对话模型。" />
             <NumberField name="model_api_timeout_seconds" label="API 请求超时（秒）" min={10} max={600} step={10} help="Ark Model API 和向量 API 的 HTTP 请求超时。" />
           </Section>
-          <Section title="M5 执行器" description="M5 使用独立 CLI；对话工作区复用该 CLI，但可另选模型。">
-            <SelectField name="execute_cli" label="执行 CLI" options={cliOptions} help="M5 执行任务及对话工作区使用的命令行执行器。" />
+          <Section title="M5 执行器" description="M5 使用独立 CLI、模型和推理档位。">
+            <SelectField name="execute_cli" label="执行 CLI" options={cliOptions} help="M5 执行任务使用的命令行执行器。" />
             <TextField name="execute_model" label="M5 执行模型" />
             <SelectField name="execute_reasoning_effort" label="M5 推理档位" options={reasoningOptions} />
           </Section>
@@ -331,12 +330,10 @@ export default function RuntimeSettings() {
             <NumberField name="extract_concurrency" label="并发会话数" min={1} max={16} help="不同单聊或群聊可并行；同一个 chat_id 始终串行。" />
             <NumberField name="extract_batch_messages" label="每批消息上限" min={1} max={5000} />
           </Section>
-          <Section title="输入上下文" description="决定每次提取能看到多少近期消息、开放 Todo、今天的事实明细、关键人事实和最近有进展的任务。">
+          <Section title="输入上下文" description="决定每次提取能看到多少近期消息、开放 Todo 和最近有进展的任务。">
             <NumberField name="extract_context_messages" label="每个会话前文条数" min={0} max={500} />
             <NumberField name="extract_context_window_minutes" label="前文时间窗（分钟）" min={1} max={10080} />
             <NumberField name="extract_open_todo_limit" label="开放 Todo 上限" min={1} max={1000} help="随 Prompt 提供的未关闭 Todo 数量，用于避免重复创建。" />
-            <NumberField name="extract_fact_limit" label="每主体今天事实上限" min={1} max={100} help="每个主体（群/项目/人）今天注入的明细事实条数；前一天另加一条日压缩摘要。" />
-            <NumberField name="extract_key_person_limit" label="关键人事实人数上限" min={1} max={50} help="交办人、leader 与本轮发言者取并集后，最多取多少人注入人物事实。" />
             <NumberField name="extract_recent_task_limit" label="最近有进展任务上限" min={1} max={100} help="注入近期有进展的任务摘要条数。" />
             <NumberField name="extract_max_prompt_chars" label="Prompt 字符上限" min={1000} max={1000000} step={1000} />
           </Section>
@@ -354,7 +351,7 @@ export default function RuntimeSettings() {
     },
     {
       key: 'execute',
-      label: <PanelLabel title="M5 · 任务执行与对话" description="Task 执行、并发恢复和对话工作区" />,
+      label: <PanelLabel title="M5 · 任务执行" description="Task 执行、并发和异常恢复" />,
       children: (
         <>
           <Section title="任务执行" description="CLI 和模型在“常用设置”中配置。">
@@ -383,7 +380,15 @@ export default function RuntimeSettings() {
               </Form.Item>
             </SettingCol>
           </Section>
-          <Section title="对话工作区" description="设置新会话默认值；Agent 和模型可在每个会话中选择。">
+        </>
+      ),
+    },
+    {
+      key: 'chat',
+      label: <PanelLabel title="对话工作区" description="完整对话页的新会话默认参数" />,
+      children: (
+        <>
+          <Section title="新会话默认值" description="默认 Agent 跟随 M5 执行 CLI；每个会话仍可独立选择 Agent、模型和推理档位。">
             <TextField name="chat_model" label="对话模型" />
             <SelectField name="chat_reasoning_effort" label="推理档位" options={reasoningOptions} />
             <SelectField name="chat_sandbox" label="文件权限" options={sandboxOptions} />
@@ -483,7 +488,7 @@ export default function RuntimeSettings() {
           type="warning"
           showIcon
           title="配置已保存，重启主服务后生效"
-          description="运行 ./scripts/rebuild-server.sh 重新构建并重启。"
+          description="运行 ./scripts/jarvis-deploy --skip-pull 重新构建并重启。"
         />
       )}
       {success && <Alert type="success" showIcon title={success} closable onClose={() => setSuccess(undefined)} />}
@@ -510,13 +515,6 @@ export default function RuntimeSettings() {
           enabled={liveSettings.execute_auto_enabled}
           primary={`${liveSettings.execute_cli} · ${liveSettings.execute_model}`}
           secondary={`${liveSettings.execute_concurrency} 并发 · ${liveSettings.execute_timeout_seconds}s 超时`}
-        />
-        <RuntimeStep
-          stage="CHAT"
-          title="对话工作区"
-          enabled={liveSettings.chat_enabled}
-          primary={`${liveSettings.execute_cli} · ${liveSettings.chat_model}`}
-          secondary={`${liveSettings.chat_reasoning_effort} · ${liveSettings.chat_timeout_seconds}s 超时`}
         />
         <RuntimeStep
           stage="FACT"

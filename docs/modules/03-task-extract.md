@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: normative module guide
-> Last verified: 2026-09-10
+> Last verified: 2026-09-11
 > Code source: `internal/extract/`, `internal/contextsnap/`
 
 M3 把新证据和工作背景转成经过准入判断的 Todo。它回答“这条线索是否值得启动一次 M5”，只创建/更新 Todo，不创建 Task、不执行外部写操作、不手工写长期 Fact，也不替 M5 制定方案或完成调查。
@@ -46,7 +46,7 @@ M3 可用 `trigger_message_id` 从已引用的消息中指定一个回到触发�
 2. 否则用 `project_hint` 对 code/name 精确匹配；
 3. 一次短查询仍无法确定则记录 unresolved resolution trace，交给 M5 在确有需要时继续调查。
 
-`Todo.content` 是唯一语义载体，使用 [渐进式上下文协议](../design-context-pipeline.md)：
+`Todo.content` 是唯一语义载体，使用 [冻结上下文决策](../decisions/context-snapshot.md)：
 
 - `source`：完整 Candidate，包括已校验的来源消息 ID、原句、准入简报及未知扩展字段；
 - `capture`：程序冻结的 principal、group、project、assigner、完整会话、参与人、资源和其他项目；
@@ -72,10 +72,8 @@ Todo、事件、水位和去重向量在同一落库流程中协调；关键步�
 
 | 配置 | 当前语义 |
 |---|---|
-| `extract.engine=codex` | 默认，traex Agent 自跑 lark-cli/bytedcli/git/jarvis-tools |
-| `extract.engine=model_api` | 备用 OpenAI-compatible function-calling 引擎 |
+| `extract.engine` | 选择 Agent CLI 或 OpenAI-compatible function-calling 引擎 |
 | `extract.concurrency` | 不同 `chat_id` 的并发上限；同一单聊或群聊始终串行 |
-| `extract.fact_limit` | 默认注入的已有 Fact 上限 |
 | `extract.semantic_*` | Qdrant Todo 去重配置 |
 
 阶段职责与输出协议在 `conf/prompts/m3-system-prompt.md`，三档准入尺度及领域特例在 `conf/rules/m3.md`；运行时组装在 `internal/extract/prompt.go`；工具说明来自 `internal/toolcatalog`。M3 的工具查询只服务四个准入问题：相关性、未闭环状态、责任归属和完成/重复检查；证据足够后立即停止。
@@ -86,7 +84,7 @@ M2 新消息实时唤醒 M3；`extract.schedule` 只做持久化补偿。单聊�
 ./bin/jarvis-server -config conf/config.yaml -extract-once
 ```
 
-`conf/prompts/initiative-level.md` 保存 quiet / normal / active（默认 normal）。每次批次组装读取一次，各 conversation unit 与格式/证据重试使用已组装的选择；新的批次读取更新值。安静档要求明确的介入必要性，普通档保留当前不确定即准入及反馈、回顾特例，活跃档增加有证据的前置准备。明确交办与明确订阅三档都履行。代码只注入选择，Todo 固化依旧只看 extracted。
+`conf/prompts/initiative-level.md` 保存 quiet / normal / active。每次批次组装读取一次，各 conversation unit 与格式/证据重试使用已组装的选择；新的批次读取更新值。安静档要求明确的介入必要性，普通档保留当前不确定即准入及反馈、回顾特例，活跃档增加有证据的前置准备。明确交办与明确订阅三档都履行。代码只注入选择，Todo 固化依旧只看 extracted。
 
 ## 6. 当前限制
 
