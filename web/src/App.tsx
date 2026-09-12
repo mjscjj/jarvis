@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Alert, Badge, Button, Drawer, Input, Layout, Menu, Modal, Result, Spin, Tooltip, Typography, message } from 'antd'
 import type { MenuProps } from 'antd'
 import {
@@ -97,8 +97,9 @@ function AppShell() {
   const { enabled: authEnabled, user, logout } = useAuth()
   const { context, navigate } = usePageContext()
   const weeklyShare = context.active_key === 'biz-okr' && isWeeklyShareViewState(context.view_state)
-  const runtimeFailures = useRuntimeFailureCount()
-  const executingTasks = useExecutingTaskCount()
+  const principalDataEnabled = !authEnabled || user !== null
+  const runtimeFailures = useRuntimeFailureCount(principalDataEnabled)
+  const executingTasks = useExecutingTaskCount(principalDataEnabled)
   const [siderCollapsed, setSiderCollapsed] = useLocalStorage('jarvis.siderCollapsed', false)
   const siderWidth = siderCollapsed ? SIDER_COLLAPSED_WIDTH : SIDER_WIDTH
   // Preserve an existing main-branch plugin choice when initializing the
@@ -153,26 +154,35 @@ function AppShell() {
     ? `${activeModule.label} · ${activeModuleChild.label}`
     : pageLabels[context.active_key] || 'Jarvis'
 
-  const refreshPlugins = useCallback(async () => {
-    try {
-      const result = await listPluginInstallations()
-      setEnabledPlugins(result.items.filter((item) => item.enabled))
-    } catch {
-      // The plugin page owns visible API errors; navigation keeps its last good state.
-    } finally {
-      setPluginsLoaded(true)
-    }
-  }, [])
-
   useEffect(() => {
+    setEnabledPlugins([])
+    setPluginsLoaded(false)
+    if (!principalDataEnabled) return
+    let request: AbortController | undefined
+    const refreshPlugins = async () => {
+      request?.abort()
+      const controller = new AbortController()
+      request = controller
+      try {
+        const result = await listPluginInstallations(controller.signal)
+        if (!controller.signal.aborted) setEnabledPlugins(result.items.filter((item) => item.enabled))
+      } catch {
+        // The plugin page owns visible API errors; navigation keeps its last good state.
+      } finally {
+        if (!controller.signal.aborted) setPluginsLoaded(true)
+      }
+    }
     void refreshPlugins()
     const onChanged = () => {
       setOpenMenuKeys((keys) => keys.includes('plugin-group') ? keys : [...keys, 'plugin-group'])
       void refreshPlugins()
     }
     window.addEventListener('jarvis:plugins-changed', onChanged)
-    return () => window.removeEventListener('jarvis:plugins-changed', onChanged)
-  }, [refreshPlugins])
+    return () => {
+      request?.abort()
+      window.removeEventListener('jarvis:plugins-changed', onChanged)
+    }
+  }, [principalDataEnabled, setOpenMenuKeys])
 
   const enabledPluginPages = [
     ...(moduleEnablement?.okr ? [{ id: 'okr', name: 'OKR 插件' }] : []),
@@ -417,7 +427,7 @@ function AppShell() {
       {messageContext}
       {!weeklyShare && <Sider className="app-sider" width={SIDER_WIDTH} collapsedWidth={SIDER_COLLAPSED_WIDTH} collapsed={siderCollapsed} theme="light">
         <div className={`sider-brand ${siderCollapsed ? 'is-collapsed' : ''}`}>
-          <AgentActivityIcon name={agentName} {...executingTasks} onActivate={() => navigate('settings', { view: 'about' })} />
+          <AgentActivityIcon name={agentName} enabled={principalDataEnabled} {...executingTasks} onActivate={() => navigate('settings', { view: 'about' })} />
           {!siderCollapsed && (
             <div className="sider-brand-copy">
               <div className="sider-name-row">
@@ -525,7 +535,7 @@ function AppShell() {
               {pages[context.active_key]}
             </Suspense>
             <Suspense fallback={null}>
-              <Chat compact={context.active_key !== 'chat'} hidden={context.active_key === 'biz-okr' && !showOKRChat} />
+              {principalDataEnabled && <Chat compact={context.active_key !== 'chat'} hidden={context.active_key === 'biz-okr' && !showOKRChat} />}
             </Suspense>
           </Content>
         </div>

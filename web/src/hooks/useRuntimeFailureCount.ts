@@ -3,25 +3,29 @@ import { useEffect, useState } from 'react'
 import { getDebugFailures } from '../api'
 import { countUnrecoveredFailures } from '../runtimeFailures'
 
-export function useRuntimeFailureCount(intervalMs = 60_000) {
+export function useRuntimeFailureCount(enabled: boolean, intervalMs = 60_000) {
   const [count, setCount] = useState<number>()
   const [error, setError] = useState<string>()
 
   useEffect(() => {
+    setCount(undefined)
+    setError(undefined)
+    if (!enabled) return
     let active = true
     let request: AbortController | undefined
 
     const load = () => {
       request?.abort()
-      request = new AbortController()
-      getDebugFailures(24, request.signal)
+      const controller = new AbortController()
+      request = controller
+      getDebugFailures(24, controller.signal)
         .then(({ items }) => {
-          if (!active) return
+          if (!active || controller.signal.aborted) return
           setCount(countUnrecoveredFailures(items))
           setError(undefined)
         })
         .catch((cause: unknown) => {
-          if (!active || cause instanceof DOMException) return
+          if (!active || controller.signal.aborted || cause instanceof DOMException) return
           setError(cause instanceof Error ? cause.message : String(cause))
         })
     }
@@ -33,7 +37,7 @@ export function useRuntimeFailureCount(intervalMs = 60_000) {
       request?.abort()
       window.clearInterval(timer)
     }
-  }, [intervalMs])
+  }, [enabled, intervalMs])
 
-  return { count, error }
+  return enabled ? { count, error } : {}
 }

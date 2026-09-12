@@ -6,10 +6,12 @@ export interface ExecutingTaskState {
   error?: string
 }
 
-export function useExecutingTaskCount(): ExecutingTaskState {
+export function useExecutingTaskCount(enabled: boolean): ExecutingTaskState {
   const [state, setState] = useState<ExecutingTaskState>({})
 
   useEffect(() => {
+    setState({})
+    if (!enabled) return
     let active = true
     let timer: number | undefined
     let request: AbortController | undefined
@@ -48,7 +50,7 @@ export function useExecutingTaskCount(): ExecutingTaskState {
       stop()
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
-  }, [])
+  }, [enabled])
 
-  return state
+  return enabled ? state : {}
 }

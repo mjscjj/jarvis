@@ -4,7 +4,7 @@ const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
 const base = process.env.CHAT_TEST_URL || 'http://127.0.0.1:18801'
 const source = await (await fetch(`${base}/src/auth.tsx`)).text()
 const reactPath = source.match(/from ["']([^"']*react\.js[^"']*)["']/)[1]
-const browser = await chromium.launch({ executablePath: process.env.CHROME_EXECUTABLE, headless: true })
+const browser = await chromium.launch({ executablePath: process.env.CHROME_EXECUTABLE, headless: true, args: ['--no-sandbox'] })
 try {
   const page = await browser.newPage()
   page.setDefaultTimeout(8000)
@@ -84,6 +84,60 @@ try {
   await page.getByText('已进入工作区', { exact: true }).waitFor()
   assert.deepEqual(errors, [])
   console.log('PASS: regeneration ignores stale SSO completion and completes the new flow')
+
+  await page.route('**/__okr-guest-recovery', route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: `<div id="root"></div><script type="module">
+    import RefreshRuntime from '/@react-refresh';
+    RefreshRuntime.injectIntoGlobalHook(window); window.$RefreshReg$=()=>{}; window.$RefreshSig$=()=>t=>t; window.__vite_plugin_react_preamble_installed__=true;
+    const {default:React}=await import('${reactPath}');
+    const {default:ReactDOM}=await import('/node_modules/.vite/deps/react-dom_client.js');
+    const {AuthProvider,AuthGate,useAuth}=await import('/src/auth.tsx');
+    const {default:IdentityBoundary}=await import('/src/okr/IdentityBoundary.tsx');
+    const {apiFetch}=await import('/src/api.ts');
+    const response=data=>new Response(JSON.stringify({code:0,data}),{headers:{'Content-Type':'application/json'}});
+    window.mounts=0; window.loginCalls=0; window.recovered=false; window.finishStatus=null;
+    window.fetch=async path=>{
+      if(path==='/api/auth/status') return new Promise((resolve,reject)=>{window.finishStatus=fail=>{window.finishStatus=null;fail?reject(new Error('identity service unavailable')):resolve(response({enabled:true,status:'unauthenticated'}));};});
+      if(path==='/api/biz-okr/me') return response({configured:true,authenticated:true,management_access:false,user:{open_id:'okr-visitor',name:'OKR visitor'}});
+      if(path==='/api/expired') return new Response(JSON.stringify({code:401,msg:'session expired'}),{status:401});
+      if(path==='/api/auth/login') {window.loginCalls++;return response({enabled:true,status:'pending',flow_id:'principal-flow',verification_url:'https://example.test/principal'});}
+      throw new Error('Unexpected request: '+path);
+    };
+    window.expireSession=()=>{window.recovered=false;void apiFetch('/api/expired').then(()=>{window.recovered=true;});};
+    function Draft(){const [text,setText]=React.useState('');React.useEffect(()=>{window.mounts++;},[]);return React.createElement('input',{placeholder:'OKR draft',value:text,onChange:event=>setText(event.target.value)});}
+    function Surface(){const auth=useAuth();window.authLoading=auth.loading;return React.createElement(AuthGate,{agentName:'Test'},React.createElement(IdentityBoundary,null,React.createElement(Draft)));}
+    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(AuthProvider,null,React.createElement(Surface)));
+  </script>` }))
+  for (const hash of ['/biz-okr?tab=okr-plan', '/weekly-report?tab=weekly-fill']) {
+    await page.goto('about:blank')
+    await page.goto(`${base}/__okr-guest-recovery#${hash}`)
+    const draft = page.getByPlaceholder('OKR draft')
+    await draft.fill('keep the OKR draft')
+    await page.waitForFunction(() => typeof window.finishStatus === 'function')
+    assert.equal(await page.evaluate(() => window.authLoading), true, 'Module renders while principal identity is unresolved')
+    await page.evaluate(() => window.finishStatus(false))
+    await page.waitForFunction(() => window.authLoading === false)
+    for (const fail of [false, true]) {
+      await page.evaluate(() => window.expireSession())
+      await page.waitForFunction(() => typeof window.finishStatus === 'function')
+      assert.equal(await draft.inputValue(), 'keep the OKR draft')
+      assert.equal(await page.locator('.auth-loading').count(), 0)
+      await page.evaluate(fail => window.finishStatus(fail), fail)
+      await page.waitForFunction(() => window.recovered)
+      assert.equal(await draft.inputValue(), 'keep the OKR draft')
+      assert.equal(await page.evaluate(() => window.mounts), 1)
+      assert.equal(await page.evaluate(() => window.loginCalls), 0)
+    }
+    await page.evaluate(() => { location.hash = '/chat' })
+    await page.getByRole('button', { name: /使用字节身份登录/ }).waitFor()
+    assert.equal(await draft.count(), 0, 'Protected pages still require principal login')
+    await page.getByRole('button', { name: /使用字节身份登录/ }).click()
+    await page.waitForFunction(() => typeof window.finishStatus === 'function')
+    await page.evaluate(() => window.finishStatus(false))
+    await page.locator('a[href="https://example.test/principal"]').waitFor()
+    assert.equal(await page.evaluate(() => window.loginCalls), 1)
+  }
+  assert.deepEqual(errors, [])
+  console.log('PASS: OKR and shared reports retain drafts through principal 401 recovery and failure without bypassing protected-page login')
 } catch (error) {
   for (const page of browser.contexts().flatMap(context => context.pages())) console.error(JSON.stringify({ body: await page.locator('body').innerText(), state: await page.evaluate(() => ({ polls: window.authPolls, loginCalls: window.loginCalls, authorized: window.newAuthorized })) }))
   throw error

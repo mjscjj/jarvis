@@ -11,17 +11,17 @@ const particles = Array.from({ length: 18 }, (_, index) => {
   return { x: 50 + Math.cos(angle) * radius, y: 50 + Math.sin(angle) * radius, size: index % 3 === 0 ? 1.8 : 1.1 }
 })
 
-export function AgentActivityIcon({ name, count, error, onActivate }: ExecutingTaskState & { name: string; onActivate: () => void }) {
-  const running = !error && count !== undefined && count > 0
-  const status = error ? 'error' : count === undefined ? 'loading' : running ? 'running' : 'idle'
-  const label = error
+export function AgentActivityIcon({ name, enabled, count, error, onActivate }: ExecutingTaskState & { name: string; enabled: boolean; onActivate: () => void }) {
+  const running = enabled && !error && count !== undefined && count > 0
+  const status = !enabled ? 'inactive' : error ? 'error' : count === undefined ? 'loading' : running ? 'running' : 'idle'
+  const label = !enabled ? '' : error
     ? '任务状态读取失败'
     : count === undefined ? '正在读取任务状态'
       : running ? `正在执行 ${count} 个任务` : '暂无执行中的任务'
 
   return (
-    <Tooltip title={`${error ? `${label}：${error}` : label} · ${activateHint}`}>
-      <button type="button" className="agent-activity-icon" data-state={status} aria-label={`${name}：${label}，${activateHint}`} onClick={onActivate}>
+    <Tooltip title={enabled ? `${error ? `${label}：${error}` : label} · ${activateHint}` : activateHint}>
+      <button type="button" className="agent-activity-icon" data-state={status} aria-label={enabled ? `${name}：${label}，${activateHint}` : `${name}：${activateHint}`} onClick={onActivate}>
         <img className="sider-brand-icon" src={jarvisIcon} alt="" />
         <svg className="agent-activity-particles" viewBox="0 0 100 100" fill="none" aria-hidden="true">
           <g className="agent-activity-swarm">
@@ -40,7 +40,7 @@ export function AgentActivityIcon({ name, count, error, onActivate }: ExecutingT
             <circle cx="50" cy="96" r="2" fill="#e1fcff" />
           </g>
         </svg>
-        {error && <span className="agent-activity-error" aria-hidden="true">!</span>}
+        {enabled && error && <span className="agent-activity-error" aria-hidden="true">!</span>}
       </button>
     </Tooltip>
   )

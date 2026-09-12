@@ -175,12 +175,11 @@ export function AuthGate({ agentName, children }: { agentName: string; children:
     window.addEventListener('hashchange', sync)
     return () => window.removeEventListener('hashchange', sync)
   }, [])
+  if (onModuleRoute) return children
   if (loading) {
     return <div className="auth-loading"><Spin size="small" /><span>正在验证字节身份...</span></div>
   }
-  // App modules carry their own visitor login, so they render without the
-  // outer principal SSO session. Everything else stays behind the gate.
-  if (!enabled || user || onModuleRoute) return children
+  if (!enabled || user) return children
 
   return (
     <main className="auth-page">
