@@ -64,7 +64,7 @@ function reviewStatusText(review: PreviewReviewState): string {
   return 'AI 评审结果'
 }
 
-export function PreviewReviewButton({ target, label, className = '' }: { target: PreviewReviewTarget; label: string; className?: string }) {
+export function PreviewReviewButton({ target, label, iconOnly = false, className = '' }: { target: PreviewReviewTarget; label: string; iconOnly?: boolean; className?: string }) {
   const { reviews, ready, run } = usePreviewReview()
   const review = reviews[previewReviewKey(target)]
   const running = review?.running === true
@@ -79,11 +79,13 @@ export function PreviewReviewButton({ target, label, className = '' }: { target:
     }
   }
 
-  return <span className="inline-flex flex-col items-end">
-    <button type="button" disabled={!ready || running} onClick={() => void start()} className={`inline-flex h-6 items-center rounded-md border border-sky-200 bg-sky-50 px-1.5 text-[10px] font-semibold leading-none text-sky-700 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-45 ${className}`}>
-      {running ? '评审中…' : review?.content ? `重新${label}` : label}
+  const buttonLabel = running ? '评审中…' : review?.content ? `重新${label}` : label
+
+  return <span className="relative inline-flex flex-col items-end">
+    <button type="button" disabled={!ready || running} aria-label={buttonLabel} title={buttonLabel} onClick={() => void start()} className={`inline-flex h-6 items-center rounded-md border border-sky-200 bg-sky-50 px-1.5 text-[10px] font-semibold leading-none text-sky-700 hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-45 ${iconOnly ? 'w-6 justify-center !px-0' : ''} ${className}`}>
+      {iconOnly ? <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className={`size-3.5 ${running ? 'animate-pulse' : ''}`}><path d="m4 20 12-12 4 4L8 24Z" transform="translate(0 -3)" /><path d="m13 8 3 3M5 3v4M3 5h4M18 2v4M16 4h4M20 17v4M18 19h4" /></svg> : buttonLabel}
     </button>
-    {clickError && <span className="mt-1 max-w-64 text-right text-[10px] text-red-600">{clickError}</span>}
+    {clickError && <span className={`${iconOnly ? 'absolute top-full left-0 z-10 w-48 rounded border border-red-100 bg-white p-1 shadow' : 'max-w-64 text-right'} mt-1 text-[10px] text-red-600`}>{clickError}</span>}
   </span>
 }
 

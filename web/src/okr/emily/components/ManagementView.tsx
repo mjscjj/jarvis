@@ -7,12 +7,13 @@ import type { Kr, KrOwner, KrPriority, KrTag, Objective } from '../types'
 import { BusinessCategoryTabs } from './BusinessCategoryTabs'
 import { FeishuPeoplePicker, FeishuPeoplePickerInput } from './FeishuPeoplePicker'
 import { HierarchyNav } from './HierarchyNav'
+import { PersonAvatar } from './PersonAvatar'
 import { KrDefinitionDetails } from './Table'
 import { TagEditor } from './TagEditor'
 import { CommentSurfaceHint, CommentTargetButton, commentTargetElementId, scrollToCommentSource, useCommentInteraction, useCommentSurface } from '../commenting'
 import { findCommentTargetLocation } from '../comments'
 import { mergeVisibleObjectiveOrder } from '../ordering'
-import { MoveButtons } from './ui'
+import { MoveButtons, Text } from './ui'
 import { PreviewReviewButton, PreviewReviewPanel } from '../aiReviewContext'
 
 // 业务分类和优先级各自有专属控件（分类标签条、优先级下拉、每行的选择器），
@@ -94,11 +95,14 @@ function KrEditorRow({ compactPresentation = false, objectiveId, kr, tagSuggesti
     }
   }
 
+  const ownerControl = (readOnly ? <span className="flex flex-wrap justify-end gap-1">{krOwners(kr).map((owner) => <span key={`${owner.openId}:${owner.name}`} title={owner.name} aria-label={owner.name} className={`inline-flex min-h-5 max-w-full items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-slate-500 ${compactPresentation ? '!min-h-4 !gap-1 !border-0 !bg-transparent !px-0.5 !py-0 text-[8px] leading-3' : 'text-[10px] leading-3.5'}`}>{compactPresentation && <PersonAvatar name={owner.name} openId={owner.openId} size="size-3 text-[7px]" />}<span className="min-w-0 break-words">{owner.name}</span></span>)}</span> : <FeishuPeoplePicker kr={kr} compact={!cardHierarchy} small={compactPresentation} />)
+
   return (
-    <article id={commentTargetElementId(commentTarget)} onClick={commentSurface.onClick} className={`group/kr group/commentable grid grid-cols-[minmax(0,1fr)_auto] gap-2 transition-[background-color,box-shadow] ${cardHierarchy ? `overflow-hidden rounded-xl border border-slate-200 bg-white px-3.5 ${compactPresentation ? 'py-1.5' : 'py-2.5'} shadow-[0_2px_8px_rgba(31,35,40,0.035)]` : 'px-3.5 py-2'} ${commentSurface.enabled ? 'cursor-pointer hover:bg-indigo-50/70' : cardHierarchy ? '' : 'hover:bg-slate-50/70'} ${commentSurface.selected || commentSurface.focused ? 'bg-indigo-50/80 ring-2 ring-inset ring-indigo-500' : ''}`}>
+    <article id={commentTargetElementId(commentTarget)} onClick={compactPresentation ? undefined : commentSurface.onClick} className={`group/kr group/commentable grid grid-cols-[minmax(0,1fr)_auto] gap-2 transition-[background-color,box-shadow] ${cardHierarchy ? `overflow-hidden rounded-xl border border-slate-200 bg-white px-3.5 ${compactPresentation ? 'py-1.5' : 'py-2.5'} shadow-[0_2px_8px_rgba(31,35,40,0.035)]` : 'px-3.5 py-2'} ${!compactPresentation && commentSurface.enabled ? 'cursor-pointer hover:bg-indigo-50/70' : cardHierarchy ? '' : 'hover:bg-slate-50/70'} ${!compactPresentation && (commentSurface.selected || commentSurface.focused) ? 'bg-indigo-50/80 ring-2 ring-inset ring-indigo-500' : ''}`}>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-1.5">
 			{cardHierarchy && <button type="button" onClick={onToggleDetails} title={detailsOpen ? '折叠 KR' : '展开 KR'} aria-label={detailsOpen ? '折叠 KR' : '展开 KR'} aria-expanded={detailsOpen} className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><svg viewBox="0 0 12 12" aria-hidden className={`size-3 transition-transform ${detailsOpen ? 'rotate-90' : ''}`}><path d="M4 2.2 L8.8 6 L4 9.8 Z" fill="currentColor" /></svg></button>}
+          {compactPresentation ? <Text value={kr.title} onChange={(value) => setKrTitle(objectiveId, kr.id, value)} placeholder="填写 KR 内容" readOnly={readOnly} fit className="[field-sizing:content] !min-w-0 text-[14px] font-semibold !leading-5 text-slate-900" /> : (
           <input
             value={kr.title}
 			readOnly={readOnly}
@@ -106,8 +110,11 @@ function KrEditorRow({ compactPresentation = false, objectiveId, kr, tagSuggesti
             placeholder="填写 KR 内容"
             aria-label="KR 内容"
 			className={`min-w-64 flex-[1_1_32rem] rounded-md border border-transparent bg-transparent px-1.5 outline-none transition-colors ${readOnly ? 'cursor-default' : 'hover:border-slate-200 hover:bg-white focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-50'} ${cardHierarchy ? 'min-h-7 text-[14px] font-semibold leading-5 text-slate-900' : 'h-7 text-[11px] font-medium text-slate-700'}`}
-				/>
-					<CommentTargetButton target={{ type: 'kr', id: kr.id, title: kr.title }} />
+				/>)}
+          {compactPresentation && ownerControl}
+          {compactPresentation && (readOnly ? <span className={`rounded-md border px-2 py-1 text-[10px] ${priorityTone(priority)}`}>{priority ? (priority === 'p0' ? 'Focus · P0' : priority.toUpperCase()) : '未标注'}</span> : <select value={priority} onChange={(event) => setKrPriority(kr.id, event.target.value as KrPriority | '')} aria-label="优先级标签" className={`h-6 rounded-md border px-2 text-[10px] outline-none focus:border-blue-400 ${priorityTone(priority)}`}><option value="">未标注</option><option value="p0">Focus · P0</option><option value="p1">P1</option><option value="p2">P2</option></select>)}
+
+					{!compactPresentation && <CommentTargetButton target={{ type: 'kr', id: kr.id, title: kr.title }} />}
 					{showStructuralFields && !cardHierarchy && (readOnly ? <span className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] text-blue-700">{businessCategoryOf(kr) || '未标注业务'}</span> : <BusinessCategoryField value={businessCategoryOf(kr)} categories={businessCategories} onChange={(value) => setKrBusinessCategory(kr.id, value)} allowEmpty ariaLabel="业务分类" className="h-6 max-w-36 rounded-md border border-blue-200 bg-blue-50 px-2 text-[10px] text-blue-700 outline-none focus:border-blue-400" />)}
 				{showStructuralFields && !cardHierarchy && (readOnly ? <span className={`rounded-md border px-2 py-1 text-[10px] ${priorityTone(priority)}`}>{priority ? (priority === 'p0' ? 'Focus · P0' : priority.toUpperCase()) : '未标注'}</span> : <select value={priority} onChange={(event) => setKrPriority(kr.id, event.target.value as KrPriority | '')} aria-label="优先级标签" className={`h-6 rounded-md border px-2 text-[10px] outline-none focus:border-blue-400 ${priorityTone(priority)}`}>
 					<option value="">未标注</option><option value="p0">Focus · P0</option><option value="p1">P1</option><option value="p2">P2</option>
@@ -115,7 +122,7 @@ function KrEditorRow({ compactPresentation = false, objectiveId, kr, tagSuggesti
         </div>
 		<div className={`flex flex-wrap items-start gap-2 px-1.5 ${compactPresentation ? 'mt-0.5' : cardHierarchy ? 'mt-1.5' : 'mt-1'}`}>
 			  {cardHierarchy && showStructuralFields && (readOnly ? <span className="rounded-md border border-blue-200 bg-blue-50 px-2 py-1 text-[10px] text-blue-700">{businessCategoryOf(kr) || '未标注业务'}</span> : <BusinessCategoryField value={businessCategoryOf(kr)} categories={businessCategories} onChange={(value) => setKrBusinessCategory(kr.id, value)} allowEmpty ariaLabel="业务分类" className="h-6 max-w-36 rounded-md border border-blue-200 bg-blue-50 px-2 text-[10px] text-blue-700 outline-none focus:border-blue-400" />)}
-			  {cardHierarchy && (readOnly ? <span className={`rounded-md border px-2 py-1 text-[10px] ${priorityTone(priority)}`}>{priority ? (priority === 'p0' ? 'Focus · P0' : priority.toUpperCase()) : '未标注'}</span> : <select value={priority} onChange={(event) => setKrPriority(kr.id, event.target.value as KrPriority | '')} aria-label="优先级标签" className={`h-6 rounded-md border px-2 text-[10px] outline-none focus:border-blue-400 ${priorityTone(priority)}`}><option value="">未标注</option><option value="p0">Focus · P0</option><option value="p1">P1</option><option value="p2">P2</option></select>)}
+			  {cardHierarchy && !compactPresentation && (readOnly ? <span className={`rounded-md border px-2 py-1 text-[10px] ${priorityTone(priority)}`}>{priority ? (priority === 'p0' ? 'Focus · P0' : priority.toUpperCase()) : '未标注'}</span> : <select value={priority} onChange={(event) => setKrPriority(kr.id, event.target.value as KrPriority | '')} aria-label="优先级标签" className={`h-6 rounded-md border px-2 text-[10px] outline-none focus:border-blue-400 ${priorityTone(priority)}`}><option value="">未标注</option><option value="p0">Focus · P0</option><option value="p1">P1</option><option value="p2">P2</option></select>)}
 		  {showTags && <div className="min-w-0 flex-1"><KrTagEditor kr={kr} suggestions={tagSuggestions} readOnly={readOnly} /></div>}
 		  {!cardHierarchy && <button
             type="button"
@@ -127,9 +134,9 @@ function KrEditorRow({ compactPresentation = false, objectiveId, kr, tagSuggesti
           </button>}
         </div>
       </div>
-      <div className={`flex min-w-12 justify-end gap-1 ${compactPresentation ? 'items-start self-start' : 'items-center'}`}>
-		{reviewEnabled && <PreviewReviewButton target={reviewTarget} label="AI评审" />}
-		{readOnly ? <span className="flex flex-wrap justify-end gap-1">{krOwners(kr).map((owner) => <span key={`${owner.openId}:${owner.name}`} title={owner.name} aria-label={owner.name} className="inline-flex min-h-6 min-w-6 items-center justify-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-500">{compactPresentation ? Array.from(owner.name.trim())[0] : owner.name}</span>)}</span> : <FeishuPeoplePicker kr={kr} compact={!cardHierarchy} initialsOnly={compactPresentation} />}
+      <div className={`flex min-w-12 justify-end gap-1 ${compactPresentation ? 'min-w-0 flex-wrap items-start self-start' : 'items-center'}`}>
+		{reviewEnabled && !compactPresentation && <PreviewReviewButton target={reviewTarget} label="AI评审" />}
+        {!compactPresentation && ownerControl}
 		{!readOnly && <span className={`flex items-center gap-1 transition-opacity ${cardHierarchy && !confirmDelete ? 'sm:opacity-0 sm:group-hover/kr:opacity-100 sm:group-focus-within/kr:opacity-100' : ''}`}>
         <MoveButtons label="条 KR" onUp={onMoveUp} onDown={onMoveDown} />
         {confirmDelete ? (
@@ -140,7 +147,7 @@ function KrEditorRow({ compactPresentation = false, objectiveId, kr, tagSuggesti
           </>
 		) : <button type="button" onClick={() => setConfirmDelete(true)} title="删除 KR" className="h-6 rounded-md px-1.5 text-[10px] text-slate-300 transition-colors hover:bg-red-50 hover:text-red-600">删除</button>}
 		</span>}
-        <CommentSurfaceHint target={commentTarget} />
+        {!compactPresentation && <CommentSurfaceHint target={commentTarget} />}
       </div>
 		{reviewEnabled && <PreviewReviewPanel target={reviewTarget} className="col-span-2" />}
 		{detailsOpen && <div className={`col-span-2 ${cardHierarchy ? 'px-0.5 pb-1' : 'px-1.5 pb-1'}`}><KrDefinitionDetails compactPresentation={compactPresentation} objectiveId={objectiveId} kr={kr} tagSuggestions={showTags ? tagSuggestions : undefined} deletePointWarning={deleteWarning} compactEmptyPointGroups={compactEmptyPointGroups} cardBody={cardHierarchy} readOnly={readOnly} reviewEnabled={reviewEnabled} /></div>}

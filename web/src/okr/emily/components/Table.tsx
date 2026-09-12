@@ -255,7 +255,7 @@ function ownerTone(owner: KrOwner) {
 
 function KrOwnerBadge({ owner, compact = false }: { owner: KrOwner; compact?: boolean }) {
   const tone = ownerTone(owner)
-  if (compact) return <span title={owner.name} aria-label={owner.name} className={`inline-flex size-6 shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold ${tone.badge}`}>{Array.from(owner.name.trim())[0]}</span>
+  if (compact) return <span title={owner.name} aria-label={owner.name} className={`inline-flex max-w-full items-center gap-1 rounded px-0.5 py-0 text-[8px] leading-3 text-slate-500`}><PersonAvatar name={owner.name} openId={owner.openId} size="size-3 text-[7px]" tone={tone.avatar} /><span className="min-w-0 break-words">{owner.name}</span></span>
   return (
     <span title={`负责人：${owner.name}`} className={`inline-flex h-6 items-center gap-1 rounded-full border py-0.5 pr-2 pl-1 text-[10px] font-semibold shadow-sm ${tone.badge}`}>
       <PersonAvatar name={owner.name} openId={owner.openId} size="size-4 text-[8px]" tone={tone.avatar} />
@@ -297,7 +297,7 @@ function KrHeader({ objectiveId, kr, open, onToggle, onMoveUp, onMoveDown, readO
   )
 }
 
-function PointHeader({ inlineReview = false, compactPresentation = false, objectiveId, krId, point, index, open, onToggle, onMoveUp, onMoveDown, readOnly, structureReadOnly, showProgress = true, showScore = false, scoreReadOnly = true, tagSuggestions, deleteWarning }: { inlineReview?: boolean; compactPresentation?: boolean; objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; onMoveUp?: () => void; onMoveDown?: () => void; readOnly: boolean; structureReadOnly: boolean; showProgress?: boolean; showScore?: boolean; scoreReadOnly?: boolean; tagSuggestions?: KrTag[]; deleteWarning: string }) {
+function PointHeader({ reviewUnderLabel = false, compactPresentation = false, objectiveId, krId, point, index, open, onToggle, onMoveUp, onMoveDown, readOnly, structureReadOnly, showProgress = true, showScore = false, scoreReadOnly = true, tagSuggestions, deleteWarning }: { reviewUnderLabel?: boolean; compactPresentation?: boolean; objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; onMoveUp?: () => void; onMoveDown?: () => void; readOnly: boolean; structureReadOnly: boolean; showProgress?: boolean; showScore?: boolean; scoreReadOnly?: boolean; tagSuggestions?: KrTag[]; deleteWarning: string }) {
   const { setPointTitle, setPointKind, setPointMeegoLink, removePoint, addPointTag, removePointTag, setPointScore, week } = useBoard()
   const commentTarget = { type: 'point' as const, id: point.id, title: point.title }
   const commentSurface = useCommentSurface(commentTarget)
@@ -322,11 +322,31 @@ function PointHeader({ inlineReview = false, compactPresentation = false, object
     }
   }
 
+  const pointFooter = <>
+        {!readOnly && <span className={compactPresentation ? 'flex min-w-0 max-w-full flex-wrap items-center gap-1' : 'flex max-w-[45%] shrink-0 flex-wrap items-center justify-end gap-1 pt-0.5'}><PointPeoplePicker krId={krId} point={point} small={compactPresentation} /></span>}
+        {readOnly && (point.owners?.length ?? 0) > 0 && <span aria-label="具体 KR 负责人" className={compactPresentation ? 'flex min-w-0 max-w-full flex-wrap items-center gap-1' : 'flex max-w-[45%] shrink-0 flex-wrap items-center justify-end gap-1 pt-0.5'}>{point.owners?.map((owner, ownerIndex) => <KrOwnerBadge key={`${owner.openId || owner.name}:${ownerIndex}`} owner={owner} compact={compactPresentation} />)}</span>}
+
+        {!readOnly && <MoveButtons label="条具体 KR" onUp={onMoveUp} onDown={onMoveDown} />}
+        {!structureReadOnly && (confirmDelete ? (
+          <span className="flex shrink-0 items-center gap-1">
+            <span className="text-[9px] leading-tight text-red-500">{deleteWarning}</span>
+            <button type="button" onClick={() => removePoint(objectiveId, krId, point.id)} className="h-6 rounded-md bg-red-600 px-2 text-[9px] font-medium !text-white hover:bg-red-700">确认</button>
+            <button type="button" onClick={() => setConfirmDelete(false)} className="h-6 px-1 text-[9px] text-slate-400 hover:text-slate-700">取消</button>
+          </span>
+        ) : (
+          <button type="button" onClick={() => setConfirmDelete(true)} title="删除这个具体 KR" className="shrink-0 text-slate-300 opacity-0 transition-opacity group-hover/point:opacity-100 hover:text-red-500">×</button>
+        ))}
+        <CommentSurfaceHint target={commentTarget} />
+  </>
+
   return (
     <div id={commentTargetElementId(commentTarget)} onClick={commentSurface.onClick} className={`group/point group/commentable rounded-md transition-[background-color,box-shadow] ${commentSurface.enabled ? 'cursor-pointer hover:bg-indigo-50/70' : ''} ${commentSurface.selected || commentSurface.focused ? 'bg-indigo-50/80 ring-2 ring-inset ring-indigo-500' : ''}`}>
       <div className="flex items-start gap-2">
-        {showProgress ? <Caret open={open} onToggle={onToggle} label="具体 KR" /> : <span className="w-4 shrink-0" />}
-        <span className="mt-0.5 shrink-0 rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-600">KR{index + 1}</span>
+        {showProgress ? <Caret open={open} onToggle={onToggle} label="具体 KR" /> : !compactPresentation && <span className="w-4 shrink-0" />}
+        <span className="mt-0.5 flex shrink-0 flex-col items-center gap-1">
+          <span className="rounded-md border border-blue-200 bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-600">KR{index + 1}</span>
+          {reviewUnderLabel && <PreviewReviewButton target={{ kind: 'point', objectiveId, krId, pointId: point.id, title: point.title }} label="AI评审" iconOnly />}
+        </span>
         {!compactPresentation && !structureReadOnly && <select
           value={point.kind}
           onChange={(event) => setPointKind(krId, point.id, event.target.value as PointKind)}
@@ -344,18 +364,13 @@ function PointHeader({ inlineReview = false, compactPresentation = false, object
             {showScore && <span className="pt-0.5"><WeeklyScoreControl score={point.score} readOnly={scoreReadOnly} onChange={(score) => setPointScore(krId, point.id, score)} label="具体 KR 评分" /></span>}
             {showProgress && <span className="pt-1 text-xs text-slate-400">{doing} 进展 · {done} 已完成</span>}
           </div>
-          {/* 标签只在「管理与打标」里展示和维护，填写和会议视图不渲染。 */}
-          {tagSuggestions && (compactPresentation && !point.tags?.length ? (
-            <details className="mt-0.5 text-[10px] text-slate-400">
-              <summary className="cursor-pointer">标签</summary>
-              <TagEditor idPrefix={`point-tag-options-${point.id}`} tags={point.tags ?? []} suggestions={tagSuggestions} emptyLabel="+ 要点标签" onAdd={(value, type) => addPointTag(krId, point.id, value, type)} onRemove={(type, value) => removePointTag(krId, point.id, type, value)} />
-            </details>
-          ) : (
-            <div className={compactPresentation ? 'mt-0.5 min-w-0' : 'mt-1.5 min-w-0'}>
+          {/* 紧凑 Plan 隐去要点标签与 Meego 辅助信息，完整管理视图仍可维护。 */}
+          {!compactPresentation && tagSuggestions && (
+            <div className="mt-1.5 min-w-0">
               <TagEditor idPrefix={`point-tag-options-${point.id}`} tags={point.tags ?? []} suggestions={tagSuggestions} emptyLabel="+ 要点标签" onAdd={(value, type) => addPointTag(krId, point.id, value, type)} onRemove={(type, value) => removePointTag(krId, point.id, type, value)} />
             </div>
-          ))}
-          {(point.meegoWorkItemId || editingMeego) && (
+          )}
+          {!compactPresentation && (point.meegoWorkItemId || editingMeego) && (
             <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[11px] text-slate-400">
               <span>Meego</span>
               {!structureReadOnly ? (
@@ -368,24 +383,12 @@ function PointHeader({ inlineReview = false, compactPresentation = false, object
               {showProgress && point.meegoWorkItemId && <button type="button" onClick={() => void loadPreview()} disabled={previewing} className="rounded px-1.5 py-0.5 text-blue-500 hover:bg-blue-50 disabled:text-slate-300">{previewing ? '读取中' : '对比'}</button>}
             </div>
           )}
-          {!structureReadOnly && !point.meegoWorkItemId && !editingMeego && (
-            <button type="button" onClick={() => setEditingMeego(true)} className={compactPresentation ? "hidden text-[11px] text-slate-400 hover:text-blue-500 group-hover/point:inline-block group-focus-within/point:inline-block" : "mt-1 text-[11px] text-slate-300 opacity-0 transition-opacity hover:text-blue-500 group-hover/point:opacity-100"}>+ 关联 Meego</button>
+          {!compactPresentation && !structureReadOnly && !point.meegoWorkItemId && !editingMeego && (
+            <button type="button" onClick={() => setEditingMeego(true)} className="mt-1 text-[11px] text-slate-300 opacity-0 transition-opacity hover:text-blue-500 group-hover/point:opacity-100">+ 关联 Meego</button>
           )}
+          {compactPresentation && <div className="mt-1 flex flex-wrap items-center gap-1">{pointFooter}</div>}
         </div>
-        {!readOnly && <span className="flex max-w-[45%] shrink-0 flex-wrap items-center justify-end gap-1 pt-0.5"><PointPeoplePicker krId={krId} point={point} initialsOnly={compactPresentation} /></span>}
-        {readOnly && (point.owners?.length ?? 0) > 0 && <span aria-label="具体 KR 负责人" className="flex max-w-[45%] shrink-0 flex-wrap items-center justify-end gap-1 pt-0.5">{point.owners?.map((owner, ownerIndex) => <KrOwnerBadge key={`${owner.openId || owner.name}:${ownerIndex}`} owner={owner} compact={compactPresentation} />)}</span>}
-        {inlineReview && <PreviewReviewButton target={{ kind: 'point', objectiveId, krId, pointId: point.id, title: point.title }} label="AI评审" />}
-        {!readOnly && <MoveButtons label="条具体 KR" onUp={onMoveUp} onDown={onMoveDown} />}
-        {!structureReadOnly && (confirmDelete ? (
-          <span className="flex shrink-0 items-center gap-1">
-            <span className="text-[9px] leading-tight text-red-500">{deleteWarning}</span>
-            <button type="button" onClick={() => removePoint(objectiveId, krId, point.id)} className="h-6 rounded-md bg-red-600 px-2 text-[9px] font-medium !text-white hover:bg-red-700">确认</button>
-            <button type="button" onClick={() => setConfirmDelete(false)} className="h-6 px-1 text-[9px] text-slate-400 hover:text-slate-700">取消</button>
-          </span>
-        ) : (
-          <button type="button" onClick={() => setConfirmDelete(true)} title="删除这个具体 KR" className="shrink-0 text-slate-300 opacity-0 transition-opacity group-hover/point:opacity-100 hover:text-red-500">×</button>
-        ))}
-        <CommentSurfaceHint target={commentTarget} />
+        {!compactPresentation && pointFooter}
       </div>
       {showProgress && (preview || previewError) && (
         <div className="mt-2 ml-8 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-500">
@@ -411,7 +414,7 @@ function PointBlock({ compactPresentation = false, objectiveId, krId, point, ind
   const reviewTarget = { kind: 'point' as const, objectiveId, krId, pointId: point.id, title: point.title }
   return (
     <article id={`point-${point.id}`} className="scroll-mt-5 border-l-2 border-slate-200 pl-3 sm:pl-4">
-      <PointHeader inlineReview={compactPresentation && showReview} compactPresentation={compactPresentation} objectiveId={objectiveId} krId={krId} point={point} index={index} open={open} onToggle={onToggle} onMoveUp={onMoveUp} onMoveDown={onMoveDown} readOnly={definitionReadOnly} structureReadOnly={structureReadOnly} showProgress={showProgress} showScore={!compactPresentation && showReview} scoreReadOnly={progressReadOnly} tagSuggestions={tagSuggestions} deleteWarning={deleteWarning} />
+      <PointHeader reviewUnderLabel={compactPresentation && showReview} compactPresentation={compactPresentation} objectiveId={objectiveId} krId={krId} point={point} index={index} open={open} onToggle={onToggle} onMoveUp={onMoveUp} onMoveDown={onMoveDown} readOnly={definitionReadOnly} structureReadOnly={structureReadOnly} showProgress={showProgress} showScore={!compactPresentation && showReview} scoreReadOnly={progressReadOnly} tagSuggestions={tagSuggestions} deleteWarning={deleteWarning} />
       {showReview && !compactPresentation && <div className="mt-1.5 flex justify-end pl-7"><PreviewReviewButton target={reviewTarget} label="AI评审" /></div>}
       {showReview && <PreviewReviewPanel target={reviewTarget} className="mt-1.5 ml-7" />}
       {open && showProgress && (review
@@ -441,15 +444,15 @@ function PointBlock({ compactPresentation = false, objectiveId, krId, point, ind
 function PointGroup({ compactPresentation = false, objectiveId, kr, kind, closed, toggle, definitionReadOnly, structureReadOnly, progressReadOnly, showProgress, reviewEnabled = false, tagSuggestions, deleteWarning }: { compactPresentation?: boolean; objectiveId: string; kr: Kr; kind: PointKind; closed: Set<string>; toggle: (id: string) => void; definitionReadOnly: boolean; structureReadOnly: boolean; progressReadOnly: boolean; showProgress: boolean; reviewEnabled?: boolean; tagSuggestions?: KrTag[]; deleteWarning: string }) {
   const { addPoint, swapPoints } = useBoard()
   const points = kr.points.filter((point) => point.kind === kind)
-  if (points.length === 0 && structureReadOnly) return null
+  if (points.length === 0 && structureReadOnly && !compactPresentation) return null
 
   return (
-    <section className={`rounded-xl border-l-[3px] ${compactPresentation ? 'px-2 py-1.5' : 'p-2.5'} ${kind === 'strategy' ? 'border-l-violet-500 bg-violet-50/35' : 'border-l-teal-500 bg-teal-50/35'}`}>
+    <section className={`min-w-0 rounded-xl border-l-[3px] ${compactPresentation ? 'px-2 py-1.5' : 'p-2.5'} ${kind === 'strategy' ? 'border-l-violet-500 bg-violet-50/35' : 'border-l-teal-500 bg-teal-50/35'}`}>
       <div className={`flex items-center gap-2 ${compactPresentation ? 'mb-1' : 'mb-2'}`}>
-        {!compactPresentation && <><span className={`flex size-5 items-center justify-center rounded text-[10px] font-bold text-white ${kind === 'strategy' ? 'bg-violet-500' : 'bg-teal-500'}`}>{kind === 'strategy' ? '策' : '产'}</span>
+        <span className={`flex size-5 items-center justify-center rounded text-[10px] font-bold text-white ${kind === 'strategy' ? 'bg-violet-500' : 'bg-teal-500'}`}>{kind === 'strategy' ? '策' : '产'}</span>
         <h3 className={`text-[12px] font-semibold ${kind === 'strategy' ? 'text-violet-700' : 'text-teal-700'}`}>{KIND_LABEL[kind]}</h3>
-        <span className="rounded-full bg-white/80 px-1.5 text-[10px] text-slate-400">{points.length} 条</span></>}
-        {!structureReadOnly && <button type="button" onClick={() => addPoint(objectiveId, kr.id, kind)} className="text-xs text-slate-400 hover:text-blue-600">+ 一项</button>}
+        <span className="rounded-full bg-white/80 px-1.5 text-[10px] text-slate-400">{points.length} 条</span>
+        {!structureReadOnly && <button type="button" onClick={() => addPoint(objectiveId, kr.id, kind)} className="ml-auto shrink-0 text-xs text-slate-400 hover:text-blue-600">+ 一项</button>}
       </div>
       <div className={compactPresentation ? 'space-y-1.5' : 'space-y-4'}>
         {points.map((point, index) => <PointBlock compactPresentation={compactPresentation} key={point.id} objectiveId={objectiveId} krId={kr.id} point={point} index={index} open={!closed.has(point.id)} onToggle={() => toggle(point.id)} onMoveUp={index > 0 ? () => swapPoints(kr.id, point.id, points[index - 1].id) : undefined} onMoveDown={index < points.length - 1 ? () => swapPoints(kr.id, point.id, points[index + 1].id) : undefined} definitionReadOnly={definitionReadOnly} structureReadOnly={structureReadOnly} progressReadOnly={progressReadOnly} showProgress={showProgress} reviewEnabled={reviewEnabled} tagSuggestions={tagSuggestions} deleteWarning={deleteWarning} />)}
@@ -461,6 +464,7 @@ function PointGroup({ compactPresentation = false, objectiveId, kr, kind, closed
 
 export function KrDefinitionDetails({ compactPresentation = false, objectiveId, kr, tagSuggestions, deletePointWarning = '连同各周进展一起删除', compactEmptyPointGroups = false, cardBody = false, readOnly = false, reviewEnabled = false }: { compactPresentation?: boolean; objectiveId: string; kr: Kr; tagSuggestions?: KrTag[]; deletePointWarning?: string; compactEmptyPointGroups?: boolean; cardBody?: boolean; readOnly?: boolean; reviewEnabled?: boolean }) {
   const { addPoint } = useBoard()
+  const visibleKinds = KINDS.filter((kind) => !compactEmptyPointGroups || kr.points.some((point) => point.kind === kind))
   const [closed, setClosed] = useState<Set<string>>(new Set())
   const toggle = (id: string) => setClosed((previous) => {
     const next = new Set(previous)
@@ -470,9 +474,10 @@ export function KrDefinitionDetails({ compactPresentation = false, objectiveId, 
   })
 
   return (
-    <div className={compactPresentation ? 'space-y-2 border-t border-slate-100 pt-2' : cardBody ? 'space-y-5 border-t border-slate-100 pt-4' : 'space-y-4 rounded-xl border border-slate-200 bg-slate-50/55 p-3'}>
+    <div className={compactPresentation ? '@container space-y-2 border-t border-slate-100 pt-2' : cardBody ? 'space-y-5 border-t border-slate-100 pt-4' : 'space-y-4 rounded-xl border border-slate-200 bg-slate-50/55 p-3'}>
 		<MetricBox compactPresentation={compactPresentation} kr={kr} readOnly={readOnly} />
-      {KINDS.filter((kind) => !compactEmptyPointGroups || kr.points.some((point) => point.kind === kind)).map((kind) => (
+      <div className={compactPresentation ? `grid grid-cols-1 items-stretch gap-3 ${visibleKinds.length > 1 ? '@[800px]:grid-cols-2' : ''}` : cardBody ? 'space-y-5' : 'space-y-4'}>
+      {visibleKinds.map((kind) => (
         <PointGroup
           compactPresentation={compactPresentation}
           key={kind}
@@ -490,8 +495,9 @@ export function KrDefinitionDetails({ compactPresentation = false, objectiveId, 
           deleteWarning={deletePointWarning}
         />
       ))}
+      </div>
 		{!readOnly && compactEmptyPointGroups && KINDS.some((kind) => !kr.points.some((point) => point.kind === kind)) && <div className="flex flex-wrap gap-2">
-        {KINDS.filter((kind) => !kr.points.some((point) => point.kind === kind)).map((kind) => <button key={kind} type="button" onClick={() => addPoint(objectiveId, kr.id, kind)} className="rounded-md border border-dashed border-slate-200 bg-white px-2.5 py-1.5 text-[10px] text-slate-400 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600">{compactPresentation ? '+ 一项' : `+ ${KIND_LABEL[kind]}`}</button>)}
+        {KINDS.filter((kind) => !kr.points.some((point) => point.kind === kind)).map((kind) => <button key={kind} type="button" onClick={() => addPoint(objectiveId, kr.id, kind)} className="rounded-md border border-dashed border-slate-200 bg-white px-2.5 py-1.5 text-[10px] text-slate-400 hover:border-blue-300 hover:bg-blue-50 hover:text-blue-600">{`+ ${KIND_LABEL[kind]}`}</button>)}
       </div>}
     </div>
   )

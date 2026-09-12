@@ -40,6 +40,21 @@ test('OKR Plan share link keeps the Plan quarter and uses the public share route
 	)
 })
 
+test('Plan sharing uses the selected Plan instead of stale URL state', () => {
+  assert.equal(
+    weeklyShareURLForTab('https://emily.example/#/biz-okr?quarter=2026-Q3&week=2026-W36&plan_id=old-plan', 'okr-plan', 'https://emily.example/', { id: 'selected-plan', quarter: '2026-Q4' }),
+    'https://emily.example/#/weekly-report?tab=okr-plan&quarter=2026-Q4&plan_id=selected-plan',
+  )
+  assert.equal(
+    weeklyShareURLForTab('https://emily.example/#/weekly-report?quarter=2026-Q4&plan_id=selected-plan&comment_id=private-context', 'okr-plan', ''),
+    'https://emily.example/#/weekly-report?tab=okr-plan&quarter=2026-Q4&plan_id=selected-plan',
+  )
+  assert.equal(
+    weeklyShareURL('https://emily.example/#/biz-okr?quarter=2026-Q3&week=2026-W36&plan_id=old-plan', { dataset: 'review', view: 'fill' }, ''),
+    'https://emily.example/#/weekly-report?tab=review-fill&quarter=2026-Q3&week=2026-W36',
+  )
+})
+
 test('weekly share scope resolves OKR Plan and all four weekly pages', () => {
   assert.equal(isWeeklyShareViewState({ share: 'weekly' }), true)
   assert.equal(isWeeklyShareViewState({}), false)

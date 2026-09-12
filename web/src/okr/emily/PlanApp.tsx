@@ -153,7 +153,7 @@ function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }:
 		let link: string
 		try {
 			const config = await getWebConfig()
-			link = weeklyShareURLForTab(window.location.href, 'okr-plan', config.public_base_url)
+			link = weeklyShareURLForTab(window.location.href, 'okr-plan', config.public_base_url, plan)
 		} catch (cause) {
 			setShareNotice(cause instanceof Error ? `读取分享地址失败：${cause.message}` : '读取分享地址失败')
 			return
@@ -286,7 +286,8 @@ function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }:
                 compactPresentation
                 title=""
                 subtitle=""
-                showTags
+                showTags={false}
+                hideStructuralFields
                 deleteKrWarning="只删除这个 Plan 草稿里的 KR"
 				  hierarchyNavigation
 				  hierarchyScopeKey={`${quarter}:${plan.id}`}
@@ -294,7 +295,6 @@ function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }:
 				  defaultExpandDetails
 				  compactEmptyPointGroups
 				  objectiveDragReorder
-				  objectiveBusinessCategoryEditing
 				  reviewEnabled
               />
             </div>

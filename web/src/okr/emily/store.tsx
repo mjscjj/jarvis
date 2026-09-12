@@ -647,6 +647,7 @@ export function BoardProvider({
         const objective = next.find((item) => item.id === objectiveId)
         if (!objective) throw new Error('目标分组不存在，请重新载入。')
         objective.krs.push(created)
+        serverKrs.current.set(created.id, clone(created))
         publish(next)
         setSyncState({ kind: 'saved', message: 'KR 已创建' })
       } catch (error) {

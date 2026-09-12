@@ -28,7 +28,7 @@ export function weeklyShareWorkspaceTab(tab: WeeklyShareTab): WeeklyWorkspaceTab
   return isWeeklyWorkspaceTab(tab) ? tab : undefined
 }
 
-export function weeklyShareURLForTab(currentURL: string, tab: WeeklyShareTab, publicBaseURL: string): string {
+export function weeklyShareURLForTab(currentURL: string, tab: WeeklyShareTab, publicBaseURL: string, plan?: { id: string; quarter: string }): string {
   const url = new URL(publicBaseURL.trim() || currentURL)
 	const current = new URL(currentURL)
 	const [, query = ''] = current.hash.replace(/^#/, '').split('?')
@@ -37,6 +37,12 @@ export function weeklyShareURLForTab(currentURL: string, tab: WeeklyShareTab, pu
 	for (const key of ['quarter', 'week']) {
 		const value = currentParams.get(key)
 		if (value) params.set(key, value)
+	}
+	if (tab === 'okr-plan') {
+		params.delete('week')
+		if (plan) params.set('quarter', plan.quarter)
+		const planId = plan?.id || currentParams.get('plan_id')
+		if (planId) params.set('plan_id', planId)
 	}
 	url.hash = `/weekly-report?${params}`
   return url.toString()
