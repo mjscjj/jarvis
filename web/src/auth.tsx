@@ -4,7 +4,6 @@ import { Button, Result, Spin, Typography } from 'antd'
 import { LinkOutlined, LoginOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
 import { authEvents, completeByteDanceLogin, getAuthStatus, loginWithByteDance, logoutFromJarvis, setAuthRecoveryHandler } from './api'
 import type { AuthUser, AuthView } from './types'
-import { DeveloperDocumentLinks } from './components/DeveloperDocuments'
 
 interface AuthContextValue {
   loading: boolean
@@ -171,10 +170,6 @@ export function AuthGate({ agentName, children }: { agentName: string; children:
           </Button>
         )}
         {error && <Result status="error" subTitle={error} extra={<Button onClick={() => void login()}>重试</Button>} />}
-        <section className="setup-documents">
-          <Typography.Text type="secondary">开发文档</Typography.Text>
-          <DeveloperDocumentLinks />
-        </section>
       </section>
     </main>
   )

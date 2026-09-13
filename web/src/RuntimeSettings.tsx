@@ -18,7 +18,7 @@ import {
   Tooltip,
   Typography,
 } from 'antd'
-import { QuestionCircleOutlined } from '@ant-design/icons'
+import { PoweroffOutlined, QuestionCircleOutlined } from '@ant-design/icons'
 import { getRuntimeSettings, updateRuntimeSettings } from './api'
 import type { RuntimeSettings as RuntimeSettingsInput } from './types'
 
@@ -200,7 +200,7 @@ function RuntimeStep({
   )
 }
 
-export default function RuntimeSettings() {
+export default function RuntimeSettings({ onShutdown }: { onShutdown: () => void }) {
   const [form] = Form.useForm<RuntimeSettingsInput>()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -541,6 +541,14 @@ export default function RuntimeSettings() {
       >
         <Collapse size="small" defaultActiveKey={['common']} items={panels} />
       </Form>
+
+      <section className="runtime-danger-zone">
+        <div>
+          <Text strong>停止 Jarvis</Text>
+          <Text type="secondary">停止主服务、Qdrant、CC Connect 和开发 Web 服务，正在执行的任务会被中断。</Text>
+        </div>
+        <Button danger icon={<PoweroffOutlined />} onClick={onShutdown}>退出并停止服务</Button>
+      </section>
 
       {dirty && (
         <div className="runtime-settings-actions" role="status" aria-live="polite">

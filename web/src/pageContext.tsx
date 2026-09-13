@@ -25,7 +25,6 @@ const pageHashes: Record<string, string> = {
   todos: '/manage/clues',
   'scheduled-tasks': '/manage/automations',
   plugins: '/plugins',
-  security: '/security',
   agents: '/agents',
   settings: '/manage/settings',
   debug: '/manage/runtime',
@@ -47,6 +46,10 @@ function isLegacyAgentSettingsHash(): boolean {
   return path === '/manage/settings' && new URLSearchParams(query).get('view') === 'agents'
 }
 
+function isLegacySecurityHash(): boolean {
+  return window.location.hash.replace(/^#/, '').split('?')[0] === '/security'
+}
+
 function routeFromHash(initialKey: string): HashRoute {
   const raw = window.location.hash.replace(/^#/, '')
   const [path, query = ''] = raw.split('?')
@@ -55,8 +58,8 @@ function routeFromHash(initialKey: string): HashRoute {
     const { view: _view, ...agentViewState } = viewState
     return { key: 'agents', selection: null, viewState: agentViewState }
   }
-  if (path === '/manage/settings' && viewState.view === 'security') {
-    return { key: 'security', selection: null, viewState: {} }
+  if (path === '/security') {
+    return { key: 'settings', selection: null, viewState: { view: 'security' } }
   }
   const taskMatch = path.match(/^\/work\/task\/(\d+)$/)
   if (taskMatch) {
@@ -112,7 +115,7 @@ export function PageContextProvider({
   useEffect(() => {
     if (!window.location.hash) {
       writePageHash(initialKey, null, {}, true)
-    } else if (isLegacyAgentSettingsHash()) {
+    } else if (isLegacyAgentSettingsHash() || isLegacySecurityHash()) {
       writePageHash(initialRoute.key, initialRoute.selection, initialRoute.viewState, true)
     }
     const syncFromHash = () => {
@@ -120,7 +123,7 @@ export function PageContextProvider({
       setActiveKeyState(route.key)
       setSelectionState(route.selection)
       setViewStateState(route.viewState)
-      if (isLegacyAgentSettingsHash()) {
+      if (isLegacyAgentSettingsHash() || isLegacySecurityHash()) {
         writePageHash(route.key, route.selection, route.viewState, true)
       }
     }

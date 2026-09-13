@@ -26,7 +26,7 @@ try {
     } else assert.equal(method, 'GET', `Unexpected mutation: ${path}`)
     let data
     if (path === '/api/agent-identity') data = { display_name: 'Jarvis' }
-    else if (path === '/api/auth/status') data = { status: 'authenticated', user: { name: 'Test', email: 'test@example.test' } }
+    else if (path === '/api/auth/status') data = { status: 'authenticated', user: { username: 'Test', email: 'test@example.test' } }
     else if (path === '/api/setup/bootstrap') data = { machine_configuration_ready: true }
     else if (path === '/api/setup/status') data = {
       app_ready: true, completed: true, world_model_ready: true,
@@ -39,6 +39,11 @@ try {
     else if (path === '/api/chat/sessions/s1') data = session
     else if (path === '/api/chat/agents') data = { items: [{ id: 'trae', name: 'TRAE', available: true, default: true }] }
     else if (path === '/api/chat/agents/trae/models') data = { items: [{ id: 'test', name: 'Test', default: true }] }
+    else if (path === '/api/security-settings') data = {
+      settings: { p2p_scan_enabled: true }, restart_required: false,
+      l4_document_read: { enforceable: false, enabled: false, message: '尚不可强制' },
+    }
+    else if (path === '/api/security-audit-events') data = { items: [] }
     else if (path === '/api/tasks') {
       const size = Number(url.searchParams.get('page_size'))
       if (size === 1) {
@@ -67,6 +72,24 @@ try {
   }, hidden)
   const setTasks = async next => { tasks = next; await refresh() }
   await waitState('idle')
+  assert.equal(await page.getByText('安全保护', { exact: true }).count(), 0, 'Security is not a primary destination')
+  assert.equal(await page.getByLabel('查看开发文档').count(), 0, 'Developer documents do not float in the sidebar')
+  assert.equal(await page.getByText('停止服务', { exact: true }).count(), 0, 'Shutdown is not a persistent sidebar action')
+  await page.locator('.sider-account-trigger').click()
+  await page.getByText('已通过字节身份登录').waitFor()
+  await page.getByText('test@example.test', { exact: true }).waitFor()
+  if (process.env.ACCOUNT_TEST_SCREENSHOT) await page.screenshot({ path: process.env.ACCOUNT_TEST_SCREENSHOT })
+  await page.keyboard.press('Escape')
+  await page.locator('.sider-account-trigger').blur()
+
+  await page.evaluate(() => { window.location.hash = '/security' })
+  await page.getByText('单聊消息扫描').waitFor()
+  assert.match(page.url(), /#\/manage\/settings\?view=security$/)
+  await page.getByRole('tab', { name: '安全与隐私' }).waitFor()
+  assert.equal(await page.getByRole('tab', { name: '工作设定' }).count(), 0, 'Work settings remain a System navigation item, not a settings tab')
+  if (process.env.SECURITY_TEST_SCREENSHOT) await page.screenshot({ path: process.env.SECURITY_TEST_SCREENSHOT, fullPage: true })
+  await page.evaluate(() => { window.location.hash = '/chat' })
+  await waitState('idle')
   const idleBox = await icon.boundingBox()
   assert.equal(idleBox.width, 44)
   assert.equal(idleBox.height, 44)
@@ -85,15 +108,26 @@ try {
   if (process.env.ACTIVITY_TEST_SCREENSHOT) await page.screenshot({ path: process.env.ACTIVITY_TEST_SCREENSHOT })
 
   await setTasks([{ id: 1, status: 'executing' }, { id: 2, status: 'executing', source_type: 'scheduled_task' }, { id: 3, status: 'pending' }])
-  await page.getByRole('button', { name: 'Jarvis：正在执行 2 个任务，点击查看版本与更新' }).waitFor()
+  await page.getByRole('button', { name: 'Jarvis：正在执行 2 个任务，点击查看 Jarvis 状态与设置' }).waitFor()
   assert.equal(await orbit.evaluate(el => getComputedStyle(el).animationDuration), '8s')
   await icon.hover()
   // Becoming interactive must not drop the execution state the icon reports.
-  await page.getByRole('tooltip', { name: '正在执行 2 个任务 · 点击查看版本与更新' }).waitFor()
-  await page.getByRole('button', { name: '修改机器人名称' }).click()
+  assert.equal(await icon.getAttribute('title'), '正在执行 2 个任务 · 点击查看 Jarvis 状态与设置')
+  await icon.click()
+  await page.getByRole('button', { name: '修改名称' }).waitFor()
+  await page.waitForTimeout(200)
+  if (process.env.AGENT_MENU_TEST_SCREENSHOT) await page.screenshot({ path: process.env.AGENT_MENU_TEST_SCREENSHOT })
+  await page.getByRole('button', { name: '修改名称' }).click()
   await page.getByRole('textbox', { name: '机器人名称' }).fill('测试名称')
   await page.getByRole('textbox', { name: '机器人名称' }).press('Escape')
   assert.deepEqual(await icon.boundingBox(), idleBox)
+  assert.equal(await page.locator('.sider-footer .sider-collapse-btn').count(), 0, 'Collapse control must not be coupled to the account footer')
+  assert.equal(await page.locator('.app-sider .sider-collapse-btn').count(), 1)
+  const footerBox = await page.locator('.sider-footer').boundingBox()
+  const collapseBox = await page.locator('.sider-collapse-btn').boundingBox()
+  const expandedSiderBox = await page.locator('.app-sider').boundingBox()
+  assert.ok(footerBox.y + footerBox.height >= expandedSiderBox.y + expandedSiderBox.height - 1, 'Account footer stays at the bottom of the sidebar')
+  assert.ok(Math.abs((collapseBox.y + collapseBox.height / 2) - (footerBox.y + footerBox.height / 2)) > 100, 'Collapse control stays visually separate from the account')
   await page.locator('.sider-collapse-btn').click()
   await page.waitForTimeout(400)
   const collapsed = await icon.boundingBox()
@@ -156,7 +190,7 @@ try {
   tasks = [{ id: 1, status: 'executing', source_type: 'scheduled_task' }]
   await waitState('running')
   assert.deepEqual(errors, [])
-  console.log(JSON.stringify({ result: 'passed', activityCalls, checks: ['real App shell', 'polling across pages', 'manual and scheduled execution', 'total across pagination', 'non-executing statuses', 'animated orbit', 'stable layout', 'interactive button semantics', 'name editing', 'collapsed glow bounds', 'reduced motion', 'API failure and recovery', 'visibility pause/resume', 'aborted response ignored'] }))
+  console.log(JSON.stringify({ result: 'passed', activityCalls, checks: ['real App shell', 'clean sidebar', 'compact account menu', 'security settings route migration', 'work settings stays in System navigation', 'polling across pages', 'manual and scheduled execution', 'total across pagination', 'non-executing statuses', 'animated orbit', 'stable layout', 'interactive button semantics', 'Jarvis menu and name editing', 'collapsed glow bounds', 'reduced motion', 'API failure and recovery', 'visibility pause/resume', 'aborted response ignored'] }))
 } catch (error) {
   console.error(JSON.stringify({ errors, body: (await page.locator('body').innerText()).slice(0, 2200) }))
   throw error

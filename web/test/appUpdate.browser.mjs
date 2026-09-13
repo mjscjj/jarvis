@@ -25,7 +25,7 @@ try {
     else assert.equal(method, 'GET', `Unexpected mutation: ${path}`)
     let data
     if (path === '/api/agent-identity') data = { display_name: 'Jarvis' }
-    else if (path === '/api/auth/status') data = { status: 'authenticated', user: { name: 'Test', email: 'test@example.test' } }
+    else if (path === '/api/auth/status') data = { status: 'authenticated', user: { username: 'Test', email: 'test@example.test' } }
     else if (path === '/api/setup/bootstrap') data = { machine_configuration_ready: true }
     else if (path === '/api/setup/status') data = {
       app_ready: true, completed: true, world_model_ready: true,
@@ -101,8 +101,9 @@ try {
 
   await page.goto(base)
 
-  // The brand icon is the entry point into 设置 → 关于.
+  // The brand icon opens Jarvis controls; version information is one explicit action.
   await page.locator('.agent-activity-icon').click()
+  await page.getByRole('button', { name: '关于与更新' }).click()
   await page.getByRole('heading', { name: '关于 Jarvis' }).waitFor()
   assert.match(page.url(), /#\/manage\/settings\?view=about$/)
   await page.getByText('0.1.5', { exact: true }).waitFor()
@@ -185,7 +186,7 @@ try {
   assert.equal(await browserPage.getByRole('dialog').count(), 0)
 
   assert.deepEqual(errors, [])
-  console.log(JSON.stringify({ result: 'passed', checks: ['icon opens 设置 → 关于', 'current version', 'checking state', 'already latest with timestamp', 'repeated check reaches updater', 'check failure shows raw error', 'available reports in place', 'prompt on demand', 'install failure shows raw error', 'failure survives dismiss', 'reopened prompt is clean', 'silent startup failure', 'startup prompt', 'browser fallback'] }))
+  console.log(JSON.stringify({ result: 'passed', checks: ['icon menu opens 设置 → 关于', 'current version', 'checking state', 'already latest with timestamp', 'repeated check reaches updater', 'check failure shows raw error', 'available reports in place', 'prompt on demand', 'install failure shows raw error', 'failure survives dismiss', 'reopened prompt is clean', 'silent startup failure', 'startup prompt', 'browser fallback'] }))
 } catch (error) {
   console.error(JSON.stringify({ errors, body: (await active.locator('body').innerText()).slice(0, 2200) }))
   throw error

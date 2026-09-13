@@ -1271,7 +1271,7 @@ export interface Plugin {
 // PageContext carries the active page and selected record for navigation and
 // explicit source selection in the conversation workspace.
 export interface PageContext {
-  // 当前左侧导航 key：overview/todos/tasks/scheduled-tasks/plugins/background/security/settings/progress/debug
+  // 当前左侧导航 key：overview/todos/tasks/scheduled-tasks/plugins/background/agents/settings/progress/debug
   active_key: string
   // 当前选中项的可读摘要（如 "Todo #12 修复登录超时"）；无选中则 null
   selection: PageSelection | null

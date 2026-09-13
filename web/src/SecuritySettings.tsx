@@ -22,7 +22,6 @@ import {
   SafetyCertificateOutlined,
 } from '@ant-design/icons'
 import { getSecuritySettings, listSecurityAuditEvents, updateSecuritySettings } from './api'
-import PageHeader from './components/PageHeader'
 import type {
   AccessAuditActorKind,
   AccessAuditEvent,
@@ -172,7 +171,6 @@ export default function SecuritySettings() {
   if (loading && !view) {
     return (
       <div className="security-page">
-        <PageHeader title="安全保护" subtitle="管理 Jarvis 的数据访问边界与访问审计" />
         <div className="security-settings-loading"><Spin /></div>
       </div>
     )
@@ -182,7 +180,6 @@ export default function SecuritySettings() {
 
   return (
     <div className="security-page">
-      <PageHeader title="安全保护" subtitle="管理 Jarvis 的数据访问边界与访问审计" />
       <div className="security-settings">
       {view?.restart_required && (
         <Alert

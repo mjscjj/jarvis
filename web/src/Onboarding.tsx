@@ -10,7 +10,6 @@ import type { SetupFlow, SetupStatus } from './types'
 import { setupAction, setupCanEnter, setupSecretVisible } from './onboardingState'
 import { SetupLarkApplication, larkApplicationURL } from './SetupLarkApplication'
 import { WorldModelSetup } from './WorldModelSetup'
-import { DeveloperDocumentLinks } from './components/DeveloperDocuments'
 import jarvisIcon from './assets/jarvis-icon.png'
 
 const restartKey = 'jarvis.onboardingRestartFrom'
@@ -238,7 +237,6 @@ export function OnboardingGate({ children }: { children: ReactNode }) {
         {status.lark.app_id && action !== 'application' && <SetupLarkApplication lark={status.lark} disabled={locked} />}
         {status.lark.app_id && (error || status.lark.error) && <Button disabled={locked} onClick={() => void beginFlow('authorize')}>重新授权当前应用</Button>}
       </details>
-      <details className="setup-help setup-documents"><summary>开发文档</summary><DeveloperDocumentLinks /></details>
     </section></main>
   }
 
