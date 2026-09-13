@@ -12,7 +12,7 @@ label=com.bytedance.jarvis.server
 service_target="gui/$UID/$label"
 bin=$repo_dir/bin/jarvis-server
 next_bin=$repo_dir/bin/jarvis-server.next
-tasks_api="http://127.0.0.1:18800/api/tasks?status=executing&page=1&page_size=1"
+tasks_api=""
 force_interrupt_running_tasks=false
 
 usage() {
@@ -48,6 +48,10 @@ case $# in
     ;;
 esac
 
+source "$script_dir/lib/connection.sh"
+jarvis_connection "$repo_dir"
+tasks_api="${JARVIS_CONNECTION_API_BASE}/api/tasks?status=executing&page=1&page_size=1"
+
 running_task_count() {
   local response
   if ! response=$(curl --fail --silent --show-error --max-time 5 "$tasks_api"); then
@@ -62,7 +66,7 @@ running_task_count() {
 
 wait_for_health() {
   for attempt in {1..30}; do
-    if curl --fail --silent --show-error --max-time 2 -o /dev/null http://127.0.0.1:18800/healthz; then
+    if curl --fail --silent --show-error --max-time 2 -o /dev/null "${JARVIS_CONNECTION_API_BASE}/healthz"; then
       echo "backend health HTTP 200"
       return 0
     fi

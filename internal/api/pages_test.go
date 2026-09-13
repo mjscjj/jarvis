@@ -18,6 +18,33 @@ import (
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
 )
 
+func TestAgentIdentityUsesConfiguredPrincipalWithoutSavedProfile(t *testing.T) {
+	db, err := store.OpenSQLite(t.Context(), config.SQLiteConfig{Path: filepath.Join(t.TempDir(), "jarvis.db")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close(db) })
+	if err := store.Migrate(db); err != nil {
+		t.Fatal(err)
+	}
+	profile, err := background.NewProfileService(db, "ou_configured")
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := server.New()
+	h.GET("/api/agent-identity", GetAgentIdentity("Friday", profile))
+	response := ut.PerformRequest(h.Engine, "GET", "/api/agent-identity", nil).Result()
+	var result struct {
+		Data map[string]string `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode() != 200 || len(result.Data) != 2 || result.Data["display_name"] != "Friday" || result.Data["principal_open_id"] != "ou_configured" {
+		t.Fatalf("identity response = %s", response.Body())
+	}
+}
+
 func TestUpdateProjectRejectsSummaryField(t *testing.T) {
 	h := server.New()
 	h.PUT("/api/projects/:project_id", UpdateProject(nil))

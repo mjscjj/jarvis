@@ -117,13 +117,24 @@ func (s *PersonService) List(ctx context.Context, filter ListFilter) (*PersonLis
 	if err := filter.validate(); err != nil {
 		return nil, invalid(err)
 	}
+	query := s.db.WithContext(ctx).Model(&domain.Person{})
+	if filter.Keyword != "" {
+		like := keywordPattern(filter.Keyword)
+		query = query.Where(`name LIKE ? ESCAPE '\' OR en_name LIKE ? ESCAPE '\' OR department LIKE ? ESCAPE '\' OR title LIKE ? ESCAPE '\' OR role LIKE ? ESCAPE '\' OR open_id LIKE ? ESCAPE '\'`, like, like, like, like, like, like)
+	}
+	if filter.Role != "" {
+		query = query.Where("role = ?", filter.Role)
+	}
+	if filter.OpenID != "" {
+		query = query.Where("open_id = ?", filter.OpenID)
+	}
 	var total int64
-	if err := s.db.WithContext(ctx).Model(&domain.Person{}).Count(&total).Error; err != nil {
+	if err := query.Count(&total).Error; err != nil {
 		return nil, fmt.Errorf("count persons: %w", err)
 	}
 	items := make([]domain.Person, 0, filter.PageSize)
 	if total > 0 {
-		if err := s.db.WithContext(ctx).
+		if err := query.
 			Order("priority_weight DESC, id DESC").
 			Limit(filter.PageSize).
 			Offset(filter.offset()).

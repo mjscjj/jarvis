@@ -1,6 +1,3 @@
-// Package toolcatalog owns the prompt-facing description of tools available to
-// Jarvis agents. System prompts define role and behavior; tool descriptions stay
-// here so they can evolve with the tools without becoming user-edited persona.
 package toolcatalog
 
 import (
@@ -18,40 +15,21 @@ const (
 	StageMorningBrief = "morning_brief"
 )
 
-// Block returns the trusted tool catalog for one agent stage. The catalog only
-// describes capabilities and machine-enforced contracts. Stage role, judgment,
-// stopping conditions and write policy belong to that stage's system prompt.
 func Block(stage string) (string, error) {
 	switch stage {
 	case StageExtract, StageExecute, StageChat, StageFactEngine, StageProactive, StageMeetingSweep, StageMorningBrief:
 	default:
 		return "", fmt.Errorf("unknown tool catalog stage %q", stage)
 	}
-
-	lines := []string{
-		"BEGIN_AVAILABLE_TOOLS（工具能力说明由工具层维护，不属于系统角色提示词。）",
-		"当前阶段：" + stage,
-		"各阶段看到同一套工具能力；允许执行哪些动作由当前阶段的系统提示词决定，命令自身执行参数和运行环境校验。",
-		"- jarvis-tools：查询和维护 Jarvis 的项目、人物、关键事项、群背景、关系、资源、消息、共享记忆、Skills、线索、任务与定时触发。先运行 `jarvis-tools --help` 看能力分组，再按子命令 `--help` 获取参数和机器约束。",
-		"- 共享记忆只保存 Principal 明确要求长期记住的行为偏好；用 `get-shared-memory` 读取，`append-shared-memory` 追加，`set-shared-memory` 整理，总长度不超过 2000 字。",
-		"- list/query 命令返回紧凑摘要，get 命令返回单个对象详情；大段 prompt、run output、资源正文需要通过对应显式参数或 get 命令加载。",
-		"- 实体当前状态用 `get-page` / `update-page` 读写，`list-pages` 是页面索引。`list-facts` 返回证据索引：一句锚点加原始材料指针；按 `source_kind` / `source_id` 用 `get-message`、`get-todo-event`、`get-task-event`、`get-task-run` 或 `get-captured-resource` 读取原文。",
-		"- `list-delegations --state open|closed|all --query TEXT` / `get-delegation --id TODO_ID` 读取 M3 交办待办及其独立进展；`update-delegation --id TODO_ID --payload JSON` 写入 expected_version、开放 content、actor、可选 closed。原始 source_payload 不变。`list-delegation-tasks --id TODO_ID` 分页读取关联检查，不把 Task 状态解释为交付状态。",
-		"- `list-todos` / `list-tasks` 返回摘要和来源消息 ID；用 `--query` 搜索、`--source-message-id` 精确匹配原生消息 ID，可加 `--project-id` / `--group-id`，Task 还可用开放的 `--action-type` 精确过滤；用 `--page` / `--limit` 翻页。Task 查询覆盖所有来源和完成、失败状态。",
-		"- `get-task` / `get-todo --id ID` 默认给来源原文与简短说明；`--context conversation|background|SECTION` 直接读冻结会话、背景或指定区块，`--message-id ID` 读冻结快照中的单条原文，`--context full` 显式展开全部。Todo 后续读取可带 `--revision` 防止跨修订混读。",
-		"- `list-task-runs --id TASK_ID --page N --limit N` 查历史摘要；`get-task-run --id RUN_ID` 读完整结果和 effects，`--include-prompt` 才加载该 run 的 prompt。",
-		"- `notice-principal --payload-file FILE` 用 Bot 给 Principal 发卡片：type 是开放展示文字（默认 Notice，可参考 Update、Reminder、Alert、Brief，也可自拟），content 为自然叙述的消息正文，开头一句概括事情，不单列 title、不写标题标签或大号标题；links、details（折叠详情）、extra（自由补充内容）可选。idempotency_key 为稳定发送键；task_id 可选，CLI 默认携带 JARVIS_TASK_ID，服务自动附上任务详情链接，无需自行拼接本地地址；links 用于业务材料链接。返回消息凭据及可原样记录的 effect；不改变任务状态。完整参数见命令 --help。",
-		"- 查本地已采集对话先用 `query-messages`，已知数据库 ID 时用 `get-message`；查附件与文档引用先用 `query-captured-resources`，命中后再用 `get-captured-resource` 加载正文。",
-		"- `query-messages --message-ids ID,ID,... --limit 100` 按原始消息 ID 批量精确查询，只返回已存在记录的 id/message_id；每批最多 100 个，不依赖正文关键词或 Task 是否存在。",
-		"- `yield-until` 需要 Task runner 注入 `JARVIS_TASK_ID`，创建归属当前 Task 的恢复触发；`create-scheduled-task` 创建独立触发。",
-		"- `create-task` 创建 `source_type=manual|proactive` 的普通 Task 并交给 M5；`supplement-task` 给现有 Task 追加上下文但不启动，`resume-task` 回答 `needs_human` 问题并续跑原 M5 Session。`start-task` / `update-task` / `close-task` 管理既有 Task；stage 只用于上下文和留痕，不是权限身份。",
-		"- lark-cli：查询或操作飞书。先用 `lark-cli skills list` 查看能力目录并选定域，再用 `lark-cli skills read <域名>` 查工作流、`lark-cli schema <method>` 查单 API 参数；匹配到飞书 Skill 时先读取 Skill。",
-		"- bytedcli：查询内部代码、commit、MR、issue 等研发信息。先用 `bytedcli --help` 查看领域，再用 `bytedcli --json <领域> --help` 查看该领域命令，最后用 `bytedcli --json <子命令路径> --help` 查看参数；不要加载全量帮助。",
-		"- git：查询和操作本地代码仓库。",
-	}
-	if stage == StageChat {
-		lines = append(lines, "- 对话查询 Skill：`jarvis-tools get-skill --name jarvis-chat` 读取正文；`list-skills --keyword TEXT` 查找其它领域 Skill。")
-	}
-	lines = append(lines, "END_AVAILABLE_TOOLS")
-	return strings.Join(lines, "\n"), nil
+	return strings.Join([]string{
+		"BEGIN_AVAILABLE_TOOLS",
+		"各阶段共享工具能力；职责、调查深度和停止条件由当前阶段指引决定，不是工具权限。",
+		"- jarvis-tools：查询和维护 Jarvis 内部状态。`--help` 查看能力组，`help <group>` 查找命令，`<command> --help` 查看输入、返回和机器约束。已知命令可直接使用，不必重复读取目录。",
+		"  world：身份、项目、人物、关键事项、群、资料和实体页；evidence：消息、采集资料、Fact 和事件；task：Todo、Task、交办、运行记录与恢复；schedule：独立调度和当前 Task 的等待恢复；memory：长期行为偏好；skill：发现与读取领域流程；notify：Principal 通知及回执。",
+		"- 先读列表或索引，再读取命中对象；完整证据、冻结上下文和大段输出按需展开。参数及错误以目标命令帮助和服务端返回为准。",
+		"- lark-cli：飞书操作。先读取匹配的官方 Skill；可用 `lark-cli skills list` / `skills read <域名>` 发现流程，`lark-cli schema <method>` 查看参数。",
+		"- bytedcli：内部研发信息。用 `bytedcli --help` 选择领域，再逐级用 `bytedcli --json <命令路径> --help` 查看目标帮助，不加载全量手册。",
+		"- git：本地代码仓库与版本历史。",
+		"END_AVAILABLE_TOOLS",
+	}, "\n"), nil
 }

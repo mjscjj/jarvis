@@ -30,3 +30,9 @@ Build and binding are separate operations:
 ```
 
 Changing the pinned upstream or patch requires updating `manifest.sh`, regenerating the patch, running the upstream Feishu tests through `scripts/install-cc-connect.sh`, and running the Jarvis test suite.
+
+### Jarvis 连接地址
+
+`manage.sh bind/validate` 支持 `--addr HOST:PORT`，`jarvis-install bind-cc/validate-binding` 原样透传。地址按 `--addr` → `JARVIS_API_BASE` → 有效配置选择，时区使用 `JARVIS_TIMEZONE` 或配置值；同一结果用于 Agent 环境和三个 HTTP 回调。没有运行环境时调用现有 `jarvis-config show-connection`，不自行解析 YAML。
+
+服务临时使用 `-addr` 时，绑定和校验传入同一个覆盖值。长期变更请修改配置，再重新绑定并重启 CC。绑定结果是启动配置，已经运行的 daemon 不会自动更新。

@@ -730,6 +730,41 @@ func TestValidateCandidateEvidenceFoldsCurlyQuotes(t *testing.T) {
 	}
 }
 
+func TestWorkerShellEngineDoesNotBuildModelToolBox(t *testing.T) {
+	for _, withBuilder := range []bool{false, true} {
+		t.Run(fmt.Sprintf("builder=%t", withBuilder), func(t *testing.T) {
+			store := &fakePipelineStore{batches: []ChatBatch{retryBatch()}}
+			model := &fakeModelExtractor{result: &ExtractionResult{Candidates: []Candidate{}}}
+			var builder toolBoxBuilder
+			if withBuilder {
+				builder = &fakeToolBoxBuilder{err: errors.New("unused model tool box")}
+			}
+			opts := validWorkerOptions()
+			opts.AgentToolCatalog = true
+			worker, err := NewWorker(store, model, &fakeFactReader{}, &fakeCandidateDeduplicator{}, builder, opts)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := worker.ExtractChat(t.Context(), "oc_1"); err != nil {
+				t.Fatal(err)
+			}
+			if len(model.boxes) != 1 || model.boxes[0] != nil || store.persistCalls != 1 {
+				t.Fatalf("boxes=%v persists=%d", model.boxes, store.persistCalls)
+			}
+			if !strings.Contains(model.prompts[0].System, "BEGIN_AVAILABLE_TOOLS") {
+				t.Fatal("shell engine lost its tool catalog")
+			}
+		})
+	}
+}
+
+func TestWorkerModelAPIRequiresToolBox(t *testing.T) {
+	_, err := NewWorker(&fakePipelineStore{}, &fakeModelExtractor{}, &fakeFactReader{}, &fakeCandidateDeduplicator{}, nil, validWorkerOptions())
+	if err == nil || !strings.Contains(err.Error(), "tool box builder is nil") {
+		t.Fatalf("error=%v, want missing model tool box", err)
+	}
+}
+
 func validWorkerOptions() WorkerOptions {
 	return WorkerOptions{
 		Load: LoadOptions{

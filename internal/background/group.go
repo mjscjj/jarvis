@@ -48,6 +48,7 @@ type GroupFilter struct {
 	RelatedOnly bool
 	KeyOnly     bool
 	Keyword     string
+	ChatID      string
 	ChatMode    string
 	Tier        string
 }
@@ -110,6 +111,9 @@ func (f GroupFilter) applyFilters(query *gorm.DB) *gorm.DB {
 	}
 	if f.KeyOnly {
 		query = query.Where("feishu_group.is_key_group = ?", true)
+	}
+	if f.ChatID != "" {
+		query = query.Where("feishu_group.chat_id = ?", f.ChatID)
 	}
 	if f.ChatMode != "" {
 		query = query.Where("feishu_group.chat_mode = ?", f.ChatMode)

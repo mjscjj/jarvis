@@ -163,10 +163,13 @@ func TestJarvisWorldModelResolvesWildcardServerAddressLocally(t *testing.T) {
 	if !ok || port == "" {
 		t.Fatalf("test server address = %q", addr)
 	}
-	if err := os.WriteFile(configPath, []byte("server:\n  addr: \"0.0.0.0:"+port+"\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte(syntheticConnectionConfig(t)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
+	if err := os.WriteFile(filepath.Join(filepath.Dir(configPath), "config.runtime.yaml"), []byte("server:\n  addr: \"0.0.0.0:"+port+"\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	out, err := runJarvisWorldModel(t, "", nil, "discover", "--config", configPath)
 	if err != nil {
 		t.Fatal(err)
@@ -203,7 +206,7 @@ func runJarvisWorldModel(t *testing.T, apiBase string, extraEnv []string, args .
 		t.Fatal(err)
 	}
 	command := exec.Command("bash", append([]string{script}, args...)...)
-	command.Env = append(command.Environ(), extraEnv...)
+	command.Env = append(sanitizedEnv(command.Environ(), "JARVIS_API_BASE", "JARVIS_CONFIG_PATH", "JARVIS_DESKTOP", "JARVIS_RESOURCE_ROOT"), extraEnv...)
 	if apiBase != "" {
 		command.Env = append(command.Env, "JARVIS_API_BASE="+apiBase)
 	}

@@ -87,6 +87,7 @@ const maxActiveManagedResources = 50
 type ResourceFilter struct {
 	ListFilter
 	PersonID      *uint64
+	PersonOpenID  string
 	ProjectID     *uint64
 	PrincipalOnly bool
 	ActiveOnly    bool
@@ -318,6 +319,13 @@ func (s *ResourceService) ensureLinksExist(ctx context.Context, personID, projec
 }
 
 func applyResourceFilter(query *gorm.DB, filter ResourceFilter) *gorm.DB {
+	if filter.Keyword != "" {
+		like := keywordPattern(filter.Keyword)
+		query = query.Where(`title LIKE ? ESCAPE '\' OR resource_type LIKE ? ESCAPE '\' OR url LIKE ? ESCAPE '\' OR local_path LIKE ? ESCAPE '\' OR summary LIKE ? ESCAPE '\' OR person_id IN (SELECT id FROM person WHERE name LIKE ? ESCAPE '\') OR project_id IN (SELECT id FROM project WHERE name LIKE ? ESCAPE '\')`, like, like, like, like, like, like, like)
+	}
+	if filter.PersonOpenID != "" {
+		query = query.Where("person_id IN (SELECT id FROM person WHERE open_id = ?)", filter.PersonOpenID)
+	}
 	if filter.PersonID != nil {
 		query = query.Where("person_id = ?", *filter.PersonID)
 	}

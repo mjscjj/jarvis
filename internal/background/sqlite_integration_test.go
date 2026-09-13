@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -288,4 +289,273 @@ func TestBackgroundCRUDSQLite(t *testing.T) {
 
 func itoa(v int64) string {
 	return strconv.FormatInt(v, 10)
+}
+
+func TestBackgroundListFiltersSQLite(t *testing.T) {
+	db := openBackgroundTestDB(t)
+	ctx := t.Context()
+	text := func(value string) *string { return &value }
+	id := func(value uint64) *uint64 { return &value }
+	now := time.Now().UTC()
+	seed := func(value any) {
+		t.Helper()
+		if err := db.Create(value).Error; err != nil {
+			t.Fatalf("seed list fixtures: %v", err)
+		}
+	}
+	seed(&[]domain.Project{
+		{ID: 1, Code: text(`P_%\`), Name: "ProjectName", Role: "owner", Status: "active", Priority: 1, Summary: text(`needle %_\`)},
+		{ID: 2, Code: text(`P_%\-suffix`), Name: "Second", Role: "owner", Status: "active", Priority: 1, Summary: text("needle")},
+		{ID: 3, Name: "Third", Role: "owner", Status: "paused", Priority: 1, Summary: text("needle")},
+		{ID: 4, Name: "Unrelated", Role: "participant", Status: "planning", Priority: 1},
+		{ID: 5, Name: "Archived", Role: "owner", Status: "archived", Priority: 1, Summary: text(`needle %_\`)},
+	})
+	seed(&[]domain.Person{
+		{ID: 1, OpenID: `ou_%\`, Name: "PersonName", EnName: text("EnglishName"), Department: text(`needle %_\`), Title: text("Architect"), Role: "leader", PriorityWeight: 0.5},
+		{ID: 2, OpenID: `ou_%\-suffix`, Name: "SecondPerson", Department: text("needle"), Role: "leader", PriorityWeight: 0.5},
+		{ID: 3, OpenID: "ou_third", Name: "ThirdPerson", Department: text("needle"), Role: "leader", PriorityWeight: 0.5},
+		{ID: 4, OpenID: "ou_other", Name: "OtherPerson", Department: text("needle"), Role: "colleague", PriorityWeight: 0.5},
+	})
+	seed(&[]domain.KeyMatter{
+		{ID: 1, Title: "MatterTitle", Status: "推进中", Summary: text(`needle %_\`), LastActiveAt: now},
+		{ID: 2, Title: "SecondMatter", Status: "等待", Summary: text("needle"), LastActiveAt: now},
+		{ID: 3, Title: "ThirdMatter", Status: "等待", Summary: text("needle"), LastActiveAt: now},
+		{ID: 4, Title: "ClosedMatter", Status: "完成", Summary: text(`needle %_\`), ClosedAt: &now, LastActiveAt: now},
+		{ID: 5, Title: "OtherMatter", Status: "等待", LastActiveAt: now},
+	})
+	seed(&[]domain.ManagedResource{
+		{ID: 1, Title: "ResourceTitle", ResourceType: "repo", URL: text("https://example.test/repository"), LocalPath: text("/workspace/source"), Summary: text(`needle %_\`), PersonID: id(1), ProjectID: id(1), LinkPrincipal: true, LastActiveAt: now},
+		{ID: 2, Title: "SecondResource", ResourceType: "doc", Summary: text("needle"), PersonID: id(1), ProjectID: id(1), LinkPrincipal: true, LastActiveAt: now},
+		{ID: 3, Title: "ThirdResource", ResourceType: "doc", Summary: text("needle"), PersonID: id(1), ProjectID: id(1), LinkPrincipal: true, LastActiveAt: now},
+		{ID: 4, Title: "OtherResource", ResourceType: "doc", PersonID: id(2), LastActiveAt: now},
+		{ID: 5, Title: "InactiveResource", ResourceType: "doc", Summary: text("needle"), PersonID: id(1), ProjectID: id(1), LinkPrincipal: true, LastActiveAt: now},
+	})
+	if err := db.Model(&domain.ManagedResource{}).Where("id = ?", 5).UpdateColumn("is_active", false).Error; err != nil {
+		t.Fatalf("seed inactive resource: %v", err)
+	}
+	seed(&[]domain.Group{
+		{ID: 1, ChatID: `oc_%\`, ChatMode: "group", Name: text("needle"), Tier: "hot"},
+		{ID: 2, ChatID: `oc_%\-suffix`, ChatMode: "group", Name: text("needle"), Tier: "cold", RelatedGroup: true},
+	})
+	assertIDs := func(t *testing.T, total int64, got, want []uint64, wantTotal int64) {
+		t.Helper()
+		if total != wantTotal || !reflect.DeepEqual(got, want) {
+			t.Fatalf("total=%d ids=%v, want total=%d ids=%v", total, got, wantTotal, want)
+		}
+	}
+
+	t.Run("projects", func(t *testing.T) {
+		svc, err := NewProjectService(db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cases := []struct {
+			name   string
+			filter ListFilter
+			ids    []uint64
+			total  int64
+		}{
+			{"summary second page", ListFilter{Page: 2, PageSize: 2, Keyword: "needle"}, []uint64{1}, 3},
+			{"name", ListFilter{Page: 1, PageSize: 10, Keyword: "ProjectName"}, []uint64{1}, 1},
+			{"code keyword", ListFilter{Page: 1, PageSize: 10, Keyword: "P_"}, []uint64{2, 1}, 2},
+			{"role keyword", ListFilter{Page: 1, PageSize: 10, Keyword: "participant"}, []uint64{4}, 1},
+			{"status keyword", ListFilter{Page: 1, PageSize: 10, Keyword: "paused"}, []uint64{3}, 1},
+			{"exact code", ListFilter{Page: 1, PageSize: 10, Code: `P_%\`}, []uint64{1}, 1},
+			{"partial code is not exact", ListFilter{Page: 1, PageSize: 10, Code: "P_"}, []uint64{}, 0},
+			{"combined filters", ListFilter{Page: 1, PageSize: 10, Keyword: "paused", Code: `P_%\`}, []uint64{}, 0},
+			{"empty", ListFilter{Page: 1, PageSize: 10, Keyword: "missing"}, []uint64{}, 0},
+			{"past last page", ListFilter{Page: 3, PageSize: 2, Keyword: "needle"}, []uint64{}, 3},
+		}
+		for _, keyword := range []string{"%", "_", `\`} {
+			cases = append(cases, struct {
+				name   string
+				filter ListFilter
+				ids    []uint64
+				total  int64
+			}{"literal " + keyword, ListFilter{Page: 1, PageSize: 10, Keyword: keyword}, []uint64{2, 1}, 2})
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				list, err := svc.List(ctx, tc.filter)
+				if err != nil {
+					t.Fatal(err)
+				}
+				ids := make([]uint64, 0, len(list.Items))
+				for _, item := range list.Items {
+					ids = append(ids, item.ID)
+				}
+				assertIDs(t, list.Total, ids, tc.ids, tc.total)
+			})
+		}
+	})
+
+	t.Run("persons", func(t *testing.T) {
+		svc, err := NewPersonService(db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cases := []struct {
+			name   string
+			filter ListFilter
+			ids    []uint64
+			total  int64
+		}{
+			{"filtered second page", ListFilter{Page: 2, PageSize: 2, Keyword: "needle", Role: "leader"}, []uint64{1}, 3},
+			{"exact open id", ListFilter{Page: 1, PageSize: 10, OpenID: `ou_%\`}, []uint64{1}, 1},
+			{"partial open id", ListFilter{Page: 1, PageSize: 10, OpenID: "ou_"}, []uint64{}, 0},
+			{"exact role", ListFilter{Page: 1, PageSize: 10, Role: "lead"}, []uint64{}, 0},
+			{"combined filters", ListFilter{Page: 1, PageSize: 10, OpenID: `ou_%\`, Role: "colleague"}, []uint64{}, 0},
+			{"empty", ListFilter{Page: 1, PageSize: 10, Keyword: "missing"}, []uint64{}, 0},
+		}
+		for _, keyword := range []string{"PersonName", "EnglishName", "Architect", `needle %_\`, "ou_third", "colleague"} {
+			want := uint64(1)
+			if keyword == "ou_third" {
+				want = 3
+			}
+			if keyword == "colleague" {
+				want = 4
+			}
+			cases = append(cases, struct {
+				name   string
+				filter ListFilter
+				ids    []uint64
+				total  int64
+			}{"keyword " + keyword, ListFilter{Page: 1, PageSize: 10, Keyword: keyword}, []uint64{want}, 1})
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				list, err := svc.List(ctx, tc.filter)
+				if err != nil {
+					t.Fatal(err)
+				}
+				ids := make([]uint64, 0, len(list.Items))
+				for _, item := range list.Items {
+					ids = append(ids, item.ID)
+				}
+				assertIDs(t, list.Total, ids, tc.ids, tc.total)
+			})
+		}
+	})
+
+	t.Run("key matters", func(t *testing.T) {
+		svc, err := NewKeyMatterService(db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cases := []struct {
+			name, keyword string
+			page, size    int
+			closed        bool
+			ids           []uint64
+			total         int64
+		}{
+			{"summary second page", "needle", 2, 2, false, []uint64{1}, 3},
+			{"include closed", "needle", 2, 2, true, []uint64{2, 1}, 4},
+			{"title", "MatterTitle", 1, 10, false, []uint64{1}, 1},
+			{"status", "推进中", 1, 10, false, []uint64{1}, 1},
+			{"literal special characters", `%_\`, 1, 10, false, []uint64{1}, 1},
+			{"empty", "missing", 1, 10, true, []uint64{}, 0},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				list, err := svc.List(ctx, KeyMatterFilter{ListFilter: ListFilter{Page: tc.page, PageSize: tc.size, Keyword: tc.keyword}, IncludeClosed: tc.closed})
+				if err != nil {
+					t.Fatal(err)
+				}
+				ids := make([]uint64, 0, len(list.Items))
+				for _, item := range list.Items {
+					ids = append(ids, item.ID)
+				}
+				assertIDs(t, list.Total, ids, tc.ids, tc.total)
+			})
+		}
+	})
+
+	t.Run("resources", func(t *testing.T) {
+		svc, err := NewResourceService(db)
+		if err != nil {
+			t.Fatal(err)
+		}
+		base := ListFilter{Page: 1, PageSize: 10}
+		cases := []struct {
+			name   string
+			filter ResourceFilter
+			ids    []uint64
+			total  int64
+		}{
+			{"combined second page", ResourceFilter{ListFilter: ListFilter{Page: 2, PageSize: 2, Keyword: "needle"}, PersonOpenID: `ou_%\`, PersonID: id(1), ProjectID: id(1), PrincipalOnly: true, ActiveOnly: true}, []uint64{1}, 3},
+			{"exact person open id", ResourceFilter{ListFilter: base, PersonOpenID: `ou_%\`}, []uint64{5, 3, 2, 1}, 4},
+			{"partial person open id", ResourceFilter{ListFilter: base, PersonOpenID: "ou_"}, []uint64{}, 0},
+			{"missing person", ResourceFilter{ListFilter: base, PersonOpenID: "ou_missing"}, []uint64{}, 0},
+			{"missing person id", ResourceFilter{ListFilter: base, PersonID: id(999)}, []uint64{}, 0},
+			{"contradictory person filters", ResourceFilter{ListFilter: base, PersonOpenID: `ou_%\`, PersonID: id(2)}, []uint64{}, 0},
+			{"principal", ResourceFilter{ListFilter: base, PrincipalOnly: true}, []uint64{5, 3, 2, 1}, 4},
+			{"empty", ResourceFilter{ListFilter: ListFilter{Page: 1, PageSize: 10, Keyword: "missing"}}, []uint64{}, 0},
+		}
+		for _, keyword := range []string{"ResourceTitle", "repo", "example.test", "/workspace/source", `%_\`, "PersonName", "ProjectName"} {
+			want := []uint64{1}
+			if keyword == "PersonName" || keyword == "ProjectName" {
+				want = []uint64{5, 3, 2, 1}
+			}
+			cases = append(cases, struct {
+				name   string
+				filter ResourceFilter
+				ids    []uint64
+				total  int64
+			}{"keyword " + keyword, ResourceFilter{ListFilter: ListFilter{Page: 1, PageSize: 10, Keyword: keyword}}, want, int64(len(want))})
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				list, err := svc.List(ctx, tc.filter)
+				if err != nil {
+					t.Fatal(err)
+				}
+				ids := make([]uint64, 0, len(list.Items))
+				for _, item := range list.Items {
+					ids = append(ids, item.ID)
+				}
+				assertIDs(t, list.Total, ids, tc.ids, tc.total)
+				if list.ActiveTotal != 4 {
+					t.Fatalf("active_total = %d, want global count 4", list.ActiveTotal)
+				}
+			})
+		}
+	})
+
+	t.Run("groups", func(t *testing.T) {
+		svc, err := NewGroupBackgroundService(db, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cases := []struct {
+			name, chatID, keyword string
+			related               bool
+			ids                   []uint64
+			broadened             bool
+		}{
+			{"exact chat id", `oc_%\`, "", false, []uint64{1}, false},
+			{"partial chat id", "oc_", "", false, []uint64{}, false},
+			{"missing chat", "oc_missing", "", false, []uint64{}, false},
+			{"related remains constrained", `oc_%\`, "", true, []uint64{}, false},
+			{"keyword still broadens", `oc_%\`, "needle", true, []uint64{1}, true},
+			{"legacy wildcard keyword", "", "%", false, []uint64{2, 1}, false},
+			{"keyword and id intersect", `oc_%\`, "missing", false, []uint64{}, false},
+		}
+		for _, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				list, err := svc.List(ctx, GroupFilter{ListFilter: ListFilter{Page: 1, PageSize: 10}, ChatID: tc.chatID, Keyword: tc.keyword, RelatedOnly: tc.related})
+				if err != nil {
+					t.Fatal(err)
+				}
+				ids := make([]uint64, 0, len(list.Items))
+				for _, item := range list.Items {
+					ids = append(ids, item.ID)
+				}
+				assertIDs(t, list.Total, ids, tc.ids, int64(len(tc.ids)))
+				if list.Broadened != tc.broadened {
+					t.Fatalf("broadened = %v, want %v", list.Broadened, tc.broadened)
+				}
+			})
+		}
+	})
 }

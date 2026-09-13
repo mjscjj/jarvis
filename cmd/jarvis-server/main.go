@@ -179,11 +179,8 @@ func main() {
 		infof("sqlite schema migration completed")
 		return
 	}
-	if err := agentenv.ConfigureTools(runtimeRoot); err != nil {
+	if err := agentenv.ConfigureTools(runtimeRoot, cfg.Server.Addr, cfg.Capture.Timezone); err != nil {
 		fatalf("configure Agent tools failed: %v", err)
-	}
-	if err := os.Setenv("JARVIS_TIMEZONE", cfg.Capture.Timezone); err != nil {
-		fatalf("configure Agent timezone failed: %v", err)
 	}
 	progressService, err := progress.NewService(db)
 	if err != nil {
@@ -547,13 +544,16 @@ func main() {
 		if err != nil {
 			fatalf("initialize Todo semantic deduplicator failed: %v", err)
 		}
-		toolBoxBuilder, err := extract.NewRegistryToolBoxBuilder(db, extract.ToolBoxConfig{
-			ToolTimeout:     time.Duration(cfg.Extract.ToolTimeoutSec) * time.Second,
-			HistoryMaxLimit: cfg.Extract.HistoryToolLimit,
-			Location:        location,
-		})
-		if err != nil {
-			fatalf("initialize extraction tool box builder failed: %v", err)
+		var toolBoxBuilder *extract.RegistryToolBoxBuilder
+		if cfg.Extract.Engine == "model_api" {
+			toolBoxBuilder, err = extract.NewRegistryToolBoxBuilder(db, extract.ToolBoxConfig{
+				ToolTimeout:     time.Duration(cfg.Extract.ToolTimeoutSec) * time.Second,
+				HistoryMaxLimit: cfg.Extract.HistoryToolLimit,
+				Location:        location,
+			})
+			if err != nil {
+				fatalf("initialize extraction tool box builder failed: %v", err)
+			}
 		}
 		// Engine selection: codex self-runs CLIs only to collect the decisive facts
 		// needed for Task admission (danger-full-access + network + low reasoning);

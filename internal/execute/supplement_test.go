@@ -8,6 +8,7 @@ import (
 	"jarvis/internal/datatypes"
 	"jarvis/internal/domain"
 	"jarvis/internal/prompttemplate"
+	"jarvis/internal/toolcatalog"
 )
 
 func testExecutionPromptInput(systemPrompt, approvalPolicy string, task *domain.Task, repoPath, toolCatalog, sharedMemory, workRules, skills string, history *runHistory) executionPromptInput {
@@ -200,14 +201,18 @@ func TestDecodeExecutionSupplementsRejectsInvalidJSON(t *testing.T) {
 }
 
 func TestExecutionAndBothResumesUseCurrentInitiative(t *testing.T) {
+	catalog, err := toolcatalog.Block(toolcatalog.StageExecute)
+	if err != nil {
+		t.Fatal(err)
+	}
 	input := testExecutionPromptInput(testM5SystemPrompt, "approval-policy", &domain.Task{
 		ID: 1, Title: "explicit task", ActionType: "investigate", SourcePayload: frozenTestContent(`{"request":"finish this task"}`, `{}`),
-	}, "", testToolCatalog, "memory", "M5_RULES", "SKILLS", nil)
+	}, "", catalog, "memory", "M5_RULES", "SKILLS", nil)
 	for _, level := range []string{"active", "quiet", "normal", ""} {
 		input.InitiativeLevel = level
 		initial, initialErr := buildExecutionPrompt(input)
-		waiting, waitingErr := buildScheduledResumePrompt(testM5SystemPrompt, "approval-policy", "wait condition", "M5_RULES", testToolCatalog, "SKILLS", level)
-		human, humanErr := buildHumanResumePrompt(testM5SystemPrompt, "approval-policy", "answer", "M5_RULES", testToolCatalog, "SKILLS", level)
+		waiting, waitingErr := buildScheduledResumePrompt(testM5SystemPrompt, "approval-policy", "wait condition", "M5_RULES", catalog, "SKILLS", level)
+		human, humanErr := buildHumanResumePrompt(testM5SystemPrompt, "approval-policy", "answer", "M5_RULES", catalog, "SKILLS", level)
 		if level == "" {
 			if initialErr == nil || waitingErr == nil || humanErr == nil {
 				t.Fatal("missing current mode accepted")
@@ -224,6 +229,9 @@ func TestExecutionAndBothResumesUseCurrentInitiative(t *testing.T) {
 		for _, prompt := range []string{initial, waiting, human} {
 			if !strings.HasPrefix(prompt, want+"\n") || strings.Count(prompt, "BEGIN_INITIATIVE_LEVEL") != 1 {
 				t.Fatalf("wrong effective instructions for %s", level)
+			}
+			if strings.Count(prompt, catalog) != 1 || !strings.Contains(prompt, "SKILLS") {
+				t.Fatalf("lost or duplicated discovery in %s prompt", level)
 			}
 		}
 		if !strings.Contains(waiting, "phase=resume_waiting") || !strings.Contains(human, "phase=resume_human") {

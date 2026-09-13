@@ -129,8 +129,8 @@ FactEngine 在主链路外消费 Message、TodoEvent 和 TaskEvent，使用同�
 | 主动程度 | `conf/prompts/initiative-level.md` | M3/M5/proactive 新一轮实时读取 |
 | 系统角色与输出协议 | `conf/prompts/` | textstore 固定 key 读取 |
 | 阶段工作规则 | `conf/rules/m3.md`, `conf/rules/m5.md` | 只注入所属阶段 |
-| Skills | `.agents/skills/`, `conf/skills.yaml` | 正文与启用范围分离 |
-| 工具说明 | `internal/toolcatalog/` | 运行时组装 |
+| Skills | `.agents/skills/`, `conf/skills.yaml` | 正文与目录展示范围分离；按名称读取不受目录开关限制 |
+| 工具说明 | `internal/toolcatalog/` | 运行时组装精简能力目录，详细契约按需读取命令帮助 |
 | 共享记忆 | `data/shared-memory.md` | 只保存 principal 明确要求的稳定偏好 |
 | 运行参数 | `conf/config.runtime.yaml` | 覆盖基线，重启后生效 |
 

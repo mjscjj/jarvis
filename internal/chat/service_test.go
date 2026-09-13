@@ -34,12 +34,12 @@ func TestBuildPromptOnlyInjectsGuidanceToolsAndExplicitInput(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"你好", "安全约束", "BEGIN_AVAILABLE_TOOLS", "jarvis-tools get-skill --name jarvis-chat"} {
+	for _, want := range []string{"你好", "安全约束", "BEGIN_AVAILABLE_TOOLS", "help <group>"} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("prompt missing %q\n%s", want, prompt)
 		}
 	}
-	for _, unwanted := range []string{"BEGIN_JARVIS_CONTEXT", "BEGIN_SHARED_MEMORY", "页面上下文", "BEGIN_VISIBLE_CHAT_HISTORY", "用户选择的数据来源与附件"} {
+	for _, unwanted := range []string{"BEGIN_JARVIS_CONTEXT", "BEGIN_SHARED_MEMORY", "jarvis-chat", "页面上下文", "BEGIN_VISIBLE_CHAT_HISTORY", "用户选择的数据来源与附件"} {
 		if strings.Contains(prompt, unwanted) {
 			t.Fatalf("unexpected automatic context %q\n%s", unwanted, prompt)
 		}

@@ -80,7 +80,7 @@ func NewWorker(store pipelineStore, model ToolExtractor, facts factReader, dedup
 	if dedup == nil {
 		return nil, fmt.Errorf("extract worker semantic deduplicator is nil")
 	}
-	if toolBox == nil {
+	if !opts.AgentToolCatalog && toolBox == nil {
 		return nil, fmt.Errorf("extract worker tool box builder is nil")
 	}
 	if opts.WorkRules == nil {
@@ -271,9 +271,13 @@ func (w *Worker) extractBatch(ctx context.Context, batch ChatBatch, prompts []Pr
 	results := make([]UnitExtraction, 0, len(batch.Units))
 	for index := range batch.Units {
 		unit := batch.Units[index]
-		box, err := w.toolBox.Build(batch, unit)
-		if err != nil {
-			return stats, PersistStats{}, fmt.Errorf("build extraction tool box chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
+		var box ToolBox
+		if !w.opts.AgentToolCatalog {
+			var err error
+			box, err = w.toolBox.Build(batch, unit)
+			if err != nil {
+				return stats, PersistStats{}, fmt.Errorf("build extraction tool box chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
+			}
 		}
 		// PersistChat re-reads the unit out of batch.Units by key, so hydrated
 		// evidence has to land there and not in a local copy.

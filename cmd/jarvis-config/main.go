@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
+	"time"
 
+	"jarvis/internal/agentenv"
 	"jarvis/internal/config"
 )
 
@@ -26,11 +29,46 @@ func run(args []string, stdout io.Writer) error {
 		return runConfigurePrincipal(args[1:], stdout)
 	case "show-principal":
 		return runShowPrincipal(args[1:], stdout)
+	case "show-connection":
+		return runShowConnection(args[1:], stdout)
 	case "initialization-status":
 		return runInitializationStatus(args[1:], stdout)
 	default:
 		return fmt.Errorf("unknown subcommand %q", args[0])
 	}
+}
+
+// runShowConnection is an installation-time projection of effective config.
+// It deliberately emits no identity or credentials and does not probe a server.
+func runShowConnection(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("show-connection", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	configPath := flags.String("config", "conf/config.yaml", "base config path")
+	address := flags.String("addr", "", "listen address override")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return fmt.Errorf("unexpected positional arguments: %v", flags.Args())
+	}
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		return err
+	}
+	if value := strings.TrimSpace(*address); value != "" {
+		cfg.Server.Addr = value
+	}
+	apiBase, err := agentenv.LocalAPIBase(cfg.Server.Addr)
+	if err != nil {
+		return err
+	}
+	if _, err := time.LoadLocation(cfg.Capture.Timezone); err != nil {
+		return fmt.Errorf("invalid Agent timezone %q: %w", cfg.Capture.Timezone, err)
+	}
+	return json.NewEncoder(stdout).Encode(struct {
+		APIBase  string `json:"api_base"`
+		Timezone string `json:"timezone"`
+	}{APIBase: apiBase, Timezone: cfg.Capture.Timezone})
 }
 
 func runInitializationStatus(args []string, stdout io.Writer) error {

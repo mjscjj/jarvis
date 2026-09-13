@@ -12,6 +12,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"jarvis/internal/config"
 )
 
 func TestResolveOptionsUsesExplicitRoots(t *testing.T) {
@@ -88,6 +90,49 @@ func TestPrepareSyncsBundleAndPreservesUserChanges(t *testing.T) {
 	}
 	if got := readFile(t, promptPath); got != "user edit\n" {
 		t.Fatalf("user-edited asset was overwritten: %q", got)
+	}
+}
+
+func TestPrepareUpgradesModifiedProgramsAndRemovesObsoletePrograms(t *testing.T) {
+	resources := t.TempDir()
+	writeBundleFixture(t, resources)
+	layout := NewLayout(Options{ResourceRoot: resources, StateRoot: t.TempDir()})
+	obsolete := "scripts/obsolete-helper.sh"
+	if err := os.WriteFile(filepath.Join(resources, obsolete), []byte("old\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := Prepare(layout); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"scripts/jarvis-tools", "scripts/lib/jarvis-tools/world.sh", "scripts/json-api-data.mjs", "web/dist/index.html", obsolete} {
+		if err := os.WriteFile(filepath.Join(layout.RuntimeRoot, path), []byte("local edit\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Remove(filepath.Join(resources, obsolete)); err != nil {
+		t.Fatal(err)
+	}
+	if err := Prepare(layout); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"scripts/jarvis-tools", "scripts/lib/jarvis-tools/world.sh", "scripts/json-api-data.mjs", "web/dist/index.html"} {
+		if readFile(t, filepath.Join(layout.RuntimeRoot, path)) != readFile(t, filepath.Join(resources, path)) {
+			t.Errorf("program asset not synchronized: %s", path)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(layout.RuntimeRoot, obsolete)); !os.IsNotExist(err) {
+		t.Fatalf("obsolete program still present: %v", err)
+	}
+}
+
+func TestPrepareRejectsIncompleteToolModules(t *testing.T) {
+	resources := t.TempDir()
+	writeBundleFixture(t, resources)
+	if err := os.Remove(filepath.Join(resources, "scripts/lib/jarvis-tools/evidence.sh")); err != nil {
+		t.Fatal(err)
+	}
+	if err := Prepare(NewLayout(Options{ResourceRoot: resources, StateRoot: t.TempDir()})); err == nil {
+		t.Fatal("accepted bundle missing evidence tools")
 	}
 }
 
@@ -208,6 +253,9 @@ func TestSupervisorStartsCCConnectAndRestartsServerAfterOnboarding(t *testing.T)
 	resourceRoot := t.TempDir()
 	stateRoot := t.TempDir()
 	writeBundleFixture(t, resourceRoot)
+	writeConnectionConfigFixture(t, filepath.Join(resourceRoot, "conf", "config.yaml"))
+	t.Setenv("JARVIS_API_BASE", "http://stale-parent:1")
+	t.Setenv("JARVIS_TIMEZONE", "stale-parent-timezone")
 	serverAddress := freeAddress(t)
 	qdrantAddress := freeAddress(t)
 	testBinary, err := os.Executable()
@@ -247,16 +295,29 @@ func TestSupervisorStartsCCConnectAndRestartsServerAfterOnboarding(t *testing.T)
 	if err := os.MkdirAll(filepath.Dir(service.layout.CCConnectConfig), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	overridePath := filepath.Join(filepath.Dir(service.layout.ConfigPath), "config.runtime.yaml")
+	if err := os.WriteFile(overridePath, []byte("server:\n  addr: 0.0.0.0:18899\ncapture:\n  timezone: Asia/Tokyo\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(service.layout.CCConnectConfig, []byte("[test]\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	waitForFile(t, ccStarted)
+	waitForFileLines(t, ccStarted, 1)
+	if got := readFile(t, ccStarted); got != "http://"+serverAddress+" Asia/Tokyo\n" {
+		t.Fatalf("first CC environment = %q", got)
+	}
+	if err := os.WriteFile(overridePath, []byte("capture:\n  timezone: UTC\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := os.WriteFile(service.layout.RestartRequestPath, []byte("test\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	waitForFileLines(t, serverStarts, 2)
 	waitForFileLines(t, ccStarted, 2)
+	if got := readFile(t, ccStarted); got != "http://"+serverAddress+" Asia/Tokyo\nhttp://"+serverAddress+" UTC\n" {
+		t.Fatalf("restarted CC environment = %q", got)
+	}
 	waitForTestHTTP(t, "http://"+serverAddress+"/healthz")
 
 	cancel()
@@ -334,7 +395,7 @@ func writeRestartableTestChild(t *testing.T, path, testBinary, address, startLog
 func writeLongRunningChild(t *testing.T, path, startedPath string) {
 	t.Helper()
 	script := fmt.Sprintf(
-		"#!/bin/sh\necho started >> %q\ntrap 'exit 0' TERM INT\nwhile true; do sleep 1; done\n",
+		"#!/bin/sh\nprintf '%%s %%s\\n' \"$JARVIS_API_BASE\" \"$JARVIS_TIMEZONE\" >> %q\ntrap 'exit 0' TERM INT\nwhile true; do sleep 1; done\n",
 		startedPath,
 	)
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
@@ -412,6 +473,34 @@ func assertAddressAvailable(t *testing.T, address string) {
 	listener.Close()
 }
 
+func writeConnectionConfigFixture(t *testing.T, path string) {
+	t.Helper()
+	const fixture = `
+identity: {display_name: Jarvis}
+server: {addr: '0.0.0.0:18800', web_root: web/dist}
+sqlite: {path: var/jarvis.db}
+factengine: {schedule: '@every 15m', bin: mock, model: mock, reasoning_effort: low, sandbox: danger-full-access, timeout_sec: 300, batch_limit: 200, max_material_chars: 100000, window_gap_minutes: 30, window_max_messages: 40}
+proactive: &agent {schedule: '@every 1h', startup_delay_seconds: 120, bin: mock, model: mock, reasoning_effort: low, sandbox: danger-full-access, timeout_seconds: 900}
+meeting_sweep: *agent
+morning_brief: *agent
+extract: {schedule: '@every 10m', engine: codex, codex_reasoning_effort: low, codex_sandbox: danger-full-access, concurrency: 2, batch_messages: 400, context_messages: 20, context_window_minutes: 120, open_todo_limit: 50, recent_task_limit: 10, max_prompt_chars: 60000, semantic_collection: todo_semantic, semantic_threshold: 0.85, semantic_neighbor_limit: 3, tool_timeout_sec: 10, history_tool_limit: 50, qdrant_host: 127.0.0.1, qdrant_grpc_port: 6334}
+lark_cli: {bin: mock, rate_limit: 5, burst: 10, concurrent: 2, timeout_sec: 60}
+capture: {page_size: 50, scan_workers: 2, hot_age_hours: 6, warm_age_hours: 168, timezone: Asia/Shanghai, discover_schedule: '@every 6h', scan_schedule: '@every 5m', p2p_activation_window_minutes: 15}
+codex: {bin: mock, model: mock, timeout_seconds: 600}
+execute: {schedule: '@every 5m', repo_root: ., runs_dir: runs, bin: mock, model: mock, reasoning_effort: low, timeout_second: 1800, stale_executing_minute: 45}
+chat: {timeout_seconds: 600, reasoning_effort: low, sandbox: danger-full-access}
+skills: {root: .agents/skills}
+dailydigest: {schedule: '0 19 * * *', timeout_seconds: 600, git_author: mock, group_message_limit: 200, group_concurrency: 2}
+scheduled_task: {schedule: '@every 1m', batch_limit: 20}
+`
+	if err := os.WriteFile(path, []byte(fixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := config.Load(path); err != nil {
+		t.Fatalf("invalid connection fixture: %v", err)
+	}
+}
+
 func writeBundleFixture(t *testing.T, root string) {
 	t.Helper()
 	files := map[string]string{
@@ -424,6 +513,11 @@ func writeBundleFixture(t *testing.T, root string) {
 		".agents/skills/a/SKILL.md": "# A\n",
 		"scripts/jarvis-tools":      "#!/bin/sh\n",
 		"web/dist/index.html":       "web-v1\n",
+	}
+	files["scripts/json-api-data.mjs"] = "export {};\n"
+	files["scripts/lib/connection.sh"] = "#!/bin/bash\n"
+	for _, module := range []string{"common", "commands", "world", "evidence", "task", "schedule", "memory", "skill", "notify"} {
+		files["scripts/lib/jarvis-tools/"+module+".sh"] = "#!/bin/bash\n"
 	}
 	for relative, content := range files {
 		path := filepath.Join(root, relative)

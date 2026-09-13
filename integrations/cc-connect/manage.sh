@@ -11,7 +11,9 @@ command -v curl >/dev/null 2>&1 || fail "curl is required but not found in PATH"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-CONFIG_PATH="conf/config.yaml"
+source "${REPO_ROOT}/scripts/lib/connection.sh"
+CONFIG_PATH="${JARVIS_CONFIG_PATH:-conf/config.yaml}"
+ADDRESS=""
 CC_CONFIG_PATH="${HOME}/.cc-connect/config.toml"
 REUSE_EXISTING_SECRET=false
 REPLACE_ALLOW_FROM=false
@@ -35,6 +37,7 @@ commands:
 
 flags:
   --config PATH
+  --addr HOST:PORT          actual server listen override; otherwise JARVIS_API_BASE or config
   --cc-config PATH
   --reuse-existing-secret   bind only; keep the current non-placeholder secret
   --replace-allow-from      bind only; explicitly replace an existing non-principal allow_from
@@ -45,10 +48,13 @@ consume_flags() {
   while (( $# > 0 )); do
     case "$1" in
       --config)
-        (( $# >= 2 )) || fail "--config requires a value"
+        (( $# >= 2 )) && [[ -n "$2" ]] || fail "--config requires a value"
         CONFIG_PATH="$2"
         shift 2
         ;;
+      --addr)
+        (( $# >= 2 )) && [[ -n "$2" ]] || fail "--addr requires a value"
+        ADDRESS="$2"; shift 2 ;;
       --cc-config)
         (( $# >= 2 )) || fail "--cc-config requires a value"
         CC_CONFIG_PATH="$2"
@@ -176,6 +182,63 @@ configured_identity() {
   fi
   rm -f "$error_file"
   printf '%s' "$output"
+}
+
+configured_connection() {
+  jarvis_connection "$REPO_ROOT" "$CONFIG_PATH" "" "$ADDRESS" true || return 1
+  jq -nc --arg api_base "$JARVIS_CONNECTION_API_BASE" --arg timezone "$JARVIS_CONNECTION_TIMEZONE" \
+    '{api_base:$api_base,timezone:$timezone}'
+}
+
+# The pinned Codex agent merges [projects.agent.options.env] into every
+# subprocess, overriding inherited values even under an independent launchd or
+# systemd daemon. Resolve config at bind time, never during an Agent invocation.
+write_cc_connection_environment() {
+  local connection="$1" config_dir temp_path api_base timezone
+  api_base="$(jq -r '.api_base' <<<"$connection")"
+  timezone="$(jq -r '.timezone' <<<"$connection")"
+  config_dir="$(cd "$(dirname "$CC_CONFIG_PATH")" && pwd)"
+  temp_path="$(mktemp "${config_dir}/.jarvis-cc-env.XXXXXX")"
+  chmod 0600 "$temp_path"
+  # Pass escaped values as input, not awk -v (which interprets backslashes).
+  if ! {
+    printf '%s\n' "$(toml_escape "$api_base")" "$(toml_escape "$timezone")"
+    cat "$CC_CONFIG_PATH"
+  } | awk '
+    NR == 1 { api_base = $0; next }
+    NR == 2 { timezone = $0; next }
+    function write_env() {
+      print "JARVIS_API_BASE = \"" api_base "\""
+      print "JARVIS_TIMEZONE = \"" timezone "\""
+    }
+    function finish() {
+      if (target && !has_env) {
+        print "\n[projects.agent.options.env]"
+        write_env()
+      }
+    }
+    /^[[:space:]]*\[\[projects\]\][[:space:]]*$/ {
+      finish(); target = 0; has_env = 0; in_env = 0; in_options = 0
+    }
+    /^[[:space:]]*name[[:space:]]*=[[:space:]]*"jarvis-codex"[[:space:]]*(#.*)?$/ { target = 1 }
+    target && /^[[:space:]]*\[projects\.agent\.options\.env\][[:space:]]*$/ {
+      if (has_env) exit 8
+      has_env = 1; in_env = 1; in_options = 0
+      print; write_env(); next
+    }
+    /^[[:space:]]*\[/ {
+      in_env = 0
+      in_options = target && ($0 ~ /^[[:space:]]*\[projects\.agent\.options\][[:space:]]*$/)
+    }
+    in_options && /^[[:space:]]*env[[:space:]]*[.=]/ { exit 8 }
+    target && in_env && /^[[:space:]]*(JARVIS_API_BASE|JARVIS_TIMEZONE)[[:space:]]*=/ { next }
+    { print }
+    END { finish() }
+  ' >"$temp_path"; then
+    rm -f "$temp_path"
+    fail "CC Agent env must use a single [projects.agent.options.env] table, not inline or dotted env settings"
+  fi
+  mv "$temp_path" "$CC_CONFIG_PATH"
 }
 
 jarvis_project_count() {
@@ -310,7 +373,7 @@ cc_bootstrap_prompt() {
 }
 
 append_fresh_project() {
-  local identity="$1" app_id="$2" relay_secret principal_open_id prompt config_dir
+  local identity="$1" app_id="$2" api_base="$3" relay_secret principal_open_id prompt config_dir
   relay_secret="$(jq -r '.relay_secret // ""' <<<"$identity")"
   [[ -n "$relay_secret" ]] || fail "Jarvis relay secret is empty; configure machine identity first"
   principal_open_id="$(jq -r '.principal_open_id // ""' <<<"$identity")"
@@ -320,8 +383,8 @@ append_fresh_project() {
   touch "$CC_CONFIG_PATH"
   chmod 0600 "$CC_CONFIG_PATH"
   prompt="$(cc_bootstrap_prompt)"
-  printf '\n[[projects]]\nname = "jarvis-codex"\ninject_sender = true\n\n[projects.display]\nmode = "quiet"\nthinking_messages = false\ntool_messages = false\n\n[projects.agent]\ntype = "codex"\n\n[projects.agent.options]\nwork_dir = "%s"\nmode = "yolo"\ncmd = "codex"\nappend_system_prompt = "%s"\n\n[[projects.platforms]]\ntype = "feishu"\n\n[projects.platforms.options]\napp_id = "%s"\napp_secret = "replace-during-bind"\nallow_from = "%s"\nthread_isolation = true\ndocument_comments = true\njarvis_approval_url = "http://127.0.0.1:18800/internal/card-approval/callback"\njarvis_approval_secret = "%s"\njarvis_approval_timeout_ms = 2500\njarvis_route_claim_url = "http://127.0.0.1:18800/internal/message-routing/claim"\njarvis_route_claim_secret = "%s"\njarvis_route_claim_timeout_ms = 2500\njarvis_event_relay_url = "http://127.0.0.1:18800/internal/meeting-sweep/wake"\njarvis_event_relay_secret = "%s"\njarvis_event_relay_types = "vc.meeting.participant_meeting_ended_v1"\n' \
-    "$(toml_escape "$REPO_ROOT")" "$(toml_escape "$prompt")" "$(toml_escape "$app_id")" "$(toml_escape "$principal_open_id")" "$(toml_escape "$relay_secret")" "$(toml_escape "$relay_secret")" "$(toml_escape "$relay_secret")" >>"$CC_CONFIG_PATH"
+  printf '\n[[projects]]\nname = "jarvis-codex"\ninject_sender = true\n\n[projects.display]\nmode = "quiet"\nthinking_messages = false\ntool_messages = false\n\n[projects.agent]\ntype = "codex"\n\n[projects.agent.options]\nwork_dir = "%s"\nmode = "yolo"\ncmd = "codex"\nappend_system_prompt = "%s"\n\n[[projects.platforms]]\ntype = "feishu"\n\n[projects.platforms.options]\napp_id = "%s"\napp_secret = "replace-during-bind"\nallow_from = "%s"\nthread_isolation = true\ndocument_comments = true\njarvis_approval_url = "%s/internal/card-approval/callback"\njarvis_approval_secret = "%s"\njarvis_approval_timeout_ms = 2500\njarvis_route_claim_url = "%s/internal/message-routing/claim"\njarvis_route_claim_secret = "%s"\njarvis_route_claim_timeout_ms = 2500\njarvis_event_relay_url = "%s/internal/meeting-sweep/wake"\njarvis_event_relay_secret = "%s"\njarvis_event_relay_types = "vc.meeting.participant_meeting_ended_v1"\n' \
+    "$(toml_escape "$REPO_ROOT")" "$(toml_escape "$prompt")" "$(toml_escape "$app_id")" "$(toml_escape "$principal_open_id")" "$(toml_escape "$api_base")" "$(toml_escape "$relay_secret")" "$(toml_escape "$api_base")" "$(toml_escape "$relay_secret")" "$(toml_escape "$api_base")" "$(toml_escape "$relay_secret")" >>"$CC_CONFIG_PATH"
 }
 
 read_app_secret() {
@@ -337,7 +400,7 @@ read_app_secret() {
 }
 
 write_cc_app_credentials() {
-  local app_id="$1" identity="$2" config_dir temp_path prompt principal_open_id relay_secret
+  local app_id="$1" identity="$2" api_base="$3" config_dir temp_path prompt principal_open_id relay_secret
   prompt="$(cc_bootstrap_prompt)"
   principal_open_id="$(jq -r '.principal_open_id // ""' <<<"$identity")"
   relay_secret="$(jq -r '.relay_secret // ""' <<<"$identity")"
@@ -356,7 +419,7 @@ write_cc_app_credentials() {
         [[ "$prompt_count" -gt 0 ]] || { printf 'append_system_prompt = "%s"\n' "$(toml_escape "$prompt")" >>"$temp_path"; ((prompt_count += 1)); }
       fi
       if [[ "$in_platform_options" == "true" ]]; then
-        [[ "$event_relay_url_count" -gt 0 ]] || { printf '%s\n' 'jarvis_event_relay_url = "http://127.0.0.1:18800/internal/meeting-sweep/wake"' >>"$temp_path"; ((event_relay_url_count += 1)); }
+        [[ "$event_relay_url_count" -gt 0 ]] || { printf 'jarvis_event_relay_url = "%s/internal/meeting-sweep/wake"\n' "$(toml_escape "$api_base")" >>"$temp_path"; ((event_relay_url_count += 1)); }
         [[ "$event_relay_secret_count" -gt 0 ]] || { printf 'jarvis_event_relay_secret = "%s"\n' "$(toml_escape "$relay_secret")" >>"$temp_path"; ((event_relay_secret_count += 1)); }
         [[ "$event_relay_types_count" -gt 0 ]] || { printf '%s\n' 'jarvis_event_relay_types = "vc.meeting.participant_meeting_ended_v1"' >>"$temp_path"; ((event_relay_types_count += 1)); }
       fi
@@ -389,7 +452,7 @@ write_cc_app_credentials() {
         in_agent_options=false
       fi
       if [[ "$in_platform_options" == "true" ]]; then
-        [[ "$event_relay_url_count" -gt 0 ]] || { printf '%s\n' 'jarvis_event_relay_url = "http://127.0.0.1:18800/internal/meeting-sweep/wake"' >>"$temp_path"; ((event_relay_url_count += 1)); }
+        [[ "$event_relay_url_count" -gt 0 ]] || { printf 'jarvis_event_relay_url = "%s/internal/meeting-sweep/wake"\n' "$(toml_escape "$api_base")" >>"$temp_path"; ((event_relay_url_count += 1)); }
         [[ "$event_relay_secret_count" -gt 0 ]] || { printf 'jarvis_event_relay_secret = "%s"\n' "$(toml_escape "$relay_secret")" >>"$temp_path"; ((event_relay_secret_count += 1)); }
         [[ "$event_relay_types_count" -gt 0 ]] || { printf '%s\n' 'jarvis_event_relay_types = "vc.meeting.participant_meeting_ended_v1"' >>"$temp_path"; ((event_relay_types_count += 1)); }
         in_platform_options=false
@@ -408,8 +471,14 @@ write_cc_app_credentials() {
       continue
     elif [[ "$target" == "true" && "$line" =~ ^[[:space:]]*allow_from[[:space:]]*= ]]; then
       continue
+    elif [[ "$in_platform_options" == "true" && "$line" =~ ^[[:space:]]*jarvis_approval_url[[:space:]]*= ]]; then
+      printf 'jarvis_approval_url = "%s/internal/card-approval/callback"\n' "$(toml_escape "$api_base")" >>"$temp_path"
+      continue
+    elif [[ "$in_platform_options" == "true" && "$line" =~ ^[[:space:]]*jarvis_route_claim_url[[:space:]]*= ]]; then
+      printf 'jarvis_route_claim_url = "%s/internal/message-routing/claim"\n' "$(toml_escape "$api_base")" >>"$temp_path"
+      continue
     elif [[ "$in_platform_options" == "true" && "$line" =~ ^[[:space:]]*jarvis_event_relay_url[[:space:]]*= ]]; then
-      printf '%s\n' 'jarvis_event_relay_url = "http://127.0.0.1:18800/internal/meeting-sweep/wake"' >>"$temp_path"
+      printf 'jarvis_event_relay_url = "%s/internal/meeting-sweep/wake"\n' "$(toml_escape "$api_base")" >>"$temp_path"
       ((event_relay_url_count += 1)); continue
     elif [[ "$in_platform_options" == "true" && "$line" =~ ^[[:space:]]*jarvis_event_relay_secret[[:space:]]*= ]]; then
       printf 'jarvis_event_relay_secret = "%s"\n' "$(toml_escape "$relay_secret")" >>"$temp_path"
@@ -435,7 +504,7 @@ write_cc_app_credentials() {
     [[ "$prompt_count" -gt 0 ]] || { printf 'append_system_prompt = "%s"\n' "$(toml_escape "$prompt")" >>"$temp_path"; ((prompt_count += 1)); }
   fi
   if [[ "$in_platform_options" == "true" ]]; then
-    [[ "$event_relay_url_count" -gt 0 ]] || { printf '%s\n' 'jarvis_event_relay_url = "http://127.0.0.1:18800/internal/meeting-sweep/wake"' >>"$temp_path"; ((event_relay_url_count += 1)); }
+    [[ "$event_relay_url_count" -gt 0 ]] || { printf 'jarvis_event_relay_url = "%s/internal/meeting-sweep/wake"\n' "$(toml_escape "$api_base")" >>"$temp_path"; ((event_relay_url_count += 1)); }
     [[ "$event_relay_secret_count" -gt 0 ]] || { printf 'jarvis_event_relay_secret = "%s"\n' "$(toml_escape "$relay_secret")" >>"$temp_path"; ((event_relay_secret_count += 1)); }
     [[ "$event_relay_types_count" -gt 0 ]] || { printf '%s\n' 'jarvis_event_relay_types = "vc.meeting.participant_meeting_ended_v1"' >>"$temp_path"; ((event_relay_types_count += 1)); }
   fi
@@ -451,7 +520,7 @@ validation_result() {
   command -v lark-cli >/dev/null 2>&1 || fail "lark-cli is required but not found in PATH"
   local default_config auth_output auth_status card_callback configured block app_id app_brand cc_app_id cc_app_secret credential_probe error_file error_output
   local relay_url cc_relay_secret route_claim_url cc_route_claim_secret agent_type platform_type work_dir agent_mode agent_cmd bootstrap_prompt
-  local allow_from principal_open_id
+  local allow_from principal_open_id connection agent_api_base agent_timezone
   local inject_sender document_comments thread_isolation relay_hash cc_relay_hash cc_route_claim_hash
   local event_relay_url event_relay_types cc_event_relay_secret cc_event_relay_hash
   default_config="$(lark_default_config)" || return 1
@@ -467,7 +536,10 @@ validation_result() {
   printf '%s' "$auth_status" | jq -e 'type == "object"' >/dev/null 2>&1 || { fail "lark-cli auth status did not return JSON"; return 1; }
   card_callback="$(card_callback_preflight)" || return 1
   configured="$(configured_identity)" || return 1
+  connection="$(configured_connection)" || return 1
   block="$(cc_jarvis_project_block)" || return 1
+  agent_api_base="$(toml_optional_section_string_value "$block" '[projects.agent.options.env]' JARVIS_API_BASE)"
+  agent_timezone="$(toml_optional_section_string_value "$block" '[projects.agent.options.env]' JARVIS_TIMEZONE)"
   app_id="$(jq -r '.appId' <<<"$default_config")"
   app_brand="$(jq -r '.brand // "feishu"' <<<"$default_config")"
   cc_app_id="$(toml_string_value "$block" app_id)" || return 1
@@ -500,6 +572,7 @@ validation_result() {
     --arg relay_url "$relay_url" --arg route_claim_url "$route_claim_url" --arg agent_type "$agent_type" --arg platform_type "$platform_type" \
     --arg event_relay_url "$event_relay_url" --arg event_relay_types "$event_relay_types" \
     --arg work_dir "$work_dir" --arg agent_mode "$agent_mode" --arg agent_cmd "$agent_cmd" \
+    --argjson connection "$connection" --arg agent_api_base "$agent_api_base" --arg agent_timezone "$agent_timezone" \
     --arg repo_root "$REPO_ROOT" --arg bootstrap_prompt "$bootstrap_prompt" \
     --arg allow_from "$allow_from" --arg principal_open_id "$principal_open_id" \
     --argjson auth "$auth_status" --argjson card_callback "$card_callback" --argjson configured "$configured" --argjson credential_probe "$credential_probe" \
@@ -525,18 +598,19 @@ validation_result() {
        ($bootstrap_prompt | contains("source_type=manual")) and
        ($bootstrap_prompt | contains("delivery_required"))) as $context_contract_ok |
       (($agent_mode == "yolo") and ($agent_cmd == "codex")) as $context_runtime_ok |
+      (($agent_api_base == $connection.api_base) and ($agent_timezone == $connection.timezone)) as $connection_ok |
       (($card_callback.ok == true) and ($card_callback.data.decision.status == "ready")) as $card_callback_ok |
       (($principal_open_id != "") and ($allow_from == $principal_open_id)) as $feishu_access_ok |
-      (($event_relay_url == "http://127.0.0.1:18800/internal/meeting-sweep/wake") and
+      (($event_relay_url == ($connection.api_base + "/internal/meeting-sweep/wake")) and
        ($event_relay_types | contains("vc.meeting.participant_meeting_ended_v1")) and
        $event_relay_secret_matches) as $meeting_event_relay_ok |
       {
         ready: ($auth_ok and $bot_ok and $identity_ok and ($app_id == $cc_app_id) and
           $cc_app_secret_configured and ($credential_probe.ok == true) and $relay_secret_matches and $route_claim_secret_matches and
-          ($relay_url == "http://127.0.0.1:18800/internal/card-approval/callback") and
-          ($route_claim_url == "http://127.0.0.1:18800/internal/message-routing/claim") and
+          ($relay_url == ($connection.api_base + "/internal/card-approval/callback")) and
+          ($route_claim_url == ($connection.api_base + "/internal/message-routing/claim")) and
           $route_ok and $inject_sender and $context_contract_ok and $context_runtime_ok and $document_comments and $thread_isolation and
-          $feishu_access_ok and $card_callback_ok and $meeting_event_relay_ok),
+          $feishu_access_ok and $card_callback_ok and $meeting_event_relay_ok and $connection_ok),
         checks: {
           lark_user_authenticated: $auth_ok,
           lark_default_bot_authenticated: $bot_ok,
@@ -546,16 +620,17 @@ validation_result() {
           cc_connect_app_credentials_valid: ($credential_probe.ok == true),
           cc_connect_app_credentials_error: $credential_probe.error,
           approval_relay_secret_matches: $relay_secret_matches,
-          approval_relay_url_is_local: ($relay_url == "http://127.0.0.1:18800/internal/card-approval/callback"),
+          approval_relay_url_is_local: ($relay_url == ($connection.api_base + "/internal/card-approval/callback")),
           route_claim_secret_matches: $route_claim_secret_matches,
-          route_claim_url_is_local: ($route_claim_url == "http://127.0.0.1:18800/internal/message-routing/claim"),
+          route_claim_url_is_local: ($route_claim_url == ($connection.api_base + "/internal/message-routing/claim")),
           meeting_event_relay_configured: $meeting_event_relay_ok,
           card_callback_app_permission_and_event_ready: $card_callback_ok,
           feishu_allow_from_is_principal_only: $feishu_access_ok,
           jarvis_project_routes_to_current_checkout: $route_ok,
           cc_connect_injects_trusted_chat_id: $inject_sender,
           agent_loads_jarvis_context_each_turn: $context_contract_ok,
-          agent_can_reach_jarvis_context: $context_runtime_ok,
+          agent_can_reach_jarvis_context: ($context_runtime_ok and $connection_ok),
+          agent_connection_matches_effective_config: $connection_ok,
           document_comments_enabled: $document_comments,
           thread_isolation_enabled: $thread_isolation
         },
@@ -565,9 +640,10 @@ validation_result() {
 }
 
 cmd_bind() {
-  local default_config configured app_id app_brand principal_open_id count block current_secret current_allow_from credential_probe result
+  local default_config configured app_id app_brand principal_open_id count block current_secret current_allow_from credential_probe result connection
   default_config="$(lark_default_config)" || exit 1
   configured="$(configured_identity)" || exit 1
+  connection="$(configured_connection)" || exit 1
   app_id="$(jq -r '.appId' <<<"$default_config")"
   app_brand="$(jq -r '.brand // "feishu"' <<<"$default_config")"
   principal_open_id="$(jq -r '.principal_open_id // ""' <<<"$configured")"
@@ -595,9 +671,10 @@ cmd_bind() {
   jq -e '.ok == true' >/dev/null <<<"$credential_probe" || \
     fail "the supplied App Secret is not valid for lark-cli App ${app_id}: $(jq -r '.error // "credential validation failed"' <<<"$credential_probe")"
   if [[ "$count" -eq 0 ]]; then
-    append_fresh_project "$configured" "$app_id"
+    append_fresh_project "$configured" "$app_id" "$(jq -r '.api_base' <<<"$connection")"
   fi
-  write_cc_app_credentials "$app_id" "$configured"
+  write_cc_app_credentials "$app_id" "$configured" "$(jq -r '.api_base' <<<"$connection")"
+  write_cc_connection_environment "$connection"
   APP_SECRET=""
   result="$(validation_result)" || exit 1
   emit "$result"

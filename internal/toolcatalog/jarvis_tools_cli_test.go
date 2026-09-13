@@ -37,13 +37,28 @@ func TestJarvisToolsResolvesRepositoryThroughSymlinkOutsideWorkingDirectory(t *t
 	if err := os.WriteFile(targetScript, sourceScript, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	configDir := filepath.Join(repoRoot, "conf")
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	addr := strings.TrimPrefix(server.URL, "http://")
-	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte("server:\n  addr: "+addr+"\n"), 0o600); err != nil {
-		t.Fatal(err)
+	for _, source := range []string{"json-api-data.mjs", "lib"} {
+		base := filepath.Join("..", "..", "scripts", source)
+		if err := filepath.WalkDir(base, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			rel, err := filepath.Rel(filepath.Join("..", "..", "scripts"), path)
+			if err != nil {
+				return err
+			}
+			target := filepath.Join(scriptsDir, rel)
+			if entry.IsDir() {
+				return os.MkdirAll(target, 0o755)
+			}
+			content, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			return os.WriteFile(target, content, 0o644)
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	linkDir := t.TempDir()
@@ -51,7 +66,7 @@ func TestJarvisToolsResolvesRepositoryThroughSymlinkOutsideWorkingDirectory(t *t
 	if err := os.Symlink(targetScript, link); err != nil {
 		t.Fatal(err)
 	}
-	command := exec.Command("bash", link, "get-principal")
+	command := exec.Command("bash", link, "get-principal", "--api-base", server.URL)
 	command.Dir = t.TempDir()
 	output, err := command.CombinedOutput()
 	if err != nil {
@@ -628,17 +643,14 @@ func TestJarvisToolsDateUsesConfiguredTimezoneAndFailsBeforeRequest(t *testing.T
 	}))
 	defer server.Close()
 
-	configPath := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(configPath, []byte("capture:\n  timezone: America/New_York\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := runJarvisTools(t, server.URL, nil, "list-tasks", "--date", "2026-03-08", "--config", configPath); err != nil {
+	env := []string{"JARVIS_TIMEZONE=America/New_York"}
+	if _, err := runJarvisTools(t, server.URL, env, "list-tasks", "--date", "2026-03-08"); err != nil {
 		t.Fatalf("valid date failed: %v", err)
 	}
 	if requests != 1 {
 		t.Fatalf("request count after valid date = %d", requests)
 	}
-	if _, err := runJarvisTools(t, server.URL, nil, "list-tasks", "--date", "2026-02-30", "--config", configPath); err == nil {
+	if _, err := runJarvisTools(t, server.URL, env, "list-tasks", "--date", "2026-02-30"); err == nil {
 		t.Fatal("invalid calendar date succeeded")
 	}
 	if requests != 1 {
@@ -714,12 +726,13 @@ func runJarvisTools(t *testing.T, apiBase string, extraEnv []string, args ...str
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := exec.Command("bash", append([]string{script}, args...)...)
-	command.Env = sanitizedEnv(command.Environ(), "JARVIS_TASK_ID", "JARVIS_AGENT_STAGE", "JARVIS_TIMEZONE")
-	command.Env = append(command.Env, extraEnv...)
+	cliArgs := []string{script}
 	if apiBase != "" {
-		command.Env = append(command.Env, "JARVIS_API_BASE="+apiBase)
+		cliArgs = append(cliArgs, "--api-base", apiBase)
 	}
+	command := exec.Command("bash", append(cliArgs, args...)...)
+	command.Env = sanitizedEnv(command.Environ(), "JARVIS_API_BASE", "JARVIS_TASK_ID", "JARVIS_AGENT_STAGE", "JARVIS_TIMEZONE", "JARVIS_CONFIG_PATH", "JARVIS_DESKTOP", "JARVIS_RESOURCE_ROOT")
+	command.Env = append(command.Env, extraEnv...)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		return string(output), fmt.Errorf("jarvis-tools %s: %w: %s", strings.Join(args, " "), err, output)

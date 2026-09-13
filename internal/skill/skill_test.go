@@ -76,6 +76,28 @@ func TestServiceReadsAndUpdatesConfiguration(t *testing.T) {
 	}
 }
 
+func TestDisabledCatalogEntryRemainsReadable(t *testing.T) {
+	for _, inline := range []bool{false, true} {
+		root, configPath := writeSkillFixture(t, inline)
+		service, err := NewService(root, configPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		enabled := false
+		if _, err := service.Update(t.Context(), "example", Input{Stages: []string{StageExtract}, IsEnabled: &enabled}); err != nil {
+			t.Fatal(err)
+		}
+		catalog, err := service.Catalog(t.Context(), StageExtract)
+		if err != nil || catalog != "" {
+			t.Fatalf("disabled catalog=%q err=%v", catalog, err)
+		}
+		content, err := service.Content(t.Context(), "example")
+		if err != nil || !strings.Contains(content.Content, "BODY_MARKER") {
+			t.Fatalf("content=%v err=%v", content, err)
+		}
+	}
+}
+
 func TestAvailabilityGateHidesSkill(t *testing.T) {
 	root, configPath := writeSkillFixture(t, false)
 	service, err := NewService(root, configPath)

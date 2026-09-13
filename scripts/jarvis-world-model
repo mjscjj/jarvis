@@ -13,7 +13,9 @@ command -v jq >/dev/null 2>&1 || fail "jq is required but not found in PATH"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+source "${SCRIPT_DIR}/lib/connection.sh"
 CONFIG_PATH="${JARVIS_CONFIG_PATH:-conf/config.yaml}"
+API_BASE_FLAG=""
 CHAT_ID=""
 
 usage() {
@@ -24,6 +26,8 @@ Project-owned helper used by $bootstrap-jarvis-world-model. The whole-project in
 run and checklist belong to jarvis-install start/status. This helper is not part
 of the normal Jarvis M3/M5 tool catalog and does not install services, maintain
 installation state, or configure CC Connect.
+
+flags: --config PATH, --api-base URL (otherwise JARVIS_API_BASE or workspace config)
 
 commands:
   preflight  Validate repository-local world-model resources
@@ -37,8 +41,11 @@ consume_flags() {
   while (( $# > 0 )); do
     case "$1" in
       --config)
-        (( $# >= 2 )) || fail "--config requires a value"
+        (( $# >= 2 )) && [[ -n "$2" ]] || fail "--config requires a value"
         CONFIG_PATH="$2"; shift 2 ;;
+      --api-base)
+        (( $# >= 2 )) && [[ -n "$2" ]] || fail "--api-base requires a value"
+        API_BASE_FLAG="$2"; shift 2 ;;
       --chat-id)
         (( $# >= 2 )) || fail "--chat-id requires a value"
         CHAT_ID="$2"; shift 2 ;;
@@ -91,29 +98,8 @@ cmd_preflight() {
 }
 
 resolve_api_base() {
-  if [[ -n "${JARVIS_API_BASE:-}" ]]; then printf '%s\n' "${JARVIS_API_BASE%/}"; return; fi
-  local resolved="$CONFIG_PATH"
-  [[ "$resolved" == /* ]] || resolved="${REPO_ROOT}/${resolved}"
-  [[ -f "$resolved" ]] || fail "config file not found: ${resolved}"
-  local server_addr host port runtime_config
-  runtime_config="$(dirname "$resolved")/config.runtime.yaml"
-  server_addr=""
-  if [[ -f "$runtime_config" ]]; then
-    server_addr="$(grep -E '^[[:space:]]*addr:[[:space:]]*' "$runtime_config" | head -n1 | sed -E 's/^[[:space:]]*addr:[[:space:]]*"?([^"#]+)"?.*/\1/' | tr -d '[:space:]')"
-  fi
-  if [[ -z "$server_addr" ]]; then
-    server_addr="$(grep -E '^[[:space:]]*addr:[[:space:]]*' "$resolved" | head -n1 | sed -E 's/^[[:space:]]*addr:[[:space:]]*"?([^"#]+)"?.*/\1/' | tr -d '[:space:]')"
-  fi
-  [[ -n "$server_addr" ]] || fail "could not parse server.addr from ${resolved}"
-  port="${server_addr##*:}"
-  [[ "$port" =~ ^[0-9]+$ ]] || fail "server.addr has invalid port: ${server_addr}"
-  host="${server_addr%:*}"
-  case "$host" in
-    ""|0.0.0.0) host="127.0.0.1" ;;
-    127.0.0.1|localhost|10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*) ;;
-    *) fail "server.addr has unsupported host for a local helper: ${server_addr}" ;;
-  esac
-  printf 'http://%s:%s\n' "$host" "$port"
+  jarvis_connection "$REPO_ROOT" "$CONFIG_PATH" "$API_BASE_FLAG" || return 1
+  printf '%s\n' "$JARVIS_CONNECTION_API_BASE"
 }
 
 api_call() {

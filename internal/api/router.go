@@ -230,7 +230,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 		h.POST("/api/setup/world-model", BootstrapOnboardingWorldModel(deps.Onboarding))
 	}
 	h.POST("/api/system/shutdown", ShutdownSystem(deps.SystemControl))
-	h.GET("/api/agent-identity", GetAgentIdentity(deps.AgentDisplayName))
+	h.GET("/api/agent-identity", GetAgentIdentity(deps.AgentDisplayName, deps.Profile))
 	h.GET("/api/messages", ListToolMessages(toolQueries))
 	h.GET("/api/messages/:message_id", GetToolMessage(toolQueries))
 	h.GET("/api/todo-events/:event_id", GetToolTodoEvent(toolQueries))

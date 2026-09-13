@@ -37,6 +37,7 @@
 
 `proposals/` 只保存尚待决策或仍有明确未实施部分的方案。提案不是当前架构真源。
 
+- [Shell 工具系统优化（代码已实现，macOS 验收待完成）](proposals/tool-system.md)
 - [长任务 Goal Control](proposals/goal-control.md)
 - [第一阶段产品方向](proposals/product-stage-1.md)
 - [插件扩展与解耦](proposals/plugin-extension.md)
@@ -62,7 +63,7 @@
 | 配置 | `conf/config.yaml`, `conf/config.runtime.yaml` |
 | 页面入口 | `web/src/App.tsx` |
 | Agent 行为 | `conf/prompts/`, `conf/rules/`, `.agents/skills/` |
-| Agent 工具 | `internal/toolcatalog/`, `scripts/jarvis-tools` |
+| Agent 工具 | `internal/toolcatalog/`, `scripts/jarvis-tools`, `scripts/lib/jarvis-tools/` |
 | 安装与发布动作 | `scripts/`, `packaging/`, `.agents/skills/install-jarvis/` |
 
 ## 维护规则

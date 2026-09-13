@@ -62,6 +62,17 @@ func validateBundle(layout Layout) error {
 		filepath.Join(layout.ResourceRoot, "web", "dist", "index.html"),
 		filepath.Join(layout.ResourceRoot, ".agents", "skills"),
 		filepath.Join(layout.ResourceRoot, "scripts", "jarvis-tools"),
+		filepath.Join(layout.ResourceRoot, "scripts", "json-api-data.mjs"),
+		filepath.Join(layout.ResourceRoot, "scripts", "lib", "connection.sh"),
+		filepath.Join(layout.ResourceRoot, "scripts", "lib", "jarvis-tools", "common.sh"),
+		filepath.Join(layout.ResourceRoot, "scripts", "lib", "jarvis-tools", "commands.sh"),
+		filepath.Join(layout.ResourceRoot, "scripts", "lib", "jarvis-tools", "world.sh"),
+		filepath.Join(layout.ResourceRoot, "scripts", "lib", "jarvis-tools", "evidence.sh"),
+		filepath.Join(layout.ResourceRoot, "scripts", "lib", "jarvis-tools", "task.sh"),
+		filepath.Join(layout.ResourceRoot, "scripts", "lib", "jarvis-tools", "schedule.sh"),
+		filepath.Join(layout.ResourceRoot, "scripts", "lib", "jarvis-tools", "memory.sh"),
+		filepath.Join(layout.ResourceRoot, "scripts", "lib", "jarvis-tools", "skill.sh"),
+		filepath.Join(layout.ResourceRoot, "scripts", "lib", "jarvis-tools", "notify.sh"),
 	} {
 		info, err := os.Stat(path)
 		if err != nil {
@@ -118,7 +129,7 @@ func syncRuntimeAssets(layout Layout) error {
 			targetHash, targetErr := fileHash(targetPath)
 			if targetErr == nil {
 				oldHash := previous.Files[relative]
-				if targetHash != oldHash && targetHash != sourceHash {
+				if !isProgramAsset(relative) && targetHash != oldHash && targetHash != sourceHash {
 					return nil
 				}
 				if targetHash == sourceHash {
@@ -137,10 +148,15 @@ func syncRuntimeAssets(layout Layout) error {
 			return fmt.Errorf("sync bundled runtime root %q: %w", root, err)
 		}
 	}
-	if err := removeObsoleteUnmodifiedAssets(layout.RuntimeRoot, previous, next); err != nil {
+	if err := removeObsoleteAssets(layout.RuntimeRoot, previous, next); err != nil {
 		return err
 	}
 	return writeJSONAtomic(manifestPath, next, 0o600)
+}
+
+func isProgramAsset(relative string) bool {
+	path := filepath.ToSlash(relative)
+	return strings.HasPrefix(path, "scripts/") || strings.HasPrefix(path, "web/dist/")
 }
 
 func shouldSkipRuntimeAsset(relative string, entry fs.DirEntry) bool {
@@ -151,7 +167,7 @@ func shouldSkipRuntimeAsset(relative string, entry fs.DirEntry) bool {
 	return filepath.ToSlash(relative) == "conf/config.runtime.yaml"
 }
 
-func removeObsoleteUnmodifiedAssets(runtimeRoot string, previous, next assetManifest) error {
+func removeObsoleteAssets(runtimeRoot string, previous, next assetManifest) error {
 	paths := make([]string, 0)
 	for relative, oldHash := range previous.Files {
 		if _, exists := next.Files[relative]; exists {
@@ -165,7 +181,7 @@ func removeObsoleteUnmodifiedAssets(runtimeRoot string, previous, next assetMani
 		if err != nil {
 			return err
 		}
-		if currentHash == oldHash {
+		if isProgramAsset(relative) || currentHash == oldHash {
 			paths = append(paths, target)
 		}
 	}

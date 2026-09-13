@@ -31,10 +31,20 @@ const maxPageSize = 100
 // mechanism: without a ceiling the agent always appends.
 const SummaryMaxChars = 8000
 
-// ListFilter is the shared pagination contract for every list endpoint.
+// ListFilter carries pagination and keyword search for list endpoints.
+// Code is project-only; Role and OpenID are person-only exact filters.
 type ListFilter struct {
 	Page     int
 	PageSize int
+	Keyword  string
+	Code     string
+	Role     string
+	OpenID   string
+}
+
+func keywordPattern(value string) string {
+	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return "%" + replacer.Replace(value) + "%"
 }
 
 func (f ListFilter) validate() error {
