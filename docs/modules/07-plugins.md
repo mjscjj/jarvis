@@ -7,9 +7,9 @@
 
 Jarvis 插件按需开启外围采集或业务能力，不拥有第二套事件判断或任务执行链路。
 
-新增插件的当前操作步骤、已知耦合和声明式扩展提案见
-[插件扩展与解耦规范](../proposals/plugin-extension.md)。其中的文件加载、通用表单和
-适配器拆分尚未实现；当前仍使用 Go 内置注册表与 `conf/skills.yaml`。
+未来不把这里扩展成动态插件平台。功能分享采用
+[Agent 可安装功能源码包](../proposals/plugin-extension.md)：源码包可以携带后端、API、页面和
+Skills，由 Agent 合并进目标 Jarvis。当前实现仍使用 Go 内置注册表与 `conf/skills.yaml`。
 
 采集插件接入外部来源：
 

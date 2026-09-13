@@ -40,7 +40,7 @@
 - [Shell 工具系统优化（代码已实现，macOS 验收待完成）](proposals/tool-system.md)
 - [长任务 Goal Control](proposals/goal-control.md)
 - [第一阶段产品方向](proposals/product-stage-1.md)
-- [插件扩展与解耦](proposals/plugin-extension.md)
+- [Agent 可安装功能源码包](proposals/plugin-extension.md)
 - [世界模型 3D 视图](proposals/world-model-3d.md)
 
 实现提案时，把稳定结论合并进对应 current 模块；原提案随即删除，必要的关键取舍提炼进 `decisions/`，不能继续作为平行真源。
