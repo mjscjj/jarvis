@@ -60,7 +60,9 @@ func formatExecutionSupplementDirective(items []ExecutionSupplement) string {
 			continue
 		}
 		source := "委托人"
-		if item.Channel == "proactive_agent" {
+		if item.Channel == "evidence:todo" {
+			source = "新 Todo 证据"
+		} else if item.Channel == "proactive_agent" {
 			source = "主动巡视"
 		} else if stage, ok := strings.CutPrefix(item.Channel, "agent:"); ok {
 			source = "Agent (" + stage + ")"

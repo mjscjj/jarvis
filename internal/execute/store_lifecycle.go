@@ -409,7 +409,11 @@ func resetTaskForRerun(db *gorm.DB, task *domain.Task, actorType string, detail 
 	}
 	update := db.Model(&domain.Task{}).
 		Where("id = ? AND version = ? AND status = ?", task.ID, task.Version, task.Status).
-		Updates(map[string]any{"status": "pending", "execution_result": nil, "version": gorm.Expr("version + 1")})
+		Updates(map[string]any{
+			"status": "pending", "execution_result": nil,
+			"execution_supplements": task.ExecutionSupplements,
+			"version":               gorm.Expr("version + 1"),
+		})
 	if update.Error != nil {
 		return nil, fmt.Errorf("reset execution Task id=%d for rerun: %w", task.ID, update.Error)
 	}

@@ -11,6 +11,7 @@ import (
 
 	"jarvis/internal/domain"
 	"jarvis/internal/semantic"
+	"jarvis/internal/worldview"
 
 	"gorm.io/gorm"
 )
@@ -109,6 +110,14 @@ func (s *PipelineStore) LoadPendingChat(ctx context.Context, chatID string, opts
 	if err != nil {
 		return nil, err
 	}
+	world, err := worldview.Read(ctx, s.db, worldview.Filter{})
+	if err != nil {
+		return nil, err
+	}
+	batch.WorldOverview, err = world.JSON()
+	if err != nil {
+		return nil, err
+	}
 	batch.Principal = principal
 	batch.OtherProjects = otherProjectsExcluding(projects, batch.Group.ProjectID)
 	return batch, nil
@@ -186,12 +195,6 @@ func validateLoadOptions(opts LoadOptions) error {
 	if opts.ContextWindow <= 0 {
 		return fmt.Errorf("extract context window must be positive")
 	}
-	if opts.OpenTodoLimit <= 0 {
-		return fmt.Errorf("extract open todo limit must be positive")
-	}
-	if opts.RecentTaskLimit <= 0 {
-		return fmt.Errorf("extract recent task limit must be positive")
-	}
 	return nil
 }
 
@@ -241,7 +244,7 @@ func (s *PipelineStore) buildChatBatch(ctx context.Context, group *domain.Group,
 	keys := make([]string, 0)
 	for _, message := range newMessages {
 		if !message.Extractable {
-			continue
+			message.IsNew = false
 		}
 		key := conversationKey(message)
 		if _, isRoot := topicRoots[message.MessageID]; isRoot {
@@ -252,6 +255,20 @@ func (s *PipelineStore) buildChatBatch(ctx context.Context, group *domain.Group,
 		}
 		grouped[key] = append(grouped[key], message)
 	}
+	activeKeys := keys[:0]
+	for _, key := range keys {
+		hasTrigger := false
+		for _, m := range grouped[key] {
+			if m.IsNew {
+				hasTrigger = true
+				break
+			}
+		}
+		if hasTrigger {
+			activeKeys = append(activeKeys, key)
+		}
+	}
+	keys = activeKeys
 	sort.Slice(keys, func(i, j int) bool {
 		first, second := grouped[keys[i]][0], grouped[keys[j]][0]
 		if first.CreateTime == second.CreateTime {
@@ -260,18 +277,21 @@ func (s *PipelineStore) buildChatBatch(ctx context.Context, group *domain.Group,
 		return first.CreateTime < second.CreateTime
 	})
 
-	openTodos, err := s.loadOpenTodos(ctx, group.ID, opts.OpenTodoLimit)
-	if err != nil {
-		return nil, err
-	}
 	groupContext := GroupContext{
+		ChatMode: group.ChatMode, P2PTargetType: stringValue(group.P2PTargetType),
 		ID: group.ID, ChatID: group.ChatID, Name: stringValue(group.Name),
 		Description: stringValue(group.Description), Summary: stringValue(group.Summary),
 		IsKeyGroup: group.IsKeyGroup, ProjectID: copyUint64(group.ProjectID),
 	}
-	recentTasks, err := s.loadRecentTasks(ctx, groupContext, opts.RecentTaskLimit)
-	if err != nil {
-		return nil, err
+	if group.ChatMode == "p2p" {
+		var peers []domain.Person
+		if err := s.db.WithContext(ctx).Where("p2p_chat_id = ?", group.ChatID).Find(&peers).Error; err != nil {
+			return nil, err
+		}
+		if len(peers) == 1 {
+			groupContext.PeerOpenID = peers[0].OpenID
+			groupContext.PeerName = peers[0].Name
+		}
 	}
 	units := make([]ConversationUnit, 0, len(keys))
 	for _, key := range keys {
@@ -281,6 +301,10 @@ func (s *PipelineStore) buildChatBatch(ctx context.Context, group *domain.Group,
 			return nil, err
 		}
 		messages := append(contextMessages, current...)
+		messages, missing, err := s.includeAnchors(ctx, group.ChatID, messages)
+		if err != nil {
+			return nil, err
+		}
 		participants, err := s.enrichParticipants(ctx, messages)
 		if err != nil {
 			return nil, err
@@ -290,14 +314,12 @@ func (s *PipelineStore) buildChatBatch(ctx context.Context, group *domain.Group,
 			return nil, err
 		}
 		units = append(units, ConversationUnit{
-			Key: key, Messages: messages, Participants: participants, Resources: resources,
+			Key: key, Messages: messages, Participants: participants, Resources: resources, MissingAnchors: missing,
 		})
 	}
 
 	batch := &ChatBatch{
 		Group:           groupContext,
-		OpenTodos:       openTodos,
-		RecentTasks:     recentTasks,
 		Units:           units,
 		LastNew:         newMessages[len(newMessages)-1],
 		NewMessageCount: len(newMessages),
@@ -338,8 +360,7 @@ func (s *PipelineStore) loadContextMessages(ctx context.Context, chatID, key str
 		return nil, nil
 	}
 	query := s.db.WithContext(ctx).Where("chat_id = ?", chatID).
-		Where("create_time < ? OR (create_time = ? AND id < ?)", first.CreateTime, first.CreateTime, first.DatabaseID).
-		Where("render_ok = ?", true)
+		Where("create_time < ? OR (create_time = ? AND id < ?)", first.CreateTime, first.CreateTime, first.DatabaseID)
 	if key == "chat" {
 		// 主线消息只有时间邻近性可依赖：同一个群里几小时前的对话通常已是另一件事。
 		query = query.Where("create_time >= ?", first.CreateTime-opts.ContextWindow.Milliseconds()).
@@ -439,73 +460,13 @@ func (s *PipelineStore) loadResources(ctx context.Context, groupID uint64, messa
 	return resources, nil
 }
 
-func (s *PipelineStore) loadOpenTodos(ctx context.Context, groupID uint64, limit int) ([]OpenTodoContext, error) {
-	var rows []domain.Todo
-	if err := s.db.WithContext(ctx).
-		Where("group_id = ? AND status IN ?", groupID, []string{"extracted", "observing"}).
-		Order("last_evidence_at DESC, id DESC").Limit(limit).Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("load open todos group_id=%d: %w", groupID, err)
-	}
-	result := make([]OpenTodoContext, len(rows))
-	for i := range rows {
-		result[i] = OpenTodoContext{ID: rows[i].ID, ActionType: rows[i].ActionType, Title: rows[i].Title, Status: rows[i].Status}
-	}
-	return result, nil
-}
-
-// loadRecentTasks returns tasks that recently progressed and belong to this
-// conversation via their source todo (same group or same project). Tasks without
-// a todo (scheduled/manual) are excluded on purpose.
-func (s *PipelineStore) loadRecentTasks(ctx context.Context, group GroupContext, limit int) ([]RecentTaskContext, error) {
-	if limit <= 0 {
-		return nil, fmt.Errorf("recent task limit must be positive")
-	}
-	query := s.db.WithContext(ctx).Table("task AS t").
-		Joins("JOIN todo AS td ON td.id = t.todo_id").
-		Where("t.todo_id IS NOT NULL")
-	switch {
-	case group.ProjectID != nil:
-		query = query.Where("td.group_id = ? OR td.project_id = ?", group.ID, *group.ProjectID)
-	default:
-		query = query.Where("td.group_id = ?", group.ID)
-	}
-	type row struct {
-		ID             uint64
-		Title          string
-		ActionType     string
-		Status         string
-		Summary        *string
-		LastProgressAt *time.Time
-	}
-	var rows []row
-	if err := query.Select("t.id, t.title, t.action_type, t.status, t.summary, t.last_progress_at").
-		Order("COALESCE(t.last_progress_at, t.created_at) DESC, t.id DESC").
-		Limit(limit).Scan(&rows).Error; err != nil {
-		return nil, fmt.Errorf("load recent tasks group_id=%d: %w", group.ID, err)
-	}
-	result := make([]RecentTaskContext, len(rows))
-	for i := range rows {
-		item := RecentTaskContext{
-			ID: rows[i].ID, Title: rows[i].Title, ActionType: rows[i].ActionType, Status: rows[i].Status,
-		}
-		if rows[i].Summary != nil {
-			item.Summary = *rows[i].Summary
-		}
-		if rows[i].LastProgressAt != nil {
-			item.LastProgressAt = rows[i].LastProgressAt.UTC().Format(time.RFC3339)
-		}
-		result[i] = item
-	}
-	return result, nil
-}
-
 func messageContext(message *domain.Message, isNew bool) MessageContext {
 	return MessageContext{
 		DatabaseID: message.ID, MessageID: message.MessageID, ChatID: message.ChatID, ChatMode: message.ChatMode,
 		SenderOpenID: message.SenderOpenID, SenderName: message.SenderName, SenderType: message.SenderType,
 		Source: message.Source, MessageType: message.MessageType, Content: message.Content,
 		SourceURL: stringValue(message.SourceURL), Mentions: append(json.RawMessage(nil), message.MentionsJSON...),
-		RootID: stringValue(message.RootID), ThreadID: stringValue(message.ThreadID),
+		ReplyTo: stringValue(message.ReplyTo), RootID: stringValue(message.RootID), ThreadID: stringValue(message.ThreadID),
 		CreateTime: message.CreateTime, IsNew: isNew, Extractable: extractableMessage(message),
 	}
 }
@@ -563,4 +524,51 @@ func copyUint64(value *uint64) *uint64 {
 	}
 	copy := *value
 	return &copy
+}
+
+// includeAnchors follows explicit message edges; it makes no relevance judgment.
+func (s *PipelineStore) includeAnchors(ctx context.Context, chatID string, rows []MessageContext) ([]MessageContext, []string, error) {
+	byID := map[string]int{}
+	for i, row := range rows {
+		byID[row.MessageID] = i
+	}
+	pending := []string{}
+	for _, row := range rows {
+		if row.IsNew {
+			pending = append(pending, row.RootID, row.ReplyTo)
+		}
+	}
+	visited := map[string]bool{}
+	missing := []string{}
+	for len(pending) > 0 {
+		id := pending[0]
+		pending = pending[1:]
+		if id == "" || visited[id] {
+			continue
+		}
+		visited[id] = true
+		index, ok := byID[id]
+		if !ok {
+			var found []domain.Message
+			if err := s.db.WithContext(ctx).Where("chat_id = ? AND message_id = ?", chatID, id).Find(&found).Error; err != nil {
+				return nil, nil, err
+			}
+			if len(found) == 0 {
+				missing = append(missing, id)
+				continue
+			}
+			rows = append(rows, messageContext(&found[0], false))
+			index = len(rows) - 1
+			byID[id] = index
+		}
+		rows[index].IsAnchor = true
+		pending = append(pending, rows[index].RootID, rows[index].ReplyTo)
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].CreateTime == rows[j].CreateTime {
+			return rows[i].DatabaseID < rows[j].DatabaseID
+		}
+		return rows[i].CreateTime < rows[j].CreateTime
+	})
+	return rows, missing, nil
 }

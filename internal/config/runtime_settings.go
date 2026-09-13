@@ -38,8 +38,6 @@ type RuntimeSettings struct {
 	ExtractReasoningEffort       string  `json:"extract_reasoning_effort"`
 	ExtractContextMessages       int     `json:"extract_context_messages"`
 	ExtractContextWindowMinutes  int     `json:"extract_context_window_minutes"`
-	ExtractOpenTodoLimit         int     `json:"extract_open_todo_limit"`
-	ExtractRecentTaskLimit       int     `json:"extract_recent_task_limit"`
 	ExtractMaxPromptChars        int     `json:"extract_max_prompt_chars"`
 	ExtractSemanticThreshold     float64 `json:"extract_semantic_threshold"`
 	ExtractSemanticNeighborLimit int     `json:"extract_semantic_neighbor_limit"`
@@ -282,8 +280,6 @@ func runtimeSettingsFromConfig(cfg *Config) RuntimeSettings {
 		ExtractReasoningEffort:       cfg.Extract.CodexReasoningEffort,
 		ExtractContextMessages:       cfg.Extract.ContextMessages,
 		ExtractContextWindowMinutes:  cfg.Extract.ContextWindowMinutes,
-		ExtractOpenTodoLimit:         cfg.Extract.OpenTodoLimit,
-		ExtractRecentTaskLimit:       cfg.Extract.RecentTaskLimit,
 		ExtractMaxPromptChars:        cfg.Extract.MaxPromptChars,
 		ExtractSemanticThreshold:     cfg.Extract.SemanticThreshold,
 		ExtractSemanticNeighborLimit: cfg.Extract.SemanticNeighborLimit,
@@ -357,8 +353,6 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 	cfg.Extract.CodexReasoningEffort = strings.TrimSpace(input.ExtractReasoningEffort)
 	cfg.Extract.ContextMessages = input.ExtractContextMessages
 	cfg.Extract.ContextWindowMinutes = input.ExtractContextWindowMinutes
-	cfg.Extract.OpenTodoLimit = input.ExtractOpenTodoLimit
-	cfg.Extract.RecentTaskLimit = input.ExtractRecentTaskLimit
 	cfg.Extract.MaxPromptChars = input.ExtractMaxPromptChars
 	cfg.Extract.SemanticThreshold = input.ExtractSemanticThreshold
 	cfg.Extract.SemanticNeighborLimit = input.ExtractSemanticNeighborLimit
@@ -432,8 +426,6 @@ type runtimeOverride struct {
 		ReasoningEffort       string  `yaml:"codex_reasoning_effort"`
 		ContextMessages       int     `yaml:"context_messages"`
 		ContextWindowMinutes  int     `yaml:"context_window_minutes"`
-		OpenTodoLimit         int     `yaml:"open_todo_limit"`
-		RecentTaskLimit       int     `yaml:"recent_task_limit"`
 		MaxPromptChars        int     `yaml:"max_prompt_chars"`
 		SemanticThreshold     float64 `yaml:"semantic_threshold"`
 		SemanticNeighborLimit int     `yaml:"semantic_neighbor_limit"`
@@ -536,8 +528,6 @@ func runtimeOverrideFromSettings(input RuntimeSettings) runtimeOverride {
 	override.Extract.ReasoningEffort = strings.TrimSpace(input.ExtractReasoningEffort)
 	override.Extract.ContextMessages = input.ExtractContextMessages
 	override.Extract.ContextWindowMinutes = input.ExtractContextWindowMinutes
-	override.Extract.OpenTodoLimit = input.ExtractOpenTodoLimit
-	override.Extract.RecentTaskLimit = input.ExtractRecentTaskLimit
 	override.Extract.MaxPromptChars = input.ExtractMaxPromptChars
 	override.Extract.SemanticThreshold = input.ExtractSemanticThreshold
 	override.Extract.SemanticNeighborLimit = input.ExtractSemanticNeighborLimit

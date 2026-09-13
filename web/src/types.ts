@@ -1109,8 +1109,6 @@ export interface RuntimeSettings {
   extract_reasoning_effort: ReasoningEffort
   extract_context_messages: number
   extract_context_window_minutes: number
-  extract_open_todo_limit: number
-  extract_recent_task_limit: number
   extract_max_prompt_chars: number
   extract_semantic_threshold: number
   extract_semantic_neighbor_limit: number

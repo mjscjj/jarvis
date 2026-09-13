@@ -155,14 +155,10 @@ type ExtractConfig struct {
 	BatchMessages         int     `yaml:"batch_messages"`
 	ContextMessages       int     `yaml:"context_messages"`
 	ContextWindowMinutes  int     `yaml:"context_window_minutes"`
-	OpenTodoLimit         int     `yaml:"open_todo_limit"`
 	MaxPromptChars        int     `yaml:"max_prompt_chars"`
 	SemanticCollection    string  `yaml:"semantic_collection"`
 	SemanticThreshold     float64 `yaml:"semantic_threshold"`
 	SemanticNeighborLimit int     `yaml:"semantic_neighbor_limit"`
-
-	// RecentTaskLimit caps how many recently progressed tasks are injected.
-	RecentTaskLimit int `yaml:"recent_task_limit"`
 
 	// QdrantHost/QdrantGRPCPort locate the vector store backing SemanticCollection.
 	QdrantHost     string `yaml:"qdrant_host"`
@@ -413,12 +409,6 @@ func (c *Config) validate() error {
 	}
 	if c.Extract.ContextWindowMinutes <= 0 {
 		return fmt.Errorf("extract.context_window_minutes 必须大于 0")
-	}
-	if c.Extract.OpenTodoLimit <= 0 {
-		return fmt.Errorf("extract.open_todo_limit 必须大于 0")
-	}
-	if c.Extract.RecentTaskLimit <= 0 {
-		return fmt.Errorf("extract.recent_task_limit 必须大于 0")
 	}
 	if c.Extract.MaxPromptChars <= 0 {
 		return fmt.Errorf("extract.max_prompt_chars 必须大于 0")

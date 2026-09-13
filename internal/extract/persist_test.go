@@ -38,7 +38,6 @@ func TestPrepareResultsBindsLeaderEvidence(t *testing.T) {
 				ExtractedText: "鉴权改造方案",
 			}},
 		}},
-		OpenTodos: []OpenTodoContext{{ID: 8, ActionType: "code_change", Title: "旧鉴权任务", Status: "need_info"}},
 		OtherProjects: []OtherProjectContext{{
 			ID: 9, Code: "runtime", Name: "Agent Runtime", Role: "participant",
 			Status: "active", Priority: 2,
@@ -71,14 +70,14 @@ func TestPrepareResultsBindsLeaderEvidence(t *testing.T) {
 	if snapshot.Assigner == nil || snapshot.Assigner.OpenID != "ou_leader" || snapshot.Assigner.Title == nil || *snapshot.Assigner.Title != "负责人" {
 		t.Fatalf("snapshot assigner = %#v", snapshot.Assigner)
 	}
-	if snapshot.Assigner.Summary == nil || *snapshot.Assigner.Summary != "直属领导，常用简短交办" {
-		t.Fatalf("snapshot assigner.summary = %#v", snapshot.Assigner.Summary)
+	if snapshot.Assigner.Summary != nil {
+		t.Fatalf("snapshot froze assigner world summary = %#v", snapshot.Assigner.Summary)
 	}
-	if len(snapshot.Participants) != 1 || len(snapshot.Resources) != 1 || len(snapshot.OtherProjects) != 1 {
-		t.Fatalf("snapshot did not freeze full M3 context: %#v", snapshot)
+	if len(snapshot.Participants) != 1 || len(snapshot.Resources) != 1 || len(snapshot.OtherProjects) != 0 {
+		t.Fatalf("snapshot scene boundaries = %#v", snapshot)
 	}
-	// batch.OpenTodos feeds the M3 dedup prompt but must not be frozen: M5 reads
-	// live Todos and Tasks at execution time instead.
+	// Current work indexes come from the live world overview and must not be
+	// frozen into the source scene.
 	if strings.Contains(string(prepared[0].Content), "旧鉴权任务") {
 		t.Fatalf("snapshot froze open todos:\n%s", prepared[0].Content)
 	}

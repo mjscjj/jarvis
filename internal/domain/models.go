@@ -181,8 +181,8 @@ type Task struct {
 	// resuming into waiting does not look alive. This is what makes stalled work
 	// findable in one query, which UpdatedAt cannot do (any column write bumps it).
 	LastProgressAt *time.Time `gorm:"column:last_progress_at;index:idx_task_last_progress"`
-	// ExecutionSupplements are M5-only human clarifications/instructions, append-only
-	// and isolated from Todo.content.
+	// ExecutionSupplements are M5-only human clarifications/instructions and
+	// append-only evidence notices, isolated from the initially frozen source.
 	ExecutionSupplements datatypes.JSON `gorm:"column:execution_supplements"`
 	ProjectID            *uint64        `gorm:"column:project_id;index:idx_task_project"`
 	// RepoPath is an explicitly selected execution working copy. When absent,

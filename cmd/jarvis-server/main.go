@@ -275,7 +275,7 @@ func main() {
 	if err != nil {
 		fatalf("initialize common context snapshot assembler failed: %v", err)
 	}
-	taskFactory, err := taskcreate.NewFactory(db, contextAssembler)
+	taskFactory, err := taskcreate.NewFactory(db)
 	if err != nil {
 		fatalf("initialize Task factory failed: %v", err)
 	}
@@ -576,15 +576,15 @@ func main() {
 			extractionModelName = cfg.Codex.Model
 			agentToolCatalog = true
 		}
-		extractWorker, err = extract.NewWorker(pipelineStore, extractionEngine, progressService, deduplicator, toolBoxBuilder, extract.WorkerOptions{
+		extractWorker, err = extract.NewWorker(pipelineStore, extractionEngine, deduplicator, toolBoxBuilder, extract.WorkerOptions{
 			Load: extract.LoadOptions{
 				BatchMessages: cfg.Extract.BatchMessages, ContextMessages: cfg.Extract.ContextMessages,
 				ContextWindow: time.Duration(cfg.Extract.ContextWindowMinutes) * time.Minute,
-				OpenTodoLimit: cfg.Extract.OpenTodoLimit, RecentTaskLimit: cfg.Extract.RecentTaskLimit,
 			},
 			PrincipalOpenID: cfg.Extract.PrincipalOpenID, ModelName: extractionModelName,
 			MaxPromptChars: cfg.Extract.MaxPromptChars, Location: location,
 			EvidenceRetryMax: cfg.Extract.EvidenceRetryMax,
+			RunsDir:          cfg.Execute.RunsDir,
 			AgentToolCatalog: agentToolCatalog,
 			WorkRules:        runtimeWorkRules,
 			Skills:           runtimeSkills,

@@ -72,3 +72,5 @@ register_command set-todo-status task 'Park a clue, or hand it back for executio
 register_command yield-until schedule 'Pause the current task until a future time' cmd_yield_until
 register_command delete-scheduled-task schedule 'Delete a standalone time trigger' cmd_delete_scheduled_task
 register_command get-agent-identity world 'Read runtime display name and principal open_id' cmd_get_agent_identity
+
+register_command get-world-overview world 'Read compact live world directory' cmd_get_world_overview

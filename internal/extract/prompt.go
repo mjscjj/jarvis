@@ -1,6 +1,7 @@
 package extract
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -58,7 +59,7 @@ project_hint、source_message_ids、source_quote、payload、annotation。projec
 结构化输出还包含可选来源锚点 trigger_message_id：无法确定时填 null，不需要为补齐它扩大调查。
 
 annotation 是宽松 JSON 对象编码成的字符串（注意转义双引号），无补充时写 "{}"。
-可用 brief 简述线索和不确定性，scene 用几句话解释当时现场，background 说明进一步理解所需背景；均可用自然语言，也可增加字段。不必填满，不为写说明扩大调查。
+annotation 只记录有出处的关联（如 delegation_id），没有关联就使用 {}。准入理由、不确定性和你的解释写在 payload 留作 M3 审计，不生成执行简报或现场改写。
 trigger_message_id 仅用于“消息原文”的单一跳转入口。已有证据足以确定时，从 source_message_ids 中选一条触发事项、方便回到现场的消息；不确定可留空，不影响准入。来源入口与证据摘录各自表达，不要求 source_quote 来自这个入口；其它证据继续保留。
 source_message_ids 是唯一的直接证据列表，要包含交办原文以及“这个/上述”指代的链接或事件所在消息。消息正文与背景由程序冻结，你只写说明和已有消息 ID。
 
@@ -76,7 +77,7 @@ source_message_ids 是唯一的直接证据列表，要包含交办原文以及�
       "trigger_message_id": "om_x1",
       "source_quote": "今天线上又出现 502 了，麻烦帮忙看一下",
       "payload": "张伟在群里直接点名让我排查，目前只知道偶发、未定位到具体服务，也没有人认领。属于需要我介入的未闭环问题。已核验：近期没有相同 Todo。不确定：是否与昨天的发布相关。",
-      "annotation": "{\"brief\":\"排查线上偶发 502，尚未定位服务。\",\"scene\":\"张伟在当前讨论中请求协助，还没有认领者。\"}"
+      "annotation": "{}"
     },
     {
       "action_type": "other",
@@ -88,7 +89,7 @@ source_message_ids 是唯一的直接证据列表，要包含交办原文以及�
       "trigger_message_id": null,
       "source_quote": "数据集这周五冻结，之后不再接收新样本",
       "payload": "李娜宣布的时间约束，由她本人负责推进，当前不需要我做什么，但会影响我后续提交样本的节奏，值得记住。",
-      "annotation": "{\"brief\":\"本周五冻结数据集，目前无需行动。\"}"
+      "annotation": "{}"
     }
   ]
 }
@@ -96,7 +97,7 @@ source_message_ids 是唯一的直接证据列表，要包含交办原文以及�
 再说一次：**只输出这个 JSON 对象本身，前后不要有任何其它字符。**
 `
 
-func BuildPrompt(batch ChatBatch, unit ConversationUnit, counts []FactCount, now time.Time, opts PromptOptions) (Prompt, error) {
+func BuildPrompt(batch ChatBatch, unit ConversationUnit, now time.Time, opts PromptOptions) (Prompt, error) {
 	if strings.TrimSpace(opts.PrincipalOpenID) == "" {
 		return Prompt{}, fmt.Errorf("extract principal open_id is empty")
 	}
@@ -127,20 +128,78 @@ func BuildPrompt(batch ChatBatch, unit ConversationUnit, counts []FactCount, now
 		system += "\n\n" + block
 	}
 	for {
-		user := renderUserPrompt(batch, trimmed, counts, now.In(opts.Location), opts.Location) + outputContract
+		shown, omitted := promptMessageCoverage(unit.Messages, trimmed.Messages)
+		trimmed.Coverage = mergePromptCoverage(unit.Coverage, unit, shown, omitted)
+		user := renderUserPrompt(batch, trimmed, now.In(opts.Location), opts.Location) + outputContract
 		chars := utf8.RuneCountInString(system) + utf8.RuneCountInString(user)
 		if chars <= opts.MaxChars {
-			return Prompt{System: system, User: user}, nil
+			shown := []string{}
+			omitted := []string{}
+			selected := map[string]bool{}
+			for _, m := range trimmed.Messages {
+				if !m.BodyOmitted {
+					shown = append(shown, m.MessageID)
+					selected[m.MessageID] = true
+				}
+			}
+			for _, m := range unit.Messages {
+				if !selected[m.MessageID] {
+					omitted = append(omitted, m.MessageID)
+				}
+			}
+			return Prompt{System: system, User: user, ShownMessageIDs: shown, OmittedMessageIDs: omitted}, nil
+		}
+		if countUnitNewMessages(trimmed.Messages) > 1 {
+			return Prompt{}, ErrPromptTooLarge
 		}
 		index := firstContextIndex(trimmed.Messages)
 		if index < 0 {
-			if opts.AllowSingleNewOverLimit && countUnitNewMessages(trimmed.Messages) == 1 {
-				return Prompt{System: system, User: user}, nil
+			changed := false
+			for i := range trimmed.Messages {
+				if !trimmed.Messages[i].BodyOmitted {
+					trimmed.Messages[i].BodyOmitted = true
+					changed = true
+					break
+				}
+			}
+			if changed {
+				continue
 			}
 			return Prompt{}, fmt.Errorf("%w: unit=%s chars=%d exceeds max_chars=%d after removing all context messages", ErrPromptTooLarge, unit.Key, chars, opts.MaxChars)
 		}
 		trimmed.Messages = append(trimmed.Messages[:index], trimmed.Messages[index+1:]...)
 	}
+}
+
+func promptMessageCoverage(original, displayed []MessageContext) ([]string, []string) {
+	shown := []string{}
+	selected := map[string]bool{}
+	for _, message := range displayed {
+		if !message.BodyOmitted {
+			shown = append(shown, message.MessageID)
+			selected[message.MessageID] = true
+		}
+	}
+	omitted := []string{}
+	for _, message := range original {
+		if !selected[message.MessageID] {
+			omitted = append(omitted, message.MessageID)
+		}
+	}
+	return shown, omitted
+}
+
+func mergePromptCoverage(base json.RawMessage, unit ConversationUnit, shown, omitted []string) json.RawMessage {
+	coverage := map[string]any{}
+	if len(base) > 0 {
+		_ = json.Unmarshal(base, &coverage)
+	}
+	coverage["loaded_count"] = len(unit.Messages)
+	coverage["shown_message_ids"] = shown
+	coverage["omitted_message_ids"] = omitted
+	coverage["missing_anchors"] = unit.MissingAnchors
+	raw, _ := json.Marshal(coverage)
+	return raw
 }
 
 func countUnitNewMessages(messages []MessageContext) int {
@@ -153,20 +212,17 @@ func countUnitNewMessages(messages []MessageContext) int {
 	return count
 }
 
-func renderUserPrompt(batch ChatBatch, unit ConversationUnit, counts []FactCount, now time.Time, location *time.Location) string {
+func renderUserPrompt(batch ChatBatch, unit ConversationUnit, now time.Time, location *time.Location) string {
 	sections := []string{
 		"# 当前时间\n" + now.Format(time.RFC3339) + "（时区 " + location.String() + "）",
-		"# 我的背景(principal)\n" + renderPrincipal(batch.Principal),
-		"# 当前会话所属项目（详细）\n" + renderProject(batch.Project),
-		"# 我的其他项目（精简，仅作归属参考）\n" + renderOtherProjects(batch.OtherProjects),
-		"# 来源会话（Group）\n" + renderGroup(batch.Group),
-		"# 参与者\n" + renderParticipants(unit.Participants),
-		"# 相关资源\n" + renderResources(unit.Resources),
-		"# 世界事实（明细未展开）\n" + renderFactCounts(counts),
-		"# 最近有进展的任务（仅作背景）\n" + renderRecentTasks(batch.RecentTasks),
-		"# 已存在的未闭环 Todo（仅作背景）\n" + renderOpenTodos(batch.OpenTodos),
+		"# 来源会话\n" + renderGroup(batch.Group),
+		"# 参与者身份\n" + renderParticipants(unit.Participants),
+		"# 相关资源入口\n" + renderResources(unit.Resources),
 		"# 会话记录\n" + renderConversation(unit.Messages, location),
+		"# 覆盖范围\n" + string(unit.Coverage) + fmt.Sprintf("\nmissing_anchors=%q；范围外历史未展开，可按消息 ID 或时间查询。", unit.MissingAnchors),
+		"# 当前世界目录（实时、有限）\n" + string(batch.WorldOverview),
 	}
+
 	return strings.Join(sections, "\n\n")
 }
 
@@ -215,14 +271,7 @@ func renderProject(project *ProjectContext) string {
 }
 
 func renderGroup(group GroupContext) string {
-	line := fmt.Sprintf("chat_id=%s name=%q is_key_group=%t project_id=%s", group.ChatID, group.Name, group.IsKeyGroup, uint64PointerText(group.ProjectID))
-	if strings.TrimSpace(group.Description) != "" {
-		line += "\n群公告：" + group.Description
-	}
-	if summary := strings.TrimSpace(group.Summary); summary != "" {
-		line += "\n" + summary
-	}
-	return line
+	return fmt.Sprintf("chat_id=%s name=%q chat_mode=%q p2p_target_type=%q peer_open_id=%q peer_name=%q project_id=%s（群配置关联，待核对本次事项归属）", group.ChatID, group.Name, group.ChatMode, group.P2PTargetType, group.PeerOpenID, group.PeerName, uint64PointerText(group.ProjectID))
 }
 
 func renderParticipants(participants []ParticipantContext) string {
@@ -235,9 +284,6 @@ func renderParticipants(participants []ParticipantContext) string {
 		if participant.Title != "" {
 			line += fmt.Sprintf(" title=%q", participant.Title)
 		}
-		if summary := strings.TrimSpace(participant.Summary); summary != "" {
-			line += "\n" + summary
-		}
 		lines[i] = line
 	}
 	return strings.Join(lines, "\n")
@@ -249,55 +295,8 @@ func renderResources(resources []ResourceContext) string {
 	}
 	lines := make([]string, len(resources))
 	for i, resource := range resources {
-		lines[i] = fmt.Sprintf("id=%d type=%s file_key=%q minute_token=%q doc_token=%q url=%q name=%q extracted_text=%q",
-			resource.ID, resource.ResourceType, resource.FileKey, resource.MinuteToken, resource.DocToken, resource.URL, resource.Name, resource.ExtractedText)
-	}
-	return strings.Join(lines, "\n")
-}
-
-func renderFactCounts(counts []FactCount) string {
-	if len(counts) == 0 {
-		return "(none)"
-	}
-	lines := make([]string, 0, len(counts))
-	for _, count := range counts {
-		label := strings.TrimSpace(count.Label)
-		if label == "" {
-			label = fmt.Sprintf("%s:%d", count.SubjectType, count.SubjectID)
-		}
-		lines = append(lines, fmt.Sprintf("%s:%d「%s」今日 %d 条、近 7 天 %d 条 —— 需要细节先用 list-facts 查证据索引，再沿 source 指针读原始材料。",
-			count.SubjectType, count.SubjectID, label, count.Today, count.Last7Days))
-	}
-	return strings.Join(lines, "\n")
-}
-
-func renderRecentTasks(tasks []RecentTaskContext) string {
-	if len(tasks) == 0 {
-		return "(none)"
-	}
-	lines := make([]string, len(tasks))
-	for i, task := range tasks {
-		summary := task.Summary
-		if summary == "" {
-			summary = "(no summary)"
-		}
-		progressAt := task.LastProgressAt
-		if progressAt == "" {
-			progressAt = "(unknown)"
-		}
-		lines[i] = fmt.Sprintf("task_id=%d action_type=%s title=%q status=%s summary=%q last_progress_at=%s",
-			task.ID, task.ActionType, task.Title, task.Status, summary, progressAt)
-	}
-	return strings.Join(lines, "\n")
-}
-
-func renderOpenTodos(todos []OpenTodoContext) string {
-	if len(todos) == 0 {
-		return "(none)"
-	}
-	lines := make([]string, len(todos))
-	for i, todo := range todos {
-		lines[i] = fmt.Sprintf("todo_id=%d action_type=%s title=%q status=%s", todo.ID, todo.ActionType, todo.Title, todo.Status)
+		lines[i] = fmt.Sprintf("id=%d type=%s file_key=%q minute_token=%q doc_token=%q url=%q name=%q read=get-captured-resource --id %d",
+			resource.ID, resource.ResourceType, resource.FileKey, resource.MinuteToken, resource.DocToken, resource.URL, resource.Name, resource.ID)
 	}
 	return strings.Join(lines, "\n")
 }
@@ -309,23 +308,26 @@ func renderConversation(messages []MessageContext, location *time.Location) stri
 		if message.IsNew {
 			kind = "new"
 		}
-		content := strings.ReplaceAll(strings.TrimSpace(message.Content), "\r\n", "\n")
+		content := message.Content
+		if message.BodyOmitted {
+			content = fmt.Sprintf("[原文未展开，%d 字符；query-messages --message-ids %s 取得数据库 ID 后 get-message --id ID --offset N --length N]", utf8.RuneCountInString(message.Content), message.MessageID)
+		}
 		content = strings.ReplaceAll(content, "\n", "\n    ")
 		mentions := strings.TrimSpace(string(message.Mentions))
 		if mentions == "" {
 			mentions = "[]"
 		}
-		lines[i] = fmt.Sprintf("[%s] msg_id=%s source=%s message_type=%s time=%s sender_open_id=%s is_leader=%t sender_name=%q mentions=%s: %s",
+		lines[i] = fmt.Sprintf("[%s] msg_id=%s source=%s message_type=%s time=%s sender_open_id=%s is_leader=%t sender_name=%q mentions=%s sender_type=%q chat_mode=%q reply_to=%q root_id=%q thread_id=%q: %s",
 			kind, message.MessageID, message.Source, message.MessageType,
 			time.UnixMilli(message.CreateTime).In(location).Format(time.RFC3339),
-			message.SenderOpenID, message.IsLeader, message.SenderName, mentions, content)
+			message.SenderOpenID, message.IsLeader, message.SenderName, mentions, message.SenderType, message.ChatMode, message.ReplyTo, message.RootID, message.ThreadID, content)
 	}
 	return strings.Join(lines, "\n")
 }
 
 func firstContextIndex(messages []MessageContext) int {
 	for i, message := range messages {
-		if !message.IsNew {
+		if !message.IsNew && !message.IsAnchor {
 			return i
 		}
 	}

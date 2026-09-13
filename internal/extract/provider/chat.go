@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"jarvis/internal/extract"
@@ -24,6 +26,21 @@ func (c *Client) ExtractWithTools(ctx context.Context, prompt extract.Prompt, bo
 	if box == nil {
 		return nil, fmt.Errorf("model extraction tool box is nil")
 	}
+	audit := func(kind string, value any) error {
+		if prompt.RunDir == "" {
+			return nil
+		}
+		file, err := os.OpenFile(filepath.Join(prompt.RunDir, "provider.jsonl"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
+		if err != nil {
+			return err
+		}
+		err = json.NewEncoder(file).Encode(map[string]any{"kind": kind, "value": value})
+		closeErr := file.Close()
+		if err != nil {
+			return err
+		}
+		return closeErr
+	}
 	messages := []map[string]any{
 		{"role": "system", "content": prompt.System},
 		{"role": "user", "content": prompt.User},
@@ -42,6 +59,9 @@ func (c *Client) ExtractWithTools(ctx context.Context, prompt extract.Prompt, bo
 			requestBody["tool_choice"] = "auto"
 		}
 		choice, err := c.postChatCompletion(ctx, "extraction", requestBody)
+		if auditErr := audit("model_response", map[string]any{"choice": choice, "error": fmt.Sprint(err)}); auditErr != nil {
+			return nil, auditErr
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -50,8 +70,13 @@ func (c *Client) ExtractWithTools(ctx context.Context, prompt extract.Prompt, bo
 		}
 
 		if len(choice.Message.ToolCalls) > 0 {
-			if err := c.appendToolResults(ctx, &messages, box, choice.Message.ToolCalls); err != nil {
+			before := len(messages)
+			toolErr := c.appendToolResults(ctx, &messages, box, choice.Message.ToolCalls)
+			if err := audit("tool_messages", map[string]any{"messages": messages[before:], "error": fmt.Sprint(toolErr)}); err != nil {
 				return nil, err
+			}
+			if toolErr != nil {
+				return nil, toolErr
 			}
 			continue
 		}

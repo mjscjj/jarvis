@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -50,7 +51,7 @@ func TestExtractorLiveStructuredOutput(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	result, err := extractor.ExtractWithTools(ctx, extract.Prompt{
+	result, err := extractor.ExtractWithTools(ctx, extract.Prompt{RunDir: t.TempDir(),
 		System: string(systemPrompt),
 		User: `这是格式连通性自检。不要调用任何工具，只根据下面的消息给出抽取结果。
 
@@ -69,5 +70,29 @@ END_MESSAGES`,
 	for index, candidate := range result.Candidates {
 		t.Logf("candidate[%d] action_type=%s title=%q source_quote=%q",
 			index, candidate.ActionType, candidate.Title, candidate.SourceQuote)
+	}
+
+	privateResult, err := extractor.ExtractWithTools(ctx, extract.Prompt{RunDir: t.TempDir(),
+		System: string(systemPrompt),
+		User: `这是固定私聊现场回放。不要调用任何工具，只根据下面的会话身份和完整消息输出抽取结果。
+
+# 来源会话
+chat_id=private name="储节节与张若怡" chat_mode="p2p" p2p_target_type="user" peer_open_id="ou_peer" peer_name="张若怡"
+
+# 会话记录
+[new] msg_id=link sender_open_id=ou_owner sender_name="储节节" sender_type="user": https://example.com/emily
+[new] msg_id=ask sender_open_id=ou_owner sender_name="储节节" sender_type="user" reply_to="link": 你现在能看到么
+[new] msg_id=reply sender_open_id=ou_peer sender_name="张若怡" sender_type="user" reply_to="ask": 可以的
+
+# 当前世界目录
+principal.name="储节节"；这是有限目录。`,
+	}, nil)
+	if err != nil {
+		t.Fatalf("private replay: %v", err)
+	}
+	for _, candidate := range privateResult.Candidates {
+		if candidate.Status == "extracted" || strings.Contains(candidate.Payload, "Jarvis") || strings.Contains(candidate.Target, "Jarvis") {
+			t.Fatalf("private conversation became a Jarvis execution: %+v", candidate)
+		}
 	}
 }

@@ -2,79 +2,15 @@ package taskcreate
 
 import (
 	"encoding/json"
-	"fmt"
-	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
-	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
-
-func TestProjectRepoPathRequiresOneValidBinding(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "task-repo.db")), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.AutoMigrate(
-		&domain.Project{}, &domain.ManagedResource{}, &domain.Task{}, &domain.TaskEvent{},
-	); err != nil {
-		t.Fatal(err)
-	}
-	project := domain.Project{Name: "Codebase", Role: "owner", Status: "active", Priority: 1}
-	if err := db.Create(&project).Error; err != nil {
-		t.Fatal(err)
-	}
-	path := filepath.Join(t.TempDir(), "repo")
-	if err := os.MkdirAll(filepath.Join(path, ".git"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	url := "git@code.byted.org:team/repo.git"
-	resource := domain.ManagedResource{
-		Title: "repo", ResourceType: "repo", URL: &url, LocalPath: &path,
-		ProjectID: &project.ID, IsActive: true,
-	}
-	if err := db.Create(&resource).Error; err != nil {
-		t.Fatal(err)
-	}
-	factory, err := NewFactory(db)
-	if err != nil {
-		t.Fatal(err)
-	}
-	resolved, err := factory.projectRepoPath(t.Context(), project.ID)
-	if err != nil || resolved == nil || *resolved != path {
-		t.Fatalf("projectRepoPath() = %v, %v", resolved, err)
-	}
-	task, err := factory.CreateWithDB(t.Context(), db, Input{
-		Title: "修复代码", ActionType: "code_change", Target: "service",
-		Background: json.RawMessage(`{}`), SourcePayload: json.RawMessage(`{"instruction":"修复"}`),
-		ProjectID: &project.ID, SourceType: SourceManual, ActorType: "user",
-	})
-	if err != nil {
-		t.Fatalf("CreateWithDB() error = %v", err)
-	}
-	if task.RepoPath == nil || *task.RepoPath != path {
-		t.Fatalf("CreateWithDB repo_path = %v", task.RepoPath)
-	}
-	second := filepath.Join(t.TempDir(), "repo-2")
-	if err := os.MkdirAll(filepath.Join(second, ".git"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	resource2 := domain.ManagedResource{
-		Title: "repo-2", ResourceType: "repo", URL: &url, LocalPath: &second,
-		ProjectID: &project.ID, IsActive: true,
-	}
-	if err := db.Create(&resource2).Error; err != nil {
-		t.Fatal(err)
-	}
-	resolved, err = factory.projectRepoPath(t.Context(), project.ID)
-	if err != nil || resolved != nil {
-		t.Fatalf("ambiguous projectRepoPath() = %v, %v", resolved, err)
-	}
-}
 
 func TestNormalizeInputDefaultsTodoSourceID(t *testing.T) {
 	todoID := uint64(42)
@@ -203,139 +139,34 @@ func TestNormalizeInputRejectsNullSourcePayloadJSON(t *testing.T) {
 	}
 }
 
-func TestFactoryAssemblesCommonContextForManualScheduledAndProactiveSources(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())), &gorm.Config{})
+func TestFactoryPreservesProducerSceneWithoutWorldLookup(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "producer.db")), &gorm.Config{})
 	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+		t.Fatal(err)
 	}
-	for _, statement := range []string{
-		`CREATE TABLE principal_profile (
-			id INTEGER PRIMARY KEY AUTOINCREMENT, open_id TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
-			department TEXT, title TEXT, summary TEXT, last_progress_at DATETIME,
-			leader_open_id TEXT, leader_name TEXT, created_at DATETIME, updated_at DATETIME
-		)`,
-		`CREATE TABLE project (
-			id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT, name TEXT NOT NULL, role TEXT NOT NULL,
-			status TEXT NOT NULL, priority INTEGER NOT NULL, summary TEXT, last_progress_at DATETIME,
-			created_at DATETIME, updated_at DATETIME
-		)`,
-		`CREATE TABLE managed_resource (
-			id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, resource_type TEXT NOT NULL,
-			url TEXT, local_path TEXT, summary TEXT, last_progress_at DATETIME, person_id INTEGER, project_id INTEGER,
-			link_principal INTEGER NOT NULL, is_active INTEGER NOT NULL,
-			last_active_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			created_at DATETIME, updated_at DATETIME
-		)`,
-		`CREATE TABLE fact (
-			id INTEGER PRIMARY KEY AUTOINCREMENT, subject_type TEXT NOT NULL, subject_id INTEGER NOT NULL,
-			description TEXT NOT NULL, occurred_at DATETIME NOT NULL,
-			source_kind TEXT, source_id INTEGER, created_at DATETIME
-		)`,
-		`CREATE TABLE feishu_group (
-			id INTEGER PRIMARY KEY AUTOINCREMENT, chat_id TEXT NOT NULL UNIQUE,
-			name TEXT, description TEXT, summary TEXT, last_progress_at DATETIME, project_id INTEGER,
-			is_key_group INTEGER NOT NULL DEFAULT 0
-		)`,
-		`CREATE TABLE todo (
-			id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL,
-			action_type TEXT NOT NULL, status TEXT NOT NULL, group_id INTEGER,
-			project_id INTEGER, last_evidence_at DATETIME
-		)`,
-		`CREATE TABLE task (
-			id INTEGER PRIMARY KEY AUTOINCREMENT, todo_id INTEGER, title TEXT NOT NULL,
-			status TEXT NOT NULL, summary TEXT, project_id INTEGER,
-			last_progress_at DATETIME, created_at DATETIME
-		)`,
-	} {
-		if err := db.Exec(statement).Error; err != nil {
-			t.Fatalf("create sqlite table: %v", err)
+	if err := db.AutoMigrate(&domain.Task{}, &domain.TaskEvent{}); err != nil {
+		t.Fatal(err)
+	}
+	factory, err := NewFactory(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, kind := range []string{SourceManual, SourceProactive, SourceScheduledTask} {
+		id := uint64(9)
+		occurrence := kind
+		task, err := factory.Create(t.Context(), Input{Title: "item", ActionType: "investigate", Target: "display", SourceType: kind, SourceID: &id, OccurrenceKey: &occurrence, Background: json.RawMessage(`{"note":"original scene"}`), SourcePayload: json.RawMessage(`{"instruction":"user request","delivery_required":true,"reply_target":"chat"}`)})
+		if err != nil {
+			t.Fatal(err)
 		}
-	}
-	project := domain.Project{
-		Name: "Jarvis", Role: "owner", Status: "active", Priority: 1,
-	}
-	if err := db.Create(&project).Error; err != nil {
-		t.Fatalf("create project: %v", err)
-	}
-	if err := db.Exec(`INSERT INTO feishu_group(id, chat_id, name, project_id, is_key_group)
-		VALUES (7, 'oc_scheduled', 'Jarvis 群', ?, 1)`, project.ID).Error; err != nil {
-		t.Fatalf("create group: %v", err)
-	}
-	if err := db.Create(&domain.PrincipalProfile{OpenID: "ou_me", Name: "我"}).Error; err != nil {
-		t.Fatalf("create principal: %v", err)
-	}
-	assembler, err := contextsnap.NewAssembler(db, "ou_me")
-	if err != nil {
-		t.Fatalf("NewAssembler() error = %v", err)
-	}
-	factory, err := NewFactory(db, assembler)
-	if err != nil {
-		t.Fatalf("NewFactory() error = %v", err)
-	}
-
-	manual, err := factory.assembleBackground(t.Context(), Input{
-		SourceType: SourceManual, ProjectID: &project.ID,
-		Background: json.RawMessage(`{"chat_id":"oc_scheduled","note":"手工任务背景"}`),
-	})
-	if err != nil {
-		t.Fatalf("assemble manual background: %v", err)
-	}
-	manualSnapshot, err := contextsnap.Decode(manual.Background)
-	if err != nil {
-		t.Fatalf("decode manual background: %v", err)
-	}
-	if manualSnapshot.Principal == nil || manualSnapshot.Project == nil || manualSnapshot.Group != nil || string(manualSnapshot.RequestContext) != `{"chat_id":"oc_scheduled","note":"手工任务背景"}` {
-		t.Fatalf("manual snapshot = %#v", manualSnapshot)
-	}
-	if manual.RepoPath != nil {
-		t.Fatalf("manual repo_path = %v, want nil without an explicit selection", *manual.RepoPath)
-	}
-
-	scheduled, err := factory.assembleBackground(t.Context(), Input{
-		SourceType: SourceScheduledTask,
-		Background: json.RawMessage(`{"chat_id":"oc_scheduled","note":"定时任务背景"}`),
-	})
-	if err != nil {
-		t.Fatalf("assemble scheduled background: %v", err)
-	}
-	scheduledSnapshot, err := contextsnap.Decode(scheduled.Background)
-	if err != nil {
-		t.Fatalf("decode scheduled background: %v", err)
-	}
-	if scheduled.ProjectID == nil || *scheduled.ProjectID != project.ID || scheduledSnapshot.Project == nil || scheduledSnapshot.Group == nil || scheduledSnapshot.Group.ChatID != "oc_scheduled" {
-		t.Fatalf("scheduled input/snapshot = %#v / %#v", scheduled, scheduledSnapshot)
-	}
-	if scheduled.RepoPath != nil {
-		t.Fatalf("scheduled repo_path = %v, want nil without an explicit selection", *scheduled.RepoPath)
-	}
-
-	proactive, err := factory.assembleBackground(t.Context(), Input{
-		SourceType: SourceProactive, ProjectID: &project.ID,
-		Background: json.RawMessage(`{"why_now":"发现真实阻塞"}`),
-	})
-	if err != nil {
-		t.Fatalf("assemble proactive background: %v", err)
-	}
-	proactiveSnapshot, err := contextsnap.Decode(proactive.Background)
-	if err != nil {
-		t.Fatalf("decode proactive background: %v", err)
-	}
-	if proactiveSnapshot.Principal == nil || proactiveSnapshot.Project == nil || string(proactiveSnapshot.RequestContext) != `{"why_now":"发现真实阻塞"}` {
-		t.Fatalf("proactive snapshot = %#v", proactiveSnapshot)
-	}
-	if proactive.RepoPath != nil {
-		t.Fatalf("proactive repo_path = %v, want nil without an explicit selection", *proactive.RepoPath)
-	}
-
-	explicitRepo := "/tmp/explicit-repo"
-	explicit, err := factory.assembleBackground(t.Context(), Input{
-		SourceType: SourceManual, ProjectID: &project.ID, RepoPath: &explicitRepo,
-		Background: json.RawMessage(`{"note":"明确指定仓库"}`),
-	})
-	if err != nil {
-		t.Fatalf("assemble explicit repo background: %v", err)
-	}
-	if explicit.RepoPath == nil || *explicit.RepoPath != explicitRepo {
-		t.Fatalf("explicit repo_path = %v, want %q", explicit.RepoPath, explicitRepo)
+		var packet map[string]json.RawMessage
+		if err := json.Unmarshal(task.SourcePayload, &packet); err != nil {
+			t.Fatal(err)
+		}
+		if string(packet["format_version"]) != "2" || !strings.Contains(string(packet["capture"]), "original scene") || strings.Contains(string(packet["capture"]), "principal") {
+			t.Fatalf("packet %s", task.SourcePayload)
+		}
+		if !strings.Contains(string(packet["source"]), "reply_target") {
+			t.Fatal("lost delivery target")
+		}
 	}
 }

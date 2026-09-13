@@ -289,12 +289,12 @@ func TestTodoAndTaskUnitsProjectFinalResultsWithoutBackground(t *testing.T) {
 	if todoMax != 21 || len(todoUnits) != 1 || todoUnits[0].Source != SourceTodo {
 		t.Fatalf("todo units=%+v max=%d", todoUnits, todoMax)
 	}
-	for _, fragment := range []string{`"event"`, `"todo_result"`, "接入通用事实源", `"decision": "extracted"`, `"project": "jarvis"`} {
+	for _, fragment := range []string{`"event"`, `"todo_result"`, "接入通用事实源"} {
 		if !strings.Contains(todoUnits[0].Body, fragment) {
 			t.Fatalf("todo material missing %q:\n%s", fragment, todoUnits[0].Body)
 		}
 	}
-	for _, fragment := range []string{"完整背景", "全都扔进去", "不要进入世界维护材料", "不要进入的过程", "不要进入的历史快照"} {
+	for _, fragment := range []string{`"decision": "extracted"`, `"project": "jarvis"`, "完整背景", "全都扔进去", "不要进入世界维护材料", "不要进入的过程", "不要进入的历史快照"} {
 		if strings.Contains(todoUnits[0].Body, fragment) {
 			t.Fatalf("todo material contains background %q:\n%s", fragment, todoUnits[0].Body)
 		}

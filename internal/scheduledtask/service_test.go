@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log"
+	"strings"
 	"testing"
 	"time"
 
@@ -188,7 +189,7 @@ func TestTaskInputUsesStandardM5ApprovalEntry(t *testing.T) {
 	if input.OccurrenceKey == nil {
 		t.Fatal("occurrence_key is nil")
 	}
-	if string(input.SourcePayload) != `{"instruction":"加入指定会议并完成记录"}` {
+	if !strings.Contains(string(input.SourcePayload), `"instruction":"加入指定会议并完成记录"`) || !strings.Contains(string(input.SourcePayload), `"occurrence_key":"2026-07-24T01:30:00Z"`) {
 		t.Fatalf("source_payload = %s", input.SourcePayload)
 	}
 }

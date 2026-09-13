@@ -28,9 +28,15 @@ func TestCodexAnnotationTransport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := extractor.ExtractWithTools(t.Context(), extract.Prompt{System: "system", User: "user"}, nil)
+	runDir := t.TempDir()
+	result, err := extractor.ExtractWithTools(t.Context(), extract.Prompt{RunDir: runDir, System: "system", User: "user"}, nil)
 	if err != nil {
 		t.Fatal(err)
+	}
+	for _, name := range []string{"prompt.txt", "stdout.jsonl", "stderr.txt", "todo.json"} {
+		if _, err := os.Stat(filepath.Join(runDir, name)); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if len(result.Candidates) != 1 || !strings.Contains(string(result.Candidates[0].Annotation), `"scene":{"summary":"现场"}`) {
 		t.Fatalf("lost content: %#v", result)

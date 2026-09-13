@@ -11,8 +11,7 @@ description: 在 M3 识别 principal 交给他人的待办，保存完整来源�
 首次发现独立交办时输出 `action_type=delegated_followup` 的 candidate。它落盘后的 Todo
 就是交办主体，ID 长期不变，“我的交办”在 M5 运行前即可展示它。记录交办不因主动程度减少；是否现在核验服从当前 M3 工作规则及明确看护目标。普通档、活跃档尚需核验的写 extracted；安静档没有当前核验必要时先写 observing；
 是否完成属于交办进展，不能用 Todo 的 extracted/materialized/observing 表示。
-title 描述原始交办，target 明确为“核验这条交办的当前进展并写回待办”；annotation.brief
-说明这是一次交办核验，不能把“替负责人完成交付物”写成 M5 的目标。
+title 描述原始交办，target 明确为“核验这条交办的当前进展并写回待办”；payload 记录准入判断；annotation 不生成简报或执行建议，原始交办对话和关联用于 M5 核验。
 
 ## 去重与后续证据
 
@@ -23,7 +22,7 @@ title 描述原始交办，target 明确为“核验这条交办的当前进展�
 - 已有交办出现值得核验的新证据，且没有等价检查正在执行或等待时，输出普通 investigate
   candidate，在宽松 `annotation.delegation_id` 中记录原 Todo 的数字 ID。该 candidate
   是一次检查线索，不再使用 delegated_followup；payload 交代新证据和为何现在检查。
-  target 和 annotation.brief 同时写明“核验交办 #原 Todo ID”，让默认上下文就能看到关联。
+  target 保留现有去重身份；annotation.delegation_id 让 M5 能找到原记录，不证明业务判断正确。
 - 重复信息、不需要检查的信息不创建新 candidate。不要因为已有一个完成的检查 Task，
   就认定对方已经交付；也不要因为一个检查失败就判断交办失败。
 - 不同独立交付物拆开；共同交付同一结果可以保留多个负责人。
@@ -31,7 +30,7 @@ title 描述原始交办，target 明确为“核验这条交办的当前进展�
 ## 来源和背景
 
 payload 完整保存当时的理解：谁交给谁什么事情、为什么要做、前序决定、依赖和约束、
-怎样算交付、明确期限及不确定性。annotation 可以补充便于阅读的简报与现场说明，
+怎样算交付、明确期限及不确定性。这些理解属于 M3 审计，annotation 只补充有出处的关联，
 不要求重复一份完整背景，也没有必填的负责人业务 schema。
 
 source_message_ids 必须包含原话以及理解“这个/上面的方案”所需的消息。mentions 中的

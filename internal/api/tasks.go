@@ -131,18 +131,24 @@ func GetTask(service execute.TaskService) app.HandlerFunc {
 			return
 		}
 		section, messageID := c.Query("context"), c.Query("message_id")
-		view, err := contextpack.Read(result.SourcePayload, section, messageID)
+		view, err := contextpack.ReadFor(result.SourcePayload, result.SourceType, section, messageID)
 		if err != nil {
 			writeAPIError(c, consts.StatusBadRequest, 40020, err)
 			return
 		}
-		if messageID != "" || (section != "" && section != "full" && section != "overview") {
+		view, err = contextRange(c, view)
+		if err != nil {
+			writeAPIError(c, 400, 40020, err)
+			return
+		}
+		if c.Query("offset") != "" || c.Query("length") != "" || messageID != "" || (section != "" && section != "full" && section != "overview") {
 			c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{"id": result.ID, "version": result.Version, "context": view}})
 			return
 		}
 		result.SourcePayload = view
 		if section != "full" {
 			result.ExecutionResult = nil
+			result.Target = ""
 		}
 		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
 	}

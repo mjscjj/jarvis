@@ -95,6 +95,11 @@ Get the group binding by exact Feishu chat_id, including unmonitored groups.
 Fails on zero or multiple matches. The returned id is the numeric database id.
 EOF
       ;;
+    get-world-overview) cat <<'EOF'
+usage: jarvis-tools get-world-overview [--section TYPE] [--query TEXT] [--offset N] [--limit N] [--id CURRENT_TASK_ID]
+Live partial directory. Details are read with get-page/get-task/get-todo.
+EOF
+      ;;
     get-context) cat <<'EOF'
 usage: jarvis-tools get-context [--chat-id CHAT_ID] [--project-id ID]
 Assemble the canonical current context. An explicit project wins; otherwise a
@@ -315,6 +320,7 @@ world_flags() {
     close-key-matter) printf '%s' --id ;;
     list-groups) printf '%s' '--keyword --limit --page --chat-id' ;;
     get-group) printf '%s' --chat-id ;;
+    get-world-overview) printf '%s' '--section --query --offset --limit --id' ;;
     get-context) printf '%s' '--chat-id --project-id' ;;
     update-group) printf '%s' '--id --payload' ;;
     get-principal) printf '%s' '' ;;
@@ -617,4 +623,11 @@ forbid_summary_payload() {
   if printf '%s' "$payload" | jq -e 'has("summary")' >/dev/null 2>&1; then
     fail "${command_name} does not accept summary; use update-page for long-term facts"
   fi
+}
+
+cmd_get_world_overview() {
+ local query
+ [[ "$LIMIT_EXPLICIT" == "true" ]] || LIMIT=0
+ query="$(jq -rn --arg section "$WORLD_SECTION" --arg query "$QUERY" --arg offset "${READ_OFFSET:-0}" --arg limit "$LIMIT" --arg task_id "$ID" '"?section="+($section|@uri)+"&query="+($query|@uri)+"&offset="+$offset+"&limit="+$limit+"&task_id="+$task_id')"
+ api_get "/api/world-overview${query}" | json_data
 }

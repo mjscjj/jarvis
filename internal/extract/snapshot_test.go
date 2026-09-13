@@ -5,11 +5,9 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-
-	"jarvis/internal/contextpack"
 )
 
-func TestBuildContextSnapshotFreezesSummary(t *testing.T) {
+func TestBuildContextSnapshotExcludesLiveWorldBodies(t *testing.T) {
 	store := &PipelineStore{}
 	summary := "公会侧个人 agent 系统。"
 	groupSummary := "这个群跟进公会基建。"
@@ -30,13 +28,13 @@ func TestBuildContextSnapshotFreezesSummary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildContextSnapshot: %v", err)
 	}
-	if snapshot.Principal == nil || snapshot.Principal.Summary == nil || *snapshot.Principal.Summary != "我负责公会基建。" {
+	if snapshot.Principal == nil || snapshot.Principal.Summary != nil {
 		t.Fatalf("principal.summary = %#v", snapshot.Principal)
 	}
-	if snapshot.Project == nil || snapshot.Project.Summary == nil || *snapshot.Project.Summary != summary {
+	if snapshot.Project == nil || snapshot.Project.Summary != nil {
 		t.Fatalf("project.summary = %#v", snapshot.Project)
 	}
-	if snapshot.Group == nil || snapshot.Group.Summary == nil || *snapshot.Group.Summary != groupSummary {
+	if snapshot.Group == nil || snapshot.Group.Summary != nil {
 		t.Fatalf("group.summary = %#v", snapshot.Group)
 	}
 	if len(snapshot.Messages) != 1 || !strings.Contains(string(snapshot.Messages[0].Mentions), `"id":"ou_owner"`) {
@@ -44,7 +42,7 @@ func TestBuildContextSnapshotFreezesSummary(t *testing.T) {
 	}
 }
 
-func TestFrozenMaterialsKeepAdvertisedProjectCatalog(t *testing.T) {
+func TestFrozenSceneExcludesWorldProjectCatalog(t *testing.T) {
 	projectID := uint64(44)
 	batch := ChatBatch{
 		Group:         GroupContext{ID: 7, ChatID: "oc_1"},
@@ -61,13 +59,8 @@ func TestFrozenMaterialsKeepAdvertisedProjectCatalog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	packet, err := contextpack.Freeze([]byte(`{}`), capture, "brief", candidate.Annotation)
-	if err != nil {
-		t.Fatal(err)
-	}
-	material, err := contextpack.Read(packet, "other_projects", "")
-	if err != nil || !strings.Contains(string(material), "唯一项目") {
-		t.Fatalf("advertised material lost: %s %v", material, err)
+	if strings.Contains(string(capture), "other_projects") {
+		t.Fatalf("frozen scene contains live project catalog: %s", capture)
 	}
 }
 

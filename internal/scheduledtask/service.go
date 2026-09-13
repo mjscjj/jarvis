@@ -484,6 +484,16 @@ func (s *Service) dispatch(ctx context.Context, row *domain.ScheduledTask, occur
 		s.fail(ctx, row.ID, err)
 		return err
 	}
+	var source map[string]json.RawMessage
+	if err := json.Unmarshal(input.SourcePayload, &source); err != nil {
+		return err
+	}
+	source["timezone"], _ = json.Marshal(s.location.String())
+	source["actual_triggered_at"], _ = json.Marshal(s.now().UTC().Format(time.RFC3339))
+	input.SourcePayload, err = json.Marshal(source)
+	if err != nil {
+		return err
+	}
 	task, err := s.submitter.Submit(ctx, input)
 	if err != nil {
 		s.fail(ctx, row.ID, err)
@@ -592,7 +602,12 @@ func taskInput(row *domain.ScheduledTask, occurrenceKey string) (taskcreate.Inpu
 	if occurrenceKey == "" {
 		return taskcreate.Input{}, fmt.Errorf("scheduled task occurrence key is empty")
 	}
-	sourcePayload, err := json.Marshal(map[string]any{"instruction": row.Instruction})
+	sourcePayload, err := json.Marshal(map[string]any{
+		"instruction": row.Instruction, "scheduled_task_id": row.ID, "occurrence_key": occurrenceKey,
+		"scheduled_trigger_at": row.NextRunAt, "schedule_type": row.ScheduleType,
+		"daily_time": row.DailyTime, "weekday": row.Weekday,
+		"interval_minutes": row.IntervalMinutes, "run_at": row.RunAt,
+	})
 	if err != nil {
 		return taskcreate.Input{}, fmt.Errorf("encode scheduled Task source payload: %w", err)
 	}

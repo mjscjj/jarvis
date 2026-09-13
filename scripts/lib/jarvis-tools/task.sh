@@ -21,9 +21,9 @@ example:
 EOF
       ;;
     get-todo) cat <<'EOF'
-usage: jarvis-tools get-task|get-todo --id ID [--context conversation|background|SECTION|full]
+usage: jarvis-tools get-task|get-todo --id ID [--context evidence|conversation|background|SECTION|full] [--offset N --length N]
                                     [--message-id MESSAGE_ID]
-Default: brief, scene, complete source messages, and available context sections.
+Default: original evidence and scene; --context evidence reads the same source-independent view.
 Use --context to read a frozen section, or --message-id for one frozen message.
 These options are mutually exclusive. get-todo also accepts --revision N to
 reject a read if the clue has been re-extracted since you read its overview.
@@ -65,9 +65,9 @@ example:
 EOF
       ;;
     get-task) cat <<'EOF'
-usage: jarvis-tools get-task|get-todo --id ID [--context conversation|background|SECTION|full]
+usage: jarvis-tools get-task|get-todo --id ID [--context evidence|conversation|background|SECTION|full] [--offset N --length N]
                                     [--message-id MESSAGE_ID]
-Default: brief, scene, complete source messages, and available context sections.
+Default: original evidence and scene; --context evidence reads the same source-independent view.
 Use --context to read a frozen section, or --message-id for one frozen message.
 These options are mutually exclusive. get-todo also accepts --revision N to
 reject a read if the clue has been re-extracted since you read its overview.
@@ -172,13 +172,13 @@ EOF
 task_flags() {
   case "$1" in
     list-todos) printf '%s' '--date --status --limit --project-id --group-id --page --query --source-message-id' ;;
-    get-todo) printf '%s' '--id --context --message-id --revision' ;;
+    get-todo) printf '%s' '--id --offset --length --context --message-id --revision' ;;
     list-delegations) printf '%s' '--state --query --page --limit' ;;
     get-delegation) printf '%s' --id ;;
     update-delegation) printf '%s' '--id --payload' ;;
     list-delegation-tasks) printf '%s' '--id --page --limit' ;;
     list-tasks) printf '%s' '--date --status --limit --project-id --group-id --page --query --source-message-id --action-type' ;;
-    get-task) printf '%s' '--id --context --message-id' ;;
+    get-task) printf '%s' '--id --offset --length --context --message-id' ;;
     list-task-runs) printf '%s' '--id --page --limit' ;;
     get-task-run) printf '%s' '--id --include-prompt' ;;
     create-task) printf '%s' --payload ;;
@@ -194,7 +194,7 @@ task_flags() {
 context_read_query() {
  [[ -z "$CONTEXT_SECTION" || -z "$MESSAGE_ID" ]] || fail "--context and --message-id are mutually exclusive"
  [[ -z "$REVISION" || "$REVISION" =~ ^[1-9][0-9]*$ ]] || fail "--revision must be positive"
- jq -rn --arg context "$CONTEXT_SECTION" --arg message_id "$MESSAGE_ID" --arg revision "$REVISION" '"?context="+($context|@uri)+"&message_id="+($message_id|@uri)+"&revision="+($revision|@uri)'
+ jq -rn --arg context "$CONTEXT_SECTION" --arg message_id "$MESSAGE_ID" --arg offset "$READ_OFFSET" --arg length "$READ_LENGTH" --arg revision "$REVISION" '"?context="+($context|@uri)+"&message_id="+($message_id|@uri)+"&revision="+($revision|@uri)+"&offset="+($offset|@uri)+"&length="+($length|@uri)'
 }
 
 cmd_list_todos() {

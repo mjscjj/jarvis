@@ -206,6 +206,7 @@ initialize_flags() {
   NAME=""
   STATUS=""
   LIMIT="20"
+  LIMIT_EXPLICIT="false"
   PAYLOAD="-"
   PAYLOAD_FILE=""
   AT=""
@@ -235,6 +236,9 @@ initialize_flags() {
   QUERY=""
   SOURCE_MESSAGE_ID=""
   ACTION_TYPE=""
+  READ_OFFSET=""
+  READ_LENGTH=""
+  WORLD_SECTION=""
   CONTEXT_SECTION=""
   REVISION=""
   API_BASE_FLAG=""
@@ -281,6 +285,9 @@ consume_flags() {
       --query) variable=QUERY ;;
       --source-message-id) variable=SOURCE_MESSAGE_ID ;;
       --action-type) variable=ACTION_TYPE ;;
+      --offset) variable=READ_OFFSET ;;
+      --length) variable=READ_LENGTH ;;
+      --section) variable=WORLD_SECTION ;;
       --context) variable=CONTEXT_SECTION ;;
       --revision) variable=REVISION ;;
       --keyword) variable=KEYWORD ;;
@@ -288,7 +295,7 @@ consume_flags() {
       --name) variable=NAME ;;
       --state) variable=STATUS ;;
       --status) variable=STATUS ;;
-      --limit) variable=LIMIT ;;
+      --limit) variable=LIMIT; LIMIT_EXPLICIT="true" ;;
       --payload) variable=PAYLOAD ;;
       --payload-file) variable=PAYLOAD_FILE ;;
       --at) variable=AT ;;

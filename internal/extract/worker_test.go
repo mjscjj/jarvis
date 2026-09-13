@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"jarvis/internal/extract/tools"
-	"jarvis/internal/progress"
 	"jarvis/internal/textstore"
 )
 
@@ -112,7 +111,7 @@ func TestWorkerHalvesOversizedNewEvidenceBeforeCallingModel(t *testing.T) {
 	opts := validWorkerOptions()
 	opts.Load.BatchMessages = 4
 	opts.MaxPromptChars = 7_000
-	worker, err := NewWorker(store, model, &fakeFactReader{}, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, opts)
+	worker, err := NewWorker(store, model, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, opts)
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
 	}
@@ -218,12 +217,6 @@ func (f *fakeToolBoxBuilder) Build(ChatBatch, ConversationUnit) (ToolBox, error)
 	return fakeToolBox{}, nil
 }
 
-type fakeFactReader struct {
-	filters []progress.FactFilter
-	facts   []progress.FactView
-	err     error
-}
-
 type fakeCandidateDeduplicator struct {
 	inputs   []Candidate
 	projects []*uint64
@@ -237,14 +230,6 @@ func (f *fakeCandidateDeduplicator) Resolve(_ context.Context, candidate Candida
 		return SemanticResolution{}, f.err
 	}
 	return SemanticResolution{Vector: []float32{1}}, nil
-}
-
-func (f *fakeFactReader) CountFacts(_ context.Context, filter progress.FactFilter) (int, error) {
-	f.filters = append(f.filters, filter)
-	if f.err != nil {
-		return 0, f.err
-	}
-	return len(f.facts), nil
 }
 
 type fakeWorkRuleReader struct{}
@@ -273,11 +258,10 @@ func TestWorkerPersistsWholeChat(t *testing.T) {
 		LastNew: MessageContext{MessageID: "om_1", ChatID: "oc_1", IsNew: true, CreateTime: 1_700_000_000_000},
 	}}}
 	model := &fakeModelExtractor{result: &ExtractionResult{Candidates: []Candidate{}}}
-	facts := &fakeFactReader{}
 	toolBox := &fakeToolBoxBuilder{}
 	opts := validWorkerOptions()
 	opts.SharedMemory = fakeSharedMemoryReader{text: "Bax 反馈直接进入 M5"}
-	worker, err := NewWorker(store, model, facts, &fakeCandidateDeduplicator{}, toolBox, opts)
+	worker, err := NewWorker(store, model, &fakeCandidateDeduplicator{}, toolBox, opts)
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
 	}
@@ -290,21 +274,6 @@ func TestWorkerPersistsWholeChat(t *testing.T) {
 	}
 	if store.persistCalls != 1 || len(store.results) != 1 || len(model.prompts) != 1 {
 		t.Fatalf("calls: persist=%d results=%d prompts=%d", store.persistCalls, len(store.results), len(model.prompts))
-	}
-	if len(facts.filters) != 4 {
-		t.Fatalf("fact filters count = %d, want 4: %#v", len(facts.filters), facts.filters)
-	}
-	if facts.filters[0].SubjectType != "group" || facts.filters[0].SubjectID != 1 || facts.filters[0].From == nil || facts.filters[0].Until == nil {
-		t.Fatalf("today group filter = %#v", facts.filters[0])
-	}
-	if facts.filters[1].SubjectType != "group" || facts.filters[1].From == nil || facts.filters[1].Until == nil {
-		t.Fatalf("week group filter = %#v", facts.filters[1])
-	}
-	if facts.filters[2].SubjectType != "project" || facts.filters[2].SubjectID != projectID {
-		t.Fatalf("today project filter = %#v", facts.filters[2])
-	}
-	if facts.filters[3].SubjectType != "project" || facts.filters[3].SubjectID != projectID {
-		t.Fatalf("week project filter = %#v", facts.filters[3])
 	}
 	if toolBox.built != 1 || len(model.boxes) != 1 || model.boxes[0] == nil {
 		t.Fatalf("tool box wiring: built=%d boxes=%d", toolBox.built, len(model.boxes))
@@ -324,7 +293,7 @@ func TestWorkerFailsWhenSharedMemoryCannotBeRead(t *testing.T) {
 	}}}
 	opts := validWorkerOptions()
 	opts.SharedMemory = fakeSharedMemoryReader{err: errors.New("memory unavailable")}
-	worker, err := NewWorker(store, &fakeModelExtractor{}, &fakeFactReader{}, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, opts)
+	worker, err := NewWorker(store, &fakeModelExtractor{}, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -344,7 +313,6 @@ func TestWorkerExtractChatReturnsCommittedTodoRefs(t *testing.T) {
 	worker, err := NewWorker(
 		store,
 		&fakeModelExtractor{result: &ExtractionResult{Candidates: []Candidate{}}},
-		&fakeFactReader{},
 		&fakeCandidateDeduplicator{},
 		&fakeToolBoxBuilder{},
 		validWorkerOptions(),
@@ -369,7 +337,6 @@ func TestWorkerExtractChatSkipsChatWithoutPendingMessages(t *testing.T) {
 	worker, err := NewWorker(
 		&fakePipelineStore{},
 		&fakeModelExtractor{},
-		&fakeFactReader{},
 		&fakeCandidateDeduplicator{},
 		&fakeToolBoxBuilder{},
 		validWorkerOptions(),
@@ -395,7 +362,7 @@ func TestWorkerDoesNotAdvanceWatermarkAfterModelFailure(t *testing.T) {
 		LastNew: MessageContext{MessageID: "om_1", ChatID: "oc_1", IsNew: true},
 	}}}
 	model := &fakeModelExtractor{err: errors.New("model unavailable")}
-	worker, err := NewWorker(store, model, &fakeFactReader{}, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, validWorkerOptions())
+	worker, err := NewWorker(store, model, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, validWorkerOptions())
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
 	}
@@ -424,7 +391,7 @@ func TestWorkerDoesNotPersistAfterSemanticDedupFailure(t *testing.T) {
 	worker, err := NewWorker(
 		store,
 		&fakeModelExtractor{result: &ExtractionResult{Candidates: []Candidate{candidate}}},
-		&fakeFactReader{}, dedup, &fakeToolBoxBuilder{}, validWorkerOptions(),
+		dedup, &fakeToolBoxBuilder{}, validWorkerOptions(),
 	)
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
@@ -462,7 +429,7 @@ func TestWorkerDedupsWithinResolvedProjectScope(t *testing.T) {
 	worker, err := NewWorker(
 		store,
 		&fakeModelExtractor{result: &ExtractionResult{Candidates: []Candidate{candidate}}},
-		&fakeFactReader{}, dedup, &fakeToolBoxBuilder{}, validWorkerOptions(),
+		dedup, &fakeToolBoxBuilder{}, validWorkerOptions(),
 	)
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
@@ -514,7 +481,7 @@ func TestWorkerRetriesOnQuoteMismatchThenSucceeds(t *testing.T) {
 	}}
 	opts := validWorkerOptions()
 	opts.EvidenceRetryMax = 2
-	worker, err := NewWorker(store, model, &fakeFactReader{}, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, opts)
+	worker, err := NewWorker(store, model, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, opts)
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
 	}
@@ -556,7 +523,7 @@ func TestWorkerRetriesUnparseableFinalMessage(t *testing.T) {
 	}
 	opts := validWorkerOptions()
 	opts.EvidenceRetryMax = 2
-	worker, err := NewWorker(store, model, &fakeFactReader{}, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, opts)
+	worker, err := NewWorker(store, model, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, opts)
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
 	}
@@ -580,7 +547,7 @@ func TestWorkerFailsAfterExhaustingEvidenceRetries(t *testing.T) {
 	model := &fakeModelExtractor{result: &ExtractionResult{Candidates: []Candidate{rewritten}}}
 	opts := validWorkerOptions()
 	opts.EvidenceRetryMax = 2
-	worker, err := NewWorker(store, model, &fakeFactReader{}, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, opts)
+	worker, err := NewWorker(store, model, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, opts)
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
 	}
@@ -612,7 +579,7 @@ func TestWorkerHydratesCitedMessageFromOutsideUnit(t *testing.T) {
 	candidate := retryCandidate("当前服务和架构梳理")
 	candidate.SourceMessageIDs = []string{"om_1", "om_bot"}
 	model := &fakeModelExtractor{result: &ExtractionResult{Candidates: []Candidate{candidate}}}
-	worker, err := NewWorker(store, model, &fakeFactReader{}, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, validWorkerOptions())
+	worker, err := NewWorker(store, model, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, validWorkerOptions())
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
 	}
@@ -649,7 +616,7 @@ func TestWorkerRetriesOnInventedMessageIDThenSucceeds(t *testing.T) {
 	}}
 	opts := validWorkerOptions()
 	opts.EvidenceRetryMax = 2
-	worker, err := NewWorker(store, model, &fakeFactReader{}, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, opts)
+	worker, err := NewWorker(store, model, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, opts)
 	if err != nil {
 		t.Fatalf("NewWorker() error = %v", err)
 	}
@@ -741,7 +708,7 @@ func TestWorkerShellEngineDoesNotBuildModelToolBox(t *testing.T) {
 			}
 			opts := validWorkerOptions()
 			opts.AgentToolCatalog = true
-			worker, err := NewWorker(store, model, &fakeFactReader{}, &fakeCandidateDeduplicator{}, builder, opts)
+			worker, err := NewWorker(store, model, &fakeCandidateDeduplicator{}, builder, opts)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -759,7 +726,7 @@ func TestWorkerShellEngineDoesNotBuildModelToolBox(t *testing.T) {
 }
 
 func TestWorkerModelAPIRequiresToolBox(t *testing.T) {
-	_, err := NewWorker(&fakePipelineStore{}, &fakeModelExtractor{}, &fakeFactReader{}, &fakeCandidateDeduplicator{}, nil, validWorkerOptions())
+	_, err := NewWorker(&fakePipelineStore{}, &fakeModelExtractor{}, &fakeCandidateDeduplicator{}, nil, validWorkerOptions())
 	if err == nil || !strings.Contains(err.Error(), "tool box builder is nil") {
 		t.Fatalf("error=%v, want missing model tool box", err)
 	}
@@ -769,7 +736,6 @@ func validWorkerOptions() WorkerOptions {
 	return WorkerOptions{
 		Load: LoadOptions{
 			BatchMessages: 100, ContextMessages: 20, ContextWindow: 2 * time.Hour,
-			OpenTodoLimit: 50, RecentTaskLimit: 10,
 		},
 		PrincipalOpenID: "ou_owner", ModelName: "model",
 		MaxPromptChars: 60_000, Location: time.UTC,
@@ -782,7 +748,7 @@ func validWorkerOptions() WorkerOptions {
 
 func TestBatchPromptsUseCurrentInitiativeForAllUnits(t *testing.T) {
 	opts := validWorkerOptions()
-	w := &Worker{opts: opts, facts: &fakeFactReader{}}
+	w := &Worker{opts: opts}
 	batch := retryBatch()
 	second := batch.Units[0]
 	second.Key = "second"

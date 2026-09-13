@@ -76,7 +76,7 @@ M3 只调查到足以决定：
 - `extracted`：存在值得交给 M5 调查和推进的动作线索；
 - `observing`：值得保留，但当前不启动 M5。
 
-创建 Todo 时冻结 `source + capture + annotation`。`source` 保留原始语义，`capture` 保存创建时事实，`annotation` 是开放的模型说明。M3 不提前完成 M5 的深入调查。
+创建 Todo 时冻结带 `format_version: 2` 的 `source + capture + annotation`：原始触发引用、现场和有出处的关联。M3 完整准入判断保存在 Todo 描述与事件审计，不作为 M5 执行说明。M3 不提前完成 M5 的深入调查。
 
 ### Todo 固化
 
@@ -84,7 +84,7 @@ M3 只调查到足以决定：
 
 ### M5：执行内核
 
-M5 接管 `pending` Task，主动查证真实状态，调整当前目标和范围，选择工具完成动作并验证。上游内容是冻结证据，不是不可修改的执行合同。
+M5 接管 `pending` Task，主动查证真实状态，调整当前目标和范围，选择工具完成动作并验证。上游内容是冻结证据，不是不可修改的执行合同。默认通过统一 evidence 视图读取原始现场，通过公共 world-overview 读取当前薄目录；首次执行与同 Session 恢复都刷新目录，历史现场不重建。
 
 结果映射：
 
@@ -151,3 +151,5 @@ FactEngine 在主链路外消费 Message、TodoEvent 和 TaskEvent，使用同�
 - 通用 Resource 下载、解析和内容哈希链路尚未闭环。
 
 模块细节见 [文档导航](README.md#当前实现)。
+
+上下文输入与存量读取的完整契约见 [M3/M5 上下文与世界投影](proposals/m3-m5-context-projection.md)。

@@ -141,13 +141,12 @@ func TestBuildExecutionPromptKeepsOnlyUsefulTaskHints(t *testing.T) {
 	}
 	for _, want := range []string{
 		`"title_hint":"评测截图"`,
-		`"target_hint":"评测截图影响面"`,
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("execution prompt missing hint field %q:\n%s", want, prompt)
 		}
 	}
-	for _, obsolete := range []string{`"action_type_hint":`, `"action_type":`, `"plan":`, `"decision_payload":`, `"decision_direction":`, `"decision_context":`} {
+	for _, obsolete := range []string{`"target_hint":`, `"action_type_hint":`, `"action_type":`, `"plan":`, `"decision_payload":`, `"decision_direction":`, `"decision_context":`} {
 		if strings.Contains(prompt, obsolete) {
 			t.Fatalf("execution prompt still exposes upstream semantics as authoritative field %q:\n%s", obsolete, prompt)
 		}
@@ -184,7 +183,6 @@ func TestBuildExecutionPromptForwardsSourcePayloadVerbatim(t *testing.T) {
 	}
 	for _, want := range []string{
 		`"source":` + clue,
-		`"target_hint":"公会基建Agent 日会（meeting_id=7667030332496007223）"`,
 	} {
 		if !strings.Contains(prompt, want) {
 			t.Fatalf("execution prompt missing %q:\n%s", want, prompt)

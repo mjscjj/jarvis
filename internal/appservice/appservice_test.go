@@ -483,7 +483,7 @@ factengine: {schedule: '@every 15m', bin: mock, model: mock, reasoning_effort: l
 proactive: &agent {schedule: '@every 1h', startup_delay_seconds: 120, bin: mock, model: mock, reasoning_effort: low, sandbox: danger-full-access, timeout_seconds: 900}
 meeting_sweep: *agent
 morning_brief: *agent
-extract: {schedule: '@every 10m', engine: codex, codex_reasoning_effort: low, codex_sandbox: danger-full-access, concurrency: 2, batch_messages: 400, context_messages: 20, context_window_minutes: 120, open_todo_limit: 50, recent_task_limit: 10, max_prompt_chars: 60000, semantic_collection: todo_semantic, semantic_threshold: 0.85, semantic_neighbor_limit: 3, tool_timeout_sec: 10, history_tool_limit: 50, qdrant_host: 127.0.0.1, qdrant_grpc_port: 6334}
+extract: {schedule: '@every 10m', engine: codex, codex_reasoning_effort: low, codex_sandbox: danger-full-access, concurrency: 2, batch_messages: 400, context_messages: 20, context_window_minutes: 120, max_prompt_chars: 60000, semantic_collection: todo_semantic, semantic_threshold: 0.85, semantic_neighbor_limit: 3, tool_timeout_sec: 10, history_tool_limit: 50, qdrant_host: 127.0.0.1, qdrant_grpc_port: 6334}
 lark_cli: {bin: mock, rate_limit: 5, burst: 10, concurrent: 2, timeout_sec: 60}
 capture: {page_size: 50, scan_workers: 2, hot_age_hours: 6, warm_age_hours: 168, timezone: Asia/Shanghai, discover_schedule: '@every 6h', scan_schedule: '@every 5m', p2p_activation_window_minutes: 15}
 codex: {bin: mock, model: mock, timeout_seconds: 600}

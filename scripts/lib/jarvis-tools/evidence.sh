@@ -15,7 +15,7 @@ Use --limit 100 for batches; the number of requested IDs must not exceed limit.
 EOF
       ;;
     get-message) cat <<'EOF'
-usage: jarvis-tools get-message --id ID
+usage: jarvis-tools get-message --id ID [--offset N --length N]
 Load one locally captured message by its database ID, including original content.
 EOF
       ;;
@@ -40,7 +40,7 @@ Use get-captured-resource after selecting one item.
 EOF
       ;;
     get-captured-resource) cat <<'EOF'
-usage: jarvis-tools get-captured-resource --id ID
+usage: jarvis-tools get-captured-resource --id ID [--offset N --length N]
 Load one captured resource in full, including local_path and extracted_text.
 EOF
       ;;
@@ -137,11 +137,11 @@ EOF
 evidence_flags() {
   case "$1" in
     query-messages) printf '%s' '--chat-id --sender-open-id --keyword --date --limit --message-ids' ;;
-    get-message) printf '%s' --id ;;
+    get-message) printf '%s' '--id --offset --length' ;;
     get-todo-event) printf '%s' --id ;;
     get-task-event) printf '%s' --id ;;
     query-captured-resources) printf '%s' '--chat-id --message-id --resource-type --keyword --limit' ;;
-    get-captured-resource) printf '%s' --id ;;
+    get-captured-resource) printf '%s' '--id --offset --length' ;;
     append-clue) printf '%s' '--source --external-id --title --content --occurred-at' ;;
     append-fact) printf '%s' '--subject-type --subject-id --description --occurred-at --source --source-id' ;;
     append-facts-batch) printf '%s' --payload ;;
@@ -183,7 +183,7 @@ cmd_query_messages() {
 
 cmd_get_message() {
   [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "get-message requires positive --id"
-  api_get "/api/messages/${ID}" | json_data
+  api_get "/api/messages/${ID}?offset=${READ_OFFSET}&length=${READ_LENGTH}" | json_data
 }
 
 cmd_get_todo_event() {
@@ -220,7 +220,7 @@ cmd_query_captured_resources() {
 
 cmd_get_captured_resource() {
   [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "get-captured-resource requires positive --id"
-  api_get "/api/captured-resources/${ID}" | json_data
+  api_get "/api/captured-resources/${ID}?offset=${READ_OFFSET}&length=${READ_LENGTH}" | json_data
 }
 
 cmd_append_clue() {

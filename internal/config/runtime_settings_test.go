@@ -72,8 +72,6 @@ extract:
   batch_messages: 400
   context_messages: 20
   context_window_minutes: 120
-  open_todo_limit: 50
-  recent_task_limit: 10
   max_prompt_chars: 60000
   semantic_collection: "todo_semantic"
   semantic_threshold: 0.85

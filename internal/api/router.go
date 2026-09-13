@@ -237,6 +237,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.GET("/api/task-events/:event_id", GetToolTaskEvent(toolQueries))
 	h.GET("/api/captured-resources", ListCapturedResources(toolQueries))
 	h.GET("/api/captured-resources/:resource_id", GetCapturedResource(toolQueries))
+	h.GET("/api/world-overview", WorldOverview(deps.DB))
 	h.POST("/api/context", AssembleContext(deps.ContextAssembler))
 	h.GET("/api/todos", ListTodos(deps.Todos))
 	h.GET("/api/todos/:todo_id", GetTodo(deps.Todos))

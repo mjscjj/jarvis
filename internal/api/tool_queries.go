@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -72,7 +73,17 @@ func GetToolMessage(service ToolQueryService) app.HandlerFunc {
 			writeToolQueryError(c, err)
 			return
 		}
-		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": view})
+		raw, err := json.Marshal(view)
+		if err != nil {
+			writeToolQueryError(c, err)
+			return
+		}
+		ranged, err := contextRange(c, raw)
+		if err != nil {
+			writeAPIError(c, 400, 40071, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": ranged})
 	}
 }
 
@@ -142,7 +153,17 @@ func GetCapturedResource(service ToolQueryService) app.HandlerFunc {
 			writeToolQueryError(c, err)
 			return
 		}
-		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": view})
+		raw, err := json.Marshal(view)
+		if err != nil {
+			writeToolQueryError(c, err)
+			return
+		}
+		ranged, err := contextRange(c, raw)
+		if err != nil {
+			writeAPIError(c, 400, 40071, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": ranged})
 	}
 }
 

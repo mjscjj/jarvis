@@ -30,7 +30,7 @@ M3 状态只有：
 
 ## 2. Candidate 契约
 
-Candidate 只保留机器确实消费的小外壳：`action_type`、`status`、`title`、`target`、`project_hint`、source message/quote，以及一段不解析的 `payload`。payload 是准入简报：自然表达与 principal 的相关性、未闭环状态、当前责任、已核验证据、status 依据和剩余不确定性。执行计划、候选方案、具体副作用、审批和最终完成标准由 M5 调查决定，Go 不逐字段投影。
+Candidate 只保留机器确实消费的小外壳：`action_type`、`status`、`title`、`target`、`project_hint`、source message/quote，以及一段不解析的 `payload`。payload 是准入审计：自然表达与 principal 的相关性、未闭环状态、当前责任、已核验证据、status 依据和剩余不确定性。执行计划、候选方案、具体副作用、审批和最终完成标准由 M5 调查决定，Go 不逐字段投影。
 
 `action_type` 是开放的 snake_case 字符串；代码不维护封闭业务枚举。完整协议以 `internal/extract/candidate.go` 和 `internal/extract/provider/schema.go` 为准。
 
@@ -48,13 +48,13 @@ M3 可用 `trigger_message_id` 从已引用的消息中指定一个回到触发�
 
 `Todo.content` 是唯一语义载体，使用 [冻结上下文决策](../decisions/context-snapshot.md)：
 
-- `source`：完整 Candidate，包括已校验的来源消息 ID、原句、准入简报及未知扩展字段；
-- `capture`：程序冻结的 principal、group、project、assigner、完整会话、参与人、资源和其他项目；
-- `annotation`：模型提供的开放说明，默认可包含 brief 和 scene，不承担机器定位。
+- `format_version: 2` 标识新包；`source` 保存已校验的触发消息引用和原句；完整 Candidate（包含未知扩展字段）保存于事件的 m3_admission；
+- `capture`：程序冻结的会话身份、assigner、实际消息窗口、参与人身份、原始资源与覆盖范围；项目关联单独标明依据，不冻结实体页正文或项目目录；
+- `annotation`：有出处且确有消费者的关联，如 delegation_id，不生成 brief/scene。
 
 `source_message_ids` 另投影到 Todo 列上用于查询，`resolution` 单独保留项目解析轨迹。Todo 更新时形成新 revision；事件保留旧修订的来源索引和内容。
 
-capture 不冻结 Fact 明细：实体 `summary` 已回答「创建时是什么」，历史明细由下游按需用 `list-facts` 下钻。也不冻结 open Todos 和 recent Tasks——它们是可变化的世界状态，只进入本轮 M3 提示词辅助去重；M5 在执行时自行查询相关工作。capture 同样不包含 shared memory，M3 也不装配 ManagedResource。
+capture 不冻结实体 `summary`、Fact 明细、open Todos 或 recent Tasks；它们是可变化的世界状态，由公共 world-overview 在 M3/M5 本轮读取，跨会话和来源提供有限目录，详情按需查询。capture 同样不包含 shared memory，M3 也不装配 ManagedResource。
 
 ## 4. 去重与落库
 

@@ -14,7 +14,7 @@ import (
 )
 
 // ExecutionPromptVersion identifies the prompt contract for auditing.
-const ExecutionPromptVersion = "task-exec-v16-capture"
+const ExecutionPromptVersion = "task-exec-v17-evidence-world"
 
 const (
 	m5PhaseExecute = `BEGIN_M5_PHASE
@@ -163,7 +163,7 @@ type executionTask struct {
 	SourceID       *uint64 `json:"source_id,omitempty"`
 	ID             uint64  `json:"id"`
 	TitleHint      string  `json:"title_hint"`
-	TargetHint     string  `json:"target_hint"`
+	TargetHint     string  `json:"-"`
 	CurrentStatus  string  `json:"current_status"`
 	CurrentSummary *string `json:"current_summary,omitempty"`
 	LastProgressAt string  `json:"last_progress_at,omitempty"`
@@ -186,7 +186,7 @@ func buildTaskContext(task *domain.Task, repoPath string, history *runHistory) (
 	if len(bytes.TrimSpace(task.SourcePayload)) == 0 {
 		return nil, nil, fmt.Errorf("execution prompt Task id=%d missing source_payload", task.ID)
 	}
-	overview, err := contextpack.Read(task.SourcePayload, "", "")
+	overview, err := contextpack.Evidence(task.SourcePayload, task.SourceType)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -195,7 +195,7 @@ func buildTaskContext(task *domain.Task, repoPath string, history *runHistory) (
 		return nil, nil, fmt.Errorf("execution prompt Task id=%d execution_supplements invalid: %w", task.ID, err)
 	}
 	promptTask := executionTask{
-		ID: task.ID, TodoID: task.TodoID, SourceType: task.SourceType, SourceID: task.SourceID, TitleHint: task.Title, TargetHint: task.Target,
+		ID: task.ID, TodoID: task.TodoID, SourceType: task.SourceType, SourceID: task.SourceID, TitleHint: task.Title,
 		CurrentStatus: task.Status, CurrentSummary: task.Summary,
 		ProjectID: task.ProjectID,
 	}
@@ -243,6 +243,7 @@ func renderPrompt(instructions, toolCatalog, sharedMemory, skills string, supple
 // values and positional arguments stopped being readable.
 type executionPromptInput struct {
 	InitiativeLevel string
+	WorldOverview   json.RawMessage
 	SystemPrompt    string
 	ApprovalPolicy  string
 	Task            *domain.Task
@@ -271,6 +272,17 @@ func buildExecutionPrompt(in executionPromptInput) (string, error) {
 		return "", err
 	}
 
+	if len(in.WorldOverview) > 0 {
+		var payload map[string]json.RawMessage
+		if err := json.Unmarshal(encoded, &payload); err != nil {
+			return "", err
+		}
+		payload["world_overview"] = in.WorldOverview
+		encoded, err = json.Marshal(payload)
+		if err != nil {
+			return "", err
+		}
+	}
 	instructions := renderedSystemPrompt + "\n\n" + m5PhaseExecute
 	instructions += repoInstruction(in.RepoPath)
 
