@@ -102,7 +102,7 @@ function KrEditorRow({ compactPresentation = false, objectiveId, kr, tagSuggesti
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-1.5">
 			{cardHierarchy && <button type="button" onClick={onToggleDetails} title={detailsOpen ? '折叠 KR' : '展开 KR'} aria-label={detailsOpen ? '折叠 KR' : '展开 KR'} aria-expanded={detailsOpen} className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"><svg viewBox="0 0 12 12" aria-hidden className={`size-3 transition-transform ${detailsOpen ? 'rotate-90' : ''}`}><path d="M4 2.2 L8.8 6 L4 9.8 Z" fill="currentColor" /></svg></button>}
-          {compactPresentation ? <Text value={kr.title} onChange={(value) => setKrTitle(objectiveId, kr.id, value)} placeholder="填写 KR 内容" readOnly={readOnly} fit className="[field-sizing:content] !min-w-0 text-[14px] font-semibold !leading-5 text-slate-900" /> : (
+          {compactPresentation ? <Text value={kr.title} onChange={(value) => setKrTitle(objectiveId, kr.id, value)} placeholder="填写 KR 内容" ariaLabel="KR 内容" readOnly={readOnly} fit className="[field-sizing:content] !min-w-0 text-[14px] font-semibold !leading-5 text-slate-900" /> : (
           <input
             value={kr.title}
 			readOnly={readOnly}

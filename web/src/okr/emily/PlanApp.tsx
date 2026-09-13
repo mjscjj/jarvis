@@ -286,7 +286,7 @@ function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }:
                 compactPresentation
                 title=""
                 subtitle=""
-                showTags={false}
+                showTags
                 hideStructuralFields
                 deleteKrWarning="只删除这个 Plan 草稿里的 KR"
 				  hierarchyNavigation

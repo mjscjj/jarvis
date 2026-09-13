@@ -120,6 +120,8 @@ try {
   await page.reload()
   await page.getByLabel('选择 Plan', { exact: true }).selectOption(planID)
   assert.equal(await page.getByLabel('KR 内容', { exact: true }).inputValue(), '提高有效转化率')
+  await page.locator('span[title="自定义 · 回归标签"]').waitFor()
+  assert.equal(await page.locator('select[aria-label="业务分类"], input[aria-label="业务分类"]').count(), 0)
   pass('Plan create, O/KR create, title/priority/tag autosave, reload persistence')
 
   await page.getByRole('button', { name: '管理关联人', exact: true }).first().click()
@@ -129,11 +131,15 @@ try {
   await write(objectivePath, () => page.getByPlaceholder('例：Q3 累计自然入驻 1,253 家，线索到入驻转化率 16.51%').fill('Plan 转化率达到 25%'))
   await write(objectivePath, () => page.getByRole('button', { name: '+ 一条核心数据', exact: true }).click())
   await write(objectivePath, () => page.getByTitle('删除这条核心数据', { exact: true }).last().click())
-  await write(objectivePath, () => page.getByRole('button', { name: '+ 一项', exact: true }).first().click())
+  await write(objectivePath, () => page.getByRole('button', { name: '+ 策略具体 KR', exact: true }).click())
   const planPoint = (await api(`/api/biz-okr/plans/${planID}`)).objectives[0].krs[0].points[0]
   const planPointPath = `/api/biz-okr/plans/${planID}/points/${planPoint.id}/definition`
   const planPointRow = page.locator(`#point-${planPoint.id}`)
   await write(planPointPath, () => planPointRow.getByPlaceholder('具体 KR 点').fill('Plan 交付策略'))
+  await planPointRow.getByText('标签', { exact: true }).click()
+  await planPointRow.getByRole('button', { name: '+ 要点标签', exact: true }).click()
+  await planPointRow.getByPlaceholder('标签值').fill('具体 KR 标签')
+  await write(planPointPath, () => planPointRow.getByRole('button', { name: '添加', exact: true }).click())
   await planPointRow.hover()
   await planPointRow.getByRole('button', { name: '+ 关联 Meego', exact: true }).click()
   await write(planPointPath, () => planPointRow.getByPlaceholder('工作项 ID').fill('regression-item'))
@@ -141,6 +147,7 @@ try {
   const detailedPlan = await api(`/api/biz-okr/plans/${planID}`)
   assert.equal(detailedPlan.objectives[0].krs[0].owners[0].open_id, 'ou_regression')
   assert.equal(detailedPlan.objectives[0].krs[0].metrics[0].text, 'Plan 转化率达到 25%')
+  assert(detailedPlan.objectives[0].krs[0].points[0].tags.some(tag => tag.value === '具体 KR 标签'))
   assert.equal(detailedPlan.objectives[0].krs[0].points[0].meego_work_item_id, 'regression-item')
   await planPointRow.getByTitle('删除这个具体 KR', { exact: true }).click()
   await write(objectivePath, () => planPointRow.getByRole('button', { name: '确认', exact: true }).click())

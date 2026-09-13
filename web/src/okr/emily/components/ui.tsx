@@ -152,6 +152,7 @@ export function Text({
   value,
   onChange,
   placeholder,
+  ariaLabel,
   className = '',
   fit,
   readOnly = false,
@@ -160,6 +161,7 @@ export function Text({
   value: string
   onChange: (v: string) => void
   placeholder?: string
+  ariaLabel?: string
   className?: string
   /** 宽度跟着内容走，而不是撑满父容器；用于让后面的控件紧贴文本 */
   fit?: boolean
@@ -226,6 +228,7 @@ export function Text({
       value={local}
       readOnly={readOnly}
       placeholder={placeholder}
+      aria-label={ariaLabel}
       onChange={(e) => setLocal(e.target.value)}
       onSelect={captureSelection}
       onKeyDown={(event) => {

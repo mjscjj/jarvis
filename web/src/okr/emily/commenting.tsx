@@ -43,7 +43,7 @@ export function useCommentSurface(target: CommentTarget) {
     onClick: (event: MouseEvent<HTMLElement>) => {
       if (!enabled) return
       const source = event.target
-      if (source instanceof Element && source.closest('button,input,textarea,select,a,[contenteditable="true"]')) return
+      if (source instanceof Element && source.closest('button,input,textarea,select,a,summary,[contenteditable="true"]')) return
       if (window.getSelection()?.toString().trim()) return
       event.stopPropagation()
       interaction.select(target)

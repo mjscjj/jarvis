@@ -364,13 +364,17 @@ function PointHeader({ reviewUnderLabel = false, compactPresentation = false, ob
             {showScore && <span className="pt-0.5"><WeeklyScoreControl score={point.score} readOnly={scoreReadOnly} onChange={(score) => setPointScore(krId, point.id, score)} label="具体 KR 评分" /></span>}
             {showProgress && <span className="pt-1 text-xs text-slate-400">{doing} 进展 · {done} 已完成</span>}
           </div>
-          {/* 紧凑 Plan 隐去要点标签与 Meego 辅助信息，完整管理视图仍可维护。 */}
-          {!compactPresentation && tagSuggestions && (
-            <div className="mt-1.5 min-w-0">
+          {tagSuggestions && (compactPresentation && !point.tags?.length ? (
+            <details className="mt-0.5 text-[10px] text-slate-400">
+              <summary className="cursor-pointer">标签</summary>
+              <TagEditor idPrefix={`point-tag-options-${point.id}`} tags={point.tags ?? []} suggestions={tagSuggestions} emptyLabel="+ 要点标签" onAdd={(value, type) => addPointTag(krId, point.id, value, type)} onRemove={(type, value) => removePointTag(krId, point.id, type, value)} />
+            </details>
+          ) : (
+            <div className={compactPresentation ? 'mt-0.5 min-w-0' : 'mt-1.5 min-w-0'}>
               <TagEditor idPrefix={`point-tag-options-${point.id}`} tags={point.tags ?? []} suggestions={tagSuggestions} emptyLabel="+ 要点标签" onAdd={(value, type) => addPointTag(krId, point.id, value, type)} onRemove={(type, value) => removePointTag(krId, point.id, type, value)} />
             </div>
-          )}
-          {!compactPresentation && (point.meegoWorkItemId || editingMeego) && (
+          ))}
+          {(point.meegoWorkItemId || editingMeego) && (
             <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[11px] text-slate-400">
               <span>Meego</span>
               {!structureReadOnly ? (
@@ -383,8 +387,8 @@ function PointHeader({ reviewUnderLabel = false, compactPresentation = false, ob
               {showProgress && point.meegoWorkItemId && <button type="button" onClick={() => void loadPreview()} disabled={previewing} className="rounded px-1.5 py-0.5 text-blue-500 hover:bg-blue-50 disabled:text-slate-300">{previewing ? '读取中' : '对比'}</button>}
             </div>
           )}
-          {!compactPresentation && !structureReadOnly && !point.meegoWorkItemId && !editingMeego && (
-            <button type="button" onClick={() => setEditingMeego(true)} className="mt-1 text-[11px] text-slate-300 opacity-0 transition-opacity hover:text-blue-500 group-hover/point:opacity-100">+ 关联 Meego</button>
+          {!structureReadOnly && !point.meegoWorkItemId && !editingMeego && (
+            <button type="button" onClick={() => setEditingMeego(true)} className={compactPresentation ? "hidden text-[11px] text-slate-400 hover:text-blue-500 group-hover/point:inline-block group-focus-within/point:inline-block" : "mt-1 text-[11px] text-slate-300 opacity-0 transition-opacity hover:text-blue-500 group-hover/point:opacity-100"}>+ 关联 Meego</button>
           )}
           {compactPresentation && <div className="mt-1 flex flex-wrap items-center gap-1">{pointFooter}</div>}
         </div>
