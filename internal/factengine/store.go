@@ -214,11 +214,9 @@ func (s *GORMStore) MessageUnits(ctx context.Context, cursor uint64, limit int, 
 	return units, maxID, nil
 }
 
-// TodoUnits follows todo_event rather than todo.id. Re-extraction mutates a Todo
-// in place, so scanning only the main table once would miss every later change.
-// The Agent receives lifecycle identity plus the current extraction/resolution
-// result. Source messages, context and snapshots remain stored but are not
-// copied into world-maintenance material.
+// TodoUnits follows todo_event rather than todo.id. The event is only an
+// evidence cursor and locator: M3's lifecycle status and interpretation stay in
+// Todo's own audit record instead of being projected as entity knowledge.
 func (s *GORMStore) TodoUnits(ctx context.Context, cursor uint64, limit int, opts WindowOptions) ([]SourceUnit, uint64, error) {
 	if limit <= 0 {
 		return nil, 0, fmt.Errorf("fact engine todo limit must be positive")
@@ -239,8 +237,7 @@ func (s *GORMStore) TodoUnits(ctx context.Context, cursor uint64, limit int, opt
 		}
 		material := todoMaterial{
 			Ref:      fmt.Sprintf("%s:%d", SourceTodo, row.ID),
-			Event:    projectTodoEvent(row),
-			Result:   projectTodoResult(row.Todo),
+			Evidence: projectTodoEvidence(row, row.Todo),
 			subjects: todoSubjects(row.Todo),
 		}
 		size, err := jsonMaterialSize(material)
@@ -253,17 +250,17 @@ func (s *GORMStore) TodoUnits(ctx context.Context, cursor uint64, limit int, opt
 	units := make([]SourceUnit, 0, len(materials))
 	for start := 0; start < len(materials); {
 		end := structuredMaterialWindowEnd(start, len(materials), opts.MaxMessages, opts.Location,
-			func(i int) time.Time { return materials[i].Event.CreatedAt },
+			func(i int) time.Time { return materials[i].Evidence.OccurredAt },
 			func(i int) int { return materials[i].encodedSize })
 		window := materials[start:end]
 		body, err := renderJSONMaterial(window)
 		if err != nil {
-			return nil, 0, fmt.Errorf("render todo events id=%d-%d: %w", window[0].Event.ID, window[len(window)-1].Event.ID, err)
+			return nil, 0, fmt.Errorf("render todo events id=%d-%d: %w", window[0].Evidence.EventID, window[len(window)-1].Evidence.EventID, err)
 		}
 		units = append(units, SourceUnit{
-			Source: SourceTodo, Key: fmt.Sprintf("todo_events:%d-%d", window[0].Event.ID, window[len(window)-1].Event.ID),
-			LastID: window[len(window)-1].Event.ID, OccurredAt: window[len(window)-1].Event.CreatedAt,
-			Context: fmt.Sprintf("material_kind=todo_lifecycle_events\ncount=%d\nwindow=%s .. %s", len(window), window[0].Event.CreatedAt.In(opts.Location).Format(time.RFC3339), window[len(window)-1].Event.CreatedAt.In(opts.Location).Format(time.RFC3339)),
+			Source: SourceTodo, Key: fmt.Sprintf("todo_events:%d-%d", window[0].Evidence.EventID, window[len(window)-1].Evidence.EventID),
+			LastID: window[len(window)-1].Evidence.EventID, OccurredAt: window[len(window)-1].Evidence.OccurredAt,
+			Context: fmt.Sprintf("material_kind=todo_evidence_events\ncount=%d\nwindow=%s .. %s", len(window), window[0].Evidence.OccurredAt.In(opts.Location).Format(time.RFC3339), window[len(window)-1].Evidence.OccurredAt.In(opts.Location).Format(time.RFC3339)),
 			Body:    body, Subjects: todoMaterialSubjects(window),
 		})
 		start = end
@@ -271,9 +268,10 @@ func (s *GORMStore) TodoUnits(ctx context.Context, cursor uint64, limit int, opt
 	return units, lastTodoEventID(rows), nil
 }
 
-// TaskUnits does the same for task_event and includes only the linked run's
-// final result when present. Frozen background, source payload, plan and run
-// prompt remain stored but are not copied into world-maintenance material.
+// TaskUnits follows task_event but projects only an evidence locator and the
+// linked run's original result/effects. Task status transitions, Task.summary,
+// duplicate result fields and run bookkeeping stay queryable on Task/Run and do
+// not become default material for entity pages.
 func (s *GORMStore) TaskUnits(ctx context.Context, cursor uint64, limit int, opts WindowOptions) ([]SourceUnit, uint64, error) {
 	if limit <= 0 {
 		return nil, 0, fmt.Errorf("fact engine task limit must be positive")
@@ -287,6 +285,7 @@ func (s *GORMStore) TaskUnits(ctx context.Context, cursor uint64, limit int, opt
 		return nil, 0, fmt.Errorf("list task events for fact extraction cursor=%d: %w", cursor, err)
 	}
 	materials := make([]taskMaterial, 0, len(rows))
+	seenRuns := make(map[uint64]struct{})
 	for i := range rows {
 		row := rows[i]
 		if row.Task == nil {
@@ -295,12 +294,19 @@ func (s *GORMStore) TaskUnits(ctx context.Context, cursor uint64, limit int, opt
 		if row.RunID != nil && row.Run == nil {
 			return nil, 0, fmt.Errorf("task event id=%d references missing execution run id=%d", row.ID, *row.RunID)
 		}
+		runEvidence := projectExecutionRunEvidence(row.Run)
+		if runEvidence != nil {
+			if _, duplicate := seenRuns[runEvidence.ID]; duplicate {
+				runEvidence = nil
+			} else {
+				seenRuns[runEvidence.ID] = struct{}{}
+			}
+		}
 		material := taskMaterial{
-			Ref:       fmt.Sprintf("%s:%d", SourceTask, row.ID),
-			Event:     projectTaskEvent(row),
-			Result:    projectTaskResult(row.Task),
-			RunResult: projectExecutionRunResult(row.Run),
-			subjects:  taskSubjects(row.Task),
+			Ref:         fmt.Sprintf("%s:%d", SourceTask, row.ID),
+			Evidence:    projectTaskEvidence(row, row.Task),
+			RunEvidence: runEvidence,
+			subjects:    taskSubjects(row.Task),
 		}
 		size, err := jsonMaterialSize(material)
 		if err != nil {
@@ -312,17 +318,17 @@ func (s *GORMStore) TaskUnits(ctx context.Context, cursor uint64, limit int, opt
 	units := make([]SourceUnit, 0, len(materials))
 	for start := 0; start < len(materials); {
 		end := structuredMaterialWindowEnd(start, len(materials), opts.MaxMessages, opts.Location,
-			func(i int) time.Time { return materials[i].Event.OccurredAt },
+			func(i int) time.Time { return materials[i].Evidence.OccurredAt },
 			func(i int) int { return materials[i].encodedSize })
 		window := materials[start:end]
 		body, err := renderJSONMaterial(window)
 		if err != nil {
-			return nil, 0, fmt.Errorf("render task events id=%d-%d: %w", window[0].Event.ID, window[len(window)-1].Event.ID, err)
+			return nil, 0, fmt.Errorf("render task events id=%d-%d: %w", window[0].Evidence.EventID, window[len(window)-1].Evidence.EventID, err)
 		}
 		units = append(units, SourceUnit{
-			Source: SourceTask, Key: fmt.Sprintf("task_events:%d-%d", window[0].Event.ID, window[len(window)-1].Event.ID),
-			LastID: window[len(window)-1].Event.ID, OccurredAt: window[len(window)-1].Event.OccurredAt,
-			Context: fmt.Sprintf("material_kind=task_lifecycle_events\ncount=%d\nwindow=%s .. %s", len(window), window[0].Event.OccurredAt.In(opts.Location).Format(time.RFC3339), window[len(window)-1].Event.OccurredAt.In(opts.Location).Format(time.RFC3339)),
+			Source: SourceTask, Key: fmt.Sprintf("task_events:%d-%d", window[0].Evidence.EventID, window[len(window)-1].Evidence.EventID),
+			LastID: window[len(window)-1].Evidence.EventID, OccurredAt: window[len(window)-1].Evidence.OccurredAt,
+			Context: fmt.Sprintf("material_kind=task_evidence_events\ncount=%d\nwindow=%s .. %s", len(window), window[0].Evidence.OccurredAt.In(opts.Location).Format(time.RFC3339), window[len(window)-1].Evidence.OccurredAt.In(opts.Location).Format(time.RFC3339)),
 			Body:    body, Subjects: taskMaterialSubjects(window),
 		})
 		start = end
@@ -331,108 +337,67 @@ func (s *GORMStore) TaskUnits(ctx context.Context, cursor uint64, limit int, opt
 }
 
 type todoMaterial struct {
-	Ref         string             `json:"ref"`
-	Event       todoEventMaterial  `json:"event"`
-	Result      todoResultMaterial `json:"todo_result"`
+	Ref         string               `json:"ref"`
+	Evidence    todoEvidenceMaterial `json:"evidence"`
 	subjects    []Subject
 	encodedSize int
 }
 
-type todoEventMaterial struct {
-	ID         uint64    `json:"id"`
+type todoEvidenceMaterial struct {
+	EventID    uint64    `json:"event_id"`
 	TodoID     uint64    `json:"todo_id"`
-	FromStatus *string   `json:"from_status,omitempty"`
-	ToStatus   string    `json:"to_status"`
-	CreatedAt  time.Time `json:"created_at"`
-}
-
-type todoResultMaterial struct {
-	ID        uint64    `json:"id"`
-	Title     string    `json:"title"`
-	Status    string    `json:"status"`
-	ProjectID *uint64   `json:"project_id,omitempty"`
-	GroupID   *uint64   `json:"group_id,omitempty"`
-	UpdatedAt time.Time `json:"updated_at"`
+	Title      string    `json:"title"`
+	ProjectID  *uint64   `json:"project_id,omitempty"`
+	GroupID    *uint64   `json:"group_id,omitempty"`
+	OccurredAt time.Time `json:"occurred_at"`
 }
 
 type taskMaterial struct {
-	Ref         string                      `json:"ref"`
-	Event       taskEventMaterial           `json:"event"`
-	Result      taskResultMaterial          `json:"task_result"`
-	RunResult   *executionRunResultMaterial `json:"run_result,omitempty"`
+	Ref         string                        `json:"ref"`
+	Evidence    taskEvidenceMaterial          `json:"evidence"`
+	RunEvidence *executionRunEvidenceMaterial `json:"run_evidence,omitempty"`
 	subjects    []Subject
 	encodedSize int
 }
 
-type taskEventMaterial struct {
-	ID         uint64    `json:"id"`
+type taskEvidenceMaterial struct {
+	EventID    uint64    `json:"event_id"`
 	TaskID     uint64    `json:"task_id"`
-	EventType  string    `json:"event_type"`
-	FromStatus *string   `json:"from_status,omitempty"`
-	ToStatus   string    `json:"to_status"`
+	Title      string    `json:"title"`
+	ProjectID  *uint64   `json:"project_id,omitempty"`
 	RunID      *uint64   `json:"run_id,omitempty"`
 	OccurredAt time.Time `json:"occurred_at"`
 }
 
-type taskResultMaterial struct {
-	ID              uint64          `json:"id"`
-	Title           string          `json:"title"`
-	Status          string          `json:"status"`
-	ExecutionResult json.RawMessage `json:"execution_result,omitempty"`
-	Summary         *string         `json:"summary,omitempty"`
-	ProjectID       *uint64         `json:"project_id,omitempty"`
-	UpdatedAt       time.Time       `json:"updated_at"`
+type executionRunEvidenceMaterial struct {
+	ID         uint64          `json:"id"`
+	TaskID     uint64          `json:"task_id"`
+	Output     json.RawMessage `json:"output,omitempty"`
+	Effects    json.RawMessage `json:"effects,omitempty"`
+	FinishedAt *time.Time      `json:"finished_at,omitempty"`
 }
 
-type executionRunResultMaterial struct {
-	ID          uint64          `json:"id"`
-	TaskID      uint64          `json:"task_id"`
-	Status      string          `json:"status"`
-	Summary     *string         `json:"summary,omitempty"`
-	Output      json.RawMessage `json:"output,omitempty"`
-	Effects     json.RawMessage `json:"effects,omitempty"`
-	ErrorDetail *string         `json:"error_detail,omitempty"`
-	FinishedAt  *time.Time      `json:"finished_at,omitempty"`
-}
-
-func projectTodoEvent(event domain.TodoEvent) todoEventMaterial {
-	return todoEventMaterial{
-		ID: event.ID, TodoID: event.TodoID, FromStatus: event.FromStatus,
-		ToStatus: event.ToStatus, CreatedAt: event.CreatedAt,
+func projectTodoEvidence(event domain.TodoEvent, todo *domain.Todo) todoEvidenceMaterial {
+	return todoEvidenceMaterial{
+		EventID: event.ID, TodoID: todo.ID, Title: todo.Title,
+		ProjectID: todo.ProjectID, GroupID: todo.GroupID, OccurredAt: event.CreatedAt,
 	}
 }
 
-func projectTodoResult(todo *domain.Todo) todoResultMaterial {
-	return todoResultMaterial{
-		ID: todo.ID, Title: todo.Title, Status: todo.Status,
-		ProjectID: todo.ProjectID, GroupID: todo.GroupID, UpdatedAt: todo.UpdatedAt,
+func projectTaskEvidence(event domain.TaskEvent, task *domain.Task) taskEvidenceMaterial {
+	return taskEvidenceMaterial{
+		EventID: event.ID, TaskID: task.ID, Title: task.Title,
+		ProjectID: task.ProjectID, RunID: event.RunID, OccurredAt: event.OccurredAt,
 	}
 }
 
-func projectTaskEvent(event domain.TaskEvent) taskEventMaterial {
-	return taskEventMaterial{
-		ID: event.ID, TaskID: event.TaskID, EventType: event.EventType,
-		FromStatus: event.FromStatus, ToStatus: event.ToStatus, RunID: event.RunID,
-		OccurredAt: event.OccurredAt,
-	}
-}
-
-func projectTaskResult(task *domain.Task) taskResultMaterial {
-	return taskResultMaterial{
-		ID: task.ID, Title: task.Title, Status: task.Status,
-		ExecutionResult: json.RawMessage(task.ExecutionResult), Summary: task.Summary,
-		ProjectID: task.ProjectID, UpdatedAt: task.UpdatedAt,
-	}
-}
-
-func projectExecutionRunResult(run *domain.ExecutionRun) *executionRunResultMaterial {
+func projectExecutionRunEvidence(run *domain.ExecutionRun) *executionRunEvidenceMaterial {
 	if run == nil {
 		return nil
 	}
-	return &executionRunResultMaterial{
-		ID: run.ID, TaskID: run.TaskID, Status: run.Status, Summary: run.Summary,
-		Output: json.RawMessage(run.Output), Effects: json.RawMessage(run.Effects),
-		ErrorDetail: run.ErrorDetail, FinishedAt: run.FinishedAt,
+	return &executionRunEvidenceMaterial{
+		ID: run.ID, TaskID: run.TaskID, Output: json.RawMessage(run.Output),
+		Effects: json.RawMessage(run.Effects), FinishedAt: run.FinishedAt,
 	}
 }
 
@@ -476,7 +441,7 @@ func todoMaterialSubjects(materials []todoMaterial) []Subject {
 }
 
 func taskSubjects(task *domain.Task) []Subject {
-	subjects := []Subject{{Type: "task", ID: task.ID, Name: task.Title}}
+	var subjects []Subject
 	if task.ProjectID != nil {
 		subjects = append(subjects, Subject{Type: "project", ID: *task.ProjectID})
 	}

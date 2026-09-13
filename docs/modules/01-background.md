@@ -43,11 +43,12 @@ erDiagram
 ## 4. Fact 与页内引用
 
 - `summary` 保存实体当前最佳认知，整体读写、有字符上限，更新使用 CAS 防止并发覆盖。
+- 所有实体共用 `entity-page-guidance.md` 的内容契约，由模型根据对象与证据组织页面，不维护按实体类型划分的模板。
 - 自然语言关系写成 `[名称](type:id)` 页内引用；写入时校验目标存在，反查使用 backlinks，不建通用关系表。
 - `Fact` 是追加式证据索引，不是第二份知识正文。它保存简短锚点、业务发生时间和原始材料指针；需要判断时沿 `source_kind/source_id` 读取原文。
 - Fact 可以指向 `message`、`todo_event`、`task_event`、`execution_run` 和 `resource`；程序自身的状态变化使用 `source_kind=system`，不携带 `source_id`。FactEngine 当前自动消费的来源只有 Message、TodoEvent 和 TaskEvent。
 - `PageRevision` 保存实体页被改写前的完整正文。它记录“认知笔记怎样变化”，不是“现实发生了什么”，因此不进入 Fact。
-- factengine 消费 Message、TodoEvent 和 TaskEvent 的独立游标，把一批完整材料交给同一个 Agent。Agent 使用通用工具维护页面、资料和 Fact；整轮成功后才推进游标，失败则重放。
+- factengine 消费 Message、TodoEvent 和 TaskEvent 的独立游标，把一批完整材料交给同一个 Agent。Todo/Task 事件只提供证据定位，Task 的状态流转和 Task.summary 留在行动记录中；有关联 Run 时携带原始 output 与 effects，供 Agent 判断背后的现实事实是否改变实体认知。整轮成功后才推进游标，失败则重放。
 - M1 不负责从会话批量蒸馏事实。
 
 实体页回答“现在是什么”，Fact 帮助定位“发生了什么”，PageRevision 回答“我们的认知怎样被改写”。三者不能互相替代。

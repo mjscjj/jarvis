@@ -21,12 +21,13 @@ func TestOverviewCrossSourceBudgetAndPagination(t *testing.T) {
 		t.Fatal(err)
 	}
 	summary := strings.Repeat("长背景", 2000)
+	taskSummary := "TASK_PROGRESS_MUST_NOT_APPEAR"
 	if err := db.Create(&domain.PrincipalProfile{OpenID: "owner", Name: "我", Summary: &summary}).Error; err != nil {
 		t.Fatal(err)
 	}
 	for i := 0; i < 25; i++ {
 		source := []string{"manual", "scheduled_task", "todo", "proactive"}[i%4]
-		task := domain.Task{Title: fmt.Sprintf("事项%d", i), SourceType: source, Status: "pending", Summary: &summary, ActionType: "investigate", Target: "index", SourcePayload: []byte(`{}`)}
+		task := domain.Task{Title: fmt.Sprintf("事项%d", i), SourceType: source, Status: "pending", Summary: &taskSummary, ActionType: "investigate", Target: "index", SourcePayload: []byte(`{}`)}
 		if err := db.Create(&task).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -59,6 +60,9 @@ func TestOverviewCrossSourceBudgetAndPagination(t *testing.T) {
 		for _, row := range s.Items {
 			if s.Name == "task" {
 				sources[row["source_type"]] = true
+				if _, exists := row["summary"]; exists {
+					t.Fatalf("Task progress leaked into world directory: %+v", row)
+				}
 			}
 			if s.Name == "todo" {
 				t.Fatal("current source todo leaked")
@@ -67,6 +71,9 @@ func TestOverviewCrossSourceBudgetAndPagination(t *testing.T) {
 	}
 	if len(sources) != 4 {
 		t.Fatalf("missing sources: %v", sources)
+	}
+	if strings.Contains(string(raw), taskSummary) {
+		t.Fatalf("Task summary preview leaked into world directory: %s", raw)
 	}
 	page, err := Read(context.Background(), db, Filter{Section: "task", Offset: 10, Limit: 3})
 	if err != nil {

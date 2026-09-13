@@ -42,6 +42,7 @@
 - [第一阶段产品方向](proposals/product-stage-1.md)
 - [Agent 可安装功能源码包](proposals/plugin-extension.md)
 - [世界模型 3D 视图](proposals/world-model-3d.md)
+- [实体 Summary：持续演化的当前认知页](proposals/entity-summary-pages.md)
 
 实现提案时，把稳定结论合并进对应 current 模块；原提案随即删除，必要的关键取舍提炼进 `decisions/`，不能继续作为平行真源。
 

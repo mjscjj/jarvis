@@ -195,7 +195,7 @@ func TestAdvanceCursorUsesSQLiteUpsertAndNeverMovesBackward(t *testing.T) {
 	}
 }
 
-func TestTodoAndTaskUnitsProjectFinalResultsWithoutBackground(t *testing.T) {
+func TestTodoAndTaskUnitsProjectEvidenceWithoutLifecycleSummaries(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(fmt.Sprintf("file:%s?mode=memory&cache=shared", t.Name())), &gorm.Config{
 		DisableForeignKeyConstraintWhenMigrating: true,
 	})
@@ -260,11 +260,11 @@ func TestTodoAndTaskUnitsProjectFinalResultsWithoutBackground(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("create task: %v", err)
 	}
-	run := domain.ExecutionRun{ID: 41, TaskID: task.ID, ActionType: "agent_task", Stage: "execute", Sandbox: "danger-full-access", Status: "succeeded", Prompt: "执行任务", Summary: &summary, Output: []byte(`{"ok":true}`), StartedAt: now, FinishedAt: &now, CreatedAt: now}
+	run := domain.ExecutionRun{ID: 41, TaskID: task.ID, ActionType: "agent_task", Stage: "execute", Sandbox: "danger-full-access", Status: "succeeded", Prompt: "执行任务", Summary: &summary, Output: []byte(`{"business_result":"模型已上线","future":{"value":1}}`), Effects: []byte(`[{"kind":"deployment","target":"prod"}]`), StartedAt: now, FinishedAt: &now, CreatedAt: now}
 	if err := db.Table("execution_run").Create(map[string]any{
 		"id": run.ID, "task_id": run.TaskID, "action_type": run.ActionType, "stage": run.Stage,
 		"sandbox": run.Sandbox, "status": run.Status, "prompt": run.Prompt, "summary": run.Summary,
-		"output": run.Output, "started_at": run.StartedAt, "finished_at": run.FinishedAt, "created_at": run.CreatedAt,
+		"output": run.Output, "effects": run.Effects, "started_at": run.StartedAt, "finished_at": run.FinishedAt, "created_at": run.CreatedAt,
 	}).Error; err != nil {
 		t.Fatalf("create execution run: %v", err)
 	}
@@ -275,6 +275,13 @@ func TestTodoAndTaskUnitsProjectFinalResultsWithoutBackground(t *testing.T) {
 		"run_id": taskEvent.RunID, "detail": taskEvent.Detail, "occurred_at": taskEvent.OccurredAt, "created_at": taskEvent.CreatedAt,
 	}).Error; err != nil {
 		t.Fatalf("create task event: %v", err)
+	}
+	if err := db.Table("task_event").Create(map[string]any{
+		"id": uint64(52), "task_id": taskEvent.TaskID, "task_version": 2,
+		"event_type": "feedback_delivered", "to_status": taskEvent.ToStatus, "actor_type": taskEvent.ActorType,
+		"run_id": taskEvent.RunID, "detail": []byte(`{"summary":"重复运作记录"}`), "occurred_at": now.Add(time.Second), "created_at": now.Add(time.Second),
+	}).Error; err != nil {
+		t.Fatalf("create duplicate-run task event: %v", err)
 	}
 
 	store, err := NewGORMStore(db)
@@ -289,12 +296,12 @@ func TestTodoAndTaskUnitsProjectFinalResultsWithoutBackground(t *testing.T) {
 	if todoMax != 21 || len(todoUnits) != 1 || todoUnits[0].Source != SourceTodo {
 		t.Fatalf("todo units=%+v max=%d", todoUnits, todoMax)
 	}
-	for _, fragment := range []string{`"event"`, `"todo_result"`, "接入通用事实源"} {
+	for _, fragment := range []string{`"evidence"`, `"event_id": 21`, `"todo_id": 11`, "接入通用事实源"} {
 		if !strings.Contains(todoUnits[0].Body, fragment) {
 			t.Fatalf("todo material missing %q:\n%s", fragment, todoUnits[0].Body)
 		}
 	}
-	for _, fragment := range []string{`"decision": "extracted"`, `"project": "jarvis"`, "完整背景", "全都扔进去", "不要进入世界维护材料", "不要进入的过程", "不要进入的历史快照"} {
+	for _, fragment := range []string{`"status"`, `"from_status"`, `"to_status"`, `"decision": "extracted"`, `"project": "jarvis"`, "完整背景", "全都扔进去", "不要进入世界维护材料", "不要进入的过程", "不要进入的历史快照"} {
 		if strings.Contains(todoUnits[0].Body, fragment) {
 			t.Fatalf("todo material contains background %q:\n%s", fragment, todoUnits[0].Body)
 		}
@@ -304,15 +311,18 @@ func TestTodoAndTaskUnitsProjectFinalResultsWithoutBackground(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TaskUnits: %v", err)
 	}
-	if taskMax != 51 || len(taskUnits) != 1 || taskUnits[0].Source != SourceTask {
+	if taskMax != 52 || len(taskUnits) != 1 || taskUnits[0].Source != SourceTask {
 		t.Fatalf("task units=%+v max=%d", taskUnits, taskMax)
 	}
-	for _, fragment := range []string{`"event"`, `"task_result"`, `"run_result"`, "实现并验证完成", `"ok": true`} {
+	for _, fragment := range []string{`"evidence"`, `"event_id": 51`, `"run_evidence"`, "模型已上线", `"kind": "deployment"`} {
 		if !strings.Contains(taskUnits[0].Body, fragment) {
 			t.Fatalf("task material missing %q:\n%s", fragment, taskUnits[0].Body)
 		}
 	}
-	for _, fragment := range []string{"不要进入的任务背景", "不要进入的来源步骤", "执行任务"} {
+	if strings.Count(taskUnits[0].Body, `"run_evidence"`) != 1 {
+		t.Fatalf("same run result was projected more than once:\n%s", taskUnits[0].Body)
+	}
+	for _, fragment := range []string{`"status"`, `"event_type"`, `"from_status"`, `"to_status"`, `"task_result"`, `"run_result"`, "实现并验证完成", "已经完成", "重复运作记录", "不要进入的任务背景", "不要进入的来源步骤", "执行任务"} {
 		if strings.Contains(taskUnits[0].Body, fragment) {
 			t.Fatalf("task material contains background %q:\n%s", fragment, taskUnits[0].Body)
 		}

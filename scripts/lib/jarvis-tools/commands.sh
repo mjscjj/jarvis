@@ -44,6 +44,7 @@ register_command append-fact evidence 'Record one fact about a project, group, p
 register_command append-facts-batch evidence 'Record multiple facts from one JSON array' cmd_append_facts_batch
 register_command list-facts evidence 'Read a subject'"'"'s recorded facts, optionally for one day' cmd_list_facts
 register_command get-page world 'Read one entity'"'"'s long-term fact page' cmd_get_page
+register_command get-page-guidance world 'Read the shared entity page content guidance' cmd_get_page_guidance
 register_command update-page world 'Replace one entity'"'"'s long-term fact page' cmd_update_page
 register_command list-pages world 'List long-term fact page indexes' cmd_list_pages
 register_command list-backlinks world 'List pages that reference an entity' cmd_list_backlinks

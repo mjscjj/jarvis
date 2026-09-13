@@ -32,14 +32,14 @@ func TestParseReferences(t *testing.T) {
 // and ParseReferences is its only reader. An example the parser cannot read
 // leaves every page link invisible without any error, so assert the round trip
 // against the prompt file itself instead of against a copy of its wording.
-func TestFactEnginePromptExampleParsesAsAReference(t *testing.T) {
+func TestEntityPageGuidanceExampleParsesAsAReference(t *testing.T) {
 	t.Parallel()
-	raw, err := os.ReadFile(filepath.Join("..", "..", "conf", "prompts", "fact-extract-system-prompt.md"))
+	raw, err := os.ReadFile(filepath.Join("..", "..", "conf", "prompts", "entity-page-guidance.md"))
 	if err != nil {
 		t.Fatalf("read FactEngine system prompt: %v", err)
 	}
 	if refs := ParseReferences(string(raw)); len(refs) == 0 {
-		t.Fatal("prompt shows no reference example ParseReferences accepts; a bare person:12 example makes page links silently invisible")
+		t.Fatal("entity page guidance shows no reference example ParseReferences accepts")
 	}
 }
 

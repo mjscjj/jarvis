@@ -47,8 +47,8 @@ func TestJarvisToolsAllHelpIsOfflineAndGrouped(t *testing.T) {
 	}
 	commandLine := regexp.MustCompile(`(?m)^  ([a-z]+(?:-[a-z]+)+)\s+`)
 	commands := commandLine.FindAllStringSubmatch(all, -1)
-	if len(commands) != 74 {
-		t.Fatalf("commands = %d, want 72 original plus identity and world overview", len(commands))
+	if len(commands) != 75 {
+		t.Fatalf("commands = %d, want 72 original plus identity, world overview and page guidance", len(commands))
 	}
 	seen := map[string]int{}
 	for _, group := range groups {

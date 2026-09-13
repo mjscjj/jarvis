@@ -116,9 +116,9 @@ failed      -> failed
 - 长期认知：实体 `summary` 页、Fact、PageRevision；
 - 只读产物：DailyDigest、晨报和本地 Markdown 报告。
 
-实体页回答“现在是什么”；Fact 是带主体和原始材料指针的证据索引；PageRevision 保存旧版认知页。实体关系使用页内引用与 backlinks，不维护通用关系表。
+实体页回答“现在是什么”，以整页替换方式持续演化；所有实体共用一份内容指导，由模型根据对象和证据自然组织。Fact 是带主体和原始材料指针的证据索引；PageRevision 保存旧版认知页。实体关系使用页内引用与 backlinks，不维护通用关系表。
 
-FactEngine 在主链路外消费 Message、TodoEvent 和 TaskEvent，使用同一 Agent 协议维护实体页、资料和 Fact。整轮成功后才推进来源游标。
+FactEngine 在主链路外消费 Message、TodoEvent 和 TaskEvent，使用同一 Agent 协议维护实体页、资料和 Fact。Task/Todo 的状态流转保留在行动记录中；只有证据背后真正发生、与实体有关的现实变化才进入实体页。整轮成功后才推进来源游标。
 
 主动巡视读取世界模型并看护未闭环工作。内部认知可直接维护；任何外部行动统一创建普通 Task 交给 M5。
 

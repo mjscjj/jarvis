@@ -240,7 +240,15 @@ usage: jarvis-tools get-page --type TYPE --id N
 Read one entity's long-term fact page. TYPE is principal, person, project,
 key_matter, group or resource. Returns the full summary, character count and
 limit, updated_at for CAS, outbound and back links, and the subject's fact
-count without fact content. Use list-facts for history detail.
+count without fact content. Use get-page-guidance before the first page edit in
+an Agent session; use list-facts for history detail.
+EOF
+      ;;
+    get-page-guidance) cat <<'EOF'
+usage: jarvis-tools get-page-guidance
+Read the single shared content contract for every entity's current cognition
+page. Use it before the first update-page call in an Agent session. Returns the
+registered Markdown guidance and its metadata.
 EOF
       ;;
     update-page) cat <<'EOF'
@@ -337,6 +345,7 @@ world_flags() {
     touch-resource) printf '%s' --id ;;
     delete-resource) printf '%s' --id ;;
     get-page) printf '%s' '--type --id' ;;
+    get-page-guidance) printf '%s' '' ;;
     update-page) printf '%s' '--type --id --content --if-unchanged-since' ;;
     list-pages) printf '%s' '--type --all --stale-days --over-limit' ;;
     list-backlinks) printf '%s' '--type --id' ;;
@@ -515,6 +524,10 @@ cmd_get_page() {
   local body
   body="$(api_get "/api/pages/${TYPE}/${ID}")"
   printf '%s' "$body" | json_data
+}
+
+cmd_get_page_guidance() {
+  emit_api_data /api/text-files/entity_page_guidance
 }
 
 cmd_update_page() {

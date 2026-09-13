@@ -47,7 +47,7 @@ GET /api/world-overview；CLI：get-world-overview。
 | Principal | 身份、岗位、负责人及最多 200 字的首行索引 |
 | Project | 活跃项目最多 10 条，角色、状态、首行索引 |
 | Key matter | 未关闭事项最多 10 条，首行索引、已记录期限 |
-| Task | 所有来源的未结束 Task 最多 10 条；近 7 天结束最多 5 条 |
+| Task | 所有来源的未结束 Task 最多 10 条；近 7 天结束最多 5 条；目录只含事项索引、状态、来源和关联，进展按需查询 |
 | Todo | extracted/observing 最多 10 条，原文片段及关联 Task |
 | 人物、群、资源 | 当前现场提供身份，其余通过类别查询 |
 

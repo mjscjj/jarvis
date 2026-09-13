@@ -332,6 +332,7 @@ func TestJarvisToolsWorldModelWritesUseSpecificEndpoints(t *testing.T) {
 		{"touch-resource", []string{"--id", "10"}, http.MethodPost, "/api/resources/10/touch"},
 		{"delete-resource", []string{"--id", "10"}, http.MethodDelete, "/api/resources/10"},
 		{"update-page", []string{"--type", "project", "--id", "7", "--content", "hello", "--if-unchanged-since", "2026-08-15T00:00:00Z"}, http.MethodPut, "/api/pages/project/7"},
+		{"get-page-guidance", nil, http.MethodGet, "/api/text-files/entity_page_guidance"},
 		{"append-facts-batch", []string{"--payload", `[{"subject_type":"project","subject_id":1,"description":"d1","source":"system"},{"subject_type":"project","subject_id":2,"description":"d2","source":"system"}]`}, http.MethodPost, "/api/facts/batch"},
 		{"get-message", []string{"--id", "11"}, http.MethodGet, "/api/messages/11"},
 		{"get-todo-event", []string{"--id", "12"}, http.MethodGet, "/api/todo-events/12"},
@@ -446,6 +447,8 @@ func TestJarvisToolsPageCommandsUseExactEndpoints(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/pages/project/7":
 			fmt.Fprint(w, `{"code":0,"data":{"type":"project","id":7,"summary":"page","updated_at":"2026-08-15T00:00:00Z","fact_count":12}}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/text-files/entity_page_guidance":
+			fmt.Fprint(w, `{"code":0,"data":{"key":"entity_page_guidance","content":"shared page guidance"}}`)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/pages":
 			if r.URL.Query().Get("type") != "person" || r.URL.Query().Get("all") != "true" ||
 				r.URL.Query().Get("stale_days") != "14" || r.URL.Query().Get("over_limit") != "true" {
@@ -463,6 +466,10 @@ func TestJarvisToolsPageCommandsUseExactEndpoints(t *testing.T) {
 	out, err := runJarvisTools(t, server.URL, nil, "get-page", "--type", "project", "--id", "7")
 	if err != nil || !strings.Contains(out, `"fact_count":12`) {
 		t.Fatalf("get-page output = %s, error = %v", out, err)
+	}
+	out, err = runJarvisTools(t, server.URL, nil, "get-page-guidance")
+	if err != nil || !strings.Contains(out, `"content":"shared page guidance"`) {
+		t.Fatalf("get-page-guidance output = %s, error = %v", out, err)
 	}
 	out, err = runJarvisTools(t, server.URL, nil, "list-pages", "--type", "person", "--all", "--stale-days", "14", "--over-limit")
 	if err != nil || !strings.Contains(out, `"id":12`) {
