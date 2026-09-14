@@ -23,8 +23,7 @@ export function FrozenContextPanel({ content }: { content: unknown }) {
   }
   const labels: Record<string, string> = { group: '来源会话', project: '项目', principal: '委托人', participants: '参与者', resources: '相关资料', assigner: '交办人', other_projects: '项目目录' }
   return <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
-    {typeof annotation.brief === 'string' && <Paragraph>{annotation.brief}</Paragraph>}
-    {annotation.scene != null && <section><Text strong>当时现场</Text>{renderBody(annotation.scene)}</section>}
+    {packet.format_version !== 2 && (annotation.brief != null || annotation.scene != null) && <details><summary>历史模型说明（未经独立核验）</summary>{renderBody(annotation)}</details>}
     {messages.map((item, index) => {
       const record = object(item)
       const primary = ids.has(record.message_id)
@@ -35,7 +34,7 @@ export function FrozenContextPanel({ content }: { content: unknown }) {
     })}
     {Object.entries(capture).filter(([key, body]) => key !== 'messages' && body != null).map(([key, body]) =>
       <details key={key}><summary>{labels[key] || key}</summary>{renderBody(body)}</details>)}
-    <details><summary>来源原文与判断</summary>{renderBody(packet.source)}</details>
-    <details><summary>补充说明</summary>{renderBody(annotation)}</details>
+    <details><summary>存储 source（历史格式可能包含 M3 判断）</summary>{renderBody(packet.source)}</details>
+    <details><summary>来源关联提示</summary>{renderBody(annotation)}</details>
   </Space>
 }

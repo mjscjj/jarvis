@@ -22,6 +22,7 @@ func ListProjects(svc *background.ProjectService) app.HandlerFunc {
 			writeAPIError(c, consts.StatusBadRequest, 40020, err)
 			return
 		}
+		filter.Code = c.Query("code")
 		result, err := svc.List(ctx, filter)
 		if err != nil {
 			writeBackgroundError(c, err)
@@ -219,6 +220,8 @@ func ListPersons(svc *background.PersonService) app.HandlerFunc {
 			writeAPIError(c, consts.StatusBadRequest, 40020, err)
 			return
 		}
+		filter.Role = c.Query("role")
+		filter.OpenID = c.Query("open_id")
 		result, err := svc.List(ctx, filter)
 		if err != nil {
 			writeBackgroundError(c, err)
@@ -360,10 +363,12 @@ func ListGroups(svc *background.GroupBackgroundService) app.HandlerFunc {
 			return
 		}
 		filter := background.GroupFilter{
-			ListFilter: base,
-			Keyword:    strings.TrimSpace(c.Query("keyword")),
-			ChatMode:   strings.TrimSpace(c.Query("chat_mode")),
-			Tier:       strings.TrimSpace(c.Query("tier")),
+			ListFilter:   base,
+			Keyword:      strings.TrimSpace(c.Query("keyword")),
+			ChatID:       c.Query("chat_id"),
+			ChatMode:     strings.TrimSpace(c.Query("chat_mode")),
+			Tier:         strings.TrimSpace(c.Query("tier")),
+			CaptureState: strings.TrimSpace(c.Query("capture_state")),
 		}
 		if raw := strings.TrimSpace(c.Query("related_only")); raw != "" {
 			value, err := strconv.ParseBool(raw)
@@ -549,7 +554,7 @@ func resourceListFilter(c *app.RequestContext) (background.ResourceFilter, error
 	if err != nil {
 		return background.ResourceFilter{}, err
 	}
-	filter := background.ResourceFilter{ListFilter: base}
+	filter := background.ResourceFilter{ListFilter: base, PersonOpenID: c.Query("person_open_id")}
 	if raw := strings.TrimSpace(c.Query("person_id")); raw != "" {
 		id, err := strconv.ParseUint(raw, 10, 64)
 		if err != nil || id == 0 {
@@ -590,7 +595,7 @@ func backgroundListFilter(c *app.RequestContext) (background.ListFilter, error) 
 	if err != nil {
 		return background.ListFilter{}, err
 	}
-	return background.ListFilter{Page: page, PageSize: pageSize}, nil
+	return background.ListFilter{Page: page, PageSize: pageSize, Keyword: strings.TrimSpace(c.Query("keyword"))}, nil
 }
 
 func backgroundID(c *app.RequestContext, name string) (uint64, error) {

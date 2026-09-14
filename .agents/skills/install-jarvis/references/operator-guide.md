@@ -62,3 +62,9 @@
 ```
 
 `jarvis-install status` 的 `complete=true` 表示全部完成；`deliverable=true` 表示所有未完成项都有结构化说明，可交给用户决定是否接受当前边界。
+
+## 连接地址
+
+`jarvis-tools` 和世界模型脚本默认读取所属工作区的有效配置（包含 runtime overlay），也可用 `--api-base` 或 `JARVIS_API_BASE` 覆盖。源码独立调用复用已有 `go run ./cmd/jarvis-config show-connection`，服务启动的 Agent 使用已注入的连接环境；不需要额外构建工具。
+
+服务临时使用 `-addr` 时，`jarvis-install bind-cc`、`validate-binding`、`validate`、`doctor` 传相同的 `--addr HOST:PORT`；它选择现有服务的连接，不修改服务注册或启动参数。长期使用的地址应保存到工作区配置。重建脚本的运行中 Task 检查和健康检查也使用 `JARVIS_API_BASE` 或工作区配置，不再固定端口。

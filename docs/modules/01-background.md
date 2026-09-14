@@ -45,13 +45,14 @@ Task 是独立执行单元，只保留可选 `project_id`，不直接关联 KeyM
 ## 4. Fact、Page 与 EntityRelation
 
 - `summary` 保存实体当前最佳认知，整体读写、有字符上限，更新使用 CAS 防止并发覆盖。
+- 所有实体共用 `entity-page-guidance.md` 的内容契约，由模型根据对象与证据组织页面，不维护按实体类型划分的模板。
 - 自然语言关系写成 `[名称](type:id)` 页内引用；写入时校验目标存在，反查使用 backlinks。
 - EntityRelation 保存两个既有实体之间带证据、需要程序查询的跨模块映射，不替代叙述性引用。
 - WorldProgress 保存指定主体在一个周期内的证据化判断；项目进展与 OKR 世界投影使用同一服务，但不替代 OKR 产品的正式 Progress。
 - `Fact` 是追加式证据索引，不是第二份知识正文。它保存简短锚点、业务发生时间和原始材料指针；需要判断时沿 `source_kind/source_id` 读取原文。
 - Fact 可以指向 `message`、`todo_event`、`task_event`、`execution_run` 和 `resource`；程序自身的状态变化使用 `source_kind=system`，不携带 `source_id`。FactEngine 当前自动消费的来源只有 Message、TodoEvent 和 TaskEvent。
 - `PageRevision` 保存实体页被改写前的完整正文。它记录“认知笔记怎样变化”，不是“现实发生了什么”，因此不进入 Fact。
-- factengine 消费 Message、TodoEvent 和 TaskEvent 的独立游标，把一批完整材料交给同一个 Agent。Agent 使用通用工具维护页面、资料和 Fact；整轮成功后才推进游标，失败则重放。
+- factengine 消费 Message、TodoEvent 和 TaskEvent 的独立游标，把一批完整材料交给同一个 Agent。Todo/Task 事件只提供证据定位，Task 的状态流转和 Task.summary 留在行动记录中；有关联 Run 时携带原始 output 与 effects，供 Agent 判断背后的现实事实是否改变实体认知。整轮成功后才推进游标，失败则重放。
 - M1 不负责从会话批量蒸馏事实。
 - 外部证据先进入 Message/Clue，再由 Agent 写入最小的 Project、KeyMatter 或其它通用实体；Page 继续使用 CAS，Fact 保留来源追溯。
 

@@ -78,7 +78,7 @@ M3 只调查到足以决定：
 - `extracted`：存在值得交给 M5 调查和推进的动作线索；
 - `observing`：值得保留，但当前不启动 M5。
 
-创建 Todo 时冻结 `source + capture + annotation`。`source` 保留原始语义，`capture` 保存创建时事实，`annotation` 是开放的模型说明。M3 可核验责任、当前状态和已有工作，但不提前完成执行方案、请示判断或深入调查；证据足够即停止。
+创建 Todo 时冻结带 `format_version: 2` 的 `source + capture + annotation`：原始触发引用、现场和有出处的关联。M3 完整准入判断保存在 Todo 描述与事件审计，不作为 M5 执行说明。M3 不提前完成 M5 的深入调查。
 
 ### Todo 固化
 
@@ -86,7 +86,7 @@ M3 只调查到足以决定：
 
 ### M5：执行内核
 
-M5 接管 `pending` Task，主动查证真实状态，调整当前目标和范围，选择工具完成动作并验证。上游内容是冻结证据，不是不可修改的执行合同；已通过准入的目标只核验是否完成、失效或重复，不重新进行泛化价值筛选。
+M5 接管 `pending` Task，主动查证真实状态，调整当前目标和范围，选择工具完成动作并验证。上游内容是冻结证据，不是不可修改的执行合同。默认通过统一 evidence 视图读取原始现场，通过公共 world-overview 读取当前薄目录；首次执行与同 Session 恢复都刷新目录，历史现场不重建。 已通过准入的目标只核验是否完成、失效或重复，不重新进行泛化价值筛选。
 
 | Agent outcome | Task 状态/动作 |
 |---|---|
@@ -122,7 +122,7 @@ M5 每轮开始时给可达来源消息添加 `OnIt`，本轮离开 `executing` 
 - 周期判断：WorldProgress 保存 Jarvis 对主体在指定周期的证据化评估；
 - 只读产物：DailyDigest、晨报和本地 Markdown 报告。
 
-实体页回答“现在是什么”，支持整体读写、字符上限和 CAS；Fact 是带主体、业务时间及原始材料指针的证据索引；PageRevision 保存旧版认知页。叙述性关系使用 `[名字](person:12)` 等页内引用与 backlinks，明确的可查询映射使用 EntityRelation。WorldProgress 不替代外部系统的正式进展。
+实体页回答“现在是什么”，支持整体读写、字符上限和 CAS，并共用一份实体页面内容指导；Fact 是带主体、业务时间及原始材料指针的证据索引；PageRevision 保存旧版认知页。叙述性关系使用 `[名字](person:12)` 等页内引用与 backlinks，明确的可查询映射使用 EntityRelation。WorldProgress 不替代外部系统的正式进展。
 
 KeyMatter 表示需长期回看的事项，不等于 Project 或一次执行动作；`closed_at` 表示闭环，`status` 保持自由文本。需要外部行动时另建普通 Task。
 
@@ -131,6 +131,8 @@ FactEngine 在主链路外消费 Message、TodoEvent 和 TaskEvent，按独立�
 主动巡视读取这些状态并看护未闭环工作。内部认知可直接维护；任何外部行动统一创建普通 `source_type=proactive` Task 交给 M5。每次实际 Agent 调用保存输入、输出、错误和耗时，不依赖无限续跑会话记忆。
 
 可选 `okr` 模块拥有 Objective、KR、Metric、Point、Owner、周次、Weekly KR Core 和正式 Progress；`biz-okr` 依赖 `okr`，拥有 Plan、标签、Review、评论、评分、Follow-up、催填、Meego 和页面身份。两者生命周期由 AppModule 管理，产品数据在 `data/okr/okr.db`，不复制成世界模型事实。OKR 与世界通过 EntityRelation、Page/Fact 和 WorldProgress 按证据关联，具体边界见 [OKR 模块](modules/06-okr.md) 与 [OKR 世界模型](design-okr-world-model.md)。
+
+Task/Todo 的状态流转保留在行动记录中；只有证据背后真正发生、与实体有关的现实变化才进入实体页。
 
 字段与迁移以 `internal/domain/`、`internal/store/sqlite.go` 及模块 Store 为准。
 
@@ -141,8 +143,8 @@ FactEngine 在主链路外消费 Message、TodoEvent 和 TaskEvent，按独立�
 | 主动程度 | `conf/prompts/initiative-level.md` | M3/M5/proactive 新一轮实时读取 |
 | 系统角色与输出协议 | `conf/prompts/` | textstore 固定 key 读取 |
 | 阶段工作规则 | `conf/rules/m3.md`, `conf/rules/m5.md` | 只注入所属阶段 |
-| Skills | `.agents/skills/`, `conf/skills.yaml` | 正文与启用范围分离 |
-| 工具说明 | `internal/toolcatalog/` | 运行时组装 |
+| Skills | `.agents/skills/`, `conf/skills.yaml` | 正文与目录展示范围分离；按名称读取不受目录开关限制 |
+| 工具说明 | `internal/toolcatalog/` | 运行时组装精简能力目录，详细契约按需读取命令帮助 |
 | 共享记忆 | `data/shared-memory.md` | 只保存 principal 明确要求的稳定偏好 |
 | 运行参数 | `conf/config.runtime.yaml` | 按叶子 key 覆盖基线，重启后生效 |
 
@@ -163,3 +165,5 @@ FactEngine 在主链路外消费 Message、TodoEvent 和 TaskEvent，按独立�
 - 通用 Resource 下载、解析和内容哈希链路尚未闭环。
 
 路由见 [HTTP API](reference/http-api.md)，部署见 [运行与部署](reference/operations.md)，页面真源是 `web/src/App.tsx`，模块细节见 [文档导航](README.md#当前实现)。
+
+上下文输入与存量读取的完整契约见 [M3/M5 上下文与世界投影](proposals/m3-m5-context-projection.md)。

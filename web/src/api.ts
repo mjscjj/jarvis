@@ -621,11 +621,16 @@ export function listGroups(query: GroupQuery, signal?: AbortSignal): Promise<Gro
   if (query.keyword) params.set('keyword', query.keyword)
   if (query.chatMode) params.set('chat_mode', query.chatMode)
   if (query.tier) params.set('tier', query.tier)
+  if (query.captureState) params.set('capture_state', query.captureState)
   return request<GroupList>(`/api/groups?${params.toString()}`, { signal })
 }
 
 export function updateGroupBackground(id: number, body: GroupBackgroundInput): Promise<Group> {
   return request<Group>(`/api/groups/${id}`, { method: 'PUT', body })
+}
+
+export function updateGroupCaptureExclusion(groupIds: number[], excluded: boolean): Promise<{ updated: number; excluded: boolean }> {
+  return request('/api/groups/capture-exclusion', { method: 'PUT', body: { group_ids: groupIds, excluded } })
 }
 
 export function getProfile(signal?: AbortSignal): Promise<ProfileView> {

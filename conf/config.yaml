@@ -63,10 +63,8 @@ extract:
   codex_reasoning_effort: "medium"      # M3 准入判断保留中等推理档位
   concurrency: 5                        # 不同 chat_id（单聊/群聊）并发，同一 chat 串行
   batch_messages: 400
-  context_messages: 20
-  context_window_minutes: 120
-  open_todo_limit: 20
-  recent_task_limit: 10          # 推送最近有进展的任务条数上限
+  context_messages: 50
+  context_window_minutes: 1440
   max_prompt_chars: 60000
   semantic_collection: "todo_semantic_volcengine"
   semantic_threshold: 0.85

@@ -19,6 +19,7 @@ import SkillsPanel from './background/SkillsPanel'
 import './styles/review-memory.css'
 
 const WorldMap = lazy(() => import('./world-map/WorldMap'))
+const SecuritySettings = lazy(() => import('./SecuritySettings'))
 
 type MemoryView = 'world-map' | 'projects' | 'persons' | 'groups' | 'resources' | 'key-matters' | 'facts' | 'profile'
 
@@ -62,27 +63,28 @@ export default function Background() {
   )
 }
 
-type SettingsView = 'runtime' | 'scheduling' | 'memory' | 'extensions' | 'about'
+type SettingsView = 'runtime' | 'scheduling' | 'security' | 'memory' | 'extensions' | 'about'
 
 function settingsView(value: string | undefined): SettingsView {
-  return value === 'runtime' || value === 'scheduling' || value === 'memory' || value === 'extensions' || value === 'about'
+  return value === 'runtime' || value === 'scheduling' || value === 'security' || value === 'memory' || value === 'extensions' || value === 'about'
     ? value
     : 'runtime'
 }
 
-export function Settings() {
+export function Settings({ onShutdown }: { onShutdown: () => void }) {
   const { name: agentName } = useAgentIdentity()
   const { context, setViewState } = usePageContext()
 
   return (
     <div className="settings-page">
-      <PageHeader title="系统设置" subtitle={`配置 ${agentName} 的运行、调度、共享记忆和扩展能力，查看应用版本`} />
+      <PageHeader title="系统设置" subtitle={`配置 ${agentName} 的运行、调度、安全、共享记忆和扩展能力`} />
       <Tabs
         activeKey={settingsView(context.view_state.view)}
         onChange={(view) => setViewState({ view })}
         items={[
-          { key: 'runtime', label: '运行', children: <RuntimeSettings /> },
+          { key: 'runtime', label: '运行', children: <RuntimeSettings onShutdown={onShutdown} /> },
           { key: 'scheduling', label: '调度', children: <SystemTasks /> },
+          { key: 'security', label: '安全与隐私', children: <SecuritySettings /> },
           { key: 'memory', label: '共享记忆', children: <SharedMemory /> },
           {
             key: 'extensions',

@@ -15,18 +15,18 @@ Task 可来自：
 - `scheduled_task`：到期物化；
 - `manual`：通过 API 创建。
 
-所有来源都把原始语义和创建时事实冻结在同一个宽松 `source_payload`，结构为 `source + capture + annotation`。Todo 来源机械复制 `Todo.content`；scheduled、manual 和 proactive 来源在创建 Task 时由程序组装同一外壳。Go 和前端都不把 `source` 或 `annotation` 解释成固定执行计划。
+所有来源都把原始语义和创建时事实冻结在同一个宽松 `source_payload`，新包结构为 `format_version: 2 + source + capture + annotation`。Todo 来源机械复制 `Todo.content`；scheduled、manual 和 proactive 来源在创建 Task 时由程序组装同一外壳。Go 和前端都不把 `source` 或 `annotation` 解释成固定执行计划。
 
 首轮执行 prompt 默认只放：
 
-- Task ID、来源、标题/目标 hint、当前状态、当前 summary、项目绑定和显式 `repo_path`；
-- `annotation.brief`、`annotation.scene`、直接来源消息原文；没有消息来源时放原始 `source`；
+- Task ID、来源、中性事项标签、当前状态、当前 summary、项目关联和显式 `repo_path`；
+- evidence 视图中的原始请求、触发锚点、会话身份及周围原文；不默认展示 M3 判断；
 - 可展开的 capture 区块、会话消息数和读取命令；
 - execution supplements；
 - 历史 run 数量及最近一次 ID/状态，不放 run 正文；
 - 当前主动程度、shared memory、M5 rules、Skills、工具目录和审批政策。
 
-完整 Candidate、周边会话、实体背景、相关 Todo/Task 和历史 run 正文都按需读取。`get-task --context ...` 展开冻结区块，`--message-id` 读取单条冻结消息；`list-tasks` / `list-todos` 可按关键词、来源消息、项目或群筛选；`list-task-runs` 返回分页概要，`get-task-run` 再读完整结果、错误和 effects，只有 `--include-prompt` 才展开 prompt。需要实体当前状态时由 M5 读取 summary 页或 Fact，而不是在启动时重新拼一个 `current_world`。
+正常窗口的周边会话默认可见，超长原文、实体详情和历史 Run 按需读取。M3 Candidate 保留于审计。`get-task --context ...` 展开冻结区块，`--message-id` 读取单条冻结消息；`list-tasks` / `list-todos` 可按关键词、来源消息、项目或群筛选；`list-task-runs` 返回分页概要，`get-task-run` 再读完整结果、错误和 effects，只有 `--include-prompt` 才展开 prompt。需要实体当前状态时由 M5 读取 summary 页或 Fact，本轮公共 world-overview 只提供实时薄目录，不重建冻结现场；同 Session 恢复也刷新目录。
 
 调用方明确选定仓库时，M5 消费 `repo_path`；否则继承 Jarvis 当前工作目录并自行定位，不从 capture 的项目资料猜默认值。
 

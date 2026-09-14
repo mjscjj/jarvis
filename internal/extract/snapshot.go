@@ -4,24 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
 )
 
-// buildContextSnapshot freezes the background for one candidate at extraction
-// time (docs/decisions/context-snapshot.md). It assembles from the already
-// loaded ChatBatch/unit data; the only DB read is the full project detail when
-// the project was resolved from a hint (the bound project detail is already in
-// the batch).
-//
-// Open Todos and recent Tasks are loaded into the M3 prompt for dedup judgement
-// but deliberately are not frozen here: they are world state, and M5 loads them
-// fresh at execution time instead.
+// buildContextSnapshot freezes the source scene for one candidate at extraction
+// time. Entity bodies and work indexes are live world state and deliberately do
+// not ride in this packet; M3 and M5 read them from the shared world overview.
 func (s *PipelineStore) buildContextSnapshot(ctx context.Context, batch ChatBatch, unit ConversationUnit, candidate Candidate, projectID *uint64, assignerOpenID *string) (contextsnap.Snapshot, error) {
 	snapshot := contextsnap.Snapshot{
+		Coverage: unit.Coverage, EvidenceRefs: unit.EvidenceRefs,
 		SnapshotVersion: contextsnap.SnapshotVersion,
 		CapturedAt:      s.now().UTC().Format(time.RFC3339),
 		Principal:       snapshotPrincipal(batch.Principal),
@@ -29,7 +23,6 @@ func (s *PipelineStore) buildContextSnapshot(ctx context.Context, batch ChatBatc
 		Messages:        snapshotConversation(unit),
 		Participants:    snapshotParticipants(unit.Participants),
 		Resources:       snapshotResources(unit.Resources),
-		OtherProjects:   snapshotOtherProjects(batch.OtherProjects),
 	}
 
 	project, err := s.snapshotProject(ctx, batch, projectID)
@@ -57,7 +50,6 @@ func snapshotPrincipal(principal *PrincipalContext) *contextsnap.Principal {
 		Name:         principal.Name,
 		Department:   nonEmptyPtr(principal.Department),
 		Title:        nonEmptyPtr(principal.Title),
-		Summary:      nonEmptyPtr(principal.Summary),
 		LeaderOpenID: nonEmptyPtr(principal.LeaderOpenID),
 		LeaderName:   nonEmptyPtr(principal.LeaderName),
 	}
@@ -65,13 +57,12 @@ func snapshotPrincipal(principal *PrincipalContext) *contextsnap.Principal {
 
 func snapshotGroup(group GroupContext) *contextsnap.Group {
 	return &contextsnap.Group{
-		ID:          group.ID,
-		ChatID:      group.ChatID,
-		Name:        nonEmptyPtr(group.Name),
-		Description: nonEmptyPtr(group.Description),
-		Summary:     nonEmptyPtr(group.Summary),
-		IsKeyGroup:  group.IsKeyGroup,
-		ProjectID:   copyUint64(group.ProjectID),
+		ChatMode: group.ChatMode, P2PTargetType: group.P2PTargetType, PeerOpenID: group.PeerOpenID, PeerName: group.PeerName,
+		ID:         group.ID,
+		ChatID:     group.ChatID,
+		Name:       nonEmptyPtr(group.Name),
+		IsKeyGroup: group.IsKeyGroup,
+		ProjectID:  copyUint64(group.ProjectID),
 	}
 }
 
@@ -83,7 +74,7 @@ func (s *PipelineStore) snapshotProject(ctx context.Context, batch ChatBatch, pr
 		p := batch.Project
 		return &contextsnap.Project{
 			ID: p.ID, Code: nonEmptyPtr(p.Code), Name: p.Name, Role: p.Role,
-			Status: p.Status, Priority: p.Priority, Summary: nonEmptyPtr(p.Summary),
+			Status: p.Status, Priority: p.Priority,
 		}, nil
 	}
 	var row domain.Project
@@ -92,7 +83,7 @@ func (s *PipelineStore) snapshotProject(ctx context.Context, batch ChatBatch, pr
 	}
 	return &contextsnap.Project{
 		ID: row.ID, Code: row.Code, Name: row.Name, Role: row.Role,
-		Status: row.Status, Priority: row.Priority, Summary: copyStringPtr(row.Summary),
+		Status: row.Status, Priority: row.Priority,
 	}, nil
 }
 
@@ -103,7 +94,6 @@ func snapshotAssigner(openID string, participants []ParticipantContext) *context
 			assigner.Name = nonEmptyPtr(participant.Name)
 			assigner.Role = nonEmptyPtr(participant.Role)
 			assigner.Title = nonEmptyPtr(participant.Title)
-			assigner.Summary = nonEmptyPtr(participant.Summary)
 			break
 		}
 	}
@@ -116,7 +106,7 @@ func snapshotParticipants(participants []ParticipantContext) []contextsnap.Parti
 		result[i] = contextsnap.Participant{
 			OpenID: participants[i].OpenID, Name: nonEmptyPtr(participants[i].Name),
 			Role: nonEmptyPtr(participants[i].Role), Title: nonEmptyPtr(participants[i].Title),
-			IsLeader: participants[i].IsLeader, Summary: nonEmptyPtr(participants[i].Summary),
+			IsLeader: participants[i].IsLeader,
 		}
 	}
 	return result
@@ -135,19 +125,6 @@ func snapshotResources(resources []ResourceContext) []contextsnap.Resource {
 	return result
 }
 
-// Preserve the catalog M3 saw even when one entry becomes the resolved project.
-// Its advertised material key and contents must survive inference unchanged.
-func snapshotOtherProjects(projects []OtherProjectContext) []contextsnap.ProjectBrief {
-	result := make([]contextsnap.ProjectBrief, 0, len(projects))
-	for i := range projects {
-		result = append(result, contextsnap.ProjectBrief{
-			ID: projects[i].ID, Code: nonEmptyPtr(projects[i].Code), Name: projects[i].Name,
-			Role: projects[i].Role, Status: projects[i].Status, Priority: projects[i].Priority,
-		})
-	}
-	return result
-}
-
 // snapshotConversation preserves the entire admitted unit for later reads.
 func snapshotConversation(unit ConversationUnit) []contextsnap.Message {
 	messages := unit.Messages
@@ -157,6 +134,7 @@ func snapshotConversation(unit ConversationUnit) []contextsnap.Message {
 	conversation := make([]contextsnap.Message, 0, len(messages))
 	for _, message := range messages {
 		conversation = append(conversation, contextsnap.Message{
+			ReplyTo: message.ReplyTo, SenderType: message.SenderType,
 			MessageID: message.MessageID, ChatID: message.ChatID, ChatMode: message.ChatMode,
 			SenderOpenID: message.SenderOpenID, SenderName: message.SenderName,
 			SourceURL: message.SourceURL, Mentions: append(json.RawMessage(nil), message.Mentions...),
@@ -165,12 +143,4 @@ func snapshotConversation(unit ConversationUnit) []contextsnap.Message {
 		})
 	}
 	return conversation
-}
-
-func copyStringPtr(value *string) *string {
-	if value == nil || strings.TrimSpace(*value) == "" {
-		return nil
-	}
-	copied := *value
-	return &copied
 }

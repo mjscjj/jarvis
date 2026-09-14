@@ -1,5 +1,5 @@
-import { lazy, Suspense, useEffect, useState } from 'react'
-import { Alert, Badge, Button, Drawer, Input, Layout, Menu, Modal, Result, Spin, Tooltip, Typography, message } from 'antd'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
+import { Alert, Avatar, Badge, Button, Divider, Drawer, Input, Layout, Menu, Modal, Popover, Result, Spin, Tooltip, Typography, message } from 'antd'
 import type { MenuProps } from 'antd'
 import {
   HomeOutlined,
@@ -12,14 +12,13 @@ import {
   MenuUnfoldOutlined,
   DatabaseOutlined,
   MoreOutlined,
-  PoweroffOutlined,
   ApiOutlined,
   CheckOutlined,
   CloseOutlined,
+  DownOutlined,
   EditOutlined,
+  InfoCircleOutlined,
   LogoutOutlined,
-  SafetyCertificateOutlined,
-  UserOutlined,
 } from '@ant-design/icons'
 import { AppUpdateProvider } from './AppUpdate'
 import { AgentIdentityProvider, useAgentIdentity } from './agentIdentity'
@@ -37,7 +36,6 @@ import type { AuthUser as OKRAuthUser } from './okr/emily/types'
 import { useExecutingTaskCount } from './hooks/useExecutingTaskCount'
 import type { Plugin } from './types'
 import { AgentActivityIcon } from './components/AgentActivityIcon'
-import { DeveloperHelpButton } from './components/DeveloperDocuments'
 
 const { Sider, Content } = Layout
 const { Title } = Typography
@@ -53,7 +51,6 @@ const ScheduledTasks = lazy(() => import('./ScheduledTasks'))
 const Debug = lazy(() => import('./Debug'))
 const Chat = lazy(() => import('./Chat'))
 const Plugins = lazy(() => import('./Plugins'))
-const SecuritySettings = lazy(() => import('./SecuritySettings'))
 
 const DEFAULT_KEY = 'chat'
 
@@ -85,7 +82,6 @@ const pageLabels: Record<string, string> = {
   todos: '线索',
   'scheduled-tasks': '任务',
   plugins: '插件',
-  security: '安全保护',
   agents: '工作设定',
   settings: '系统设置',
   debug: '运行状态',
@@ -119,6 +115,8 @@ function AppShell() {
       .some((email) => ['claire.li@bytedance.com', 'chujiejie.1@bytedance.com'].includes(email?.trim().toLowerCase() ?? ''))
   const [moduleLoadError, setModuleLoadError] = useState<string>()
   const [enabledPlugins, setEnabledPlugins] = useState<Array<Pick<Plugin, 'id' | 'name' | 'kind' | 'enabled'>>>([])
+  const [agentMenuOpen, setAgentMenuOpen] = useState(false)
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false)
   const [shuttingDown, setShuttingDown] = useState(false)
   const [editingName, setEditingName] = useState(false)
   const [nameDraft, setNameDraft] = useState(agentName)
@@ -203,6 +201,16 @@ function AppShell() {
     ? enabledPlugins.some((plugin) => plugin.id === 'my-delegations')
     : null
 
+  const activityLabel = executingTasks.error
+    ? '任务状态读取失败'
+    : executingTasks.count === undefined
+      ? '正在读取任务状态'
+      : executingTasks.count > 0
+        ? `正在执行 ${executingTasks.count} 个任务`
+        : '当前空闲'
+  const accountName = user?.username || user?.email || '当前用户'
+  const accountInitial = Array.from(accountName.trim())[0]?.toUpperCase() || '我'
+
   const menuProps: MenuProps['items'] = [
     { key: 'chat', label: '对话', icon: <MessageOutlined /> },
     { key: 'overview', label: '工作台', icon: <HomeOutlined /> },
@@ -223,7 +231,6 @@ function AppShell() {
     }),
     { key: 'background', label: '世界', icon: <DatabaseOutlined /> },
     pluginMenu,
-    { key: 'security', label: '安全保护', icon: <SafetyCertificateOutlined /> },
     { type: 'divider' },
     {
       key: 'management',
@@ -248,9 +255,8 @@ function AppShell() {
     'scheduled-tasks': <ScheduledTasks delegationsEnabled={delegationsEnabled === true} />,
     plugins: <Plugins />,
     background: <Background />,
-    security: <SecuritySettings />,
     agents: <AgentSettings />,
-    settings: <Settings />,
+    settings: <Settings onShutdown={confirmShutdown} />,
     progress: <Progress />,
     debug: <Debug />,
     ...Object.fromEntries(enabledModules.map((module) => [
@@ -307,6 +313,8 @@ function AppShell() {
   }, [context.active_key, moduleEnablement, navigate])
 
   const goTo = (key: string) => {
+    setAgentMenuOpen(false)
+    setAccountMenuOpen(false)
     setMobileSystemOpen(false)
     setMobileModuleKey(undefined)
     const target = moduleNavigationTargets.find((item) => item.menuKey === key)
@@ -321,7 +329,7 @@ function AppShell() {
     navigate(key)
   }
 
-  const confirmShutdown = () => {
+  function confirmShutdown() {
     modal.confirm({
       title: `退出 ${agentName}？`,
       content: '这会停止当前 Jarvis 实例的服务，正在执行的任务也会被中断。',
@@ -365,6 +373,7 @@ function AppShell() {
   }
 
   const handleLogout = async () => {
+    setAccountMenuOpen(false)
     try {
       await logout()
     } catch (cause) {
@@ -427,12 +436,22 @@ function AppShell() {
       {messageContext}
       {!weeklyShare && <Sider className="app-sider" width={SIDER_WIDTH} collapsedWidth={SIDER_COLLAPSED_WIDTH} collapsed={siderCollapsed} theme="light">
         <div className={`sider-brand ${siderCollapsed ? 'is-collapsed' : ''}`}>
-          <AgentActivityIcon name={agentName} enabled={principalDataEnabled} {...executingTasks} onActivate={() => navigate('settings', { view: 'about' })} />
-          {!siderCollapsed && (
-            <div className="sider-brand-copy">
-              <div className="sider-name-row">
+          <Popover
+            trigger="click"
+            placement="bottomLeft"
+            open={agentMenuOpen}
+            onOpenChange={(open) => {
+              setAgentMenuOpen(open)
+              if (!open) cancelNameEdit()
+            }}
+            content={(
+              <div className="agent-menu">
+                <div className="agent-menu-heading">
+                  <strong>{agentName}</strong>
+                  <Badge status={executingTasks.error ? 'error' : executingTasks.count === undefined ? 'processing' : executingTasks.count > 0 ? 'processing' : 'success'} text={activityLabel} />
+                </div>
                 {editingName ? (
-                  <>
+                  <div className="agent-menu-name-editor">
                     <Input
                       size="small"
                       value={nameDraft}
@@ -451,27 +470,30 @@ function AppShell() {
                     <Tooltip title="取消">
                       <Button type="text" size="small" icon={<CloseOutlined />} disabled={savingName} onClick={cancelNameEdit} />
                     </Tooltip>
-                  </>
+                  </div>
                 ) : (
-                  <>
-                    <Tooltip title={agentName}>
-                      <Title level={4}>{agentName}</Title>
-                    </Tooltip>
-                    <Tooltip title="修改机器人名称">
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={<EditOutlined />}
-                        aria-label="修改机器人名称"
-                        onClick={() => {
-                          setNameDraft(agentName)
-                          setEditingName(true)
-                        }}
-                      />
-                    </Tooltip>
-                  </>
+                  <Button type="text" block onClick={() => {
+                    setNameDraft(agentName)
+                    setEditingName(true)
+                  }}>修改名称</Button>
                 )}
+                <Divider />
+                {Boolean(executingTasks.count) && (
+                  <Button type="text" block icon={<PlayCircleOutlined />} onClick={() => goTo('tasks')}>查看运行中的任务</Button>
+                )}
+                <Button type="text" block icon={<EditOutlined />} onClick={() => goTo('agents')}>工作设定</Button>
+                <Button type="text" block icon={<InfoCircleOutlined />} onClick={() => {
+                  setAgentMenuOpen(false)
+                  navigate('settings', { view: 'about' })
+                }}>关于与更新</Button>
               </div>
+            )}
+          >
+            <AgentActivityIcon name={agentName} enabled={principalDataEnabled} {...executingTasks} tooltipDisabled={agentMenuOpen} />
+          </Popover>
+          {!siderCollapsed && (
+            <div className="sider-brand-copy">
+              <div className="sider-name-row"><Title level={4}>{agentName}</Title></div>
               <div className="sider-agent-caption">你的主动式 Agent</div>
             </div>
           )}
@@ -490,38 +512,42 @@ function AppShell() {
           onClick={({ key }) => goTo(key)}
           className="app-menu"
         />
-        <div className={`sider-help ${siderCollapsed ? 'is-collapsed' : ''}`}>
-          <DeveloperHelpButton />
-        </div>
         <div className={`sider-footer ${siderCollapsed ? 'is-collapsed' : ''}`}>
-          {authEnabled && <div className="sider-account">
-            {!siderCollapsed && (
-              <>
-                <UserOutlined />
-                <div className="sider-account-copy">
-                  <strong>{user?.username}</strong>
-                  <span>{user?.email}</span>
+          {authEnabled && user && <Popover
+            trigger="click"
+            placement="topLeft"
+            open={accountMenuOpen}
+            onOpenChange={setAccountMenuOpen}
+            content={(
+              <div className="account-menu">
+                <div className="account-menu-profile">
+                  <Avatar size={36}>{accountInitial}</Avatar>
+                  <div>
+                    <strong>{accountName}</strong>
+                    <span>{user?.email}</span>
+                  </div>
                 </div>
-              </>
+                <Badge status="success" text="已通过字节身份登录" />
+                <Divider />
+                <Button type="text" block icon={<LogoutOutlined />} onClick={() => void handleLogout()}>退出登录</Button>
+              </div>
             )}
-            <Tooltip title={siderCollapsed ? `${user?.username ?? '当前用户'} · 退出登录` : '退出登录'} placement="right">
-              <Button type="text" icon={<LogoutOutlined />} aria-label="退出登录" onClick={() => void handleLogout()} />
-            </Tooltip>
-          </div>}
-          <Tooltip title="退出当前实例" placement="right">
-            <Button className="sider-shutdown-btn" type="text" danger icon={<PoweroffOutlined />} aria-label={`退出 ${agentName}`} onClick={confirmShutdown}>
-              {!siderCollapsed && '停止服务'}
+          >
+            <Button type="text" className="sider-account-trigger" aria-label={`${accountName}，打开账号菜单`}>
+              <Avatar size={26}>{accountInitial}</Avatar>
+              {!siderCollapsed && <><span className="sider-account-name">{accountName}</span><DownOutlined /></>}
             </Button>
-          </Tooltip>
-          <Tooltip title={siderCollapsed ? '展开侧边栏' : '收起侧边栏'} placement="right">
-            <Button
-              type="text"
-              className="sider-collapse-btn"
-              icon={siderCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
-              onClick={() => setSiderCollapsed((value) => !value)}
-            />
-          </Tooltip>
+          </Popover>}
         </div>
+        <Tooltip title={siderCollapsed ? '展开侧边栏' : '收起侧边栏'} placement="right">
+          <Button
+            type="text"
+            className="sider-collapse-btn"
+            aria-label={siderCollapsed ? '展开侧边栏' : '收起侧边栏'}
+            icon={siderCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            onClick={() => setSiderCollapsed((value) => !value)}
+          />
+        </Tooltip>
       </Sider>}
       {!weeklyShare && <header className="mobile-topbar">
         <strong>{currentPageLabel}</strong>
@@ -590,15 +616,14 @@ function AppShell() {
         onClose={() => setMobileSystemOpen(false)}
       >
         <div className="mobile-system-links">
-          {authEnabled && <div className="mobile-account">
-            <UserOutlined />
+          {authEnabled && user && <div className="mobile-account">
+            <Avatar size={32}>{accountInitial}</Avatar>
             <div>
-              <strong>{user?.username}</strong>
+              <strong>{accountName}</strong>
               <span>{user?.email}</span>
             </div>
           </div>}
           {[
-            { key: 'security', label: '安全保护', icon: <SafetyCertificateOutlined /> },
             { key: 'todos', label: '线索', icon: <CheckCircleOutlined /> },
             { key: 'agents', label: '工作设定', icon: <EditOutlined /> },
             { key: 'settings', label: '系统设置', icon: <SettingOutlined /> },
@@ -608,9 +633,7 @@ function AppShell() {
               {item.label}
             </Button>
           ))}
-          {authEnabled && <Button icon={<LogoutOutlined />} onClick={() => void handleLogout()}>退出登录</Button>}
-          <DeveloperHelpButton showLabel />
-          <Button danger icon={<PoweroffOutlined />} onClick={confirmShutdown}>退出并停止服务</Button>
+          {authEnabled && user && <Button icon={<LogoutOutlined />} onClick={() => void handleLogout()}>退出登录</Button>}
         </div>
       </Drawer>}
     </Layout>

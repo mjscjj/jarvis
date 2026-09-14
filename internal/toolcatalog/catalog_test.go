@@ -3,6 +3,7 @@ package toolcatalog
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func TestBlockSupportsAgentStages(t *testing.T) {
@@ -15,23 +16,40 @@ func TestBlockSupportsAgentStages(t *testing.T) {
 		if err != nil || block == "" {
 			t.Fatalf("Block(%q): %v", stage, err)
 		}
-		for _, required := range []string{
-			"同一套工具能力", "参数和运行环境校验", "通用世界实体", "关系",
-			"query-messages", "get-message", "get-todo-event", "get-task-event", "query-captured-resources", "get-captured-resource",
-			"list-facts", "get-page", "update-page", "list-pages", "list-page-revisions", "resolve-world-node",
-			"list-relations --node-type TYPE --node-id ID", "--node-types TYPE[,TYPE...]", "yield-until", "JARVIS_TASK_ID",
-			"get-world-progress", "create-world-progress", "update-world-progress",
-			"get-shared-memory", "append-shared-memory", "set-shared-memory", "2000",
-			"对所有 Agent 阶段开放", "JARVIS_AGENT_STAGE", "不是权限身份",
-			"create-task", "source_type=manual|proactive", "supplement-task", "resume-task",
-			"bytedcli --json <领域> --help", "不要加载全量帮助",
-		} {
+		for _, required := range []string{"各阶段共享工具能力", "不是工具权限", "help <group>", "<command> --help", "world", "evidence", "task", "schedule", "memory", "skill", "notify"} {
 			if !strings.Contains(block, required) {
-				t.Fatalf("Block(%q) missing %q:\n%s", stage, required, block)
+				t.Fatalf("Block(%q) missing %q", stage, required)
 			}
 		}
+
 		if strings.Contains(block, "--all-help") {
 			t.Fatalf("Block(%q) recommends eager bytedcli help:\n%s", stage, block)
+		}
+	}
+}
+
+func TestCatalogIsSharedDiscoveryNotCommandManual(t *testing.T) {
+	base, err := Block(StageExtract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if size := utf8.RuneCountInString(base); size > 900 {
+		t.Fatalf("tool discovery has %d characters", size)
+	}
+	for _, stage := range []string{StageExecute, StageChat, StageFactEngine, StageProactive, StageMeetingSweep, StageMorningBrief} {
+		block, err := Block(stage)
+		if err != nil || block != base {
+			t.Fatalf("stage %s differs from shared discovery: %v", stage, err)
+		}
+	}
+	for _, want := range []string{"help <group>", "<command> --help", "world", "evidence", "task", "schedule", "memory", "skill", "notify"} {
+		if !strings.Contains(base, want) {
+			t.Errorf("discovery missing %q", want)
+		}
+	}
+	for _, detail := range []string{"jarvis-chat", "idempotency_key", "expected_version", "--payload", "当前阶段："} {
+		if strings.Contains(base, detail) {
+			t.Errorf("command or stage detail leaked into discovery: %q", detail)
 		}
 	}
 }

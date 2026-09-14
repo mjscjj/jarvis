@@ -31,6 +31,7 @@ type preparedCandidate struct {
 	// dedup fingerprint so the same clue dedups stably across runs.
 	ProjectID  *uint64
 	Resolution datatypes.JSON
+	Admission  json.RawMessage
 	Content    datatypes.JSON
 }
 
@@ -198,6 +199,7 @@ func (s *PipelineStore) prepareCandidate(ctx context.Context, batch ChatBatch, u
 	if err != nil {
 		return nil, err
 	}
+	snapshot.ProjectAssociation = resolutionRaw
 	snapshotRaw, err := snapshot.Encode()
 	if err != nil {
 		return nil, fmt.Errorf("encode context snapshot: %w", err)
@@ -207,7 +209,25 @@ func (s *PipelineStore) prepareCandidate(ctx context.Context, batch ChatBatch, u
 	if err != nil {
 		return nil, fmt.Errorf("encode extraction result: %w", err)
 	}
-	content, err := contextpack.Freeze(extractionRaw, snapshotRaw, candidate.Payload, candidate.Annotation)
+	source, err := json.Marshal(map[string]any{"source_message_ids": candidate.SourceMessageIDs, "trigger_message_id": candidate.TriggerMessageID, "source_quote": candidate.SourceQuote})
+	if err != nil {
+		return nil, err
+	}
+	links := map[string]json.RawMessage{}
+	var annotation map[string]json.RawMessage
+	if len(candidate.Annotation) > 0 {
+		if err := json.Unmarshal(candidate.Annotation, &annotation); err != nil {
+			return nil, err
+		}
+	}
+	if id, ok := annotation["delegation_id"]; ok {
+		links["delegation_id"] = id
+	}
+	notes, err := json.Marshal(links)
+	if err != nil {
+		return nil, err
+	}
+	content, err := contextpack.FreezeEvidence(source, snapshotRaw, notes)
 	if err != nil {
 		return nil, fmt.Errorf("freeze candidate content: %w", err)
 	}
@@ -215,7 +235,7 @@ func (s *PipelineStore) prepareCandidate(ctx context.Context, batch ChatBatch, u
 	return &preparedCandidate{
 		Candidate: candidate, Fingerprint: fingerprint, AssignerOpenID: assigner,
 		LeaderAssigned: len(leaders) > 0, FirstEvidenceAt: first, LastEvidenceAt: last,
-		ProjectID: projectID, Resolution: resolutionJSON, Content: datatypes.JSON(content),
+		Admission: extractionRaw, ProjectID: projectID, Resolution: resolutionJSON, Content: datatypes.JSON(content),
 	}, nil
 }
 
@@ -275,7 +295,7 @@ func (s *PipelineStore) createTodo(tx *gorm.DB, batch ChatBatch, prepared *prepa
 	if err := tx.Create(&todo).Error; err != nil {
 		return false, nil, fmt.Errorf("create todo fingerprint=%s: %w", prepared.Fingerprint, err)
 	}
-	detail, err := eventDetail("created", todo.Revision, prepared.Candidate.SourceMessageIDs)
+	detail, err := eventDetail("created", todo.Revision, prepared.Candidate.SourceMessageIDs, prepared.Admission)
 	if err != nil {
 		return false, nil, err
 	}
@@ -337,7 +357,7 @@ func (s *PipelineStore) updateTodo(tx *gorm.DB, existing *domain.Todo, prepared 
 	if result.RowsAffected != 1 {
 		return fmt.Errorf("update todo id=%d optimistic lock affected=%d, want 1", existing.ID, result.RowsAffected)
 	}
-	detail, err := eventDetail("evidence_updated", existing.Revision+1, prepared.Candidate.SourceMessageIDs)
+	detail, err := eventDetail("evidence_updated", existing.Revision+1, prepared.Candidate.SourceMessageIDs, prepared.Admission)
 	if err != nil {
 		return err
 	}
@@ -360,9 +380,9 @@ func (s *PipelineStore) updateTodo(tx *gorm.DB, existing *domain.Todo, prepared 
 	return nil
 }
 
-func eventDetail(eventType string, revision int32, messageIDs []string) (datatypes.JSON, error) {
+func eventDetail(eventType string, revision int32, messageIDs []string, admission json.RawMessage) (datatypes.JSON, error) {
 	encoded, err := json.Marshal(map[string]any{
-		"event_type": eventType, "revision": revision, "source_message_ids": messageIDs,
+		"event_type": eventType, "revision": revision, "source_message_ids": messageIDs, "m3_admission": admission,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("encode todo event detail: %w", err)

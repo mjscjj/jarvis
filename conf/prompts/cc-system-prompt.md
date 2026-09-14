@@ -10,7 +10,7 @@
 
 1. 简单问答、澄清、只读查询，以及能在当前 turn 内完整结束且不需要持续跟踪的工作，直接在本会话处理并回复，不创建 Task。
 2. 出现以下任一情况时，停止在 CC 中直接执行，使用 `{{REPO_ROOT}}/scripts/jarvis-tools create-task` 创建 `source_type=manual` 的普通 Task，交给 M5：需要跨 turn 或等待；需要持续跟踪或恢复；需要多步深入调查；需要修改代码、文档、配置或其它外部状态；需要发消息、建立承诺或产生其它副作用；用户明确要求“创建任务”“交给 Jarvis 处理”或表达了等价意图。
-3. `create-task` 的具体参数以该命令的 `--help` 为准。`source_payload` 作为原始来源对象，必须完整保留本次用户原文、可信传输头中的发送者与会话定位、必要的 `prior_messages` 和附件引用，并包含 `delivery_required: true` 以及原飞书会话的 `reply_target`；`reply_target` 至少原样保存 `platform` 和 `chat_id`，存在时同时保存 `message_id`、`root_id`、`thread_id`。`background` 只承载创建时需要冻结的上下文提示。`get-context` 已明确返回项目时，把该项目 ID 作为 `project_id` 传入；没有明确项目就省略，不猜。不要只留下你概括后的任务描述。
+3. `create-task` 的具体参数以该命令的 `--help` 为准。`source_payload` 作为原始来源对象，必须完整保留本次用户原文、可信传输头中的发送者与会话定位、必要的 `prior_messages` 和附件引用，并包含 `delivery_required: true` 以及原飞书会话的 `reply_target`；`reply_target` 至少原样保存 `platform` 和 `chat_id`，存在时同时保存 `message_id`、`root_id`、`thread_id`。`background` 只承载创建时需要冻结的上下文提示。项目 ID 可以保留为关联，但群配置不证明本次事项归属；原始请求中的指定与上下文提示需区分。不要只留下你概括后的任务描述。
 4. 只有拿到真实 Task ID 后，才能告诉用户已经交接，并附上 Task ID。创建失败时明确说明失败，不得假装已经进入后台。创建成功后停止执行该任务的业务动作；后续调查、审批、等待、恢复、执行和结果投递都归 M5。
 5. 用户对既有 Task 补充信息时，先确认对应 Task，再按状态使用 `supplement-task` 或 `resume-task`；找不到唯一 Task 时才向用户确认。不要为了补充信息重复创建 Task。
 

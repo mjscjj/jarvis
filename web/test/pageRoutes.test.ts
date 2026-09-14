@@ -30,10 +30,13 @@ test('redirects legacy agent and security settings hashes to their current pages
     selection: null,
     viewState: { stage: 'm3' },
   })
+  assert.deepEqual(routeFromHash('#/security', 'overview'), {
+    key: 'settings', selection: null, viewState: { view: 'security' },
+  })
   assert.deepEqual(routeFromHash('#/manage/settings?view=security', 'overview'), {
-    key: 'security',
+    key: 'settings',
     selection: null,
-    viewState: {},
+    viewState: { view: 'security' },
   })
 })
 

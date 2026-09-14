@@ -94,11 +94,15 @@ func (e *Extractor) ExtractWithTools(ctx context.Context, prompt extract.Prompt,
 		return nil, fmt.Errorf("codex extraction prompt is empty")
 	}
 
-	tempDir, err := os.MkdirTemp("", "jarvis-codex-extract-")
-	if err != nil {
-		return nil, fmt.Errorf("create codex extraction temp directory: %w", err)
+	tempDir := prompt.RunDir
+	if tempDir == "" {
+		return nil, fmt.Errorf("M3 run directory is required for evidence retention")
 	}
-	defer os.RemoveAll(tempDir)
+	if err := os.MkdirAll(tempDir, 0700); err != nil {
+		return nil, err
+	}
+	var err error
+
 	schemaPath := filepath.Join(tempDir, "todo.schema.json")
 	resultPath := filepath.Join(tempDir, "todo.json")
 	schemaBytes, err := json.Marshal(provider.TodoExtractionJSONSchema())
@@ -125,13 +129,18 @@ func (e *Extractor) ExtractWithTools(ctx context.Context, prompt extract.Prompt,
 	runCtx, cancel := context.WithTimeout(ctx, e.timeout)
 	defer cancel()
 	command := exec.CommandContext(runCtx, e.bin, args...)
-	command.Env = append(os.Environ(), "JARVIS_AGENT_STAGE=extract")
+	command.Env = append(os.Environ(), "JARVIS_AGENT_STAGE=extract", "JARVIS_EVIDENCE_DIR="+tempDir)
 	command.Dir = tempDir
 	command.Stdin = strings.NewReader(combined)
 	var stdout, stderr bytes.Buffer
 	command.Stdout = &stdout
 	command.Stderr = &stderr
 	commandErr := command.Run()
+	for name, body := range map[string][]byte{"stdout.jsonl": stdout.Bytes(), "stderr.txt": stderr.Bytes(), "prompt.txt": []byte(combined)} {
+		if err := os.WriteFile(filepath.Join(tempDir, name), body, 0600); err != nil {
+			return nil, err
+		}
+	}
 	usage, usageErr := agentusage.ParseCodexJSONL(stdout.Bytes())
 	if usageErr == nil {
 		if err := agentusage.Record(ctx, usage); err != nil {

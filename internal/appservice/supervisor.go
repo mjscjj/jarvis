@@ -14,6 +14,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"jarvis/internal/config"
 )
 
 const RuntimeConnectionPrefix = "JARVIS_RUNTIME_CONNECTION "
@@ -210,6 +212,20 @@ func (s *Supervisor) startProcess(name, binary string, args []string, workingDir
 		"JARVIS_RUNTIME_ROOT="+s.layout.RuntimeRoot,
 		"JARVIS_CONFIG_PATH="+s.layout.ConfigPath,
 	)
+	if name == "cc-connect" {
+		// CC Connect is a sibling of jarvis-server, not its child. Read the same
+		// effective config on every start (including after a runtime restart).
+		cfg, err := config.Load(s.layout.ConfigPath)
+		if err != nil {
+			stdout.Close()
+			stderr.Close()
+			return nil, fmt.Errorf("load CC Connect environment: %w", err)
+		}
+		command.Env = append(command.Env,
+			"JARVIS_API_BASE="+s.layout.Connection(s.options.Address).HTTPURL,
+			"JARVIS_TIMEZONE="+cfg.Capture.Timezone,
+		)
+	}
 	if err := command.Start(); err != nil {
 		stdout.Close()
 		stderr.Close()

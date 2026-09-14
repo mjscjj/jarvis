@@ -155,6 +155,28 @@ func TestServiceRejectsSkillIdentityChangesAndEmptyBody(t *testing.T) {
 	}
 }
 
+func TestDisabledCatalogEntryRemainsReadable(t *testing.T) {
+	for _, inline := range []bool{false, true} {
+		root, configPath := writeSkillFixture(t, inline)
+		service, err := NewService(root, configPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		enabled := false
+		if _, err := service.Update(t.Context(), "example", Input{Stages: []string{StageExtract}, IsEnabled: &enabled}); err != nil {
+			t.Fatal(err)
+		}
+		catalog, err := service.Catalog(t.Context(), StageExtract)
+		if err != nil || catalog != "" {
+			t.Fatalf("disabled catalog=%q err=%v", catalog, err)
+		}
+		content, err := service.Content(t.Context(), "example")
+		if err != nil || !strings.Contains(content.Content, "BODY_MARKER") {
+			t.Fatalf("content=%v err=%v", content, err)
+		}
+	}
+}
+
 func TestAvailabilityGateHidesSkill(t *testing.T) {
 	root, configPath := writeSkillFixture(t, false)
 	service, err := NewService(root, configPath)
@@ -296,8 +318,8 @@ func TestRepositoryFeishuMessageSkillDefinesM5SendClosure(t *testing.T) {
 		"面向多个独立收件人的系统通知或批量提醒读取 `feishu-broadcast`",
 		"给 principal 本人的主动通知和动作回执使用 `jarvis-tools notice-principal`",
 		"不执行本 Skill 的任何写命令",
-		"jarvis-config show-principal",
-		"不能改读 Task 仓库里的同名文件",
+		"jarvis-tools get-agent-identity",
+		"同一运行实例的有效身份",
 		"lark-cli auth status --json --verify",
 		"lark-cli 当前默认身份",
 		"user `openId` 与 principal `open_id` 完全相同",

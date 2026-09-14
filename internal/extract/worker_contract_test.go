@@ -26,7 +26,7 @@ func TestBuildPromptDropsContextBeforeNewEvidence(t *testing.T) {
 	batch := contractChatBatch()
 	unit := batch.Units[0]
 	unit.Messages[0].Content = "old-marker " + strings.Repeat("x", 5000)
-	prompt, err := BuildPrompt(batch, unit, nil, time.Now(), PromptOptions{InitiativeLevel: "normal", SystemPrompt: testM3SystemPrompt,
+	prompt, err := BuildPrompt(batch, unit, time.Now(), PromptOptions{InitiativeLevel: "normal", SystemPrompt: testM3SystemPrompt,
 		PrincipalOpenID: "ou_owner", Location: time.UTC, MaxChars: 4000,
 	})
 	if err != nil {

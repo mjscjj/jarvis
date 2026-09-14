@@ -38,8 +38,6 @@ type RuntimeSettings struct {
 	ExtractReasoningEffort       string  `json:"extract_reasoning_effort"`
 	ExtractContextMessages       int     `json:"extract_context_messages"`
 	ExtractContextWindowMinutes  int     `json:"extract_context_window_minutes"`
-	ExtractOpenTodoLimit         int     `json:"extract_open_todo_limit"`
-	ExtractRecentTaskLimit       int     `json:"extract_recent_task_limit"`
 	ExtractMaxPromptChars        int     `json:"extract_max_prompt_chars"`
 	ExtractSemanticThreshold     float64 `json:"extract_semantic_threshold"`
 	ExtractSemanticNeighborLimit int     `json:"extract_semantic_neighbor_limit"`
@@ -109,7 +107,8 @@ type RuntimeSettingsView struct {
 }
 
 type SecuritySettings struct {
-	P2PScanEnabled bool `json:"p2p_scan_enabled"`
+	P2PScanEnabled     bool `json:"p2p_scan_enabled"`
+	AutoRelatedP2PTopN int  `json:"auto_related_p2p_top_n"`
 }
 
 type SecurityCapability struct {
@@ -128,10 +127,11 @@ type SecuritySettingsView struct {
 // The active snapshot is frozen at process start, so the API can truthfully
 // report whether saved settings differ from the running process.
 type RuntimeSettingsService struct {
-	mu                   sync.Mutex
-	configPath           string
-	active               RuntimeSettings
-	activeP2PScanEnabled bool
+	mu                       sync.Mutex
+	configPath               string
+	active                   RuntimeSettings
+	activeP2PScanEnabled     bool
+	activeAutoRelatedP2PTopN int
 }
 
 func NewRuntimeSettingsService(configPath string, active *Config) (*RuntimeSettingsService, error) {
@@ -142,9 +142,10 @@ func NewRuntimeSettingsService(configPath string, active *Config) (*RuntimeSetti
 		return nil, fmt.Errorf("runtime settings active config is nil")
 	}
 	return &RuntimeSettingsService{
-		configPath:           configPath,
-		active:               runtimeSettingsFromConfig(active),
-		activeP2PScanEnabled: active.Capture.P2PScanEnabled,
+		configPath:               configPath,
+		active:                   runtimeSettingsFromConfig(active),
+		activeP2PScanEnabled:     active.Capture.P2PScanEnabled,
+		activeAutoRelatedP2PTopN: active.Capture.AutoRelatedP2PTopN,
 	}, nil
 }
 
@@ -176,20 +177,7 @@ func (s *RuntimeSettingsService) Update(ctx context.Context, input RuntimeSettin
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidRuntimeSettings, err)
 	}
-	override := runtimeOverrideFromSettings(input)
-	// Browser authentication is deployment-local rather than editable on the
-	// settings page. Preserve its active value when that page rewrites the
-	// runtime overlay.
-	override.Auth = cfg.Auth
-	override.Server.Addr = cfg.Server.Addr
-	override.Server.PublicBaseURL = cfg.Server.PublicBaseURL
-	override.Chat.Enabled = cfg.Chat.Enabled
-	override.Capture.P2PScanEnabled = cfg.Capture.P2PScanEnabled
-	override.Extract.PrincipalOpenID = cfg.Extract.PrincipalOpenID
-	override.LarkCLI.Bin = cfg.LarkCLI.Bin
-	override.DailyDigest.GitAuthor = cfg.DailyDigest.GitAuthor
-	override.CardApproval = cfg.CardApproval
-	if err := writeRuntimeOverride(RuntimeOverridePath(s.configPath), override); err != nil {
+	if err := UpdateRuntimeOverride(s.configPath, runtimeOverrideFromSettings(input)); err != nil {
 		return nil, err
 	}
 	return s.getLocked()
@@ -220,20 +208,16 @@ func (s *RuntimeSettingsService) UpdateSecurity(ctx context.Context, input Secur
 		return nil, err
 	}
 	cfg.Capture.P2PScanEnabled = input.P2PScanEnabled
+	cfg.Capture.AutoRelatedP2PTopN = input.AutoRelatedP2PTopN
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidRuntimeSettings, err)
 	}
-	settings := runtimeSettingsFromConfig(cfg)
-	override := runtimeOverrideFromSettings(settings)
-	override.Server.Addr = cfg.Server.Addr
-	override.Server.PublicBaseURL = cfg.Server.PublicBaseURL
-	override.Chat.Enabled = cfg.Chat.Enabled
-	override.Capture.P2PScanEnabled = cfg.Capture.P2PScanEnabled
-	override.Extract.PrincipalOpenID = cfg.Extract.PrincipalOpenID
-	override.LarkCLI.Bin = cfg.LarkCLI.Bin
-	override.DailyDigest.GitAuthor = cfg.DailyDigest.GitAuthor
-	override.CardApproval = cfg.CardApproval
-	if err := writeRuntimeOverride(RuntimeOverridePath(s.configPath), override); err != nil {
+	if err := UpdateRuntimeOverride(s.configPath, map[string]any{
+		"capture": map[string]any{
+			"p2p_scan_enabled":       input.P2PScanEnabled,
+			"auto_related_p2p_top_n": input.AutoRelatedP2PTopN,
+		},
+	}); err != nil {
 		return nil, err
 	}
 	reloaded, err := Load(s.configPath)
@@ -245,8 +229,11 @@ func (s *RuntimeSettingsService) UpdateSecurity(ctx context.Context, input Secur
 
 func (s *RuntimeSettingsService) securityView(cfg *Config) *SecuritySettingsView {
 	return &SecuritySettingsView{
-		Settings:        SecuritySettings{P2PScanEnabled: cfg.Capture.P2PScanEnabled},
-		RestartRequired: cfg.Capture.P2PScanEnabled != s.activeP2PScanEnabled,
+		Settings: SecuritySettings{
+			P2PScanEnabled: cfg.Capture.P2PScanEnabled, AutoRelatedP2PTopN: cfg.Capture.AutoRelatedP2PTopN,
+		},
+		RestartRequired: cfg.Capture.P2PScanEnabled != s.activeP2PScanEnabled ||
+			cfg.Capture.AutoRelatedP2PTopN != s.activeAutoRelatedP2PTopN,
 		L4DocumentRead: SecurityCapability{
 			Enforceable: false,
 			Enabled:     false,
@@ -286,8 +273,6 @@ func runtimeSettingsFromConfig(cfg *Config) RuntimeSettings {
 		ExtractReasoningEffort:       cfg.Extract.CodexReasoningEffort,
 		ExtractContextMessages:       cfg.Extract.ContextMessages,
 		ExtractContextWindowMinutes:  cfg.Extract.ContextWindowMinutes,
-		ExtractOpenTodoLimit:         cfg.Extract.OpenTodoLimit,
-		ExtractRecentTaskLimit:       cfg.Extract.RecentTaskLimit,
 		ExtractMaxPromptChars:        cfg.Extract.MaxPromptChars,
 		ExtractSemanticThreshold:     cfg.Extract.SemanticThreshold,
 		ExtractSemanticNeighborLimit: cfg.Extract.SemanticNeighborLimit,
@@ -361,8 +346,6 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 	cfg.Extract.CodexReasoningEffort = strings.TrimSpace(input.ExtractReasoningEffort)
 	cfg.Extract.ContextMessages = input.ExtractContextMessages
 	cfg.Extract.ContextWindowMinutes = input.ExtractContextWindowMinutes
-	cfg.Extract.OpenTodoLimit = input.ExtractOpenTodoLimit
-	cfg.Extract.RecentTaskLimit = input.ExtractRecentTaskLimit
 	cfg.Extract.MaxPromptChars = input.ExtractMaxPromptChars
 	cfg.Extract.SemanticThreshold = input.ExtractSemanticThreshold
 	cfg.Extract.SemanticNeighborLimit = input.ExtractSemanticNeighborLimit
@@ -387,7 +370,6 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 	cfg.Capture.DiscoverSchedule = strings.TrimSpace(input.CaptureDiscoverSchedule)
 	cfg.Capture.ScanSchedule = strings.TrimSpace(input.CaptureScanSchedule)
 	cfg.Capture.P2PWindowMinutes = input.CaptureP2PWindowMinutes
-	cfg.Capture.AutoRelatedP2PTopN = input.CaptureAutoRelatedP2PTopN
 	cfg.FactEngine.Enabled = input.FactEngineEnabled
 	cfg.FactEngine.Schedule = strings.TrimSpace(input.FactEngineSchedule)
 	cfg.FactEngine.Model = strings.TrimSpace(input.FactEngineModel)
@@ -420,13 +402,7 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 
 type runtimeOverride struct {
 	Identity IdentityConfig `yaml:"identity"`
-	Auth     AuthConfig     `yaml:"auth"`
-	Server   struct {
-		Addr          string `yaml:"addr"`
-		PublicBaseURL string `yaml:"public_base_url"`
-	} `yaml:"server"`
-	Extract struct {
-		PrincipalOpenID       string  `yaml:"principal_open_id"`
+	Extract  struct {
 		Enabled               bool    `yaml:"enabled"`
 		Engine                string  `yaml:"engine"`
 		Schedule              string  `yaml:"schedule"`
@@ -437,8 +413,6 @@ type runtimeOverride struct {
 		ReasoningEffort       string  `yaml:"codex_reasoning_effort"`
 		ContextMessages       int     `yaml:"context_messages"`
 		ContextWindowMinutes  int     `yaml:"context_window_minutes"`
-		OpenTodoLimit         int     `yaml:"open_todo_limit"`
-		RecentTaskLimit       int     `yaml:"recent_task_limit"`
 		MaxPromptChars        int     `yaml:"max_prompt_chars"`
 		SemanticThreshold     float64 `yaml:"semantic_threshold"`
 		SemanticNeighborLimit int     `yaml:"semantic_neighbor_limit"`
@@ -467,7 +441,6 @@ type runtimeOverride struct {
 		Concurrency          int    `yaml:"concurrency"`
 	} `yaml:"execute"`
 	Chat struct {
-		Enabled         bool   `yaml:"enabled"`
 		Model           string `yaml:"model"`
 		Sandbox         string `yaml:"sandbox"`
 		ReasoningEffort string `yaml:"reasoning_effort"`
@@ -478,15 +451,9 @@ type runtimeOverride struct {
 		ScanWorkers                int    `yaml:"scan_workers"`
 		DiscoverSchedule           string `yaml:"discover_schedule"`
 		ScanSchedule               string `yaml:"scan_schedule"`
-		P2PScanEnabled             bool   `yaml:"p2p_scan_enabled"`
 		P2PActivationWindowMinutes int    `yaml:"p2p_activation_window_minutes"`
-		AutoRelatedP2PTopN         int    `yaml:"auto_related_p2p_top_n"`
 	} `yaml:"capture"`
-	// CardApproval is local identity/secret configuration, not a setting the
-	// management page may edit. Preserve its active value whenever that page
-	// rewrites the runtime overlay.
-	CardApproval CardApprovalConfig `yaml:"card_approval"`
-	FactEngine   struct {
+	FactEngine struct {
 		Enabled           bool   `yaml:"enabled"`
 		Schedule          string `yaml:"schedule"`
 		Model             string `yaml:"model"`
@@ -508,7 +475,6 @@ type runtimeOverride struct {
 		TimeoutSeconds      int    `yaml:"timeout_seconds"`
 	} `yaml:"proactive"`
 	LarkCLI struct {
-		Bin        string  `yaml:"bin"`
 		RateLimit  float64 `yaml:"rate_limit"`
 		Burst      int     `yaml:"burst"`
 		Concurrent int     `yaml:"concurrent"`
@@ -522,7 +488,6 @@ type runtimeOverride struct {
 	DailyDigest struct {
 		Enabled           bool   `yaml:"enabled"`
 		Schedule          string `yaml:"schedule"`
-		GitAuthor         string `yaml:"git_author"`
 		GroupMessageLimit int    `yaml:"group_message_limit"`
 		GroupConcurrency  int    `yaml:"group_concurrency"`
 	} `yaml:"dailydigest"`
@@ -541,8 +506,6 @@ func runtimeOverrideFromSettings(input RuntimeSettings) runtimeOverride {
 	override.Extract.ReasoningEffort = strings.TrimSpace(input.ExtractReasoningEffort)
 	override.Extract.ContextMessages = input.ExtractContextMessages
 	override.Extract.ContextWindowMinutes = input.ExtractContextWindowMinutes
-	override.Extract.OpenTodoLimit = input.ExtractOpenTodoLimit
-	override.Extract.RecentTaskLimit = input.ExtractRecentTaskLimit
 	override.Extract.MaxPromptChars = input.ExtractMaxPromptChars
 	override.Extract.SemanticThreshold = input.ExtractSemanticThreshold
 	override.Extract.SemanticNeighborLimit = input.ExtractSemanticNeighborLimit
@@ -572,7 +535,6 @@ func runtimeOverrideFromSettings(input RuntimeSettings) runtimeOverride {
 	override.Capture.DiscoverSchedule = strings.TrimSpace(input.CaptureDiscoverSchedule)
 	override.Capture.ScanSchedule = strings.TrimSpace(input.CaptureScanSchedule)
 	override.Capture.P2PActivationWindowMinutes = input.CaptureP2PWindowMinutes
-	override.Capture.AutoRelatedP2PTopN = input.CaptureAutoRelatedP2PTopN
 	override.FactEngine.Enabled = input.FactEngineEnabled
 	override.FactEngine.Schedule = strings.TrimSpace(input.FactEngineSchedule)
 	override.FactEngine.Model = strings.TrimSpace(input.FactEngineModel)
@@ -604,80 +566,45 @@ func runtimeOverrideFromSettings(input RuntimeSettings) runtimeOverride {
 	return override
 }
 
-func writeRuntimeOverride(path string, override runtimeOverride) error {
-	patch, err := yaml.Marshal(&override)
+func UpdateRuntimeOverride(configPath string, patch any) error {
+	path := RuntimeOverridePath(configPath)
+	document, err := readRuntimeOverrideDocument(path)
+	if err != nil {
+		return err
+	}
+	var updates yaml.Node
+	if err := updates.Encode(patch); err != nil {
+		return fmt.Errorf("encode runtime config update: %w", err)
+	}
+	mergeRuntimeMapping(document.Content[0], &updates)
+	data, err := yaml.Marshal(document)
 	if err != nil {
 		return fmt.Errorf("marshal runtime config override: %w", err)
 	}
-	data := patch
-	if current, readErr := os.ReadFile(path); readErr == nil {
-		data, err = mergeRuntimeOverrideYAML(current, patch)
-		if err != nil {
-			return fmt.Errorf("merge runtime config override: %w", err)
-		}
-	} else if !os.IsNotExist(readErr) {
-		return fmt.Errorf("read runtime config override %q: %w", path, readErr)
-	}
-	dir := filepath.Dir(path)
-	temp, err := os.CreateTemp(dir, ".config.runtime-*.yaml")
+	base, err := os.ReadFile(configPath)
 	if err != nil {
-		return fmt.Errorf("create runtime config override temp file: %w", err)
+		return err
 	}
-	tempPath := temp.Name()
-	defer os.Remove(tempPath)
-	if err := temp.Chmod(0o600); err != nil {
-		temp.Close()
-		return fmt.Errorf("chmod runtime config override temp file: %w", err)
+	if err := rejectRuntimeOverrideBaseOnlySections(data, path, configPath); err != nil {
+		return err
 	}
-	if _, err := temp.Write(data); err != nil {
-		temp.Close()
-		return fmt.Errorf("write runtime config override temp file: %w", err)
+	if err := validateMergedConfig(base, data); err != nil {
+		return err
 	}
-	if err := temp.Close(); err != nil {
-		return fmt.Errorf("close runtime config override temp file: %w", err)
-	}
-	if err := os.Rename(tempPath, path); err != nil {
-		return fmt.Errorf("replace runtime config override %q: %w", path, err)
-	}
-	return nil
+	return writeRuntimeOverrideBytes(path, data)
 }
 
-// mergeRuntimeOverrideYAML updates only settings-owned leaves. Deployment
-// fields such as server/sqlite and execute paths remain
-// owned by installation configuration and survive a settings-page save.
-func mergeRuntimeOverrideYAML(current, patch []byte) ([]byte, error) {
-	var existingNode, patchNode yaml.Node
-	if err := yaml.Unmarshal(current, &existingNode); err != nil {
-		return nil, err
-	}
-	if err := yaml.Unmarshal(patch, &patchNode); err != nil {
-		return nil, err
-	}
-	if len(existingNode.Content) != 1 || len(patchNode.Content) != 1 {
-		return nil, fmt.Errorf("runtime override must contain one YAML document")
-	}
-	mergeYAMLMapping(existingNode.Content[0], patchNode.Content[0])
-	return yaml.Marshal(&existingNode)
-}
-
-func mergeYAMLMapping(dst, src *yaml.Node) {
-	if dst.Kind != yaml.MappingNode || src.Kind != yaml.MappingNode {
-		*dst = *src
-		return
-	}
-	for index := 0; index < len(src.Content); index += 2 {
-		key, value := src.Content[index], src.Content[index+1]
-		matched := false
-		for current := 0; current < len(dst.Content); current += 2 {
-			if dst.Content[current].Value != key.Value {
-				continue
-			}
-			mergeYAMLMapping(dst.Content[current+1], value)
-			matched = true
-			break
-		}
-		if !matched {
-			dst.Content = append(dst.Content, key, value)
+func mergeRuntimeMapping(target, patch *yaml.Node) {
+	for i := 0; i+1 < len(patch.Content); i += 2 {
+		key, value := patch.Content[i], patch.Content[i+1]
+		existing := mappingValue(target, key.Value)
+		if existing == nil {
+			target.Content = append(target.Content, key, value)
+		} else if existing.Kind == yaml.MappingNode && value.Kind == yaml.MappingNode {
+			mergeRuntimeMapping(existing, value)
+		} else {
+			value.HeadComment, value.LineComment, value.FootComment = existing.HeadComment, existing.LineComment, existing.FootComment
+			*existing = *value
 		}
 	}
 }

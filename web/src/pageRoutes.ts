@@ -11,7 +11,6 @@ const pageHashes: Record<string, string> = {
   todos: '/manage/clues',
   'scheduled-tasks': '/manage/automations',
   plugins: '/plugins',
-  security: '/security',
   agents: '/agents',
   settings: '/manage/settings',
   debug: '/manage/runtime',
@@ -39,8 +38,8 @@ export function routeFromHash(hash: string, initialKey: string): HashRoute {
     const { view: _view, ...agentViewState } = viewState
     return { key: 'agents', selection: null, viewState: agentViewState }
   }
-  if (path === '/manage/settings' && viewState.view === 'security') {
-    return { key: 'security', selection: null, viewState: {} }
+  if (path === '/security') {
+    return { key: 'settings', selection: null, viewState: { view: 'security' } }
   }
   const taskMatch = path.match(/^\/work\/task\/(\d+)$/)
   if (taskMatch) {

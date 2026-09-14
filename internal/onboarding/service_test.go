@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"jarvis/internal/contextpack"
-	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
 	"jarvis/internal/taskcreate"
 
@@ -200,11 +199,7 @@ func TestBootstrapWorldModelCreatesPrincipalBeforeManualTask(t *testing.T) {
 	if err := db.AutoMigrate(models...); err != nil {
 		t.Fatal(err)
 	}
-	assembler, err := contextsnap.NewAssembler(db, "ou_principal")
-	if err != nil {
-		t.Fatal(err)
-	}
-	factory, err := taskcreate.NewFactory(db, assembler)
+	factory, err := taskcreate.NewFactory(db)
 	if err != nil {
 		t.Fatal(err)
 	}

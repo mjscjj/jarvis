@@ -24,6 +24,10 @@ const (
 	// a local Markdown full brief. It does not create Tasks.
 	SystemPromptMorningBriefKey = "morning_brief_system_prompt"
 	ApprovalPolicyKey           = "m5_approval_policy"
+	// EntityPageGuidanceKey is the shared content contract for every entity's
+	// long-term current-state page. Stage prompts own when to edit a page; this
+	// file owns what a good page contains.
+	EntityPageGuidanceKey = "entity_page_guidance"
 	// SystemPromptFactExtractKey drives the offline fact engine, which distils
 	// long-lived facts out of material the pipeline already produced.
 	SystemPromptFactExtractKey      = "fact_extract_system_prompt"
@@ -100,6 +104,11 @@ func definitions() []definition {
 			key: ApprovalPolicyKey, name: "任务执行审批策略", filename: "m5-approval-policy.md",
 			description: "供任务执行 Agent 判断哪些具体动作需要先请示、哪些可以直接完成。",
 			kind:        "approval_policy", stage: prompttemplate.StageM5,
+		},
+		{
+			key: EntityPageGuidanceKey, name: "实体当前认知页指导", filename: "entity-page-guidance.md",
+			description: "所有实体共用的页面内容契约：当前认知、历史演变、证据边界及 Task 运作记录的归属。",
+			kind:        "guidance", stage: "shared",
 		},
 		{
 			key: SystemPromptFactExtractKey, name: "持续世界建模提示词", filename: "fact-extract-system-prompt.md",

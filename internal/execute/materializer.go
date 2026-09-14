@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"jarvis/internal/contextpack"
+	"jarvis/internal/datatypes"
 	"jarvis/internal/domain"
 	"jarvis/internal/taskcreate"
 
@@ -113,6 +114,17 @@ func (m *Materializer) MaterializeTodo(ctx context.Context, todoID uint64, expec
 			}); err != nil {
 				return err
 			}
+			supplement, err := freshTodoEvidenceSupplement(&todo)
+			if err != nil {
+				return err
+			}
+			encodedSupplements, err := appendExecutionSupplement(
+				existingTask.ExecutionSupplements, supplement, "evidence:todo", time.Now(),
+			)
+			if err != nil {
+				return fmt.Errorf("append fresh Todo evidence task_id=%d todo_id=%d: %w", existingTask.ID, todo.ID, err)
+			}
+			existingTask.ExecutionSupplements = datatypes.JSON(encodedSupplements)
 			rerunTask, err := resetTaskForRerun(tx, existingTask, "system", map[string]any{
 				"reason": "fresh_todo_evidence", "todo_id": todo.ID, "todo_revision": todo.Revision,
 			}, time.Now())
@@ -151,6 +163,28 @@ func (m *Materializer) MaterializeTodo(ctx context.Context, todoID uint64, expec
 		return nil, err
 	}
 	return &result, nil
+}
+
+func freshTodoEvidenceSupplement(todo *domain.Todo) (string, error) {
+	if todo == nil || todo.ID == 0 || todo.Revision < 1 {
+		return "", fmt.Errorf("%w: fresh Todo evidence identity is invalid", ErrInvalidInput)
+	}
+	messageIDs := json.RawMessage(todo.SourceMessageIDs)
+	if len(messageIDs) == 0 {
+		messageIDs = json.RawMessage(`[]`)
+	}
+	notice, err := json.Marshal(map[string]any{
+		"kind":               "fresh_todo_evidence",
+		"todo_id":            todo.ID,
+		"todo_revision":      todo.Revision,
+		"source_message_ids": messageIDs,
+		"source_quote":       todo.SourceQuote,
+		"read_evidence":      fmt.Sprintf("get-todo --id %d --context evidence", todo.ID),
+	})
+	if err != nil {
+		return "", fmt.Errorf("encode fresh Todo evidence todo_id=%d: %w", todo.ID, err)
+	}
+	return string(notice), nil
 }
 
 func requireTodoContent(todo *domain.Todo) (json.RawMessage, error) {

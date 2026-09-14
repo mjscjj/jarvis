@@ -2,13 +2,15 @@ package extract
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"jarvis/internal/agentusage"
-	"jarvis/internal/progress"
 	"jarvis/internal/sharedmem"
 	"jarvis/internal/skill"
 	"jarvis/internal/textstore"
@@ -16,11 +18,8 @@ import (
 	"jarvis/internal/workrule"
 )
 
-type factReader interface {
-	CountFacts(context.Context, progress.FactFilter) (int, error)
-}
-
 type WorkerOptions struct {
+	RunsDir         string
 	Load            LoadOptions
 	PrincipalOpenID string
 	ModelName       string
@@ -60,27 +59,23 @@ type WorkerStats struct {
 type Worker struct {
 	store   pipelineStore
 	model   ToolExtractor
-	facts   factReader
 	dedup   candidateDeduplicator
 	toolBox toolBoxBuilder
 	opts    WorkerOptions
 	now     func() time.Time
 }
 
-func NewWorker(store pipelineStore, model ToolExtractor, facts factReader, dedup candidateDeduplicator, toolBox toolBoxBuilder, opts WorkerOptions) (*Worker, error) {
+func NewWorker(store pipelineStore, model ToolExtractor, dedup candidateDeduplicator, toolBox toolBoxBuilder, opts WorkerOptions) (*Worker, error) {
 	if store == nil {
 		return nil, fmt.Errorf("extract worker store is nil")
 	}
 	if model == nil {
 		return nil, fmt.Errorf("extract worker model is nil")
 	}
-	if facts == nil {
-		return nil, fmt.Errorf("extract worker fact reader is nil")
-	}
 	if dedup == nil {
 		return nil, fmt.Errorf("extract worker semantic deduplicator is nil")
 	}
-	if toolBox == nil {
+	if !opts.AgentToolCatalog && toolBox == nil {
 		return nil, fmt.Errorf("extract worker tool box builder is nil")
 	}
 	if opts.WorkRules == nil {
@@ -113,7 +108,7 @@ func NewWorker(store pipelineStore, model ToolExtractor, facts factReader, dedup
 	if opts.Location == nil {
 		return nil, fmt.Errorf("extract worker location is nil")
 	}
-	return &Worker{store: store, model: model, facts: facts, dedup: dedup, toolBox: toolBox, opts: opts, now: time.Now}, nil
+	return &Worker{store: store, model: model, dedup: dedup, toolBox: toolBox, opts: opts, now: time.Now}, nil
 }
 
 // PendingChatIDs lists the chats with work left beyond their extraction
@@ -241,14 +236,22 @@ func (w *Worker) buildBatchPrompts(ctx context.Context, batch ChatBatch, runNow 
 			return nil, fmt.Errorf("read extract tool catalog chat_id=%s: %w", batch.Group.ChatID, err)
 		}
 	}
-	counts, err := w.loadFactCounts(ctx, batch, runNow)
-	if err != nil {
-		return nil, err
-	}
 	prompts := make([]Prompt, len(batch.Units))
 	for index := range batch.Units {
 		unit := batch.Units[index]
-		prompt, err := BuildPrompt(batch, unit, counts, runNow, PromptOptions{
+		scope := "conversation"
+		windowMinutes := int(w.opts.Load.ContextWindow.Minutes())
+		if unit.Key != "chat" {
+			scope = "thread"
+			windowMinutes = 0
+		}
+		unit.Coverage, _ = json.Marshal(map[string]any{
+			"scope": scope, "loaded_count": len(unit.Messages),
+			"history_limit_messages": w.opts.Load.ContextMessages, "history_window_minutes": windowMinutes,
+			"missing_anchors": unit.MissingAnchors,
+		})
+		batch.Units[index].Coverage = unit.Coverage
+		prompt, err := BuildPrompt(batch, unit, runNow, PromptOptions{
 			InitiativeLevel: initiativeLevel,
 			PrincipalOpenID: w.opts.PrincipalOpenID, Location: w.opts.Location, MaxChars: w.opts.MaxPromptChars,
 			AllowSingleNewOverLimit: allowSingleNewOverLimit,
@@ -271,9 +274,13 @@ func (w *Worker) extractBatch(ctx context.Context, batch ChatBatch, prompts []Pr
 	results := make([]UnitExtraction, 0, len(batch.Units))
 	for index := range batch.Units {
 		unit := batch.Units[index]
-		box, err := w.toolBox.Build(batch, unit)
-		if err != nil {
-			return stats, PersistStats{}, fmt.Errorf("build extraction tool box chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
+		var box ToolBox
+		if !w.opts.AgentToolCatalog {
+			var err error
+			box, err = w.toolBox.Build(batch, unit)
+			if err != nil {
+				return stats, PersistStats{}, fmt.Errorf("build extraction tool box chat_id=%s unit=%s: %w", batch.Group.ChatID, unit.Key, err)
+			}
 		}
 		// PersistChat re-reads the unit out of batch.Units by key, so hydrated
 		// evidence has to land there and not in a local copy.
@@ -298,67 +305,6 @@ func (w *Worker) extractBatch(ctx context.Context, batch ChatBatch, prompts []Pr
 	return stats, persisted, nil
 }
 
-func (w *Worker) loadFactCounts(ctx context.Context, batch ChatBatch, now time.Time) ([]FactCount, error) {
-	subjects := []factSubject{{
-		subjectType: "group", subjectID: batch.Group.ID, label: batch.Group.Name,
-	}}
-	if batch.Group.ProjectID != nil {
-		label := ""
-		if batch.Project != nil && batch.Project.ID == *batch.Group.ProjectID {
-			label = batch.Project.Name
-		}
-		subjects = append(subjects, factSubject{
-			subjectType: "project", subjectID: *batch.Group.ProjectID, label: label,
-		})
-	}
-
-	localNow := now.In(w.opts.Location)
-	todayStart := time.Date(localNow.Year(), localNow.Month(), localNow.Day(), 0, 0, 0, 0, w.opts.Location)
-	tomorrowStart := todayStart.AddDate(0, 0, 1)
-	weekStart := todayStart.AddDate(0, 0, -6)
-
-	counts := make([]FactCount, 0, len(subjects))
-	for _, subject := range subjects {
-		if subject.subjectID == 0 {
-			continue
-		}
-		today, err := w.facts.CountFacts(ctx, progress.FactFilter{
-			SubjectType: subject.subjectType,
-			SubjectID:   subject.subjectID,
-			From:        &todayStart,
-			Until:       &tomorrowStart,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("count today facts chat_id=%s subject=%s/%d: %w",
-				batch.Group.ChatID, subject.subjectType, subject.subjectID, err)
-		}
-		week, err := w.facts.CountFacts(ctx, progress.FactFilter{
-			SubjectType: subject.subjectType,
-			SubjectID:   subject.subjectID,
-			From:        &weekStart,
-			Until:       &tomorrowStart,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("count week facts chat_id=%s subject=%s/%d: %w",
-				batch.Group.ChatID, subject.subjectType, subject.subjectID, err)
-		}
-		counts = append(counts, FactCount{
-			SubjectType: subject.subjectType,
-			SubjectID:   subject.subjectID,
-			Label:       subject.label,
-			Today:       today,
-			Last7Days:   week,
-		})
-	}
-	return counts, nil
-}
-
-type factSubject struct {
-	subjectType string
-	subjectID   uint64
-	label       string
-}
-
 func mergeWorkerStats(target *WorkerStats, source WorkerStats) {
 	target.ChatsProcessed += source.ChatsProcessed
 	target.Units += source.Units
@@ -379,9 +325,48 @@ func mergeWorkerStats(target *WorkerStats, source WorkerStats) {
 // (transport, timeout, dedup error) aborts fail-fast immediately. Retries also
 // stop once attempts are exhausted, propagating the last error.
 func (w *Worker) extractUnitWithRetry(ctx context.Context, batch ChatBatch, unit *ConversationUnit, prompt Prompt, box ToolBox) ([]ResolvedCandidate, int, error) {
+	scope := "conversation"
+	windowMinutes := int(w.opts.Load.ContextWindow.Minutes())
+	if unit.Key != "chat" {
+		scope = "thread"
+		windowMinutes = 0
+	}
+	unit.Coverage, _ = json.Marshal(map[string]any{
+		"scope": scope, "loaded_count": len(unit.Messages),
+		"history_limit_messages": w.opts.Load.ContextMessages, "history_window_minutes": windowMinutes,
+		"shown_message_ids": prompt.ShownMessageIDs, "omitted_message_ids": prompt.OmittedMessageIDs,
+		"missing_anchors": unit.MissingAnchors,
+	})
 	current := prompt
 	for attempt := 0; ; attempt++ {
+		if w.opts.RunsDir != "" {
+			root, err := filepath.Abs(filepath.Join(w.opts.RunsDir, "extract"))
+			if err != nil {
+				return nil, 0, err
+			}
+			if err := os.MkdirAll(root, 0700); err != nil {
+				return nil, 0, err
+			}
+			dir, err := os.MkdirTemp(root, "run-")
+			if err != nil {
+				return nil, 0, err
+			}
+			current.RunDir = dir
+			if err := os.WriteFile(filepath.Join(dir, "prompt.txt"), []byte(current.System+"\n\n"+current.User), 0600); err != nil {
+				return nil, 0, err
+			}
+			unit.EvidenceRefs, _ = json.Marshal(map[string]any{"run_directory": dir, "tool_returns": "stdout.jsonl (CLI) or provider.jsonl (model API); only captured tool returns, model commentary is admission audit", "coverage": json.RawMessage(unit.Coverage)})
+		}
 		extracted, err := w.model.ExtractWithTools(ctx, current, box)
+		if current.RunDir != "" {
+			audit, encodeErr := json.Marshal(map[string]any{"result": extracted, "error": fmt.Sprint(err)})
+			if encodeErr != nil {
+				return nil, 0, encodeErr
+			}
+			if writeErr := os.WriteFile(filepath.Join(current.RunDir, "result.json"), audit, 0600); writeErr != nil {
+				return nil, 0, writeErr
+			}
+		}
 		if err != nil {
 			// A broken final message is worth another shot: the model already
 			// spent minutes reading the chat and running tools, and the mistake

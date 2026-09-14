@@ -42,7 +42,7 @@ func TodoExtractionJSONSchema() map[string]any {
 			},
 			"payload": map[string]any{
 				"type":        "string",
-				"description": "原样交给下游的开放文本；程序不解析或重写。",
+				"description": "M3 准入审计的开放文本；程序不解析或重写，保存于审计，不作为 M5 任务说明。",
 			},
 			"annotation": map[string]any{
 				"type":        "string",

@@ -6,7 +6,9 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=__JARVIS_ROOT__
-Environment=PATH=__HOME__/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=PATH=__JARVIS_ROOT__/scripts:__HOME__/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment="JARVIS_API_BASE=__JARVIS_API_BASE__"
+Environment="JARVIS_TIMEZONE=__JARVIS_TIMEZONE__"
 ExecStart=__JARVIS_ROOT__/bin/cc-connect-jarvis --config __CC_CONFIG__
 # always, not on-failure: an external SIGTERM exits cleanly, which on-failure
 # treats as a finished service. This process is the only WebSocket owner for the

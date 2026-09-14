@@ -8,39 +8,33 @@ import (
 	"jarvis/internal/agentusage"
 )
 
-// FactCount is the only fact signal pushed into the M3 prompt: how many facts
-// a subject already has, so the model drills down with list-facts instead of
-// reading bodies that would make appending cheaper than rewriting summary.
-type FactCount struct {
-	SubjectType string
-	SubjectID   uint64
-	Label       string
-	Today       int
-	Last7Days   int
-}
-
 // Prompt is the provider-independent input to the structured-output model.
 type Prompt struct {
-	System string
-	User   string
+	RunDir            string
+	System            string
+	User              string
+	ShownMessageIDs   []string
+	OmittedMessageIDs []string
 }
 
 type LoadOptions struct {
 	BatchMessages   int
 	ContextMessages int
 	ContextWindow   time.Duration
-	OpenTodoLimit   int
-	RecentTaskLimit int
 }
 
 type GroupContext struct {
-	ID          uint64
-	ChatID      string
-	Name        string
-	Description string // group announcement; a strong signal for project attribution
-	Summary     string
-	IsKeyGroup  bool
-	ProjectID   *uint64
+	ChatMode      string
+	P2PTargetType string
+	PeerOpenID    string
+	PeerName      string
+	ID            uint64
+	ChatID        string
+	Name          string
+	Description   string // group announcement; a strong signal for project attribution
+	Summary       string
+	IsKeyGroup    bool
+	ProjectID     *uint64
 }
 
 type ProjectContext struct {
@@ -93,6 +87,9 @@ type MessageContext struct {
 	Content      string
 	SourceURL    string
 	Mentions     json.RawMessage
+	ReplyTo      string
+	IsAnchor     bool
+	BodyOmitted  bool
 	RootID       string
 	ThreadID     string
 	CreateTime   int64
@@ -122,40 +119,22 @@ type ResourceContext struct {
 	ExtractedText string
 }
 
-type OpenTodoContext struct {
-	ID               uint64
-	ActionType       string
-	Title            string
-	Status           string
-	AssignerOpenID   *string
-	AssignerPersonID *uint64
-}
-
 type ConversationUnit struct {
-	Key          string
-	Messages     []MessageContext
-	Participants []ParticipantContext
-	Resources    []ResourceContext
-}
-
-// RecentTaskContext is the thin progress projection pushed into the M3 prompt.
-// Detail lives behind get-task; here we only show what moved recently.
-type RecentTaskContext struct {
-	ID             uint64
-	Title          string
-	ActionType     string
-	Status         string
-	Summary        string
-	LastProgressAt string // RFC3339; empty when unknown
+	Key            string
+	MissingAnchors []string
+	Coverage       json.RawMessage
+	EvidenceRefs   json.RawMessage
+	Messages       []MessageContext
+	Participants   []ParticipantContext
+	Resources      []ResourceContext
 }
 
 type ChatBatch struct {
+	WorldOverview json.RawMessage
 	Group         GroupContext
 	Project       *ProjectContext
 	OtherProjects []OtherProjectContext
 	Principal     *PrincipalContext
-	OpenTodos     []OpenTodoContext
-	RecentTasks   []RecentTaskContext
 	Units         []ConversationUnit
 	LastNew       MessageContext
 	// NewMessageCount includes every message advanced by this batch, including

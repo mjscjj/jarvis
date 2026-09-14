@@ -17,7 +17,6 @@ import (
 	"jarvis/internal/embedding"
 	"jarvis/internal/extract"
 	"jarvis/internal/extract/provider"
-	"jarvis/internal/progress"
 	"jarvis/internal/semantic"
 	"jarvis/internal/skill"
 	"jarvis/internal/store"
@@ -169,15 +168,10 @@ func TestPipelineLive(t *testing.T) {
 	if err != nil {
 		t.Fatalf("textstore.NewService() error = %v", err)
 	}
-	progressService, err := progress.NewService(tx)
-	if err != nil {
-		t.Fatalf("progress.NewService() error = %v", err)
-	}
-	worker, err := extract.NewWorker(pipelineStore, modelClient, progressService, deduplicator, toolBoxBuilder, extract.WorkerOptions{
+	worker, err := extract.NewWorker(pipelineStore, modelClient, deduplicator, toolBoxBuilder, extract.WorkerOptions{
 		Load: extract.LoadOptions{
 			BatchMessages: 10, ContextMessages: cfg.Extract.ContextMessages,
 			ContextWindow: time.Duration(cfg.Extract.ContextWindowMinutes) * time.Minute,
-			OpenTodoLimit: cfg.Extract.OpenTodoLimit, RecentTaskLimit: cfg.Extract.RecentTaskLimit,
 		},
 		PrincipalOpenID: cfg.Extract.PrincipalOpenID, ModelName: cfg.Model.Model,
 		MaxPromptChars: cfg.Extract.MaxPromptChars, Location: location,

@@ -158,6 +158,34 @@ func TestP2PScanDisabledSkipsAutomaticAndManualScanning(t *testing.T) {
 	}
 }
 
+func TestLegacyMonitoringEntrypointsRejectExcludedChats(t *testing.T) {
+	db := newDiscoverTestDB(t)
+	service := newDiscoverTestService(t, db, &discoverRotationFixture{}, 2)
+	groups := []domain.Group{
+		{ChatID: "oc_excluded_group", ChatMode: "group", CaptureExcluded: true, Tier: "cold"},
+		{ChatID: "oc_excluded_p2p", ChatMode: "p2p", External: false, P2PTargetType: captureStringPointer("user"), CaptureExcluded: true, Tier: "cold"},
+	}
+	if err := db.Create(&groups).Error; err != nil {
+		t.Fatalf("create excluded chats: %v", err)
+	}
+
+	if err := service.ReplaceRelatedGroups([]string{"oc_excluded_group"}); !errors.Is(err, ErrCaptureExcluded) {
+		t.Fatalf("ReplaceRelatedGroups() error = %v, want ErrCaptureExcluded", err)
+	}
+	if updated, err := service.OpenInternalP2P(); err != nil || updated != 0 {
+		t.Fatalf("OpenInternalP2P() updated=%d error=%v, want 0 nil", updated, err)
+	}
+	for _, chatID := range []string{"oc_excluded_group", "oc_excluded_p2p"} {
+		var group domain.Group
+		if err := db.Where("chat_id = ?", chatID).Take(&group).Error; err != nil {
+			t.Fatalf("load %s: %v", chatID, err)
+		}
+		if !group.CaptureExcluded || group.RelatedGroup || group.Pinned {
+			t.Fatalf("excluded chat changed through legacy entrypoint: %+v", group)
+		}
+	}
+}
+
 func TestScanRelatedPrioritizesHumanPinnedChats(t *testing.T) {
 	db := newDiscoverTestDB(t)
 	fixture := &scanOrderFixture{}

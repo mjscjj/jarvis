@@ -220,7 +220,7 @@ func (s *Service) openPrincipalActivityGroups(activities []principalGroupActivit
 	opened := 0
 	for _, activity := range activities {
 		var group domain.Group
-		if err := s.db.Select("id", "chat_id", "chat_mode", "related_group").
+		if err := s.db.Select("id", "chat_id", "chat_mode", "related_group", "capture_excluded").
 			Where("chat_id = ?", activity.ChatID).
 			First(&group).Error; err != nil {
 			return opened, fmt.Errorf("load principal activity group chat_id=%s: %w", activity.ChatID, err)
@@ -233,6 +233,9 @@ func (s *Service) openPrincipalActivityGroups(activities []principalGroupActivit
 			)
 		}
 		if group.RelatedGroup {
+			continue
+		}
+		if group.CaptureExcluded {
 			continue
 		}
 		windowStart := activity.EarliestMessage - s.opts.ActivationContext.Milliseconds()

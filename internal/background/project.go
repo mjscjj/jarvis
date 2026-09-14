@@ -198,14 +198,21 @@ func (s *ProjectService) List(ctx context.Context, filter ListFilter) (*ProjectL
 	if err := filter.validate(); err != nil {
 		return nil, invalid(err)
 	}
+	query := s.db.WithContext(ctx).Model(&domain.Project{}).Where("status <> ?", "archived")
+	if filter.Keyword != "" {
+		like := keywordPattern(filter.Keyword)
+		query = query.Where(`name LIKE ? ESCAPE '\' OR code LIKE ? ESCAPE '\' OR summary LIKE ? ESCAPE '\' OR role LIKE ? ESCAPE '\' OR status LIKE ? ESCAPE '\'`, like, like, like, like, like)
+	}
+	if filter.Code != "" {
+		query = query.Where("code = ?", filter.Code)
+	}
 	var total int64
-	if err := s.db.WithContext(ctx).Model(&domain.Project{}).Where("status <> ?", "archived").Count(&total).Error; err != nil {
+	if err := query.Count(&total).Error; err != nil {
 		return nil, fmt.Errorf("count projects: %w", err)
 	}
 	items := make([]domain.Project, 0, filter.PageSize)
 	if total > 0 {
-		if err := s.db.WithContext(ctx).
-			Where("status <> ?", "archived").
+		if err := query.
 			Order("priority ASC, id DESC").
 			Limit(filter.PageSize).
 			Offset(filter.offset()).

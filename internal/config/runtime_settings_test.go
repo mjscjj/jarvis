@@ -72,8 +72,6 @@ extract:
   batch_messages: 400
   context_messages: 20
   context_window_minutes: 120
-  open_todo_limit: 50
-  recent_task_limit: 10
   max_prompt_chars: 60000
   semantic_collection: "todo_semantic"
   semantic_threshold: 0.85
@@ -320,7 +318,7 @@ func TestRuntimeSettingsUpdateRejectsInvalidSchedule(t *testing.T) {
 	}
 }
 
-func TestSecuritySettingsUpdateOwnsOnlyP2PScan(t *testing.T) {
+func TestSecuritySettingsUpdateOwnsP2PPolicies(t *testing.T) {
 	configPath := writeRuntimeSettingsTestConfig(t)
 	if err := os.WriteFile(RuntimeOverridePath(configPath), []byte(`
 server:
@@ -338,7 +336,9 @@ server:
 		t.Fatalf("NewRuntimeSettingsService() error = %v", err)
 	}
 
-	view, err := service.UpdateSecurity(context.Background(), SecuritySettings{P2PScanEnabled: false})
+	view, err := service.UpdateSecurity(context.Background(), SecuritySettings{
+		P2PScanEnabled: false, AutoRelatedP2PTopN: 12,
+	})
 	if err != nil {
 		t.Fatalf("UpdateSecurity() error = %v", err)
 	}
@@ -350,8 +350,8 @@ server:
 	if err != nil {
 		t.Fatalf("Load() after security update error = %v", err)
 	}
-	if reloaded.Capture.P2PScanEnabled {
-		t.Fatal("p2p scan remained enabled")
+	if reloaded.Capture.P2PScanEnabled || reloaded.Capture.AutoRelatedP2PTopN != 12 {
+		t.Fatalf("p2p security settings = enabled:%t automatic:%d", reloaded.Capture.P2PScanEnabled, reloaded.Capture.AutoRelatedP2PTopN)
 	}
 	if reloaded.Capture.ScanSchedule != active.Capture.ScanSchedule ||
 		reloaded.Execute.Model != active.Execute.Model ||
@@ -359,6 +359,41 @@ server:
 		reloaded.Server.Addr != active.Server.Addr ||
 		reloaded.Server.PublicBaseURL != active.Server.PublicBaseURL {
 		t.Fatalf("security update changed unrelated runtime settings: %#v", reloaded)
+	}
+}
+
+func TestRuntimeSettingsUpdatePreservesSecurityOwnedAutomaticP2P(t *testing.T) {
+	configPath := writeRuntimeSettingsTestConfig(t)
+	if err := os.WriteFile(RuntimeOverridePath(configPath), []byte(`
+capture:
+  auto_related_p2p_top_n: 20
+`), 0o600); err != nil {
+		t.Fatalf("write runtime override: %v", err)
+	}
+	active, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	service, err := NewRuntimeSettingsService(configPath, active)
+	if err != nil {
+		t.Fatalf("NewRuntimeSettingsService() error = %v", err)
+	}
+	view, err := service.Get(context.Background())
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	input := view.Settings
+	input.AgentDisplayName = "Updated Jarvis"
+	input.CaptureAutoRelatedP2PTopN = 99
+	if _, err := service.Update(context.Background(), input); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	reloaded, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() after update error = %v", err)
+	}
+	if reloaded.Capture.AutoRelatedP2PTopN != 20 {
+		t.Fatalf("automatic p2p setting = %d, want preserved 20", reloaded.Capture.AutoRelatedP2PTopN)
 	}
 }
 

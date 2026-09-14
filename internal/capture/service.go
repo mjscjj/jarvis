@@ -23,7 +23,10 @@ const (
 	inactiveChatAge = 5 * 24 * time.Hour
 )
 
-var ErrP2PScanDisabled = errors.New("安全保护已禁止扫描单聊消息")
+var (
+	ErrP2PScanDisabled = errors.New("安全保护已禁止扫描单聊消息")
+	ErrCaptureExcluded = errors.New("会话已被排除后台消息采集")
+)
 
 type runner interface {
 	Run(ctx context.Context, out any, args ...string) error
@@ -129,11 +132,14 @@ func (s *Service) ValidateScanChat(ctx context.Context, chatID string) error {
 		return fmt.Errorf("scan chat_id is empty")
 	}
 	var group domain.Group
-	if err := s.db.WithContext(ctx).Select("chat_mode").Where("chat_id = ?", chatID).Take(&group).Error; err != nil {
+	if err := s.db.WithContext(ctx).Select("chat_mode", "capture_excluded").Where("chat_id = ?", chatID).Take(&group).Error; err != nil {
 		return fmt.Errorf("load group chat_id=%s: %w", chatID, err)
 	}
 	if group.ChatMode == "p2p" && !s.opts.P2PScanEnabled {
 		return ErrP2PScanDisabled
+	}
+	if group.CaptureExcluded {
+		return ErrCaptureExcluded
 	}
 	return nil
 }
@@ -150,7 +156,7 @@ func (s *Service) ReplaceRelatedGroups(chatIDs []string) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		var groups []domain.Group
 		if len(chatIDs) > 0 {
-			if err := tx.Select("chat_id", "chat_mode", "external").Where("chat_id IN ?", chatIDs).Find(&groups).Error; err != nil {
+			if err := tx.Select("chat_id", "chat_mode", "external", "capture_excluded").Where("chat_id IN ?", chatIDs).Find(&groups).Error; err != nil {
 				return fmt.Errorf("load related group candidates: %w", err)
 			}
 		}
@@ -168,6 +174,9 @@ func (s *Service) ReplaceRelatedGroups(chatIDs []string) error {
 			return fmt.Errorf("related groups are not discovered: %s", strings.Join(missing, ","))
 		}
 		for _, group := range groups {
+			if group.CaptureExcluded {
+				return fmt.Errorf("related chat_id=%s: %w", group.ChatID, ErrCaptureExcluded)
+			}
 			switch group.ChatMode {
 			case "group", "topic":
 			case "p2p":
@@ -223,7 +232,7 @@ func (s *Service) OpenInternalP2P() (int64, error) {
 
 	var chatIDs []string
 	if err := s.db.Model(&domain.Group{}).
-		Where("chat_mode = ? AND external = ? AND related_group = ? AND p2p_target_type = ?", "p2p", false, false, "user").
+		Where("chat_mode = ? AND external = ? AND related_group = ? AND p2p_target_type = ? AND capture_excluded = ?", "p2p", false, false, "user", false).
 		Pluck("chat_id", &chatIDs).Error; err != nil {
 		return 0, fmt.Errorf("list internal p2p chats to open: %w", err)
 	}
@@ -326,7 +335,7 @@ func (s *Service) DiscoverChats(ctx context.Context) (err error) {
 		}
 		pageToken = response.Data.PageToken
 	}
-	if err = s.reconcileAutoRelatedP2P(rankedP2P); err != nil {
+	if err = s.reconcileAutoRelatedP2P(ctx, rankedP2P); err != nil {
 		return err
 	}
 	if err = s.recomputeTiers(); err != nil {
@@ -396,9 +405,12 @@ func (s *Service) persistDiscoveredChats(chats []CLIChat) error {
 // active_time Top-N. Pinned p2p chats are human-curated fixed monitoring entries:
 // they are preserved and do not consume the automatic budget. Unpinned internal
 // human p2p chats are the rotating set.
-func (s *Service) reconcileAutoRelatedP2P(rankedChatIDs []string) error {
+func (s *Service) reconcileAutoRelatedP2P(ctx context.Context, rankedChatIDs []string) error {
+	if s.opts.AutoRelatedP2PTopN == 0 {
+		return s.disableAutomaticP2P(ctx)
+	}
 	var groups []domain.Group
-	if err := s.db.Select("chat_id", "related_group", "pinned").
+	if err := s.db.Select("chat_id", "related_group", "pinned", "capture_excluded").
 		Where("chat_mode = ? AND external = ? AND p2p_target_type = ?", "p2p", false, "user").
 		Find(&groups).Error; err != nil {
 		return fmt.Errorf("list internal p2p chats for monitoring reconciliation: %w", err)
@@ -414,7 +426,7 @@ func (s *Service) reconcileAutoRelatedP2P(rankedChatIDs []string) error {
 		if !ok {
 			return fmt.Errorf("ranked internal p2p chat_id=%s was not persisted", chatID)
 		}
-		if group.Pinned {
+		if group.Pinned || group.CaptureExcluded {
 			continue
 		}
 		if len(desired) == s.opts.AutoRelatedP2PTopN {
@@ -433,7 +445,7 @@ func (s *Service) reconcileAutoRelatedP2P(rankedChatIDs []string) error {
 	}
 
 	query := s.db.Model(&domain.Group{}).
-		Where("chat_mode = ? AND external = ? AND p2p_target_type = ? AND pinned = ?", "p2p", false, "user", false)
+		Where("chat_mode = ? AND external = ? AND p2p_target_type = ? AND pinned = ? AND capture_excluded = ?", "p2p", false, "user", false, false)
 	var result *gorm.DB
 	if len(desired) == 0 {
 		result = query.Update("related_group", false)
@@ -486,11 +498,14 @@ func (s *Service) ScanChatNow(ctx context.Context, chatID string) error {
 // message that prompted manual monitoring is not skipped.
 func (s *Service) ensureScanWindow(chatID string) error {
 	var group domain.Group
-	if err := s.db.Select("id", "chat_mode", "last_active_at").Where("chat_id = ?", chatID).First(&group).Error; err != nil {
+	if err := s.db.Select("id", "chat_mode", "last_active_at", "capture_excluded").Where("chat_id = ?", chatID).First(&group).Error; err != nil {
 		return fmt.Errorf("load group chat_id=%s: %w", chatID, err)
 	}
 	if group.ChatMode == "p2p" && !s.opts.P2PScanEnabled {
 		return ErrP2PScanDisabled
+	}
+	if group.CaptureExcluded {
+		return ErrCaptureExcluded
 	}
 	if group.LastActiveAt != nil {
 		return nil
@@ -518,6 +533,9 @@ func (s *Service) ScanChat(ctx context.Context, chatID string) (err error) {
 	}
 	if group.ChatMode == "p2p" && !s.opts.P2PScanEnabled {
 		return ErrP2PScanDisabled
+	}
+	if group.CaptureExcluded {
+		return ErrCaptureExcluded
 	}
 	if !group.RelatedGroup {
 		return fmt.Errorf("chat_id=%s is not a related group", chatID)
@@ -721,9 +739,14 @@ func (s *Service) ScanRelated(ctx context.Context) error {
 		}
 	} else {
 		chatModes = append(chatModes, "p2p")
+		if s.opts.AutoRelatedP2PTopN == 0 {
+			if err := s.disableAutomaticP2P(ctx); err != nil {
+				return err
+			}
+		}
 	}
 	if err := s.db.Select("id", "chat_id").
-		Where("related_group = ? AND chat_mode IN ?", true, chatModes).
+		Where("related_group = ? AND capture_excluded = ? AND chat_mode IN ?", true, false, chatModes).
 		Order("pinned DESC, id ASC").Find(&groups).Error; err != nil {
 		return fmt.Errorf("list related chats: %w", err)
 	}
@@ -836,10 +859,24 @@ func (s *Service) persistMessagePage(group *domain.Group, messages []CLIMessage,
 	var inserted int32
 	insertedMessageIDs := make([]string, 0)
 	err := s.db.Transaction(func(tx *gorm.DB) error {
+		var excluded bool
+		if err := tx.Model(&domain.Group{}).Select("capture_excluded").Where("id = ?", group.ID).Scan(&excluded).Error; err != nil {
+			return fmt.Errorf("check capture exclusion chat_id=%s: %w", group.ChatID, err)
+		}
+		if excluded {
+			return ErrCaptureExcluded
+		}
+		var checkpoint domain.Checkpoint
+		if err := tx.Select("capture_floor").Where("chat_id = ?", group.ChatID).Take(&checkpoint).Error; err != nil {
+			return fmt.Errorf("load capture floor chat_id=%s: %w", group.ChatID, err)
+		}
 		for _, item := range messages {
 			message, err := s.toDomainMessage(group, item)
 			if err != nil {
 				return err
+			}
+			if message.CreateTime < checkpoint.CaptureFloor {
+				continue
 			}
 			created, err := upsertMessage(tx, message)
 			if err != nil {
@@ -1152,16 +1189,24 @@ func (s *Service) finishScanError(record *domain.ScanRecord, scanErr error) erro
 
 func (s *Service) finishChatOK(record *domain.ScanRecord, checkpoint *domain.Checkpoint, highWater int64, lastMessageID *string) error {
 	now := s.now()
-	if err := s.db.Model(checkpoint).Updates(map[string]any{
+	if err := s.db.Model(checkpoint).Where("high_water_create_time <= ?", highWater).Updates(map[string]any{
 		"high_water_create_time": highWater,
 		"last_message_id":        lastMessageID,
-		"last_scan_at":           now,
-		"last_scan_status":       "ok",
-		"last_error":             nil,
+	}).Error; err != nil {
+		return fmt.Errorf("advance finished checkpoint chat_id=%s: %w", checkpoint.ChatID, err)
+	}
+	if err := s.db.Model(checkpoint).Updates(map[string]any{
+		"last_scan_at":     now,
+		"last_scan_status": "ok",
+		"last_error":       nil,
 	}).Error; err != nil {
 		return fmt.Errorf("finish checkpoint chat_id=%s: %w", checkpoint.ChatID, err)
 	}
-	return s.finishScanOK(record, &highWater)
+	var current domain.Checkpoint
+	if err := s.db.Select("high_water_create_time").Where("chat_id = ?", checkpoint.ChatID).Take(&current).Error; err != nil {
+		return fmt.Errorf("reload finished checkpoint chat_id=%s: %w", checkpoint.ChatID, err)
+	}
+	return s.finishScanOK(record, &current.HighWaterCreateTime)
 }
 
 func (s *Service) finishChatError(record *domain.ScanRecord, checkpoint *domain.Checkpoint, scanErr error) error {

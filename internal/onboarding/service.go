@@ -351,7 +351,7 @@ func (s *Service) BeginLarkLogin(ctx context.Context) (*Flow, error) {
 	}
 	values := decodeJSON(output)
 	deviceCode := findString(values, "device_code", "deviceCode")
-	verifyURL := findString(values, "verification_url", "verification_uri_complete", "verification_uri")
+	verifyURL := findString(values, "verification_uri_complete", "verification_url", "verification_uri")
 	userCode := findString(values, "user_code", "userCode")
 	if deviceCode == "" || verifyURL == "" {
 		return nil, fmt.Errorf("飞书授权响应缺少 device_code 或 verification_url")
@@ -656,7 +656,7 @@ func (s *Service) completeLarkSetup(flowID string) {
 	urlPattern := regexp.MustCompile(`https?://[^\s<>"\x1b]+`)
 	_, err := runner.RunStreaming(ctx, s.options.LarkCLIBin, []string{"config", "init", "--new"}, "", func(chunk []byte) {
 		output.Write(chunk)
-		link := findString(decodeJSON([]byte(output.String())), "verification_url", "verification_uri_complete", "verification_uri")
+		link := findString(decodeJSON([]byte(output.String())), "verification_uri_complete", "verification_url", "verification_uri")
 		if link == "" {
 			link = urlPattern.FindString(output.String())
 		}
@@ -837,8 +837,13 @@ func enableDesktopRuntime(ctx context.Context, configPath string) error {
 	settings.ProactiveEnabled = true
 	settings.ScheduledTaskEnabled = true
 	settings.DailyDigestEnabled = true
-	_, err = service.Update(ctx, settings)
-	return err
+	if _, err = service.Update(ctx, settings); err != nil {
+		return err
+	}
+	return config.UpdateRuntimeOverride(configPath, map[string]any{
+		"meeting_sweep": map[string]any{"enabled": true},
+		"morning_brief": map[string]any{"enabled": true},
+	})
 }
 
 func writeCCConfig(path, runtimeRoot, agentBin, appID, appSecret, principalOpenID, relaySecret string) error {
@@ -946,36 +951,35 @@ func decodeJSON(raw []byte) any {
 }
 
 func findString(value any, keys ...string) string {
-	wanted := make(map[string]struct{}, len(keys))
 	for _, key := range keys {
-		wanted[key] = struct{}{}
+		if text := findStringValue(value, key); text != "" {
+			return text
+		}
 	}
-	var walk func(any) string
-	walk = func(current any) string {
-		switch typed := current.(type) {
-		case map[string]any:
-			for key, child := range typed {
-				if _, ok := wanted[key]; ok {
-					if text, ok := child.(string); ok && strings.TrimSpace(text) != "" {
-						return strings.TrimSpace(text)
-					}
-				}
-			}
-			for _, child := range typed {
-				if found := walk(child); found != "" {
-					return found
-				}
-			}
-		case []any:
-			for _, child := range typed {
-				if found := walk(child); found != "" {
-					return found
-				}
+	return ""
+}
+
+func findStringValue(value any, key string) string {
+	switch typed := value.(type) {
+	case map[string]any:
+		if value, ok := typed[key]; ok {
+			if text, ok := value.(string); ok && strings.TrimSpace(text) != "" {
+				return strings.TrimSpace(text)
 			}
 		}
-		return ""
+		for _, child := range typed {
+			if found := findStringValue(child, key); found != "" {
+				return found
+			}
+		}
+	case []any:
+		for _, child := range typed {
+			if found := findStringValue(child, key); found != "" {
+				return found
+			}
+		}
 	}
-	return walk(value)
+	return ""
 }
 
 func commandError(action string, output []byte, err error) error {

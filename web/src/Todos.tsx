@@ -414,6 +414,7 @@ export default function Todos({ refreshKey }: { refreshKey: number }) {
               <blockquote>{selected.source_quote}</blockquote>
             </section>
             <section className="clue-detail-section">
+              <details><summary>M3 准入记录（判断与不确定性）</summary><p style={{ whiteSpace: 'pre-wrap' }}>{selected.description}</p></details>
               <FrozenContextPanel content={selected.content} />
             </section>
             {selected.resolution && (

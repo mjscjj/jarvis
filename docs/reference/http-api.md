@@ -133,6 +133,7 @@ Runtime settings 写入后需要重启进程生效；模块开关保存后也需
 - 主动巡视运行记录：`GET /api/debug/proactive-runs`、`GET /api/debug/proactive-runs/:run_id`
 - 手工采集：`POST /api/debug/capture/discover|scan-related|scan-chat`
 - 前端部署事实：`GET /api/web-config` 返回 `server.public_base_url`，用于生成分享链接。
+- 会话后台采集排除：`PUT /api/groups/capture-exclusion`（显式 group ID 列表；排除，或让可监听会话从当前时刻恢复固定监听）
 - 对话：`GET/POST /api/chat/sessions`；`POST /api/chat/sessions/:session_id/messages`（SSE）；Agent、模型和附件使用 `/api/chat/agents*`、`/api/chat/attachments*`
 
 对话只在 `chat.enabled=true` 且依赖构造成功时注册。

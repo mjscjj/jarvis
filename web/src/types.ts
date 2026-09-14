@@ -488,6 +488,7 @@ export interface Group {
   tenant_key: string | null
   project_id: number | null
   related_group: boolean
+  capture_excluded: boolean
   tier: string
   pinned: boolean
   include_in_memory: boolean
@@ -509,6 +510,7 @@ export interface GroupQuery {
   keyword?: string
   chatMode?: string
   tier?: string
+  captureState?: 'excluded'
 }
 
 export interface Paged<T> {
@@ -1118,8 +1120,6 @@ export interface RuntimeSettings {
   extract_reasoning_effort: ReasoningEffort
   extract_context_messages: number
   extract_context_window_minutes: number
-  extract_open_todo_limit: number
-  extract_recent_task_limit: number
   extract_max_prompt_chars: number
   extract_semantic_threshold: number
   extract_semantic_neighbor_limit: number
@@ -1203,6 +1203,7 @@ export interface AppModuleInput {
 
 export interface SecuritySettings {
   p2p_scan_enabled: boolean
+  auto_related_p2p_top_n: number
 }
 
 export interface SecurityCapability {

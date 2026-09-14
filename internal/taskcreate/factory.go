@@ -8,13 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
 	"jarvis/internal/contextpack"
-	"jarvis/internal/contextsnap"
 	"jarvis/internal/domain"
 	"jarvis/internal/progress"
 
@@ -51,39 +48,20 @@ type Input struct {
 }
 
 type Factory struct {
-	db        *gorm.DB
-	assembler *contextsnap.Assembler
-	now       func() time.Time
+	db  *gorm.DB
+	now func() time.Time
 }
 
-func NewFactory(db *gorm.DB, assemblers ...*contextsnap.Assembler) (*Factory, error) {
+func NewFactory(db *gorm.DB) (*Factory, error) {
 	if db == nil {
 		return nil, fmt.Errorf("Task factory db is nil")
 	}
-	if len(assemblers) > 1 {
-		return nil, fmt.Errorf("Task factory accepts at most one context snapshot assembler")
-	}
-	var assembler *contextsnap.Assembler
-	if len(assemblers) == 1 {
-		if assemblers[0] == nil {
-			return nil, fmt.Errorf("Task factory context snapshot assembler is nil")
-		}
-		assembler = assemblers[0]
-	}
-	return &Factory{db: db, assembler: assembler, now: time.Now}, nil
+	return &Factory{db: db, now: time.Now}, nil
 }
 
 func (f *Factory) Create(ctx context.Context, input Input) (*domain.Task, error) {
-	prepared, err := f.assembleBackground(ctx, input)
-	if err != nil {
-		return nil, err
-	}
-	if prepared.RepoPath == nil && prepared.ProjectID != nil {
-		prepared.RepoPath, err = f.projectRepoPath(ctx, *prepared.ProjectID)
-		if err != nil {
-			return nil, err
-		}
-	}
+	prepared := input
+	var err error
 	var task *domain.Task
 	err = f.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		created, err := f.CreateWithDB(ctx, tx, prepared)
@@ -96,84 +74,11 @@ func (f *Factory) Create(ctx context.Context, input Input) (*domain.Task, error)
 	return task, err
 }
 
-func (f *Factory) projectRepoPath(ctx context.Context, projectID uint64) (*string, error) {
-	return projectRepoPathWithDB(ctx, f.db, projectID)
-}
-
-func projectRepoPathWithDB(ctx context.Context, db *gorm.DB, projectID uint64) (*string, error) {
-	var rows []domain.ManagedResource
-	if err := db.WithContext(ctx).
-		Where("project_id = ? AND resource_type = ? AND is_active = ? AND local_path IS NOT NULL",
-			projectID, "repo", true).
-		Order("id").Find(&rows).Error; err != nil {
-		return nil, fmt.Errorf("resolve project repository project_id=%d: %w", projectID, err)
-	}
-	valid := make([]string, 0, len(rows))
-	for _, row := range rows {
-		if row.LocalPath == nil {
-			continue
-		}
-		path := filepath.Clean(strings.TrimSpace(*row.LocalPath))
-		if path == "." || !filepath.IsAbs(path) {
-			continue
-		}
-		if _, err := os.Stat(filepath.Join(path, ".git")); err == nil {
-			valid = append(valid, path)
-		}
-	}
-	if len(valid) != 1 {
-		return nil, nil
-	}
-	return &valid[0], nil
-}
-
-func (f *Factory) assembleBackground(ctx context.Context, input Input) (Input, error) {
-	if input.SourceType == SourceTodo {
-		return input, nil
-	}
-	switch input.SourceType {
-	case SourceManual, SourceScheduledTask, SourceProactive:
-	default:
-		return input, nil
-	}
-	if f.assembler == nil {
-		return Input{}, fmt.Errorf("assemble %s Task background: context snapshot assembler is not configured", input.SourceType)
-	}
-	options := contextsnap.AssembleOptions{ProjectID: input.ProjectID, RequestContext: input.Background}
-	var background json.RawMessage
-	var err error
-	if input.SourceType == SourceScheduledTask {
-		background, err = f.assembler.AssembleConversation(ctx, options)
-	} else {
-		background, err = f.assembler.Assemble(ctx, options)
-	}
-	if err != nil {
-		return Input{}, fmt.Errorf("assemble %s Task background: %w", input.SourceType, err)
-	}
-	snapshot, err := contextsnap.Decode(background)
-	if err != nil {
-		return Input{}, fmt.Errorf("validate assembled %s Task background: %w", input.SourceType, err)
-	}
-	input.Background = background
-	if snapshot.Project != nil {
-		projectID := snapshot.Project.ID
-		input.ProjectID = &projectID
-	}
-	return input, nil
-}
-
 // CreateWithDB lets callers with an existing transaction keep Task creation and
 // their own state transition in the same commit.
 func (f *Factory) CreateWithDB(ctx context.Context, db *gorm.DB, input Input) (*domain.Task, error) {
 	if db == nil {
 		return nil, fmt.Errorf("Task factory write db is nil")
-	}
-	if input.RepoPath == nil && input.ProjectID != nil {
-		var err error
-		input.RepoPath, err = projectRepoPathWithDB(ctx, db, *input.ProjectID)
-		if err != nil {
-			return nil, err
-		}
 	}
 	normalized, err := normalizeInput(input)
 	if err != nil {
@@ -198,7 +103,11 @@ func (f *Factory) CreateWithDB(ctx context.Context, db *gorm.DB, input Input) (*
 			return nil, fmt.Errorf("Task source content: %w", err)
 		}
 	} else {
-		content, err = contextpack.Freeze(normalized.SourcePayload, normalized.Background, normalized.Title, nil)
+		capture, captureErr := json.Marshal(map[string]any{"captured_at": f.now().UTC().Format(time.RFC3339), "request_context": json.RawMessage(normalized.Background), "project_association": map[string]any{"project_id": normalized.ProjectID, "basis": "producer_supplied; verify against original request"}})
+		if captureErr != nil {
+			return nil, captureErr
+		}
+		content, err = contextpack.FreezeEvidence(normalized.SourcePayload, capture, nil)
 		if err != nil {
 			return nil, fmt.Errorf("freeze Task source content: %w", err)
 		}

@@ -60,6 +60,8 @@ func formatExecutionSupplementDirective(items []ExecutionSupplement) string {
 		}
 		source := "委托人"
 		switch item.Channel {
+		case "evidence:todo":
+			source = "新 Todo 证据"
 		case "proactive_agent":
 			source = "主动巡视"
 		case "m5_agent":

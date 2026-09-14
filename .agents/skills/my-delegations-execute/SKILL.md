@@ -5,25 +5,13 @@ description: 在 M5 对已识别的交办待办做一次核验，把证据和当
 
 # 我的交办：Task 只做本次核验
 
-下述核验规则只适用于原始线索 action_type=delegated_followup 或冻结来源带 delegation_id 的检查
-Task。其它 Task 保持自身目标，只在发现独立交办时使用末尾的回灌规则。
-
-交办的主体是 M3 产出的 Todo，交办进展独立于 Todo/Task 的执行状态。本 Task 的目标是
-完成一次有证据的检查，不是替对方交付，也不是无限看护到对方做完。
+原始交办对话或已有待办关联提示可能需要核验。先读 evidence 中的原始现场，独立确认是否确为 principal 交给他人的交付物，以及本次是核验还是明确要求的其它行动。上游分类和说明不构成已确认目标。
 
 ## 找到同一条待办
 
-默认 Task 上下文只展示触发原话和简报，未必展开分类与关联。对来源为 Todo 的 Task，
-先读取 get-task 的 source 与 annotation 冻结片段，确认是否属于交办核验，不从原话里的
-“让某人完成”直接推成自己负责交付。手工检查的 source 通常已包含 delegation_id。
+已有 delegation_id 时读取对应 get-delegation；首次记录可从 task.todo_id 查询待办。关联只定位记录，不证明 M3 对负责人、期限或执行范围的理解正确。不要求所有 Todo Task 先读取 M3 分类与简报。
 
-首次 delegated_followup Task 使用 task.todo_id；后续检查从冻结包的
-annotation.delegation_id 或 source.delegation_id 读取交办 ID。先用 get-delegation
-读取原始来源和当前进展，再用 list-delegation-tasks 查看已有核验记录，避免重复动作。
-
-source_payload 保存最初交办的完整来源、会话、参与人、资源及 M3 理解；它回答当时
-为什么交办。content 是可更新的核验结论。原始来源中的负责人和期限可能已过期，
-必须结合新证据判断，不能改写冻结背景，也不能把当前摘要当成原始事实。
+使用 list-delegation-tasks 查看已有核验记录。原始来源与现有核验结论分别读取，Task 完成只表示本次核验完成，不代表对方已交付。不要改写冻结现场。
 
 ## 核验与回写
 

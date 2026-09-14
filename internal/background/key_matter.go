@@ -200,6 +200,10 @@ func (s *KeyMatterService) List(ctx context.Context, filter KeyMatterFilter) (*K
 		return nil, invalid(err)
 	}
 	query := s.db.WithContext(ctx).Model(&domain.KeyMatter{})
+	if filter.Keyword != "" {
+		like := keywordPattern(filter.Keyword)
+		query = query.Where(`title LIKE ? ESCAPE '\' OR status LIKE ? ESCAPE '\' OR summary LIKE ? ESCAPE '\'`, like, like, like)
+	}
 	if !filter.IncludeClosed {
 		query = query.Where("closed_at IS NULL")
 	}
@@ -209,11 +213,7 @@ func (s *KeyMatterService) List(ctx context.Context, filter KeyMatterFilter) (*K
 	}
 	items := make([]domain.KeyMatter, 0, filter.PageSize)
 	if total > 0 {
-		query = s.db.WithContext(ctx).Preload("Project")
-		if !filter.IncludeClosed {
-			query = query.Where("closed_at IS NULL")
-		}
-		if err := query.Order(keyMatterOrder).Limit(filter.PageSize).Offset(filter.offset()).Find(&items).Error; err != nil {
+		if err := query.Preload("Project").Order(keyMatterOrder).Limit(filter.PageSize).Offset(filter.offset()).Find(&items).Error; err != nil {
 			return nil, fmt.Errorf("list key matters: %w", err)
 		}
 	}

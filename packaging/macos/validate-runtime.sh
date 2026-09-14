@@ -35,9 +35,22 @@ done
 [[ -f "$runtime_root/scripts/jarvis-lark-auth" ]] || fail "missing scripts/jarvis-lark-auth"
 bash -n "$runtime_root/scripts/jarvis-lark-auth" || fail "invalid scripts/jarvis-lark-auth"
 
+bash -n "$runtime_root/scripts/lib/connection.sh" || fail "invalid or missing connection helper"
+[[ -f "$runtime_root/scripts/json-api-data.mjs" ]] || fail "missing exact JSON helper"
+for module in common commands world evidence task schedule memory skill notify; do
+  module_path="$runtime_root/scripts/lib/jarvis-tools/$module.sh"
+  [[ -f "$module_path" ]] || fail "missing tool module: $module"
+  bash -n "$module_path" || fail "invalid tool module: $module"
+done
+bash -n "$runtime_root/scripts/jarvis-tools" || fail "invalid scripts/jarvis-tools"
+
 temporary_home=$(mktemp -d "${TMPDIR:-/tmp}/jarvis-runtime-validation.XXXXXX")
 trap 'rm -rf "$temporary_home"' EXIT
 minimal_path="$runtime_root/bin:/usr/bin:/bin"
+env -i HOME="$temporary_home" PATH="$minimal_path" \
+  bash "$runtime_root/scripts/jarvis-tools" help all >/dev/null || fail "tool discovery smoke test failed"
+env -i HOME="$temporary_home" PATH="$minimal_path" \
+  "$runtime_root/bin/node" --check "$runtime_root/scripts/json-api-data.mjs" || fail "invalid exact JSON helper"
 
 run_version() {
   local name=$1
@@ -56,7 +69,11 @@ run_version cc-connect-jarvis --version
 [[ "$REPLY" == *"cc-connect ${CC_CONNECT_VERSION}"* && "$REPLY" == *"${CC_CONNECT_PATCH_COMMIT}"* ]] ||
   fail "cc-connect version does not match repository manifest"
 run_version lark-cli --version
-[[ "$REPLY" == *"lark-cli version "* ]] || fail "lark-cli version output is invalid"
+[[ "$REPLY" == "lark-cli version $JARVIS_LARK_CLI_VERSION" ]] ||
+  fail "lark-cli version is ${REPLY:q}, want $JARVIS_LARK_CLI_VERSION"
+[[ -s "$runtime_root/licenses/lark-cli-LICENSE" ]] || fail "missing Lark CLI license"
+env -i HOME="$temporary_home" PATH="$minimal_path" JARVIS_JQ_BIN="$runtime_root/bin/jq" \
+  bash "$script_dir/check-lark-skills.sh" "$runtime_root/bin/lark-cli" || fail "bundled Lark Skills validation failed"
 run_version traex --version
 [[ "$REPLY" == *"traecli "* ]] || fail "traex version output is invalid"
 run_version node --version

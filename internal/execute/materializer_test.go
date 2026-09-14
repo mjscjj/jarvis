@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -93,10 +94,16 @@ func TestMaterializeTodoDuplicateNotificationIsIdempotent(t *testing.T) {
 func TestMaterializeTodoFreshEvidenceRerunsExistingObservingTask(t *testing.T) {
 	db := newMaterializerTestDB(t)
 	insertMaterializerTodo(t, db, 10, 4)
+	if err := db.Model(&domain.Todo{}).Where("id = ?", 10).Updates(map[string]any{
+		"revision": 5, "source_message_ids": datatypes.JSON(`["om_fresh"]`), "source_quote": "新的现场证据",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
 	todoID := uint64(10)
+	originalEvidence := frozenTestContent(`{"source_message_ids":["om_old"],"source_quote":"旧证据"}`, `{"messages":[{"message_id":"om_old","content":"旧证据"}]}`)
 	task := domain.Task{
 		ID: 56, TodoID: &todoID, Title: "已有执行任务", ActionType: "investigate", Target: "目标",
-		SourcePayload: datatypes.JSON(`{"original":"evidence"}`), SourceType: "todo", SourceID: &todoID,
+		SourcePayload: originalEvidence, SourceType: "todo", SourceID: &todoID,
 		Status: "observing", ExecutionResult: datatypes.JSON(`{"outcome":"observing"}`), Version: 6,
 	}
 	if err := db.Create(&task).Error; err != nil {
@@ -121,8 +128,27 @@ func TestMaterializeTodoFreshEvidenceRerunsExistingObservingTask(t *testing.T) {
 	if reloadedTask.Status != "pending" || reloadedTask.Version != 7 || len(reloadedTask.ExecutionResult) != 0 {
 		t.Fatalf("Task status=%s version=%d execution_result=%s", reloadedTask.Status, reloadedTask.Version, reloadedTask.ExecutionResult)
 	}
-	if string(reloadedTask.SourcePayload) != `{"original":"evidence"}` {
-		t.Fatalf("frozen Task evidence changed: source_payload=%s", reloadedTask.SourcePayload)
+	assertSameJSON(t, "frozen Task evidence", reloadedTask.SourcePayload, originalEvidence)
+	supplements, err := decodeExecutionSupplements(reloadedTask.ExecutionSupplements)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(supplements) != 1 || supplements[0].Channel != "evidence:todo" {
+		t.Fatalf("fresh evidence supplements = %#v", supplements)
+	}
+	for _, want := range []string{`"todo_id":10`, `"todo_revision":5`, `"source_message_ids":["om_fresh"]`, `"source_quote":"新的现场证据"`, `get-todo --id 10 --context evidence`} {
+		if !strings.Contains(supplements[0].Note, want) {
+			t.Fatalf("fresh evidence supplement missing %q: %s", want, supplements[0].Note)
+		}
+	}
+	prompt, err := buildExecutionPrompt(testExecutionPromptInput(testM5SystemPrompt, "审批策略", &reloadedTask, "", testToolCatalog, "", "", "", nil))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"新 Todo 证据", `get-todo --id 10 --context evidence`, `"todo_revision":5`} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("M5 prompt missing fresh evidence %q: %s", want, prompt)
+		}
 	}
 	var todo domain.Todo
 	if err := db.First(&todo, todoID).Error; err != nil {

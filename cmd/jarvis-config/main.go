@@ -5,8 +5,11 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"jarvis/internal/agentenv"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 
 	"jarvis/internal/config"
 	"jarvis/internal/okrworkspace/moduleconfig"
@@ -48,6 +51,8 @@ func run(args []string, stdout io.Writer) error {
 			_, err = fmt.Fprintln(stdout, cfg.Chat.Image)
 		}
 		return err
+	case "show-connection":
+		return runShowConnection(args[1:], stdout)
 	case "api-base":
 		return runInstance(args[1:], stdout, true)
 	case "instance":
@@ -172,4 +177,37 @@ func runShowPrincipal(args []string, stdout io.Writer) error {
 	encoder := json.NewEncoder(stdout)
 	encoder.SetEscapeHTML(false)
 	return encoder.Encode(result)
+}
+
+// runShowConnection is an installation-time projection of effective config.
+// It deliberately emits no identity or credentials and does not probe a server.
+func runShowConnection(args []string, stdout io.Writer) error {
+	flags := flag.NewFlagSet("show-connection", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	configPath := flags.String("config", "conf/config.yaml", "base config path")
+	address := flags.String("addr", "", "listen address override")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return fmt.Errorf("unexpected positional arguments: %v", flags.Args())
+	}
+	cfg, err := config.Load(*configPath)
+	if err != nil {
+		return err
+	}
+	if value := strings.TrimSpace(*address); value != "" {
+		cfg.Server.Addr = value
+	}
+	apiBase, err := agentenv.LocalAPIBase(cfg.Server.Addr)
+	if err != nil {
+		return err
+	}
+	if _, err := time.LoadLocation(cfg.Capture.Timezone); err != nil {
+		return fmt.Errorf("invalid Agent timezone %q: %w", cfg.Capture.Timezone, err)
+	}
+	return json.NewEncoder(stdout).Encode(struct {
+		APIBase  string `json:"api_base"`
+		Timezone string `json:"timezone"`
+	}{APIBase: apiBase, Timezone: cfg.Capture.Timezone})
 }

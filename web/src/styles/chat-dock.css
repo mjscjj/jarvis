@@ -90,7 +90,6 @@
 .chat-dock-settings, .chat-dock-model-picker { width: min(272px, calc(100vw - 56px)); }
 .chat-dock-settings > label { display: grid; grid-template-columns: 62px minmax(0, 1fr); align-items: center; gap: 8px; margin-bottom: 10px; font-size: 12px; }
 .chat-dock-settings .ant-select, .chat-dock-model-picker .ant-select { width: 100%; }
-.chat-dock-settings .chat-source-picker { width: auto; max-width: 100%; }
 .chat-dock-reply { width: min(520px, calc(100vw - 56px)); }
 .chat-dock-reply-heading { display: flex; justify-content: space-between; align-items: center; color: var(--color-text-secondary); font-size: 12px; }
 .chat-dock-reply-body { max-height: min(340px, 50dvh); overflow: auto; overflow-wrap: anywhere; }

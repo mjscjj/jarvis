@@ -12,7 +12,7 @@
 尚未接入 Apple Developer ID 和 notarization；自动更新包始终使用独立的 Tauri
 私钥签名。
 
-macOS 最低版本和 jq 版本、下载地址、摘要由
+macOS 最低版本，以及 Lark CLI、jq 的版本、下载地址和摘要由
 `packaging/macos/runtime-manifest.sh` 定义；CC Connect 的集成版本由
 `integrations/cc-connect/manifest.sh` 定义。修改这些机器约束时应更新对应 manifest，
 本文只说明操作方式。
@@ -53,7 +53,7 @@ desktop/src-tauri/target/release/bundle/dmg/Jarvis_<version>_aarch64.dmg
 
 ```bash
 ./scripts/check-build-toolchain.sh
-command -v cargo npm node lark-cli traex
+command -v cargo npm node traex
 ```
 
 ### runtime 输入
@@ -62,8 +62,6 @@ command -v cargo npm node lark-cli traex
 
 - Qdrant：默认 `bin/qdrant`，可用 `JARVIS_QDRANT_BIN` 覆盖。
 - CC Connect：默认 `bin/cc-connect-jarvis`，可用 `JARVIS_CC_CONNECT_BIN` 覆盖。
-- lark-cli：默认从 `PATH` 查找，可用 `JARVIS_LARK_CLI_BIN` 覆盖。官方 npm
-  launcher 会被解析为同包内的原生 binary。
 - Trae CLI：默认从 `PATH` 或 `~/.local/bin/traex` 查找，可用
   `JARVIS_TRAEX_BIN` 覆盖。
 - Node.js：默认使用 `PATH` 中的 `node`，可用 `JARVIS_NODE_BIN` 覆盖。
@@ -77,10 +75,22 @@ command -v cargo npm node lark-cli traex
 
 runtime 还会在构建时：
 
+- 从官方 GitHub Release 下载 manifest 固定的 Lark CLI arm64 压缩包，先校验
+  SHA-256，再提取原生 binary 和许可证。打包不读取本机 `lark-cli` 或
+  `JARVIS_LARK_CLI_BIN`，不要求打包者或最终用户预装 Lark CLI。
 - 从 jqlang GitHub Release 下载固定版本的 jq，并校验 SHA-256。
 - 从 npm 安装固定版本的 BytedCLI，默认版本为 `0.147.0`，可用
   `JARVIS_BYTEDCLI_VERSION` 覆盖。
 - 将 Trae CLI 同时作为 `traex` 和 `codex` 入口打包。
+
+桌面运行时优先使用包内 Lark CLI；包内文件缺失或不可执行时直接报错。Lark CLI
+和内嵌 Skills 随 Jarvis 更新，不在已签名的应用内单独执行 `lark-cli update`。
+源码开发仍可通过 `lark_cli.bin` 选择本机 CLI。二进制由安装包提供，飞书账号仍由
+用户授权；当前继续使用 Lark CLI 默认配置，不额外创建凭据存储。
+
+升级 Lark CLI 时一起修改 manifest 的版本、官方 URL 和压缩包摘要，运行打包测试与
+最小环境校验，再验收首次授权、消息采集、文档读取和卡片事件协议。压缩包摘要在
+签名前校验；应用签名会修改 Mach-O 内容，不拿签名后的 binary 与压缩包摘要比较。
 
 Web 依赖的 lockfile 指向 npmjs，Desktop 依赖的 lockfile 和 BytedCLI 默认指向
 `http://bnpm.byted.org`；Go 模块按本机 `GOPROXY` 下载。完整打包通常需要公司网络
@@ -113,8 +123,8 @@ npm --prefix desktop exec tauri signer generate -- \
 4. Tauri 根据 `beforeBuildCommand` 调用 `prepare-runtime.sh`：
    - 安装并构建 Web。
    - 构建 `jarvis-server`、`jarvis-app-service` 和 `jarvis-config`。
-   - 复制 Qdrant、CC Connect、lark-cli、Trae CLI 和 Node.js。
-   - 下载 jq，安装 BytedCLI，并创建 `bytedcli`、`codex` launcher。
+   - 复制 Qdrant、CC Connect、Trae CLI 和 Node.js。
+   - 下载并校验固定版本的 Lark CLI、jq，安装 BytedCLI，并创建 `bytedcli`、`codex` launcher。
    - 复制 `conf/`、`.agents/`、`scripts/`、项目说明和 Web 产物；
      `conf/config.runtime.yaml` 不进入安装包。
    - 校验 runtime 后逐个签名原生 binary，再以 staging 目录替换最终 runtime。
@@ -138,7 +148,7 @@ runtime 校验会 fail-fast 检查：
   `lark-im` 及其 references 均可离线读取。
 - Qdrant、CC Connect、lark-cli、Trae CLI、Node.js、jq、BytedCLI 和 codex
   在最小环境中可以启动并返回预期版本。
-- CC Connect 版本与仓库 manifest 一致。
+- CC Connect 和 Lark CLI 版本与仓库 manifest 一致，Lark CLI 许可证随包分发。
 
 ## 独立验收
 
@@ -223,8 +233,8 @@ Jarvis 主服务仅在发布机配置 `JARVIS_UPDATE_ROOT` 时托管更新文件
 - `missing Qdrant binary`：安装 `bin/qdrant` 或设置 `JARVIS_QDRANT_BIN`。
 - `missing CC Connect binary`：安装 `bin/cc-connect-jarvis` 或设置
   `JARVIS_CC_CONNECT_BIN`。
-- `missing lark-cli binary` 或 Skills 检查失败：安装带内嵌 Skills 的 arm64
-  lark-cli，必要时设置 `JARVIS_LARK_CLI_BIN`。
+- Lark CLI 下载、摘要或 Skills 检查失败：检查官方发布地址和 manifest；不得跳过
+  校验或改用本机 CLI。升级版本需连同二进制和 Skills 一起验收。
 - `not a Mach-O executable` 或架构不是 arm64：覆盖变量指向了 launcher、脚本或其他
   架构 binary；改为原生 arm64 binary。
 - `non-system dynamic dependency`：输入 binary 依赖包外动态库，不满足自包含要求。

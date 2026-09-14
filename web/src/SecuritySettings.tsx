@@ -5,6 +5,7 @@ import {
   Card,
   Flex,
   Input,
+  InputNumber,
   Select,
   Space,
   Spin,
@@ -22,7 +23,6 @@ import {
   SafetyCertificateOutlined,
 } from '@ant-design/icons'
 import { getSecuritySettings, listSecurityAuditEvents, updateSecuritySettings } from './api'
-import PageHeader from './components/PageHeader'
 import type {
   AccessAuditActorKind,
   AccessAuditEvent,
@@ -30,6 +30,7 @@ import type {
   SecuritySettingsView,
 } from './types'
 import './styles/security-settings.css'
+import { usePageContext } from './pageContext'
 
 const { Text, Title } = Typography
 
@@ -51,8 +52,11 @@ function statusColor(status: number): string {
 }
 
 export default function SecuritySettings() {
+  const { navigate } = usePageContext()
   const [view, setView] = useState<SecuritySettingsView>()
   const [draftP2PEnabled, setDraftP2PEnabled] = useState(false)
+  const [draftAutoP2PTopN, setDraftAutoP2PTopN] = useState(0)
+  const [lastAutoP2PTopN, setLastAutoP2PTopN] = useState(20)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string>()
@@ -73,6 +77,8 @@ export default function SecuritySettings() {
       .then((result) => {
         setView(result)
         setDraftP2PEnabled(result.settings.p2p_scan_enabled)
+        setDraftAutoP2PTopN(result.settings.auto_related_p2p_top_n)
+        if (result.settings.auto_related_p2p_top_n > 0) setLastAutoP2PTopN(result.settings.auto_related_p2p_top_n)
         setError(undefined)
       })
       .catch((cause: unknown) => {
@@ -107,8 +113,12 @@ export default function SecuritySettings() {
   const save = async () => {
     setSaving(true)
     try {
-      const updated = await updateSecuritySettings({ p2p_scan_enabled: draftP2PEnabled })
+      const updated = await updateSecuritySettings({
+        p2p_scan_enabled: draftP2PEnabled,
+        auto_related_p2p_top_n: draftAutoP2PTopN,
+      })
       setView(updated)
+      if (updated.settings.auto_related_p2p_top_n > 0) setLastAutoP2PTopN(updated.settings.auto_related_p2p_top_n)
       setError(undefined)
       setSuccess('安全设置已保存')
       reloadAudit()
@@ -172,17 +182,16 @@ export default function SecuritySettings() {
   if (loading && !view) {
     return (
       <div className="security-page">
-        <PageHeader title="安全保护" subtitle="管理 Jarvis 的数据访问边界与访问审计" />
         <div className="security-settings-loading"><Spin /></div>
       </div>
     )
   }
 
-  const dirty = view ? draftP2PEnabled !== view.settings.p2p_scan_enabled : false
+  const dirty = view ? draftP2PEnabled !== view.settings.p2p_scan_enabled ||
+    draftAutoP2PTopN !== view.settings.auto_related_p2p_top_n : false
 
   return (
     <div className="security-page">
-      <PageHeader title="安全保护" subtitle="管理 Jarvis 的数据访问边界与访问审计" />
       <div className="security-settings">
       {view?.restart_required && (
         <Alert
@@ -215,7 +224,56 @@ export default function SecuritySettings() {
             />
           </Flex>
           <Flex className="security-policy-actions" justify="flex-end">
-            <Button type="primary" disabled={!dirty} loading={saving} onClick={save}>保存设置</Button>
+            <Button type="primary" disabled={!dirty} loading={saving} onClick={save}>保存单聊设置</Button>
+          </Flex>
+        </Card>
+
+        <Card className="security-policy-card" variant="borderless">
+          <Flex justify="space-between" align="flex-start" gap={20}>
+            <Space align="start" size={14}>
+              <span className="security-policy-icon"><SafetyCertificateOutlined /></span>
+              <div>
+                <Title level={4}>自动纳入活跃单聊</Title>
+                <Text type="secondary">关闭后不再按活跃度自动监听单聊；人工固定监听的单聊不受影响。</Text>
+                {draftAutoP2PTopN > 0 && (
+                  <div style={{ marginTop: 12 }}>
+                    <Text type="secondary" style={{ marginRight: 8 }}>自动监听数量</Text>
+                    <InputNumber
+                      min={1}
+                      max={500}
+                      value={draftAutoP2PTopN}
+                      onChange={(value) => {
+                        const next = value ?? 1
+                        setDraftAutoP2PTopN(next)
+                        setLastAutoP2PTopN(next)
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
+            </Space>
+            <Switch
+              checked={draftAutoP2PTopN > 0}
+              onChange={(enabled) => setDraftAutoP2PTopN(enabled ? lastAutoP2PTopN : 0)}
+              checkedChildren="开启"
+              unCheckedChildren="关闭"
+            />
+          </Flex>
+          <Flex className="security-policy-actions" justify="flex-end">
+            <Button type="primary" disabled={!dirty} loading={saving} onClick={save}>保存单聊设置</Button>
+          </Flex>
+        </Card>
+
+        <Card className="security-policy-card" variant="borderless">
+          <Flex justify="space-between" align="center" gap={20}>
+            <Space align="start" size={14}>
+              <span className="security-policy-icon"><FileProtectOutlined /></span>
+              <div>
+                <Title level={4}>会话排除名单</Title>
+                <Text type="secondary">在世界会话列表中批量排除单聊、群聊或话题。历史数据保留，后台不再采集新消息。</Text>
+              </div>
+            </Space>
+            <Button onClick={() => navigate('background', { view: 'groups', capture: 'excluded' })}>管理排除名单</Button>
           </Flex>
         </Card>
 

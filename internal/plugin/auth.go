@@ -289,36 +289,35 @@ func findValue(value any, key string) any {
 }
 
 func findString(value any, keys ...string) string {
-	wanted := make(map[string]struct{}, len(keys))
 	for _, key := range keys {
-		wanted[key] = struct{}{}
+		if text := findStringValue(value, key); text != "" {
+			return text
+		}
 	}
-	var visit func(any) string
-	visit = func(current any) string {
-		switch typed := current.(type) {
-		case map[string]any:
-			for key, nested := range typed {
-				if _, ok := wanted[key]; ok {
-					if text, ok := nested.(string); ok && strings.TrimSpace(text) != "" {
-						return strings.TrimSpace(text)
-					}
-				}
-			}
-			for _, nested := range typed {
-				if found := visit(nested); found != "" {
-					return found
-				}
-			}
-		case []any:
-			for _, nested := range typed {
-				if found := visit(nested); found != "" {
-					return found
-				}
+	return ""
+}
+
+func findStringValue(value any, key string) string {
+	switch typed := value.(type) {
+	case map[string]any:
+		if value, ok := typed[key]; ok {
+			if text, ok := value.(string); ok && strings.TrimSpace(text) != "" {
+				return strings.TrimSpace(text)
 			}
 		}
-		return ""
+		for _, nested := range typed {
+			if found := findStringValue(nested, key); found != "" {
+				return found
+			}
+		}
+	case []any:
+		for _, nested := range typed {
+			if found := findStringValue(nested, key); found != "" {
+				return found
+			}
+		}
 	}
-	return visit(value)
+	return ""
 }
 
 func authError(status, message string) AuthStatus {

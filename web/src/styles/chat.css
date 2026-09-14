@@ -364,29 +364,6 @@
   box-shadow: none !important;
   resize: none;
 }
-.chat-source-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-.chat-source-chips > span {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 6px;
-  border: 1px solid #e2e9dc;
-  border-radius: 5px;
-  background: #f2f6ee;
-  color: #758769;
-  font-size: 10px;
-}
-.chat-source-chips button {
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #96a18c;
-  cursor: pointer;
-}
 .chat-composer-actions {
   display: flex;
   align-items: center;
@@ -415,19 +392,6 @@
   padding: 7px 3px 0;
   color: var(--color-text-tertiary);
   font-size: 9px;
-}
-.chat-source-picker {
-  display: flex;
-  width: 265px;
-  flex-direction: column;
-  gap: 11px;
-  padding: 4px;
-}
-.chat-source-picker > .ant-typography {
-  font-size: 11px;
-}
-.chat-source-picker .ant-checkbox-wrapper {
-  font-size: 12px;
 }
 .chat-drawer-sessions {
   display: grid;
@@ -531,10 +495,6 @@
   .chat-model-select {
     width: 120px;
   }
-  .chat-source-chips {
-    max-height: 49px;
-    overflow: auto;
-  }
   .chat-session-heading > span {
     max-width: 220px;
   }
@@ -543,13 +503,6 @@
   }
 }
 @media (max-width: 410px) {
-  .chat-composer-actions .ant-btn:nth-of-type(2) {
-    font-size: 0;
-  }
-  .chat-composer-actions .ant-btn:nth-of-type(2)::after {
-    content: '数据';
-    font-size: 10px;
-  }
   .chat-agent-select {
     width: 76px;
   }

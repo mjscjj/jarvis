@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: normative module guide
-> Last verified: 2026-09-11
+> Last verified: 2026-09-13
 > Code source: `internal/capture/`, `internal/domain/capture.go`
 
 M2 把外部事实可靠写入 SQLite，并按 chat 唤醒 M3。它不分类、不下结论、不决定重试策略。
@@ -22,6 +22,8 @@ message -> factengine（旁路）-> fact
 ```
 
 Jarvis Bot 的事件连接由 CC Connect 独占；`jarvis-server` 不启动 `lark-cli event consume`。M2 依赖会话发现与增量轮询，按 checkpoint 推进恢复水位；未来若需要实时事件，只能由 CC Connect 通过明确的本机 fan-out 接口转发。
+
+会话后台采集范围由 `feishu_group.related_group` 与 `capture_excluded` 共同决定。`capture_excluded` 是 Principal 的持久排除选择，优先于活跃单聊轮换、Principal 群聊活动发现、手工扫描和批量纳入；取消排除时，可监听的会话会从当前时刻重新固定监听，不补采排除期间的消息（外部单聊仍遵守不监听策略）。该设置只约束后台轮询，不拦截用户主动发给 Jarvis Bot、由 CC Connect 接管的即时会话。
 
 CC Connect 自己接受的交互消息不进入 Todo 流水线。它在原生 Agent 执行前同步调用 `/internal/message-routing/claim`，按飞书 `message_id` 幂等保存当前消息并设置 `extraction_skipped=true`。该机器边界不携带历史、不创建 Task、不唤醒 M3，也不把会话自动改成 `related_group`；消息仍可作为后续普通线索的会话背景。CC 原生 Agent 所需的有限群聊历史直接从飞书实时读取，不从 Jarvis `message` 表重建：普通群按 chat，话题/回复按 thread。当前 `chat_id` 还用于读取群绑定的 Jarvis 世界上下文。
 

@@ -14,16 +14,20 @@ import (
 type Snapshot struct {
 	// SnapshotVersion lets consumers fail-fast on an unexpected shape instead of
 	// silently mis-reading an old snapshot.
-	SnapshotVersion string `json:"snapshot_version"`
-	CapturedAt      string `json:"captured_at"` // RFC3339 UTC
+	SnapshotVersion    string          `json:"snapshot_version"`
+	Coverage           json.RawMessage `json:"coverage,omitempty"`
+	EvidenceRefs       json.RawMessage `json:"evidence_refs,omitempty"`
+	ProjectAssociation json.RawMessage `json:"project_association,omitempty"`
+	CapturedAt         string          `json:"captured_at"` // RFC3339 UTC
 
 	Principal *Principal `json:"principal"`
 	Project   *Project   `json:"project"`
 	Group     *Group     `json:"group"`
 	Assigner  *Assigner  `json:"assigner"`
 	Messages  []Message  `json:"messages"`
-	// Participants/resources/other_projects are part of the exact context M3
-	// used to extract the clue.
+	// Participants and resources describe the source scene. OtherProjects is
+	// retained for historical/get-context snapshots; current M3 evidence packets
+	// leave it empty and use the live world overview instead.
 	//
 	// Open Todos and recent Tasks deliberately do not ride here. They are world
 	// state, not evidence: a snapshot freezes what was true at creation time,
@@ -36,16 +40,16 @@ type Snapshot struct {
 	// manual/scheduled tasks. M3 leaves it empty because its own captured
 	// resources are frozen in Resources above.
 	//
-	// Fact detail deliberately does not ride here. A snapshot answers "what was
-	// the world when this was created"; the entity Summary fields above already
-	// carry that. Fact history is drilled into on demand with list-facts.
+	// Fact detail deliberately does not ride here. Current world state and Fact
+	// history are read independently from the live directory and list-facts.
 	ManagedResources []ManagedResource `json:"managed_resources,omitempty"`
 	// RequestContext preserves caller-supplied manual/scheduled background
 	// without allowing it to replace the authoritative common snapshot.
 	RequestContext json.RawMessage `json:"request_context,omitempty"`
 }
 
-// Principal is the decision-maker ("me"): who I am, what I own, who my leader is.
+// Principal is the decision-maker identity. Summary remains for historical and
+// get-context snapshots; M3 evidence packets keep identity only.
 type Principal struct {
 	OpenID       string  `json:"open_id"`
 	Name         string  `json:"name"`
@@ -67,16 +71,20 @@ type Project struct {
 	Summary  *string `json:"summary,omitempty"`
 }
 
-// Group is the originating Feishu conversation. Description is the captured
-// announcement; Summary is Jarvis's long-term truth about the group.
+// Group is the originating Feishu conversation. Description/Summary remain for
+// historical and get-context snapshots; M3 evidence packets keep scene identity.
 type Group struct {
-	ID          uint64  `json:"id"`
-	ChatID      string  `json:"chat_id"`
-	Name        *string `json:"name"`
-	Description *string `json:"description"`
-	Summary     *string `json:"summary,omitempty"`
-	IsKeyGroup  bool    `json:"is_key_group"`
-	ProjectID   *uint64 `json:"project_id"`
+	ChatMode      string  `json:"chat_mode,omitempty"`
+	P2PTargetType string  `json:"p2p_target_type,omitempty"`
+	PeerOpenID    string  `json:"peer_open_id,omitempty"`
+	PeerName      string  `json:"peer_name,omitempty"`
+	ID            uint64  `json:"id"`
+	ChatID        string  `json:"chat_id"`
+	Name          *string `json:"name"`
+	Description   *string `json:"description"`
+	Summary       *string `json:"summary,omitempty"`
+	IsKeyGroup    bool    `json:"is_key_group"`
+	ProjectID     *uint64 `json:"project_id"`
 }
 
 // Assigner is who handed the Todo over (leader/colleague).
@@ -88,8 +96,7 @@ type Assigner struct {
 	Summary *string `json:"summary,omitempty"`
 }
 
-// Participant freezes the people information M3 used to interpret tone,
-// authority and implicit assignments.
+// Participant freezes scene identity. Long-term summaries are live world data.
 type Participant struct {
 	OpenID   string  `json:"open_id"`
 	Name     *string `json:"name,omitempty"`
@@ -133,6 +140,8 @@ type ManagedResource struct {
 
 // Message is one piece of source evidence, copied verbatim at capture time.
 type Message struct {
+	ReplyTo      string          `json:"reply_to,omitempty"`
+	SenderType   string          `json:"sender_type,omitempty"`
 	MessageID    string          `json:"message_id"`
 	ChatID       string          `json:"chat_id"`
 	ChatMode     string          `json:"chat_mode,omitempty"`

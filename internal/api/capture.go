@@ -41,6 +41,29 @@ type scanChatRequest struct {
 	ChatID string `json:"chat_id"`
 }
 
+type captureExclusionRequest struct {
+	GroupIDs []uint64 `json:"group_ids"`
+	Excluded bool     `json:"excluded"`
+}
+
+func UpdateCaptureExclusion(svc *capture.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		var request captureExclusionRequest
+		if err := decodeStrictJSON(c.Request.Body(), &request); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40033, err)
+			return
+		}
+		updated, err := svc.SetCaptureExclusion(ctx, request.GroupIDs, request.Excluded)
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40033, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]any{
+			"updated": updated, "excluded": request.Excluded,
+		}})
+	}
+}
+
 // ScanChatManually 手动采集指定 chat_id（等价 CLI -scan-chat）。
 func ScanChatManually(svc *capture.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
@@ -55,7 +78,7 @@ func ScanChatManually(svc *capture.Service) app.HandlerFunc {
 			return
 		}
 		if err := svc.ScanChatNow(ctx, chatID); err != nil {
-			if errors.Is(err, capture.ErrP2PScanDisabled) {
+			if errors.Is(err, capture.ErrP2PScanDisabled) || errors.Is(err, capture.ErrCaptureExcluded) {
 				writeAPIError(c, consts.StatusForbidden, 40330, err)
 				return
 			}

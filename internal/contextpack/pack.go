@@ -27,8 +27,8 @@ func object(raw []byte) (Object, error) {
 }
 func encoded(v any) json.RawMessage { b, _ := json.Marshal(v); return b }
 
-// Freeze preserves the producer's complete source and capture. Only annotations
-// are model-authored. No semantic field is lifted into the captured facts.
+// Freeze constructs the historical unversioned carrier for compatibility tests.
+// Deprecated: production writers use FreezeEvidence and keep admission in audit.
 func Freeze(source, capture []byte, brief string, annotation []byte) (json.RawMessage, error) {
 	if !json.Valid(source) {
 		return nil, fmt.Errorf("invalid source JSON")
@@ -95,7 +95,13 @@ func Validate(raw []byte) error {
 	if err != nil {
 		return err
 	}
-	if !json.Valid(packet["source"]) {
+	if version, ok := packet["format_version"]; ok {
+		var n int
+		if json.Unmarshal(version, &n) != nil || n != 2 {
+			return fmt.Errorf("unsupported context format_version %s", version)
+		}
+	}
+	if !json.Valid(packet["source"]) || string(packet["source"]) == "null" {
 		return fmt.Errorf("missing or invalid source")
 	}
 	capture, err := object(packet["capture"])
@@ -130,7 +136,7 @@ func Source(raw []byte) (json.RawMessage, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !json.Valid(packet["source"]) {
+	if !json.Valid(packet["source"]) || string(packet["source"]) == "null" {
 		return nil, fmt.Errorf("missing or invalid source")
 	}
 	return packet["source"], nil
@@ -196,6 +202,10 @@ func Read(raw []byte, section, id string) (json.RawMessage, error) {
 		return nil, fmt.Errorf("unknown frozen message_id %q", id)
 	}
 	switch section {
+	case "evidence":
+		return Evidence(raw, "")
+	case "capture":
+		return packet["capture"], nil
 	case "full":
 		return append(json.RawMessage(nil), raw...), nil
 	case "source":

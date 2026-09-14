@@ -15,12 +15,12 @@ import (
 	"time"
 )
 
-func TestJarvisToolsHelpStatesDesignPrinciples(t *testing.T) {
-	out, err := runJarvisTools(t, "", nil, "--help")
+func TestJarvisToolsAllHelpIncludesWorldCommands(t *testing.T) {
+	out, err := runJarvisTools(t, "", nil, "help", "all")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"Simple first", "Progressive loading", "query-captured-resources", "create-project", "list-key-matters", "touch-key-matter", "touch-resource", "get-page", "resolve-world-node", "update-page", "list-pages", "list-page-revisions", "list-backlinks", "list-relations", "create-relation", "purge-world-entities", "get-world-progress", "create-world-progress", "update-world-progress"} {
+	for _, want := range []string{"query-captured-resources", "create-project", "list-key-matters", "touch-key-matter", "touch-resource", "get-page", "resolve-world-node", "update-page", "list-pages", "list-page-revisions", "list-backlinks", "list-relations", "create-relation", "purge-world-entities", "get-world-progress", "create-world-progress", "update-world-progress"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("help missing %q:\n%s", want, out)
 		}
@@ -50,20 +50,28 @@ func TestJarvisToolsResolvesRepositoryThroughSymlinkOutsideWorkingDirectory(t *t
 	if err := os.WriteFile(targetScript, sourceScript, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	apiBaseScript, err := os.ReadFile(filepath.Join("..", "..", "scripts", "jarvis-api-base"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(scriptsDir, "jarvis-api-base"), apiBaseScript, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	configDir := filepath.Join(repoRoot, "conf")
-	if err := os.MkdirAll(configDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	addr := strings.TrimPrefix(server.URL, "http://")
-	if err := os.WriteFile(filepath.Join(configDir, "config.yaml"), []byte("server:\n  addr: "+addr+"\n"), 0o600); err != nil {
-		t.Fatal(err)
+	for _, source := range []string{"json-api-data.mjs", "lib"} {
+		base := filepath.Join("..", "..", "scripts", source)
+		if err := filepath.WalkDir(base, func(path string, entry os.DirEntry, walkErr error) error {
+			if walkErr != nil {
+				return walkErr
+			}
+			rel, err := filepath.Rel(filepath.Join("..", "..", "scripts"), path)
+			if err != nil {
+				return err
+			}
+			target := filepath.Join(scriptsDir, rel)
+			if entry.IsDir() {
+				return os.MkdirAll(target, 0o755)
+			}
+			content, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			return os.WriteFile(target, content, 0o644)
+		}); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	linkDir := t.TempDir()
@@ -71,7 +79,7 @@ func TestJarvisToolsResolvesRepositoryThroughSymlinkOutsideWorkingDirectory(t *t
 	if err := os.Symlink(targetScript, link); err != nil {
 		t.Fatal(err)
 	}
-	command := exec.Command("bash", link, "get-principal")
+	command := exec.Command("bash", link, "get-principal", "--api-base", server.URL)
 	command.Dir = t.TempDir()
 	command.Env = append(command.Environ(), "JARVIS_API_BASE="+server.URL)
 	output, err := command.CombinedOutput()
@@ -366,6 +374,7 @@ func TestJarvisToolsWorldModelWritesUseSpecificEndpoints(t *testing.T) {
 		{"update-page", []string{"--type", "project", "--id", "7", "--content", "hello", "--if-unchanged-since", "2026-08-15T00:00:00Z"}, http.MethodPut, "/api/pages/project/7"},
 		{"create-relation", []string{"--payload", `{"source_type":"okr_kr","source_id":"kr-1","relation_type":"projects_to","target_type":"project","target_id":"7"}`}, http.MethodPost, "/api/relations"},
 		{"purge-world-entities", []string{"--payload", `{"entities":[{"type":"project","id":8,"expected_name":"copy"}]}`}, http.MethodPost, "/api/world/purge"},
+		{"get-page-guidance", nil, http.MethodGet, "/api/text-files/entity_page_guidance"},
 		{"append-facts-batch", []string{"--payload", `[{"subject_type":"project","subject_id":1,"description":"d1","source":"system"},{"subject_type":"project","subject_id":2,"description":"d2","source":"system"}]`}, http.MethodPost, "/api/facts/batch"},
 		{"create-world-progress", []string{"--payload", `{"expected_version":0,"subject_type":"okr_point","subject_id":"point-1","period_key":"2026-W36","signal":"yellow","summary":"waiting","evidence":{},"evidence_until":"2026-09-06T09:00:00Z"}`}, http.MethodPost, "/api/world-progress"},
 		{"update-world-progress", []string{"--id", "11", "--payload", `{"expected_version":0,"signal":"green","summary":"done","evidence":{},"evidence_until":"2026-09-06T10:00:00Z"}`}, http.MethodPut, "/api/world-progress/11"},
@@ -516,6 +525,8 @@ func TestJarvisToolsPageCommandsUseExactEndpoints(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/pages/project/7":
 			fmt.Fprint(w, `{"code":0,"data":{"type":"project","id":7,"summary":"page","updated_at":"2026-08-15T00:00:00Z","fact_count":12}}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/text-files/entity_page_guidance":
+			fmt.Fprint(w, `{"code":0,"data":{"key":"entity_page_guidance","content":"shared page guidance"}}`)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/pages":
 			if r.URL.Query().Get("type") != "person" || r.URL.Query().Get("all") != "true" ||
 				r.URL.Query().Get("stale_days") != "14" || r.URL.Query().Get("over_limit") != "true" {
@@ -535,6 +546,10 @@ func TestJarvisToolsPageCommandsUseExactEndpoints(t *testing.T) {
 	out, err := runJarvisTools(t, server.URL, nil, "get-page", "--type", "project", "--id", "7")
 	if err != nil || !strings.Contains(out, `"fact_count":12`) {
 		t.Fatalf("get-page output = %s, error = %v", out, err)
+	}
+	out, err = runJarvisTools(t, server.URL, nil, "get-page-guidance")
+	if err != nil || !strings.Contains(out, `"content":"shared page guidance"`) {
+		t.Fatalf("get-page-guidance output = %s, error = %v", out, err)
 	}
 	out, err = runJarvisTools(t, server.URL, nil, "list-pages", "--type", "person", "--all", "--stale-days", "14", "--over-limit")
 	if err != nil || !strings.Contains(out, `"id":12`) {
@@ -837,17 +852,14 @@ func TestJarvisToolsDateUsesConfiguredTimezoneAndFailsBeforeRequest(t *testing.T
 	}))
 	defer server.Close()
 
-	configPath := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(configPath, []byte("capture:\n  timezone: America/New_York\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := runJarvisTools(t, server.URL, nil, "list-tasks", "--date", "2026-03-08", "--config", configPath); err != nil {
+	env := []string{"JARVIS_TIMEZONE=America/New_York"}
+	if _, err := runJarvisTools(t, server.URL, env, "list-tasks", "--date", "2026-03-08"); err != nil {
 		t.Fatalf("valid date failed: %v", err)
 	}
 	if requests != 1 {
 		t.Fatalf("request count after valid date = %d", requests)
 	}
-	if _, err := runJarvisTools(t, server.URL, nil, "list-tasks", "--date", "2026-02-30", "--config", configPath); err == nil {
+	if _, err := runJarvisTools(t, server.URL, env, "list-tasks", "--date", "2026-02-30"); err == nil {
 		t.Fatal("invalid calendar date succeeded")
 	}
 	if requests != 1 {
@@ -923,12 +935,13 @@ func runJarvisTools(t *testing.T, apiBase string, extraEnv []string, args ...str
 	if err != nil {
 		t.Fatal(err)
 	}
-	command := exec.Command("bash", append([]string{script}, args...)...)
-	command.Env = sanitizedEnv(command.Environ(), "JARVIS_TASK_ID", "JARVIS_AGENT_STAGE", "JARVIS_TIMEZONE")
-	command.Env = append(command.Env, extraEnv...)
+	cliArgs := []string{script}
 	if apiBase != "" {
-		command.Env = append(command.Env, "JARVIS_API_BASE="+apiBase)
+		cliArgs = append(cliArgs, "--api-base", apiBase)
 	}
+	command := exec.Command("bash", append(cliArgs, args...)...)
+	command.Env = sanitizedEnv(command.Environ(), "JARVIS_API_BASE", "JARVIS_TASK_ID", "JARVIS_AGENT_STAGE", "JARVIS_TIMEZONE", "JARVIS_CONFIG_PATH", "JARVIS_DESKTOP", "JARVIS_RESOURCE_ROOT")
+	command.Env = append(command.Env, extraEnv...)
 	output, err := command.CombinedOutput()
 	if err != nil {
 		return string(output), fmt.Errorf("jarvis-tools %s: %w: %s", strings.Join(args, " "), err, output)

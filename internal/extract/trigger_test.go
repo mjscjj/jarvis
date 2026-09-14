@@ -88,7 +88,7 @@ func TestOptionalTriggerDoesNotGateExtraction(t *testing.T) {
 			}
 			store := &fakePipelineStore{batches: []ChatBatch{batch}}
 			model := &fakeModelExtractor{result: result}
-			worker, err := NewWorker(store, model, &fakeFactReader{}, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, validWorkerOptions())
+			worker, err := NewWorker(store, model, &fakeCandidateDeduplicator{}, &fakeToolBoxBuilder{}, validWorkerOptions())
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -26,16 +26,13 @@ description: 使用 lark-cli 通过 {{AGENT_NAME}} Bot 发送普通一对一或�
 jarvis-tools get-principal
 ```
 
-结果必须提供 principal `open_id`。Task 可能在任意业务仓库执行，不要从当前 cwd 猜 Jarvis 配置；从 `jarvis-tools` 的真实路径定位 Jarvis workspace，再用现有只读配置命令读取合并后的生效身份：
+结果必须提供 principal `open_id`。读取同一运行实例的有效身份，不从当前 Task 工作目录猜 Jarvis 配置：
 
 ```bash
-JARVIS_TOOLS_REAL="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$(command -v jarvis-tools)")"
-JARVIS_REPO_ROOT="$(cd "$(dirname "$JARVIS_TOOLS_REAL")/.." && pwd)"
-(cd "$JARVIS_REPO_ROOT" && go run ./cmd/jarvis-config show-principal --config conf/config.yaml) \
-  | jq -c '{principal_open_id}'
+jarvis-tools get-agent-identity
 ```
 
-这个结果的 `principal_open_id` 必须与 `jarvis-tools get-principal` 完全相同。命令缺失、配置读取失败或两个 principal 不一致都停止，不能改读 Task 仓库里的同名文件。所有飞书命令使用 lark-cli 当前默认身份，先显式核验：
+返回的 `principal_open_id` 必须与 `get-principal` 的 `open_id` 一致；`display_name` 是当前助手名字。读取失败或身份不一致时停止并保留原始错误。所有飞书命令使用 lark-cli 当前默认身份，先显式核验：
 
 ```bash
 lark-cli auth status --json --verify

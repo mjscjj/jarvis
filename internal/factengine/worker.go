@@ -146,7 +146,11 @@ func (w *Worker) ExtractOnce(ctx context.Context) (Stats, error) {
 	if err != nil {
 		return stats, fmt.Errorf("read fact extraction system prompt: %w", err)
 	}
-	systemPrompt, err := buildAgentSystemPrompt(rolePrompt)
+	pageGuidance, err := w.opts.Prompts.Content(ctx, textstore.EntityPageGuidanceKey)
+	if err != nil {
+		return stats, fmt.Errorf("read entity page guidance: %w", err)
+	}
+	systemPrompt, err := buildAgentSystemPrompt(rolePrompt, pageGuidance)
 	if err != nil {
 		return stats, err
 	}
@@ -277,16 +281,21 @@ func escapeInvalidUTF8(value string) string {
 	return b.String()
 }
 
-func buildAgentSystemPrompt(rolePrompt string) (string, error) {
+func buildAgentSystemPrompt(rolePrompt, pageGuidance string) (string, error) {
 	rolePrompt = strings.TrimSpace(rolePrompt)
 	if rolePrompt == "" {
 		return "", fmt.Errorf("fact extraction system prompt is empty")
+	}
+	pageGuidance = strings.TrimSpace(pageGuidance)
+	if pageGuidance == "" {
+		return "", fmt.Errorf("entity page guidance is empty")
 	}
 	tools, err := toolcatalog.Block(toolcatalog.StageFactEngine)
 	if err != nil {
 		return "", fmt.Errorf("build fact engine tool catalog: %w", err)
 	}
-	return rolePrompt + "\n\n" + strings.TrimSpace(tools), nil
+	return rolePrompt + "\n\nBEGIN_ENTITY_PAGE_GUIDANCE\n" + pageGuidance +
+		"\nEND_ENTITY_PAGE_GUIDANCE\n\n" + strings.TrimSpace(tools), nil
 }
 
 func latestOccurredAt(units []SourceUnit) time.Time {

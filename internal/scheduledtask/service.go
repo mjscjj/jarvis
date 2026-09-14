@@ -413,6 +413,15 @@ func (s *Service) Trigger(ctx context.Context, id uint64) (*View, error) {
 // did not finish materializing its Task and must become claimable again.
 func (s *Service) RecoverRunning(ctx context.Context) (int64, error) {
 	now := s.now().UTC()
+	ready := s.db.WithContext(ctx).Model(&domain.ScheduledTask{}).
+		Where("status = ? AND dispatch_kind = ? AND subject_type = ?", "binding", "resume_task", "task").
+		Where("EXISTS (SELECT 1 FROM task WHERE task.id = scheduled_task.subject_id AND task.status = ?)", "waiting").
+		Where("EXISTS (SELECT 1 FROM execution_run WHERE execution_run.id = scheduled_task.source_run_id AND execution_run.task_id = scheduled_task.subject_id AND execution_run.status = ? AND TRIM(execution_run.codex_session_id) <> '')", "waiting").
+		Where("NOT EXISTS (SELECT 1 FROM execution_run WHERE execution_run.task_id = scheduled_task.subject_id AND execution_run.id > scheduled_task.source_run_id)").
+		Update("status", "active")
+	if ready.Error != nil {
+		return 0, fmt.Errorf("recover ready continuations: %w", ready.Error)
+	}
 	binding := s.db.WithContext(ctx).Model(&domain.ScheduledTask{}).
 		Where("status = ?", "binding").Updates(map[string]any{
 		"status": "completed", "last_run_status": "failed", "last_finished_at": now,
@@ -437,7 +446,7 @@ func (s *Service) RecoverRunning(ctx context.Context) (int64, error) {
 	if oneTime.Error != nil {
 		return 0, fmt.Errorf("recover running one-time scheduled tasks: %w", oneTime.Error)
 	}
-	return binding.RowsAffected + recurring.RowsAffected + oneTime.RowsAffected, nil
+	return ready.RowsAffected + binding.RowsAffected + recurring.RowsAffected + oneTime.RowsAffected, nil
 }
 
 // RunDue claims one bounded batch and materializes each occurrence as a Task.
@@ -555,6 +564,16 @@ func (s *Service) dispatch(ctx context.Context, row *domain.ScheduledTask, occur
 	input, err := taskInput(row, occurrenceKey)
 	if err != nil {
 		s.fail(ctx, row.ID, err)
+		return err
+	}
+	var source map[string]json.RawMessage
+	if err := json.Unmarshal(input.SourcePayload, &source); err != nil {
+		return err
+	}
+	source["timezone"], _ = json.Marshal(s.location.String())
+	source["actual_triggered_at"], _ = json.Marshal(s.now().UTC().Format(time.RFC3339))
+	input.SourcePayload, err = json.Marshal(source)
+	if err != nil {
 		return err
 	}
 	task, err := s.submitter.Submit(ctx, input)
@@ -707,7 +726,12 @@ func taskInput(row *domain.ScheduledTask, occurrenceKey string) (taskcreate.Inpu
 	if occurrenceKey == "" {
 		return taskcreate.Input{}, fmt.Errorf("scheduled task occurrence key is empty")
 	}
-	sourcePayload, err := json.Marshal(map[string]any{"instruction": row.Instruction})
+	sourcePayload, err := json.Marshal(map[string]any{
+		"instruction": row.Instruction, "scheduled_task_id": row.ID, "occurrence_key": occurrenceKey,
+		"scheduled_trigger_at": row.NextRunAt, "schedule_type": row.ScheduleType,
+		"daily_time": row.DailyTime, "weekday": row.Weekday,
+		"interval_minutes": row.IntervalMinutes, "run_at": row.RunAt,
+	})
 	if err != nil {
 		return taskcreate.Input{}, fmt.Errorf("encode scheduled Task source payload: %w", err)
 	}

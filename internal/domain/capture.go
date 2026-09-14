@@ -42,16 +42,20 @@ func (Message) TableName() string { return "message" }
 // Checkpoint is the polling high-water state for one chat. Only the polling
 // capture path may advance it.
 type Checkpoint struct {
-	ChatID              string     `gorm:"column:chat_id;primaryKey"`
-	HighWaterCreateTime int64      `gorm:"column:high_water_create_time;not null"`
-	LastMessageID       *string    `gorm:"column:last_message_id"`
-	BackfillDone        bool       `gorm:"column:backfill_done;not null;default:1"`
-	BackfillSince       int64      `gorm:"column:backfill_since;not null"`
-	LastScanAt          *time.Time `gorm:"column:last_scan_at"`
-	LastScanStatus      *string    `gorm:"column:last_scan_status"`
-	LastError           *string    `gorm:"column:last_error"`
-	CreatedAt           time.Time  `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`
-	UpdatedAt           time.Time  `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP;autoUpdateTime"`
+	ChatID              string  `gorm:"column:chat_id;primaryKey"`
+	HighWaterCreateTime int64   `gorm:"column:high_water_create_time;not null"`
+	LastMessageID       *string `gorm:"column:last_message_id"`
+	BackfillDone        bool    `gorm:"column:backfill_done;not null;default:1"`
+	BackfillSince       int64   `gorm:"column:backfill_since;not null"`
+	// CaptureFloor is a privacy boundary set when monitoring resumes after an
+	// explicit exclusion. Search overlap may query older rows but cannot persist
+	// messages before this timestamp. Zero means no additional floor.
+	CaptureFloor   int64      `gorm:"column:capture_floor;not null;default:0"`
+	LastScanAt     *time.Time `gorm:"column:last_scan_at"`
+	LastScanStatus *string    `gorm:"column:last_scan_status"`
+	LastError      *string    `gorm:"column:last_error"`
+	CreatedAt      time.Time  `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`
+	UpdatedAt      time.Time  `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP;autoUpdateTime"`
 }
 
 func (Checkpoint) TableName() string { return "chat_checkpoint" }

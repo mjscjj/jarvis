@@ -495,6 +495,24 @@ func TestLarkIMAuthorizationUsesDeviceFlow(t *testing.T) {
 	}
 }
 
+func TestLarkIMAuthorizationPrefersCompleteVerificationURL(t *testing.T) {
+	authorizer := newAuthorizer(fakeRunner{run: func(bin string, args []string) ([]byte, error) {
+		command := bin + " " + strings.Join(args, " ")
+		switch {
+		case strings.Contains(command, "im +chat-search"):
+			return []byte(`{"ok":false,"error":{"type":"authorization","subtype":"missing_scope","code":99991679,"message":"login required"}}`), errors.New("exit 1")
+		case strings.Contains(command, "--no-wait"):
+			return []byte(`{"data":{"device_code":"device-1","verification_uri":"https://example.test/short","verification_url":"https://example.test/verify","verification_uri_complete":"https://example.test/complete","user_code":"ABCD"}}`), nil
+		default:
+			return nil, fmt.Errorf("unexpected command: %s", command)
+		}
+	}})
+	begin := authorizer.Begin(t.Context(), "lark-cli-im")
+	if begin.Status != AuthPending || begin.VerificationURL == nil || *begin.VerificationURL != "https://example.test/complete" {
+		t.Fatalf("begin = %#v", begin)
+	}
+}
+
 func TestFindStringSearchesNestedAuthorizationPayload(t *testing.T) {
 	var payload any
 	if err := json.Unmarshal([]byte(`{"data":{"challenge":{"device_code":"x"}}}`), &payload); err != nil {
@@ -502,6 +520,16 @@ func TestFindStringSearchesNestedAuthorizationPayload(t *testing.T) {
 	}
 	if got := findString(payload, "device_code"); got != "x" {
 		t.Fatalf("findString() = %q", got)
+	}
+}
+
+func TestFindStringSkipsNonStringFieldBeforeNestedValue(t *testing.T) {
+	var payload any
+	if err := json.Unmarshal([]byte(`{"device_code":{"legacy":true},"data":{"device_code":"nested-device"}}`), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if got := findString(payload, "device_code"); got != "nested-device" {
+		t.Fatalf("findString() = %q, want nested-device", got)
 	}
 }
 

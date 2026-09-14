@@ -19,7 +19,7 @@ Options:
   --remote-okr-db        Discard the tracked OKR DB runtime diff before pulling.
   --skip-pull            Build and deploy the current working tree without Git pull.
   --force-interrupt-running-tasks
-                         Pass the explicit interruption flag to macOS rebuild.
+                         Allow restart while Tasks are executing.
   -h, --help             Show this help.
 
 Darwin uses the existing signed launchd install/rebuild scripts. Linux builds
@@ -144,6 +144,17 @@ deploy_linux() {
 
   local main_unit main_bin main_next main_stdout main_stderr
   main_unit="$(jq -er '.launchd_label' <<<"$INSTANCE").service"
+  if systemctl --user is-active --quiet "$main_unit"; then
+    local response running_tasks tasks_api
+    tasks_api="${API_BASE}/api/tasks?status=executing&page=1&page_size=1"
+    response="$(curl --fail --silent --show-error --max-time 5 "$tasks_api")" ||
+      fail "cannot query executing Tasks at $tasks_api; refusing to restart Jarvis"
+    running_tasks="$(jq -er 'if .code == 0 and (.data.total | type == "number") then .data.total else error("unexpected task-list response") end' <<<"$response")" ||
+      fail "cannot parse executing Task count; refusing to restart Jarvis"
+    if (( running_tasks > 0 )) && [[ "$FORCE_INTERRUPT" != true ]]; then
+      fail "refusing to restart $main_unit: $running_tasks Task(s) are executing; wait or use --force-interrupt-running-tasks"
+    fi
+  fi
   main_bin="${REPO_ROOT}/bin/jarvis-server"
   main_next="${main_bin}.next"
   mkdir -p "${REPO_ROOT}/bin" "${REPO_ROOT}/var/log"

@@ -255,13 +255,14 @@ func Register(h *server.Hertz, deps Dependencies) error {
 		h.POST("/api/setup/world-model", BootstrapOnboardingWorldModel(deps.Onboarding))
 	}
 	h.POST("/api/system/shutdown", ShutdownSystem(deps.SystemControl))
-	h.GET("/api/agent-identity", GetAgentIdentity(deps.AgentDisplayName))
+	h.GET("/api/agent-identity", GetAgentIdentity(deps.AgentDisplayName, deps.Profile))
 	h.GET("/api/messages", ListToolMessages(toolQueries))
 	h.GET("/api/messages/:message_id", GetToolMessage(toolQueries))
 	h.GET("/api/todo-events/:event_id", GetToolTodoEvent(toolQueries))
 	h.GET("/api/task-events/:event_id", GetToolTaskEvent(toolQueries))
 	h.GET("/api/captured-resources", ListCapturedResources(toolQueries))
 	h.GET("/api/captured-resources/:resource_id", GetCapturedResource(toolQueries))
+	h.GET("/api/world-overview", WorldOverview(deps.DB))
 	h.POST("/api/context", AssembleContext(deps.ContextAssembler))
 	h.GET("/api/todos", ListTodos(deps.Todos))
 	h.GET("/api/todos/:todo_id", GetTodo(deps.Todos))
@@ -333,6 +334,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.PUT("/api/persons/:person_id", UpdatePerson(deps.Persons))
 	h.DELETE("/api/persons/:person_id", DeletePerson(deps.Persons))
 	h.GET("/api/groups", ListGroups(deps.Groups))
+	if deps.Capture != nil {
+		h.PUT("/api/groups/capture-exclusion", UpdateCaptureExclusion(deps.Capture))
+	}
 	h.PUT("/api/groups/:group_id", UpdateGroupBackground(deps.Groups))
 	h.GET("/api/pages", ListPages(deps.Pages))
 	h.GET("/api/pages/:type/:id/revisions", ListPageRevisions(deps.Pages))

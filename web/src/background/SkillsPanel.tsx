@@ -81,11 +81,11 @@ export default function SkillsPanel() {
     { title: 'Skill', dataIndex: 'name', width: 220, render: (name: string) => <Text strong>{name}</Text> },
     { title: '说明', dataIndex: 'description', ellipsis: true },
     {
-      title: '生效阶段', width: 270,
+      title: '目录展示阶段', width: 270,
       render: (_, item) => <Flex gap={4} wrap>{item.stages.map((stage) => <Tag key={stage}>{stage === 'proactive' ? '主动巡视' : workRuleStageLabels[stage]}</Tag>)}</Flex>,
     },
     {
-      title: '启用', dataIndex: 'is_enabled', width: 70, align: 'center',
+      title: '加入目录', dataIndex: 'is_enabled', width: 100, align: 'center',
       render: (enabled: boolean, item) => <Switch size="small" checked={enabled} onChange={(checked) => toggle(item, checked)} />,
     },
     {
@@ -100,17 +100,17 @@ export default function SkillsPanel() {
 
   return <>
     <Flex justify="space-between" align="center" className="section-heading">
-      <Text type="secondary">共 {items.length} 个 Skill，正文来自 .agents/skills</Text>
+      <Text type="secondary">共 {items.length} 个 Skill，正文来自 .agents/skills；开关只控制自动加入 Agent 目录，关闭后仍可按名称读取，插件停用时不可用。</Text>
       <Flex gap={8}><Button onClick={reload} loading={loading}>刷新</Button><Button type="primary" onClick={sync} loading={loading}>扫描目录</Button></Flex>
     </Flex>
     {error && <Alert type="error" showIcon title="Skills 操作失败" description={error} closable onClose={() => setError(undefined)} />}
     <Card className="table-card" variant="borderless"><Table<AgentSkill> rowKey="name" columns={columns} dataSource={items} loading={loading} pagination={false} /></Card>
-    <Modal title={`设置 Skill 范围 · ${editing?.name || ''}`} open={Boolean(editing)} confirmLoading={submitting} onOk={submit} onCancel={() => setEditing(null)} okText="保存" destroyOnHidden>
+    <Modal title={`设置 Skill 目录展示 · ${editing?.name || ''}`} open={Boolean(editing)} confirmLoading={submitting} onOk={submit} onCancel={() => setEditing(null)} okText="保存" destroyOnHidden>
       <Form form={form} layout="vertical">
-        <Form.Item name="stages" label="生效阶段" rules={[{ required: true, type: 'array', min: 1, message: '至少选择一个阶段' }]}>
+        <Form.Item name="stages" label="目录展示阶段" rules={[{ required: true, type: 'array', min: 1, message: '至少选择一个阶段' }]}>
           <Select mode="multiple" options={Object.entries({ ...workRuleStageLabels, proactive: '主动巡视' }).map(([value, label]) => ({ value: value as SkillStage, label }))} />
         </Form.Item>
-        <Form.Item name="is_enabled" label="启用" valuePropName="checked"><Switch /></Form.Item>
+        <Form.Item name="is_enabled" label="自动加入 Agent 目录" valuePropName="checked"><Switch /></Form.Item>
       </Form>
     </Modal>
     <Modal title={`Skill · ${content?.name || ''}`} open={Boolean(content)} onCancel={() => setContent(null)} footer={null} width={760}>

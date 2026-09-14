@@ -25,7 +25,6 @@ interface ChatDockProps {
   onReconnect: () => void
   replyText: string
   replyContent: ReactNode
-  sources: ReactNode
   onSend: () => void
   onStop: () => void
   onNew: () => void
@@ -97,7 +96,6 @@ export default function ChatDock(props: ChatDockProps) {
   const settings = <div className="chat-dock-settings">
     {!!model?.reasoning_efforts?.length && <label>推理强度<Select aria-label="底部对话推理强度" value={active?.reasoning_effort} disabled={settingsDisabled}
       options={model.reasoning_efforts.map((value) => ({ value, label: value }))} onChange={props.onEffort} /></label>}
-    <div className="chat-dock-panel-caption">上下文引用</div>{props.sources}
   </div>
   const reply = <div className="chat-dock-reply">
     <div className="chat-dock-reply-heading"><span>{running ? '正在回复' : '最新回复'}</span><Button type="text" size="small" aria-label="关闭回复全文" icon={<CloseOutlined />} onClick={() => setPanel(null)} /></div>
@@ -163,7 +161,7 @@ export default function ChatDock(props: ChatDockProps) {
               onChange={(value) => { props.onModel(value); setPanel(null) }} /></div>}>
               <button type="button" className="chat-dock-model-trigger" aria-label={`切换模型：${modelName}`} title={modelName} disabled={settingsDisabled}><span>{modelName}</span><DownOutlined /></button>
             </Popover>
-            <Popover {...popover('settings')} placement="topRight" content={settings}><button type="button" className="chat-dock-icon" aria-label="更多对话设置" disabled={disabled}><MoreOutlined /></button></Popover>
+            {!!model?.reasoning_efforts?.length && <Popover {...popover('settings')} placement="topRight" content={settings}><button type="button" className="chat-dock-icon" aria-label="更多对话设置" disabled={disabled}><MoreOutlined /></button></Popover>}
             <Tooltip title="收起输入"><button type="button" className="chat-dock-icon" aria-label="收起底部对话输入" onClick={() => { setPanel(null); setExpanded(false) }}><DownOutlined /></button></Tooltip>
           </div>
         </div>}

@@ -92,7 +92,7 @@ func TestLarkLoginUsesSharedEntryAndCompletesSameDeviceFlow(t *testing.T) {
 	s := &Service{options: Options{RuntimeRoot: "/runtime", LarkCLIBin: "lark-cli"}, flows: make(map[string]*Flow)}
 	s.runner = commandFunc(func(_ context.Context, bin string, args []string, _ string) ([]byte, error) {
 		if bin == "bash" && reflect.DeepEqual(args, []string{"/runtime/scripts/jarvis-lark-auth", "begin", "lark-cli"}) {
-			return []byte(`{"device_code":"this-device","verification_url":"https://example.test/authorize"}`), nil
+			return []byte(`{"device_code":"this-device","verification_uri":"https://example.test/short","verification_url":"https://example.test/verify","verification_uri_complete":"https://example.test/authorize"}`), nil
 		}
 		if bin != "lark-cli" || !reflect.DeepEqual(args, []string{"auth", "login", "--device-code", "this-device"}) {
 			return nil, errors.New("unexpected device completion command")
@@ -109,6 +109,13 @@ func TestLarkLoginUsesSharedEntryAndCompletesSameDeviceFlow(t *testing.T) {
 	case <-completed:
 	case <-time.After(time.Second):
 		t.Fatal("device flow was not completed with the same code")
+	}
+}
+
+func TestFindStringSkipsNonStringFieldBeforeNestedValue(t *testing.T) {
+	value := decodeJSON([]byte(`{"device_code":{"legacy":true},"data":{"device_code":"nested-device"}}`))
+	if got := findString(value, "device_code"); got != "nested-device" {
+		t.Fatalf("findString() = %q, want nested-device", got)
 	}
 }
 

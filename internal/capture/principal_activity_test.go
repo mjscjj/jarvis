@@ -187,6 +187,41 @@ func TestPrincipalActivityOpensTopicGroup(t *testing.T) {
 	}
 }
 
+func TestPrincipalActivityDoesNotReopenExcludedGroup(t *testing.T) {
+	location := mustShanghai(t)
+	now := time.Date(2026, 7, 27, 16, 20, 0, 0, location)
+	discoveredAt := now.Add(-24 * time.Hour)
+	db := newCaptureTestDB(t)
+	createDiscoveredGroup(t, db, "oc_excluded_activity", "group", false, discoveredAt)
+	if err := db.Model(&activityTestGroup{}).Where("chat_id = ?", "oc_excluded_activity").
+		Update("capture_excluded", true).Error; err != nil {
+		t.Fatalf("exclude principal activity group: %v", err)
+	}
+
+	runner := &principalActivityFixture{
+		principalOpenID: "ou_principal",
+		searchMessages: []SearchedMessage{{
+			ChatID: "oc_excluded_activity", ChatType: "group",
+			CreateTime: now.Add(-time.Minute).Format(cliTimeLayout), MessageID: "om_excluded_activity",
+			Sender: CLISender{ID: "ou_principal", Name: "principal", SenderType: "user"},
+		}},
+	}
+	service := newPrincipalActivityService(t, db, runner, location)
+	service.now = func() time.Time { return now }
+
+	if err := service.SyncPrincipalActivityGroups(context.Background()); err != nil {
+		t.Fatalf("SyncPrincipalActivityGroups() error = %v", err)
+	}
+	assertActivityRelated(t, db, "oc_excluded_activity", false)
+	var checkpoint domain.Checkpoint
+	if err := db.First(&checkpoint, "chat_id = ?", "oc_excluded_activity").Error; err != nil {
+		t.Fatalf("load excluded checkpoint: %v", err)
+	}
+	if checkpoint.HighWaterCreateTime != discoveredAt.UnixMilli() {
+		t.Fatalf("excluded checkpoint moved to %d, want %d", checkpoint.HighWaterCreateTime, discoveredAt.UnixMilli())
+	}
+}
+
 func TestPrincipalActivityFailureDoesNotStopExistingRelatedScan(t *testing.T) {
 	location := mustShanghai(t)
 	now := time.Date(2026, 7, 27, 16, 20, 0, 0, location)
@@ -341,16 +376,17 @@ func createDiscoveredGroup(
 }
 
 type activityTestGroup struct {
-	ID           uint64    `gorm:"column:id;primaryKey;autoIncrement"`
-	ChatID       string    `gorm:"column:chat_id;uniqueIndex"`
-	ChatMode     string    `gorm:"column:chat_mode"`
-	External     bool      `gorm:"column:external"`
-	RelatedGroup bool      `gorm:"column:related_group"`
-	Tier         string    `gorm:"column:tier"`
-	Pinned       bool      `gorm:"column:pinned"`
-	LastActiveAt *int64    `gorm:"column:last_active_at"`
-	CreatedAt    time.Time `gorm:"column:created_at"`
-	UpdatedAt    time.Time `gorm:"column:updated_at"`
+	ID              uint64    `gorm:"column:id;primaryKey;autoIncrement"`
+	ChatID          string    `gorm:"column:chat_id;uniqueIndex"`
+	ChatMode        string    `gorm:"column:chat_mode"`
+	External        bool      `gorm:"column:external"`
+	RelatedGroup    bool      `gorm:"column:related_group"`
+	CaptureExcluded bool      `gorm:"column:capture_excluded"`
+	Tier            string    `gorm:"column:tier"`
+	Pinned          bool      `gorm:"column:pinned"`
+	LastActiveAt    *int64    `gorm:"column:last_active_at"`
+	CreatedAt       time.Time `gorm:"column:created_at"`
+	UpdatedAt       time.Time `gorm:"column:updated_at"`
 }
 
 func (activityTestGroup) TableName() string { return "feishu_group" }
@@ -388,6 +424,7 @@ type activityTestCheckpoint struct {
 	LastMessageID       *string    `gorm:"column:last_message_id"`
 	BackfillDone        bool       `gorm:"column:backfill_done"`
 	BackfillSince       int64      `gorm:"column:backfill_since"`
+	CaptureFloor        int64      `gorm:"column:capture_floor"`
 	LastScanAt          *time.Time `gorm:"column:last_scan_at"`
 	LastScanStatus      *string    `gorm:"column:last_scan_status"`
 	LastError           *string    `gorm:"column:last_error"`

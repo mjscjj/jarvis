@@ -97,28 +97,24 @@ body {
     flex-basis 0.2s ease;
 }
 
+.app-sider > .ant-layout-sider-children {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+
 .sider-footer {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: var(--space-1);
+  display: block;
   padding: var(--space-2);
   border-top: 1px solid var(--color-border);
-}
-
-.sider-help {
-  display: flex;
-  padding: 4px 16px 8px;
-}
-
-.sider-help.is-collapsed {
-  justify-content: center;
-  padding-inline: 8px;
 }
 
 .developer-document-links {
   display: grid;
   gap: 8px;
   max-width: 300px;
+  margin-top: var(--space-3);
 }
 
 .developer-document-links a {
@@ -143,59 +139,47 @@ body {
   font-size: 12px;
 }
 
-.setup-documents {
-  margin-top: 24px;
-  padding-top: 16px;
-  border-top: 1px solid var(--color-border);
-}
-
-.setup-documents .developer-document-links {
-  margin-top: 8px;
-}
-
-.sider-footer > .ant-btn {
+.sider-account-trigger.ant-btn {
+  width: 100%;
   min-width: 0;
-}
-
-.sider-account {
-  grid-column: 1 / -1;
+  height: 38px;
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  min-width: 0;
-  padding: var(--space-1) var(--space-2) var(--space-2) var(--space-6);
-  color: var(--color-text-secondary);
+  justify-content: flex-start;
+  padding-inline: var(--space-2);
+  color: var(--color-text);
 }
 
-.sider-account-copy {
+.sider-account-trigger.ant-btn:hover,
+.sider-account-trigger.ant-btn:focus {
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.sider-account-trigger.ant-btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
+}
+
+.sider-account-name {
   min-width: 0;
-  display: flex;
   flex: 1;
-  flex-direction: column;
-  line-height: 1.35;
-}
-
-.sider-account-copy strong,
-.sider-account-copy span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-align: left;
 }
 
-.sider-account-copy strong {
-  color: var(--color-text);
-  font-size: 12px;
+.sider-account-trigger .ant-avatar,
+.account-menu .ant-avatar,
+.mobile-account .ant-avatar {
+  background: var(--color-primary-light);
+  color: var(--color-primary);
+  font-weight: 700;
 }
 
-.sider-account-copy span {
-  font-size: 10px;
-}
-
-.sider-account > .ant-btn {
-  flex: 0 0 auto;
-}
-
-.sider-footer.is-collapsed .sider-account {
+.sider-footer.is-collapsed .sider-account-trigger.ant-btn {
   justify-content: center;
   padding-inline: 0;
 }
@@ -227,26 +211,33 @@ body {
   font-size: 12px;
 }
 
-.sider-shutdown-btn {
-  justify-content: flex-start;
-  padding-inline: var(--space-6);
-}
-
-.sider-footer.is-collapsed .sider-shutdown-btn {
-  justify-content: center;
-  padding-inline: 0;
-}
-
-.sider-footer.is-collapsed {
-  grid-template-columns: 1fr;
-}
-
-.sider-collapse-btn {
+.sider-collapse-btn.ant-btn {
+  position: absolute;
+  top: 50%;
+  right: -13px;
+  z-index: 1;
+  width: 26px;
+  min-width: 26px;
+  height: 42px;
+  padding: 0;
+  transform: translateY(-50%);
+  border: 1px solid var(--color-border);
+  border-radius: 0 9px 9px 0;
+  background: var(--color-bg-elevated);
   color: var(--color-text-secondary);
+  box-shadow: 2px 0 6px rgb(15 23 42 / 7%);
 }
 
-.sider-collapse-btn:hover {
+.sider-collapse-btn.ant-btn:hover,
+.sider-collapse-btn.ant-btn:focus {
+  border-color: var(--color-border);
+  background: var(--color-bg-soft);
   color: var(--color-primary);
+}
+
+.sider-collapse-btn.ant-btn:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 .sider-brand {
@@ -293,14 +284,6 @@ body {
   white-space: nowrap;
 }
 
-.sider-name-row > .ant-btn {
-  flex: 0 0 auto;
-}
-
-.sider-name-row > .ant-input {
-  min-width: 0;
-}
-
 .sider-agent-caption {
   margin-top: 2px;
   color: var(--color-text-tertiary);
@@ -309,6 +292,8 @@ body {
 }
 
 .app-menu {
+  min-height: 0;
+  overflow-y: auto;
   border-inline-end: none !important;
   background: transparent;
   flex: 1;
@@ -345,6 +330,69 @@ body {
   border-top: 1px solid var(--color-border);
   border-radius: 0 0 var(--radius-md) var(--radius-md);
   padding-top: var(--space-1);
+}
+
+.agent-menu,
+.account-menu {
+  width: 240px;
+}
+
+.agent-menu-heading,
+.account-menu-profile > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.agent-menu-heading {
+  gap: 4px;
+  padding: 2px 8px 8px;
+}
+
+.agent-menu-heading strong,
+.account-menu-profile strong,
+.account-menu-profile span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-menu .ant-divider,
+.account-menu .ant-divider {
+  margin: 8px 0;
+}
+
+.agent-menu > .ant-btn,
+.account-menu > .ant-btn {
+  justify-content: flex-start;
+}
+
+.agent-menu-name-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 2px;
+}
+
+.account-menu-profile {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.account-menu-profile span {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.about-developer-resources {
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.about-developer-resources h4.ant-typography {
+  margin: 0 0 2px !important;
 }
 
 .app-main {
@@ -2315,6 +2363,27 @@ pre {
   padding-block: 6px;
 }
 
+.runtime-danger-zone {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border);
+}
+
+.runtime-danger-zone > div {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.runtime-danger-zone .ant-btn {
+  flex: 0 0 auto;
+}
+
 .runtime-settings-actions {
   position: sticky;
   z-index: 5;
@@ -2333,6 +2402,11 @@ pre {
 }
 
 @media (max-width: 680px) {
+  .runtime-danger-zone {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
   .runtime-settings-actions {
     bottom: calc(var(--mobile-nav-height) + 10px);
     align-items: stretch;

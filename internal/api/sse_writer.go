@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/network"
@@ -19,8 +20,7 @@ type sseWriter struct {
 }
 
 func newSSEWriter(c *app.RequestContext) *sseWriter {
-	c.Response.Header.Set("Cache-Control", "no-cache, no-transform")
-	c.Response.Header.Set("X-Accel-Buffering", "no")
+	c.Response.Header.Set("Cache-Control", "no-cache")
 	c.Response.Header.SetContentType("text/event-stream; charset=utf-8")
 	writer := c.Response.GetHijackWriter()
 	if writer == nil {
@@ -58,18 +58,40 @@ func (w *sseWriter) WriteEvent(eventType string, data []byte) error {
 	return w.writer.Flush()
 }
 
-// WriteComment 写一条 SSE 注释帧（": <text>"）。客户端按规范忽略它，服务端用它
-// 探测对端是否还在——没有输出的长轮次否则一个字节都不写，察觉不到浏览器已经走了。
-func (w *sseWriter) WriteComment(text string) error {
-	if strings.ContainsAny(text, "\r\n") {
+func (w *sseWriter) WriteComment(comment string) error {
+	if strings.ContainsAny(comment, "\r\n") {
 		return fmt.Errorf("SSE comment contains CR or LF")
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if _, err := w.writer.Write([]byte(": " + text + "\n\n")); err != nil {
+	if _, err := fmt.Fprintf(w.writer, ": %s\n\n", comment); err != nil {
 		return err
 	}
 	return w.writer.Flush()
+}
+
+func startSSEHeartbeat(write func() error, interval time.Duration) func() {
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		defer close(done)
+		for {
+			select {
+			case <-ticker.C:
+				if err := write(); err != nil {
+					return
+				}
+			case <-stop:
+				return
+			}
+		}
+	}()
+	return sync.OnceFunc(func() {
+		close(stop)
+		<-done
+	})
 }
 
 func (w *sseWriter) Close() error {

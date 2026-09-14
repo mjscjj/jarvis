@@ -18,7 +18,7 @@ import {
   Tooltip,
   Typography,
 } from 'antd'
-import { QuestionCircleOutlined } from '@ant-design/icons'
+import { PoweroffOutlined, QuestionCircleOutlined } from '@ant-design/icons'
 import { getRuntimeSettings, updateRuntimeSettings } from './api'
 import type { RuntimeSettings as RuntimeSettingsInput } from './types'
 
@@ -200,7 +200,7 @@ function RuntimeStep({
   )
 }
 
-export default function RuntimeSettings() {
+export default function RuntimeSettings({ onShutdown }: { onShutdown: () => void }) {
   const [form] = Form.useForm<RuntimeSettingsInput>()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -330,11 +330,9 @@ export default function RuntimeSettings() {
             <NumberField name="extract_concurrency" label="并发会话数" min={1} max={16} help="不同单聊或群聊可并行；同一个 chat_id 始终串行。" />
             <NumberField name="extract_batch_messages" label="每批消息上限" min={1} max={5000} />
           </Section>
-          <Section title="输入上下文" description="决定每次提取能看到多少近期消息、开放 Todo 和最近有进展的任务。">
+          <Section title="输入上下文" description="决定每次提取能看到多少当前会话现场；跨会话工作由公共世界目录提供。">
             <NumberField name="extract_context_messages" label="每个会话前文条数" min={0} max={500} />
             <NumberField name="extract_context_window_minutes" label="前文时间窗（分钟）" min={1} max={10080} />
-            <NumberField name="extract_open_todo_limit" label="开放 Todo 上限" min={1} max={1000} help="随 Prompt 提供的未关闭 Todo 数量，用于避免重复创建。" />
-            <NumberField name="extract_recent_task_limit" label="最近有进展任务上限" min={1} max={100} help="注入近期有进展的任务摘要条数。" />
             <NumberField name="extract_max_prompt_chars" label="Prompt 字符上限" min={1000} max={1000000} step={1000} />
           </Section>
           <Section title="语义去重" description="先查相似 Todo；非精确命中时再由 Model API 判断是否同一行动。">
@@ -408,7 +406,6 @@ export default function RuntimeSettings() {
             <NumberField name="capture_p2p_activation_window_minutes" label="私聊首次回看（分钟）" min={1} max={1440} help="真人私聊首次进入监听时回看的历史范围；不影响 M3 的通用上下文窗口。" />
             <NumberField name="capture_page_size" label="飞书单页消息数" min={1} max={50} />
             <NumberField name="capture_scan_workers" label="并发扫描会话数" min={1} max={32} />
-            <NumberField name="capture_auto_related_p2p_top_n" label="自动关注私聊数" min={0} max={500} help="按当前活跃度轮换采集的真人私聊数量；固定私聊不占名额，0 表示关闭自动关注。" />
           </Section>
           <Section title="持续世界建模" description="在主流水线之外增量阅读消息、Todo 和 Task，由 Agent 自主维护人物、项目、群、资料、关系与历史事实；并按天压缩事实阅读层。">
             <SwitchField name="fact_engine_enabled" label="自动世界建模" />
@@ -543,6 +540,14 @@ export default function RuntimeSettings() {
       >
         <Collapse size="small" defaultActiveKey={['common']} items={panels} />
       </Form>
+
+      <section className="runtime-danger-zone">
+        <div>
+          <Text strong>停止 Jarvis</Text>
+          <Text type="secondary">停止主服务、Qdrant、CC Connect 和开发 Web 服务，正在执行的任务会被中断。</Text>
+        </div>
+        <Button danger icon={<PoweroffOutlined />} onClick={onShutdown}>退出并停止服务</Button>
+      </section>
 
       {dirty && (
         <div className="runtime-settings-actions" role="status" aria-live="polite">

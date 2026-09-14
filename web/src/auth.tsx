@@ -202,10 +202,6 @@ export function AuthGate({ agentName, children }: { agentName: string; children:
           </Button>
         )}
         {error && <Result status="error" subTitle={error} extra={<Button onClick={() => void login()}>重试</Button>} />}
-        <section className="setup-documents">
-          <Typography.Text type="secondary">开发文档</Typography.Text>
-          <DeveloperDocumentLinks />
-        </section>
       </section>
     </main>
   )

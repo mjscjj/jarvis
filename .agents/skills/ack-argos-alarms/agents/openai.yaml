@@ -1,0 +1,4 @@
+interface:
+  display_name: "确认 Argos 报警"
+  short_description: "筛选并确认飞书群中值班包含我的 Argos 报警项"
+  default_prompt: "Use $ack-argos-alarms to acknowledge my unacknowledged Argos alarms in a Feishu group."
