@@ -34,6 +34,8 @@ func TestWebEntryNoStoreAppliesToEntryDocumentOnly(t *testing.T) {
 	}{
 		{"/", "no-store"},
 		{"/index.html", "no-store"},
+		// 桌面壳把应用版本带在入口 URL 上做缓存键，查询串不能让入口文档漏判。
+		{"/?v=0.1.80", "no-store"},
 		{"/assets/index-abc123.js", ""},
 	} {
 		response := ut.PerformRequest(h.Engine, "GET", testCase.path, nil).Result()

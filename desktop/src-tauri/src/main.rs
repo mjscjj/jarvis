@@ -80,8 +80,17 @@ fn spawn_runtime(app: &tauri::AppHandle) -> Result<Child, String> {
         }
     };
 
-    let url = connection
-        .http_url
+    // 入口 URL 带上应用版本，版本一变缓存键必然落空。服务端已对入口文档发
+    // no-store，但那要等 webview 真的发出请求才生效；升级后它手里还攥着旧版本
+    // 缓存的 index.html，可能直接沿用而根本不回源，于是加载已被清理的旧 chunk
+    // 导致白屏。白屏时更新入口也在这个界面里，用户无法自救，所以这一跳不能赌。
+    let entry_url = format!(
+        "{}{}v={}",
+        connection.http_url,
+        if connection.http_url.contains('?') { "&" } else { "?" },
+        app.package_info().version
+    );
+    let url = entry_url
         .parse()
         .map_err(|error| format!("Go 服务地址无效：{error}"))?;
     let window = app
