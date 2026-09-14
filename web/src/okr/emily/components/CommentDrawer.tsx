@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode, RefObject } from 'react'
-import { createComment, createPlanComment, deleteComment, getComments, getPlanComments, updateComment } from '../api'
+import { createComment, createPlanComment, createRegionalAlignmentComment, deleteComment, getComments, getPlanComments, getRegionalAlignmentComments, updateComment } from '../api'
 import { scrollToCommentSource, scrollToCommentTarget } from '../commenting'
 import { buildCommentDocumentOrder, buildCommentOKRContextIndex, commentCountsByTarget, commentMatchesTarget, commentMessageCount, commentOKRContext, commentTargetKey, groupCommentsByTarget, sortCommentsByDocumentOrder } from '../comments'
 import type { CommentOKRContext } from '../comments'
-import type { CommentMention, CommentTarget, ImageRef, Objective, PageComment } from '../types'
+import type { CommentMention, CommentTarget, ImageRef, Objective, PageComment, RegionalCode } from '../types'
 import { CommentContent, CommentMentionInput } from './CommentMentionInput'
 import type { CommentDraft } from './CommentMentionInput'
 import { CommentDeliveryStatus } from './CommentDeliveryStatus'
@@ -24,7 +24,7 @@ function displayTime(value: string) {
 }
 
 function targetLabel(type: PageComment['targetType']) {
-  return ({ page: '整页', objective: 'O', kr: 'KR', metric: '核心数据', point: '具体 KR', entry: '进展条目', follow_up: '待跟进事项' } as const)[type]
+  return ({ page: '整页', objective: 'O', kr: 'KR', metric: '核心数据', point: '具体 KR', entry: '进展条目', follow_up: '待跟进事项', alignment_item: '对齐事项' } as const)[type]
 }
 
 function Avatar({ name, email, small = false }: { name: string; email?: string; small?: boolean }) {
@@ -298,6 +298,8 @@ interface CommentDrawerProps {
   quarter: string
   week?: string
   planId?: string
+  alignmentId?: string
+  alignmentRegion?: RegionalCode
   sourceTab: string
   scopeLabel?: string
   objectives: Objective[]
@@ -314,7 +316,7 @@ interface CommentDrawerProps {
   onCommentsChange: (comments: PageComment[]) => void
 }
 
-export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, quarter, week = '', planId, sourceTab, scopeLabel, objectives, followUpOrder = EMPTY_FOLLOW_UP_ORDER, target, focusCommentId, todoEnabled = false, onStartReview, onShowAll, onClose, onFocusCommentChange, onCountChange, onCountsChange, onCommentsChange }: CommentDrawerProps) {
+export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, quarter, week = '', planId, alignmentId, alignmentRegion, sourceTab, scopeLabel, objectives, followUpOrder = EMPTY_FOLLOW_UP_ORDER, target, focusCommentId, todoEnabled = false, onStartReview, onShowAll, onClose, onFocusCommentChange, onCountChange, onCountsChange, onCommentsChange }: CommentDrawerProps) {
   const [comments, setComments] = useState<PageComment[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -324,18 +326,20 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
   const [error, setError] = useState('')
   const [navigationNotice, setNavigationNotice] = useState('')
   const [reviewCommentId, setReviewCommentId] = useState('')
+  const [showResolved, setShowResolved] = useState(false)
   const loadVersion = useRef(0)
   const inFlightLoadVersion = useRef<number | null>(null)
   const mergeStaleLoadVersion = useRef<number | null>(null)
   const [submittedId, setSubmittedId] = useState('')
-  const scopeKey = `${planId ?? ''}:${quarter}:${week}`
+  const scopeKey = `${alignmentRegion ?? ''}:${alignmentId ?? ''}:${planId ?? ''}:${quarter}:${week}`
   const scopeRef = useRef(scopeKey)
   scopeRef.current = scopeKey
 
 
   const publishSummary = useCallback((next: PageComment[]) => {
-    onCountChange(commentMessageCount(next))
-    onCountsChange(commentCountsByTarget(next))
+		const unresolved = next.filter((comment) => !comment.resolved)
+		onCountChange(commentMessageCount(unresolved))
+		onCountsChange(commentCountsByTarget(unresolved))
     onCommentsChange(next)
   }, [onCommentsChange, onCountChange, onCountsChange])
 
@@ -349,7 +353,7 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
     setLoading(true)
     setError('')
     try {
-      const value = planId ? await getPlanComments(planId) : await getComments(quarter, week)
+      const value = alignmentRegion ? await getRegionalAlignmentComments(quarter, alignmentRegion) : planId ? await getPlanComments(planId) : await getComments(quarter, week)
       if (version !== loadVersion.current) {
         // A comment can be saved while the first list is loading. Keep the
         // freshly saved comment, then add the older threads from that list.
@@ -371,7 +375,7 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
       if (inFlightLoadVersion.current === version) inFlightLoadVersion.current = null
       if (version === loadVersion.current) setLoading(false)
     }
-  }, [planId, quarter, scopeKey, week])
+  }, [alignmentRegion, planId, quarter, scopeKey, week])
 
   useEffect(() => {
     setComments([])
@@ -384,6 +388,7 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
     setDraft({ content: '', mentions: [] })
     setDraftImages([])
   }, [target?.id, target?.selection?.end, target?.selection?.start, target?.selection?.text, target?.type])
+  useEffect(() => setShowResolved(false), [alignmentRegion, planId, quarter, week])
 
   useEffect(() => {
     if (!loading) publishSummary(comments)
@@ -411,7 +416,7 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
     const version = loadVersion.current
     const timer = window.setTimeout(async () => {
       try {
-        const next = planId ? await getPlanComments(planId) : await getComments(quarter, week)
+        const next = alignmentRegion ? await getRegionalAlignmentComments(quarter, alignmentRegion) : planId ? await getPlanComments(planId) : await getComments(quarter, week)
         if (loadVersion.current !== version) return
         setComments(current => current.map(c => {
           const fresh = next.comments.find(x => x.id === c.id)
@@ -420,17 +425,18 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
       } catch { /* A failed status refresh must not erase a saved comment. */ }
     }, 2000)
     return () => window.clearTimeout(timer)
-  }, [comments, loading, open, planId, quarter, saving, week])
+  }, [alignmentRegion, comments, loading, open, planId, quarter, saving, week])
 
   const documentOrder = useMemo(() => buildCommentDocumentOrder(objectives, followUpOrder), [followUpOrder, objectives])
+  const activeComments = useMemo(() => showResolved ? comments : comments.filter((comment) => !comment.resolved), [comments, showResolved])
   const visibleComments = useMemo(() => sortCommentsByDocumentOrder(
-    target ? comments.filter((comment) => commentMatchesTarget(comment, target)) : comments,
+    target ? activeComments.filter((comment) => commentMatchesTarget(comment, target)) : activeComments,
     documentOrder,
-  ), [comments, documentOrder, target])
+  ), [activeComments, documentOrder, target])
   const visibleCount = commentMessageCount(visibleComments)
   const okrContextIndex = useMemo(() => buildCommentOKRContextIndex(objectives), [objectives])
   const visibleGroups = useMemo(() => groupCommentsByTarget(visibleComments), [visibleComments])
-  const reviewComments = useMemo(() => sortCommentsByDocumentOrder(comments, documentOrder), [comments, documentOrder])
+  const reviewComments = useMemo(() => sortCommentsByDocumentOrder(activeComments, documentOrder), [activeComments, documentOrder])
   const reviewIndex = reviewComments.findIndex((comment) => comment.id === reviewCommentId)
   const reviewComment = reviewIndex >= 0 ? reviewComments[reviewIndex] : undefined
   const targetContext = target ? okrContextIndex[commentTargetKey(target)] : undefined
@@ -454,7 +460,9 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
     setSaving(true)
     setError('')
     const submittedScope = scopeKey
-    const activeTarget = target ?? (planId
+    const activeTarget = target ?? (alignmentId
+      ? { type: 'page' as const, id: alignmentId, title: scopeLabel || '区域 OKR 对齐' }
+      : planId
       ? { type: 'page' as const, id: planId, title: scopeLabel || 'Biz OKR Plan' }
       : { type: 'page' as const, id: `${quarter}:${week}`, title: `${week} OKR 页面` })
     try {
@@ -471,7 +479,7 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
         selectionPrefix: activeTarget.selection?.prefix,
         selectionSuffix: activeTarget.selection?.suffix,
       }
-      const created = planId ? await createPlanComment(planId, input) : await createComment({ quarter, week, sourceTab, ...input })
+      const created = alignmentRegion ? await createRegionalAlignmentComment(quarter, alignmentRegion, input) : planId ? await createPlanComment(planId, input) : await createComment({ quarter, week, sourceTab, ...input })
       if (scopeRef.current !== submittedScope) return
       if (inFlightLoadVersion.current === loadVersion.current) mergeStaleLoadVersion.current = loadVersion.current
       loadVersion.current++
@@ -490,8 +498,8 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
   }
 
   const createReply = useCallback((parentId: string, content: string, mentions: CommentMention[], images: ImageRef[]) => (
-    planId ? createPlanComment(planId, { parentId, content, mentions, images }) : createComment({ quarter, week, sourceTab, parentId, content, mentions, images })
-  ), [planId, quarter, sourceTab, week])
+    alignmentRegion ? createRegionalAlignmentComment(quarter, alignmentRegion, { parentId, content, mentions, images }) : planId ? createPlanComment(planId, { parentId, content, mentions, images }) : createComment({ quarter, week, sourceTab, parentId, content, mentions, images })
+  ), [alignmentRegion, planId, quarter, sourceTab, week])
 
   const addReply = (rootId: string, reply: PageComment) => {
     loadVersion.current++
@@ -590,10 +598,12 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
           <button type="button" onClick={onClose} aria-label="关闭评论" className="flex size-8 items-center justify-center rounded-lg text-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700">×</button>
         </header>
 
+        {!reviewing && !target && <div className="shrink-0 border-b border-slate-100 px-4 py-2"><label className="flex cursor-pointer items-center gap-2 text-[11px] text-slate-500"><input type="checkbox" checked={showResolved} onChange={(event) => setShowResolved(event.target.checked)} />展示标记解决评论 <span className="text-[9px] text-slate-400">Show resolved comments</span></label></div>}
+
         {!reviewing && <div className="shrink-0 border-b border-slate-100 bg-slate-50/60 p-3">
           {target && <div className="mb-2"><CommentSourceCard source={target} context={targetContext} onNavigate={navigateToTargetSource} /></div>}
           <div className="rounded-xl border border-slate-200 bg-white p-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-            <CommentEditorFields value={draft} images={draftImages} objectives={objectives} onChange={setDraft} onImagesChange={setDraftImages} onUploadingChange={setDraftImageUploading} onSubmitShortcut={() => void addRoot()} placeholder={target ? '针对这段内容发表评论，输入 @ 选择提醒人…' : planId ? '对当前 Plan 发表评论，输入 @ 选择提醒人…' : '对本周页面发表评论，输入 @ 选择提醒人…'} rows={3} />
+            <CommentEditorFields value={draft} images={draftImages} objectives={objectives} onChange={setDraft} onImagesChange={setDraftImages} onUploadingChange={setDraftImageUploading} onSubmitShortcut={() => void addRoot()} placeholder={target ? '针对这段内容发表评论，输入 @ 选择提醒人…' : alignmentId ? '对当前区域对齐页发表评论，输入 @ 选择提醒人…' : planId ? '对当前 Plan 发表评论，输入 @ 选择提醒人…' : '对本周页面发表评论，输入 @ 选择提醒人…'} rows={3} />
             <div className="mt-1 flex items-center gap-2">
               <span className="text-[10px] text-slate-300">Enter 发布 · Shift+Enter 换行</span>
               <button type="button" onClick={() => void addRoot()} disabled={(!draft.content.trim() && draftImages.length === 0) || saving || draftImageUploading} className="ml-auto rounded-md bg-indigo-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300">{saving ? '发布中…' : draftImageUploading ? '图片上传中…' : '发布评论'}</button>

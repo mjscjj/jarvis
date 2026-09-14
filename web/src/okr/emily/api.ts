@@ -1,6 +1,6 @@
 import { appPath } from '../../appPath.ts'
 import { normalizeKRTitle } from './krTitle'
-import type { AuthStatus, CommentDelivery, CommentMention, Entry, EnumValues, FeishuDeviceLogin, FeishuDeviceLoginPoll, FeishuDocumentResult, FollowUpItem, FollowUpList, FollowUpStatus, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, OKRActivityEntry, OKRPlan, OKRPlanList, PageComment, PageCommentList, PersonAvatarItem, PointKind, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
+import type { AuthStatus, CommentDelivery, CommentMention, Entry, EnumValues, FeishuDeviceLogin, FeishuDeviceLoginPoll, FeishuDocumentResult, FollowUpItem, FollowUpList, FollowUpStatus, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, OKRActivityEntry, OKRPlan, OKRPlanList, PageComment, PageCommentList, PersonAvatarItem, PointKind, RegionalAlignmentBoard, RegionalCode, RegionalDemand, RegionalPlanDecisionItem, RegionalRecapOverlay, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
 
 interface Envelope<T> {
   code: number
@@ -113,6 +113,51 @@ interface APIPlanList {
   plans: APIPlanSummary[]
 }
 
+interface APIRegionalDemand {
+  id: string
+  version: number
+  regional_okr: string
+  item: string
+  requirement: string
+  docs: Entry['docs']
+  images: ImageRef[]
+  priority: '' | KrPriority
+  regional_pocs: Array<{ email: string; name: string }>
+  platform_pocs: Array<{ email: string; name: string }>
+  acceptance: 'yes' | 'no' | 'tbd'
+  plan_kr_ids: string[]
+  deliverable: string
+  sort_order: number
+}
+
+interface APIRegionalDecision {
+  plan_kr_id: string
+  version: number
+  onboard: '' | 'yes' | 'no'
+  launch_regions: string[]
+  regional_pocs: Array<{ email: string; name: string }>
+  regional_okr: string
+  hidden: boolean
+}
+
+interface APIRegionalRecapOverlay {
+  bucket_key: string
+  objective_id: string
+  version: number
+  sort_order: number
+  hidden: boolean
+}
+
+interface APIRegionalBoard {
+  alignment: { id: string; quarter: string; plan_id: string; recap_quarter: string; version: number }
+  region: { region_code: RegionalCode; version: number; category_order: string[] }
+  plan: APIPlan
+  recap: APIBoard
+  demands: APIRegionalDemand[]
+  decisions: APIRegionalDecision[]
+  recap_overlays: APIRegionalRecapOverlay[]
+}
+
 interface APIActivityEntry {
   at: string
   actor_id: string
@@ -152,8 +197,10 @@ interface APIPageComment {
   version: number
   delete_token: string
   plan_id?: string
+  alignment_id?: string
+  region_code?: string
   parent_id?: string
-  target_type: 'page' | 'objective' | 'kr' | 'metric' | 'point' | 'entry' | 'follow_up'
+  target_type: PageComment['targetType']
   target_id?: string
   target_title?: string
   selected_text?: string
@@ -213,6 +260,7 @@ interface APIAuthStatus {
   authenticated: boolean
   configured: boolean
 	management_access: boolean
+	regional_auto_match_access: boolean
   expires_at?: string
   user?: {
     open_id: string
@@ -660,6 +708,69 @@ export async function listOKRPlans(quarter = ''): Promise<OKRPlanList> {
   }
 }
 
+function fromAPIRegionalDemand(value: APIRegionalDemand): RegionalDemand {
+  const owners = (items: Array<{ email: string; name: string }> = []) => items.map((item) => ({ email: item.email, name: item.name }))
+  return { id: value.id, version: value.version, regionalOkr: value.regional_okr, item: value.item, requirement: value.requirement, docs: value.docs ?? [], images: value.images ?? [], priority: value.priority, regionalPocs: owners(value.regional_pocs), platformPocs: owners(value.platform_pocs), acceptance: value.acceptance, planKrIds: value.plan_kr_ids ?? [], deliverable: value.deliverable, sortOrder: value.sort_order }
+}
+
+function regionalDemandBody(value: Omit<RegionalDemand, 'id'>) {
+  const owners = (items: KrOwner[]) => items.map((item) => ({ email: item.email, name: item.name }))
+  return { expected_version: value.version, regional_okr: value.regionalOkr, item: value.item, requirement: value.requirement, docs: value.docs, images: value.images, priority: value.priority, regional_pocs: owners(value.regionalPocs), platform_pocs: owners(value.platformPocs), acceptance: value.acceptance, plan_kr_ids: value.planKrIds, deliverable: value.deliverable, sort_order: value.sortOrder }
+}
+
+function fromAPIRegionalDecision(value: APIRegionalDecision): RegionalPlanDecisionItem {
+  return { planKrId: value.plan_kr_id, version: value.version, onboard: value.onboard, launchRegions: value.launch_regions ?? [], regionalPocs: (value.regional_pocs ?? []).map((item) => ({ email: item.email, name: item.name })), regionalOkr: value.regional_okr, hidden: value.hidden }
+}
+
+function fromAPIRegionalOverlay(value: APIRegionalRecapOverlay): RegionalRecapOverlay {
+  return { bucketKey: value.bucket_key, objectiveId: value.objective_id, version: value.version, sortOrder: value.sort_order, hidden: value.hidden }
+}
+
+export async function getRegionalAlignmentBoard(quarter: string, region: RegionalCode): Promise<RegionalAlignmentBoard> {
+  const value = await request<APIRegionalBoard>(`/api/biz-okr/regional-alignments/${encodeURIComponent(region)}/board?quarter=${encodeURIComponent(quarter)}`)
+  return {
+    alignment: { id: value.alignment.id, quarter: value.alignment.quarter, planId: value.alignment.plan_id, recapQuarter: value.alignment.recap_quarter, version: value.alignment.version },
+    region: { regionCode: value.region.region_code, version: value.region.version, categoryOrder: value.region.category_order ?? [] },
+    plan: fromAPIPlan(value.plan),
+    recap: { quarter: value.recap.quarter, objectives: value.recap.objectives.map((objective) => ({ id: objective.id, title: objective.title, version: objective.version, krs: objective.krs.map(fromAPIKr) })) },
+    demands: (value.demands ?? []).map(fromAPIRegionalDemand),
+    decisions: (value.decisions ?? []).map(fromAPIRegionalDecision),
+    recapOverlays: (value.recap_overlays ?? []).map(fromAPIRegionalOverlay),
+  }
+}
+
+export async function createRegionalDemand(quarter: string, region: RegionalCode, value: Omit<RegionalDemand, 'id'>): Promise<RegionalDemand> {
+  return fromAPIRegionalDemand(await request<APIRegionalDemand>(`/api/biz-okr/regional-alignments/${encodeURIComponent(region)}/demands?quarter=${encodeURIComponent(quarter)}`, { method: 'POST', body: JSON.stringify(regionalDemandBody({ ...value, version: 0 })) }))
+}
+
+export async function updateRegionalDemand(quarter: string, region: RegionalCode, value: RegionalDemand): Promise<RegionalDemand> {
+  return fromAPIRegionalDemand(await request<APIRegionalDemand>(`/api/biz-okr/regional-alignments/${encodeURIComponent(region)}/demands/${encodeURIComponent(value.id)}?quarter=${encodeURIComponent(quarter)}`, { method: 'PUT', body: JSON.stringify(regionalDemandBody(value)) }))
+}
+
+export async function deleteRegionalDemand(quarter: string, region: RegionalCode, value: RegionalDemand): Promise<void> {
+  await request(`/api/biz-okr/regional-alignments/${encodeURIComponent(region)}/demands/${encodeURIComponent(value.id)}?quarter=${encodeURIComponent(quarter)}`, { method: 'DELETE', body: JSON.stringify({ expected_version: value.version }) })
+}
+
+export async function putRegionalDecision(quarter: string, region: RegionalCode, value: RegionalPlanDecisionItem): Promise<RegionalPlanDecisionItem> {
+  const result = await request<APIRegionalDecision>(`/api/biz-okr/regional-alignments/${encodeURIComponent(region)}/decisions/${encodeURIComponent(value.planKrId)}?quarter=${encodeURIComponent(quarter)}`, { method: 'PUT', body: JSON.stringify({ expected_version: value.version, onboard: value.onboard, launch_regions: value.launchRegions, regional_pocs: value.regionalPocs.map((item) => ({ email: item.email, name: item.name })), regional_okr: value.regionalOkr, hidden: value.hidden }) })
+  return fromAPIRegionalDecision(result)
+}
+
+export async function putRegionalCategoryOrder(quarter: string, region: RegionalCode, expectedVersion: number, categoryOrder: string[]) {
+  const value = await request<{ region_code: RegionalCode; version: number; category_order: string[] }>(`/api/biz-okr/regional-alignments/${encodeURIComponent(region)}/settings?quarter=${encodeURIComponent(quarter)}`, { method: 'PUT', body: JSON.stringify({ expected_version: expectedVersion, category_order: categoryOrder }) })
+  return { regionCode: value.region_code, version: value.version, categoryOrder: value.category_order }
+}
+
+export async function putRegionalRecapOrder(quarter: string, region: RegionalCode, bucketKey: string, objectiveIds: string[]): Promise<RegionalRecapOverlay[]> {
+  const values = await request<APIRegionalRecapOverlay[]>(`/api/biz-okr/regional-alignments/${encodeURIComponent(region)}/recap-order?quarter=${encodeURIComponent(quarter)}`, { method: 'PUT', body: JSON.stringify({ bucket_key: bucketKey, objective_ids: objectiveIds }) })
+  return values.map(fromAPIRegionalOverlay)
+}
+
+export async function patchRegionalRecap(quarter: string, region: RegionalCode, bucketKey: string, objectiveId: string, expectedVersion: number, hidden: boolean): Promise<RegionalRecapOverlay> {
+  const value = await request<APIRegionalRecapOverlay>(`/api/biz-okr/regional-alignments/${encodeURIComponent(region)}/recap/${encodeURIComponent(objectiveId)}?quarter=${encodeURIComponent(quarter)}&bucket=${encodeURIComponent(bucketKey)}`, { method: 'PATCH', body: JSON.stringify({ expected_version: expectedVersion, hidden }) })
+  return fromAPIRegionalOverlay(value)
+}
+
 export async function getOKRPlan(id: string): Promise<OKRPlan> {
   return fromAPIPlan(await request<APIPlan>(`/api/biz-okr/plans/${encodeURIComponent(id)}`))
 }
@@ -789,6 +900,8 @@ function fromAPIComment(value: APIPageComment): PageComment {
     version: value.version,
     deleteToken: value.delete_token,
     planId: value.plan_id,
+    alignmentId: value.alignment_id,
+    regionCode: value.region_code,
     parentId: value.parent_id,
     targetType: value.target_type,
     targetId: value.target_id,
@@ -852,6 +965,11 @@ export async function getComments(quarter: string, week: string): Promise<PageCo
 export async function getPlanComments(planId: string): Promise<PageCommentList> {
   const value = await request<APIPageCommentList>(`/api/biz-okr/plans/${encodeURIComponent(planId)}/comments`)
   return { quarter: value.quarter, planId: value.plan_id, count: value.count, comments: value.comments.map(fromAPIComment) }
+}
+
+export async function getRegionalAlignmentComments(quarter: string, region: RegionalCode): Promise<PageCommentList> {
+  const value = await request<APIPageCommentList>(`/api/biz-okr/regional-alignments/${encodeURIComponent(region)}/comments?quarter=${encodeURIComponent(quarter)}`)
+  return { quarter: value.quarter, count: value.count, comments: value.comments.map(fromAPIComment) }
 }
 
 function fromAPIFollowUp(value: APIFollowUpItem): FollowUpItem {
@@ -1002,12 +1120,29 @@ export async function createPlanComment(planId: string, input: {
   return fromAPIComment(value)
 }
 
+export async function createRegionalAlignmentComment(quarter: string, region: RegionalCode, input: {
+  parentId?: string
+  content: string
+  mentions?: CommentMention[]
+  images?: ImageRef[]
+  targetType?: PageComment['targetType']
+  targetId?: string
+  targetTitle?: string
+}): Promise<PageComment> {
+  const value = await request<APIPageComment>(`/api/biz-okr/regional-alignments/${encodeURIComponent(region)}/comments?quarter=${encodeURIComponent(quarter)}`, {
+    method: 'POST',
+    body: JSON.stringify({ parent_id: input.parentId ?? '', target_type: input.targetType ?? 'page', target_id: input.targetId ?? '', target_title: input.targetTitle ?? '', content: input.content, mentions: (input.mentions ?? []).map((mention) => ({ email: mention.email, name: mention.name })), images: input.images ?? [] }),
+  })
+  return fromAPIComment(value)
+}
+
 export async function getAuthStatus(): Promise<AuthStatus> {
   const value = await request<APIAuthStatus>('/api/biz-okr/me')
   return {
     authenticated: value.authenticated,
     configured: value.configured,
 		managementAccess: value.management_access,
+		regionalAutoMatchAccess: value.regional_auto_match_access,
     expiresAt: value.expires_at,
     user: value.user ? {
       openId: value.user.open_id,

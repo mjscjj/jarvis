@@ -16,16 +16,17 @@ import (
 )
 
 const (
-	commentSourceTabOKRPlan       = "okr-plan"
-	commentSourceTabReviewFill    = "review-fill"
-	commentSourceTabReviewMeeting = "review-meeting"
-	commentSourceTabWeeklyFill    = "weekly-fill"
-	commentSourceTabWeeklyMeeting = "weekly-meeting"
+	commentSourceTabOKRPlan           = "okr-plan"
+	commentSourceTabReviewFill        = "review-fill"
+	commentSourceTabReviewMeeting     = "review-meeting"
+	commentSourceTabWeeklyFill        = "weekly-fill"
+	commentSourceTabWeeklyMeeting     = "weekly-meeting"
+	commentSourceTabRegionalAlignment = "regional-alignment"
 )
 
 func validCommentSourceTab(value string) bool {
 	switch value {
-	case commentSourceTabOKRPlan, commentSourceTabReviewFill, commentSourceTabReviewMeeting, commentSourceTabWeeklyFill, commentSourceTabWeeklyMeeting:
+	case commentSourceTabOKRPlan, commentSourceTabReviewFill, commentSourceTabReviewMeeting, commentSourceTabWeeklyFill, commentSourceTabWeeklyMeeting, commentSourceTabRegionalAlignment:
 		return true
 	default:
 		return false
@@ -44,6 +45,8 @@ type CommentMentionNotification struct {
 	Week           string
 	PlanID         string
 	PlanTitle      string
+	AlignmentID    string
+	RegionCode     string
 	ObjectiveTitle string
 	KRID           string
 	KRTitle        string
@@ -115,14 +118,23 @@ func (n *BotCommentMentionNotifier) commentURL(input CommentMentionNotification)
 	if input.PlanID != "" {
 		params.Set("plan_id", input.PlanID)
 	}
-	parsed.Fragment = "/weekly-report?" + params.Encode()
+	if input.AlignmentID != "" {
+		params.Set("region", input.RegionCode)
+		parsed.Fragment = "/biz-okr?" + params.Encode()
+	} else {
+		parsed.Fragment = "/weekly-report?" + params.Encode()
+	}
 	return parsed.String()
 }
 
 func formatCommentMentionCard(input CommentMentionNotification, link string) (string, error) {
 	week := input.Week
 	if week == "" {
-		week = "无周次（Biz OKR Plan）"
+		if input.AlignmentID != "" {
+			week = input.Quarter
+		} else {
+			week = "无周次（Biz OKR Plan）"
+		}
 	}
 	objective := input.ObjectiveTitle
 	if objective == "" {
@@ -147,6 +159,9 @@ func formatCommentMentionCard(input CommentMentionNotification, link string) (st
 	}
 	if input.PlanTitle != "" {
 		contextLines = append(contextLines[:2], append([]string{"Plan：" + input.PlanTitle}, contextLines[2:]...)...)
+	}
+	if input.AlignmentID != "" {
+		contextLines = append(contextLines[:2], append([]string{"区域：" + strings.ToUpper(input.RegionCode)}, contextLines[2:]...)...)
 	}
 	for index := range contextLines {
 		contextLines[index] = escapeCardMarkdown(contextLines[index])
@@ -222,6 +237,8 @@ func commentSourceTabLabel(tab string) string {
 		return "Review 会议"
 	case commentSourceTabWeeklyMeeting:
 		return "周报会议"
+	case commentSourceTabRegionalAlignment:
+		return "区域 OKR 对齐"
 	default:
 		return "周报填写"
 	}
@@ -250,10 +267,14 @@ func pointKindLabel(kind domain.PointKind) string {
 func (service *Service) commentMentionNotification(ctx context.Context, row domain.PageComment, sourceTab string) (CommentMentionNotification, error) {
 	result := CommentMentionNotification{
 		CommentID: row.ID, AuthorName: row.AuthorName, Quarter: row.Quarter,
-		Week: row.Week, PlanID: row.PlanID, Content: row.Content,
+		Week: row.Week, PlanID: row.PlanID, AlignmentID: row.AlignmentID, RegionCode: row.RegionCode, Content: row.Content,
 		Tab: sourceTab,
 	}
-	if row.PlanID != "" {
+	if row.AlignmentID != "" {
+		if result.Tab == "" {
+			result.Tab = commentSourceTabRegionalAlignment
+		}
+	} else if row.PlanID != "" {
 		if result.Tab == "" {
 			result.Tab = commentSourceTabOKRPlan
 		}
@@ -319,6 +340,9 @@ func (service *Service) commentMentionNotification(ctx context.Context, row doma
 			Joins("JOIN okr_workspace_kr AS kr ON kr.id = point.kr_id").
 			Joins("JOIN okr_workspace_objective AS objective ON objective.id = kr.objective_id").
 			Where("progress.id = ? AND progress.week = ? AND "+scope, append([]any{row.TargetID, row.Week}, scopeArgs...)...)
+	}
+	if row.TargetType == "alignment_item" {
+		found.TargetText = row.TargetTitle
 	}
 	if query != nil {
 		if err := query.Take(&found).Error; err != nil && err != gorm.ErrRecordNotFound {
