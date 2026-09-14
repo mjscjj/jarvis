@@ -210,3 +210,83 @@ func TestCompletionNeverIssuesSessionWithoutVerifiedIdentity(t *testing.T) {
 		}
 	}
 }
+
+func TestCompletionAutomaticallyRenewsLostOrExpiredFlow(t *testing.T) {
+	for _, reason := range []string{"restart", "ttl", "expired", "invalid_ticket", "cli_expired"} {
+		t.Run(reason, func(t *testing.T) {
+			begins := 0
+			service := newTestService(t, fakeRunner{run: func(_ string, args []string) ([]byte, error) {
+				command := strings.Join(args, " ")
+				switch {
+				case strings.HasSuffix(command, "auth login --begin"):
+					begins++
+					return []byte(`{"data":{"complete_token":"resume","verification_url":"https://sso.example/login"}}`), nil
+				case strings.Contains(command, "auth login --complete"):
+					if reason == "cli_expired" {
+						return []byte(`{"error":{"code":"BYTECLOUD_AUTH_LOGIN_EXPIRED"}}`), errors.New("exit 1")
+					}
+					return []byte(`{"data":{"status":"` + reason + `"}}`), nil
+				case strings.HasSuffix(command, "auth clear --yes"):
+					return []byte(`{}`), nil
+				default:
+					t.Fatalf("unexpected command: %s", command)
+					return nil, nil
+				}
+			}})
+			begin, err := service.Login(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			switch reason {
+			case "restart":
+				service.flows = make(map[string]flow)
+			case "ttl":
+				service.now = func() time.Time { return time.Now().Add(loginFlowTTL + time.Minute) }
+			}
+			renewed, err := service.Complete(t.Context(), *begin.FlowID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if renewed.Status != StatusPending || renewed.FlowID == nil || *renewed.FlowID == *begin.FlowID || begins != 2 || renewed.SessionToken != "" {
+				t.Fatalf("flow was not renewed: %#v; begins=%d", renewed, begins)
+			}
+		})
+	}
+}
+
+func TestCompletionRetriesTransportFailureWithoutReplacingFlow(t *testing.T) {
+	polls, begins := 0, 0
+	service := newTestService(t, fakeRunner{run: func(_ string, args []string) ([]byte, error) {
+		command := strings.Join(args, " ")
+		switch {
+		case strings.HasSuffix(command, "auth login --begin"):
+			begins++
+			return []byte(`{"data":{"complete_token":"resume","verification_url":"https://sso.example/login"}}`), nil
+		case strings.Contains(command, "auth login --complete"):
+			polls++
+			if polls == 1 {
+				return nil, errors.New("connection reset")
+			}
+			return []byte(`{"data":{"status":"success","authStatus":{"authenticated":true,"identity":{"username":"alice","email":"alice@bytedance.com"}}}}`), nil
+		case strings.HasSuffix(command, "auth clear --yes"):
+			return []byte(`{}`), nil
+		default:
+			t.Fatalf("unexpected command: %s", command)
+			return nil, nil
+		}
+	}})
+	begin, err := service.Login(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.Complete(t.Context(), *begin.FlowID); err == nil {
+		t.Fatal("expected transport error")
+	}
+	result, err := service.Complete(t.Context(), *begin.FlowID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.SessionToken == "" || begins != 1 {
+		t.Fatalf("original authorization was lost: %#v", result)
+	}
+}

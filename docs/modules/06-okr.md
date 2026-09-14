@@ -32,6 +32,8 @@ Biz OKR 页面底部对话按用户身份选择：既有白名单用户保留普
 
 向普通 Biz OKR 访客开放域名时，部署本机的 `auth.enabled` 必须开启，并在 `auth.principals` 中只列允许进入普通 Jarvis 的用户；Biz OKR 和 `/api/okr-chat/*` 仍使用飞书登录。白名单用户若只有飞书会话，页面会提示再完成字节身份登录后使用普通 Chat。Docker 工具隔离限制的是对话 Agent 的数据出口，不能代替浏览器 API 的外层登录。
 
+普通 Jarvis 的网页登录确认浏览器访客自己的字节身份，不复用宿主机的 bytedcli 登录。进入普通页面会自动开始验证；网络中断自动重试并保留当前授权，服务重启丢失流程或链接过期时自动生成并展示新链接，无需手动刷新或重新生成。用户仍需在 SSO 授权页确认身份，明确取消授权或不在白名单时停止重试。OKR 访客页面不会自动发起这层登录。
+
 `internal/okrchat/` 拥有容器执行、共享 OKR 聊天库装配和一份专用 Unix socket 出口；`internal/chat/` 复用会话、附件及流式协议。每轮 `docker run --network none`，只挂载共享 OKR 附件和当前会话的 native/work 状态、项目完整 scripts/Skills（只读）、现有模型登录文件（只读）。不挂主库、普通 Chat、完整用户目录、宿主 MCP 配置或 Docker socket。脚本可以自由执行，但不能直接联网。
 
 `internal/toolcatalog/okr_chat.go` 是受限 method/path 和工具说明的共同真源，默认拒绝未列出的请求。出口只将这些 OKR CRUD 请求转给固定主服务地址；模型通过精确域名 `:443` CONNECT 隧道维持原登录和 TLS，拒绝私网/回环目标。宿主 Agent 评审、Task、Todo、消息、普通会话、发通知、身份令牌及通用 HTTP 转发不开放。已授权用户自己上传或写进 OKR 的消息摘录仍是可读材料，不做语义脱敏。

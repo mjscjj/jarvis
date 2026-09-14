@@ -2,9 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import type { ReactNode } from 'react'
 import { Button, Result, Spin, Typography } from 'antd'
 import { LinkOutlined, LoginOutlined, SafetyCertificateOutlined } from '@ant-design/icons'
-import { authEvents, completeByteDanceLogin, getAuthStatus, loginWithByteDance, logoutFromJarvis, setAuthRecoveryHandler } from './api'
+import { APIRequestError, authEvents, completeByteDanceLogin, getAuthStatus, loginWithByteDance, logoutFromJarvis, setAuthRecoveryHandler } from './api'
 import type { AuthUser, AuthView } from './types'
-import { DeveloperDocumentLinks } from './components/DeveloperDocuments'
 import { routeFromHash } from './pageRoutes'
 import { appModuleRegistry } from './modules/registry'
 
@@ -32,6 +31,10 @@ function currentRouteIsModule(): boolean {
   return isModuleRouteKey(routeFromHash(window.location.hash, 'chat').key)
 }
 
+function canRetryLogin(cause: unknown): boolean {
+  return !(cause instanceof APIRequestError) || cause.status >= 500
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [enabled, setEnabled] = useState(true)
@@ -44,6 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const mounted = useRef(false)
   const pendingRef = useRef<AuthView | null>(null)
   const userRef = useRef<AuthUser | null>(null)
+  const retryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const apply = useCallback((view: AuthView) => {
     if (!mounted.current || signedOut.current) return
@@ -58,6 +62,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const recover = useCallback((forceLogin = false): Promise<void> => {
     if (inFlight.current) return inFlight.current
     if (signedOut.current || pendingRef.current) return Promise.resolve()
+    clearTimeout(retryTimer.current)
+    retryTimer.current = undefined
     // loading 表示「还没有可用身份」。已登录时被后台 401 触发的重新验证不能翻起
     // 它：AuthGate 会卸载整棵树，正在流式输出的对话和填写中的表单会一起丢掉。
     // 验证真的失败时下面清 user，届时才回到登录页。
@@ -80,10 +86,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           userRef.current = null
           setUser(null)
           setError(cause instanceof Error ? cause.message : String(cause))
+          if (canRetryLogin(cause)) {
+            retryTimer.current = setTimeout(() => { void recover(forceLogin) }, 2000)
+          }
         }
       } finally {
         inFlight.current = null
-        if (mounted.current) setLoading(false)
+        if (mounted.current) setLoading(retryTimer.current !== undefined && !currentRouteIsModule())
       }
     })()
     inFlight.current = operation
@@ -94,12 +103,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     mounted.current = true
     setAuthRecoveryHandler(recover)
     const expired = () => { void recover() }
+    const routeChanged = () => { if (!currentRouteIsModule()) void recover() }
     authEvents.addEventListener('expired', expired)
+    window.addEventListener('hashchange', routeChanged)
     void recover()
     return () => {
       mounted.current = false
+      clearTimeout(retryTimer.current)
       setAuthRecoveryHandler(null)
       authEvents.removeEventListener('expired', expired)
+      window.removeEventListener('hashchange', routeChanged)
     }
   }, [recover])
 
@@ -112,6 +125,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const view = await completeByteDanceLogin(pending.flow_id!)
         if (cancelled || signedOut.current) return
         if (pendingRef.current?.flow_id !== pending.flow_id) return
+        setError('')
+        if (view.status === 'pending' && view.flow_id && view.flow_id !== pending.flow_id) {
+          apply(view)
+          return
+        }
         if (view.status === 'authenticated' && view.user) {
           apply(view)
           setError('')
@@ -121,9 +139,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch (cause) {
         if (cancelled || signedOut.current) return
         if (pendingRef.current?.flow_id !== pending.flow_id) return
-        pendingRef.current = null
-        setPending(null)
-        setError(cause instanceof Error ? cause.message : String(cause))
+        if (canRetryLogin(cause)) {
+          setError('连接暂时中断，正在自动恢复登录…')
+          timer = setTimeout(poll, 2000)
+        } else {
+          pendingRef.current = null
+          setPending(null)
+          setError(cause instanceof Error ? cause.message : String(cause))
+        }
       }
     }
     timer = setTimeout(poll, 1500)
@@ -139,6 +162,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     signedOut.current = true
+    clearTimeout(retryTimer.current)
+    retryTimer.current = undefined
+    setLoading(false)
     pendingRef.current = null
     setPending(null)
     try {
@@ -194,14 +220,13 @@ export function AuthGate({ agentName, children }: { agentName: string; children:
             </Button>
             {pending.user_code && <Typography.Text className="auth-code">验证码：{pending.user_code}</Typography.Text>}
             <Typography.Text type="secondary">授权完成后此页面会自动进入</Typography.Text>
-            <Button onClick={() => void login()}>重新生成授权链接</Button>
           </>
         ) : (
           <Button type="primary" icon={<LoginOutlined />} onClick={() => void login()}>
             使用字节身份登录
           </Button>
         )}
-        {error && <Result status="error" subTitle={error} extra={<Button onClick={() => void login()}>重试</Button>} />}
+        {error && <Result status={pending ? 'info' : 'error'} subTitle={error} />}
       </section>
     </main>
   )

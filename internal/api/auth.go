@@ -61,6 +61,10 @@ func CompleteByteDanceLogin(service *authn.Service) app.HandlerFunc {
 			})
 			return
 		}
+		if errors.Is(err, authn.ErrDenied) {
+			c.JSON(consts.StatusForbidden, map[string]any{"code": 403, "msg": "SSO 授权已取消"})
+			return
+		}
 		if err != nil {
 			writeAuthError(c, err)
 			return

@@ -47,7 +47,7 @@ try {
   assert.deepEqual(errors, [])
   console.log('PASS: 401 recovery preserves the mounted editor and its draft')
 
-  await page.route('**/__auth-regenerate', route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: `<div id="root"></div><script type="module">
+  await page.route('**/__auth-automatic', route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: `<div id="root"></div><script type="module">
     import RefreshRuntime from '/@react-refresh';
     RefreshRuntime.injectIntoGlobalHook(window); window.$RefreshReg$=()=>{}; window.$RefreshSig$=()=>t=>t; window.__vite_plugin_react_preamble_installed__=true;
     const {default:React}=await import('${reactPath}');
@@ -55,35 +55,47 @@ try {
     const {AuthProvider,AuthGate}=await import('/src/auth.tsx');
     const user={name:'Test',email:'test@example.test'};
     const response=data=>new Response(JSON.stringify({code:0,data:{enabled:true,...data}}),{headers:{'Content-Type':'application/json'}});
-    window.loginCalls=0; window.authPolls=[];
+    window.loginCalls=0; window.authPolls=[]; let checks=0;
     window.fetch=async (path,options)=>{
-      if(path==='/api/auth/status') return response({status:'unauthenticated'});
+      if(path==='/api/auth/status') {
+        if (++checks===1) return new Response('',{status:503});
+        return response({status:'unauthenticated'});
+      }
       if(path==='/api/auth/login') {
-        const id='flow-'+(++window.loginCalls);
-        const result=()=>response({status:'pending',flow_id:id,verification_url:'https://example.test/'+id});
-        return window.loginCalls===1?result():new Promise(resolve=>{window.finishLogin=()=>resolve(result());});
+        window.loginCalls++;
+        return response({status:'pending',flow_id:'flow-1',verification_url:'https://example.test/flow-1'});
       }
       if(path==='/api/auth/login/complete') {
-        window.authPolls.push({body:options.body,authorized:window.newAuthorized});
-        if(JSON.parse(options.body).flow_id==='flow-1') return new Promise(resolve=>{window.finishOldPoll=()=>resolve(response({status:'authenticated',user}));});
+        const id=JSON.parse(options.body).flow_id;
+        window.authPolls.push(id);
+        if(window.authPolls.length===1) return new Response('',{status:502});
+        if(id==='flow-1') return response({status:'pending',flow_id:'flow-2',verification_url:'https://example.test/flow-2'});
+        if(window.deny) return new Response(JSON.stringify({code:403,msg:'SSO 授权已取消'}),{status:403,headers:{'Content-Type':'application/json'}});
         return response(window.newAuthorized?{status:'authenticated',user}:{status:'pending'});
       }
       throw new Error('Unexpected request: '+path);
     };
     ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(AuthProvider,null,React.createElement(AuthGate,{agentName:'Test'},React.createElement('div',null,'已进入工作区'))));
   </script>` }))
-  await page.goto(`${base}/__auth-regenerate`)
-  await page.waitForFunction(() => typeof window.finishOldPoll === 'function')
-  await page.getByRole('button', { name: '重新生成授权链接', exact: true }).click()
-  await page.waitForFunction(() => typeof window.finishLogin === 'function')
-  await page.evaluate(() => { window.finishOldPoll(); window.finishLogin() })
-  await page.locator('a[href="https://example.test/flow-2"]').waitFor()
-  assert.equal(await page.getByText('已进入工作区', { exact: true }).count(), 0)
-  assert.equal(await page.evaluate(() => window.loginCalls), 2)
+  await page.goto(`${base}/__auth-automatic`)
+  await page.locator('a[href="https://example.test/flow-2"]').waitFor({ timeout: 15000 })
+  assert.equal(await page.evaluate(() => window.loginCalls), 1)
+  assert.deepEqual(await page.evaluate(() => window.authPolls.slice(0, 2)), ['flow-1', 'flow-1'])
+  assert.equal(await page.getByRole('button', { name: '重新生成授权链接' }).count(), 0)
   await page.evaluate(() => { window.newAuthorized = true })
   await page.getByText('已进入工作区', { exact: true }).waitFor()
   assert.deepEqual(errors, [])
-  console.log('PASS: regeneration ignores stale SSO completion and completes the new flow')
+  console.log('PASS: initial outage, polling outage and expired flow recover automatically without clicks')
+
+  await page.goto(`${base}/__auth-automatic`)
+  await page.locator('a[href="https://example.test/flow-2"]').waitFor({ timeout: 15000 })
+  await page.evaluate(() => { window.deny = true })
+  await page.getByText('SSO 授权已取消', { exact: true }).waitFor()
+  const deniedPolls = await page.evaluate(() => window.authPolls.length)
+  await page.waitForTimeout(2500)
+  assert.equal(await page.evaluate(() => window.authPolls.length), deniedPolls)
+  assert.equal(await page.evaluate(() => window.loginCalls), 1)
+  console.log('PASS: explicit authorization denial stops automatic polling')
 
   await page.route('**/__okr-guest-recovery', route => route.fulfill({ contentType: 'text/html; charset=utf-8', body: `<div id="root"></div><script type="module">
     import RefreshRuntime from '/@react-refresh';
@@ -128,10 +140,8 @@ try {
       assert.equal(await page.evaluate(() => window.loginCalls), 0)
     }
     await page.evaluate(() => { location.hash = '/chat' })
-    await page.getByRole('button', { name: /使用字节身份登录/ }).waitFor()
-    assert.equal(await draft.count(), 0, 'Protected pages still require principal login')
-    await page.getByRole('button', { name: /使用字节身份登录/ }).click()
     await page.waitForFunction(() => typeof window.finishStatus === 'function')
+    assert.equal(await draft.count(), 0, 'Protected pages still require principal login')
     await page.evaluate(() => window.finishStatus(false))
     await page.locator('a[href="https://example.test/principal"]').waitFor()
     assert.equal(await page.evaluate(() => window.loginCalls), 1)

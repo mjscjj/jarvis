@@ -28,6 +28,7 @@ const (
 var (
 	ErrPending    = errors.New("authentication is still pending")
 	ErrNotAllowed = errors.New("this ByteDance identity is not on the allow list")
+	ErrDenied     = errors.New("SSO authorization was declined")
 )
 
 type User struct {
@@ -202,9 +203,12 @@ func (s *Service) Complete(ctx context.Context, flowID string) (LoginResult, err
 		return LoginResult{View: s.Status("")}, nil
 	}
 	flowID = strings.TrimSpace(flowID)
+	if flowID == "" {
+		return LoginResult{}, fmt.Errorf("SSO flow ID is required")
+	}
 	pendingFlow, ok := s.pendingFlow(flowID)
 	if !ok {
-		return LoginResult{}, fmt.Errorf("SSO flow not found or expired")
+		return s.beginLogin(ctx)
 	}
 
 	raw, err := s.run(ctx, pendingFlow.profile, "auth", "login", "--complete", pendingFlow.token)
@@ -212,7 +216,15 @@ func (s *Service) Complete(ctx context.Context, flowID string) (LoginResult, err
 		if errors.Is(err, context.DeadlineExceeded) || hasErrorCode(raw, "AUTHORIZATION_PENDING", "SLOW_DOWN", "BYTECLOUD_AUTH_LOGIN_PENDING", "BYTECLOUD_AUTH_LOGIN_TIMEOUT") {
 			return LoginResult{}, ErrPending
 		}
-		s.discardFlow(ctx, flowID, pendingFlow.profile)
+		if hasErrorCode(raw, "BYTECLOUD_AUTH_LOGIN_EXPIRED", "BYTECLOUD_AUTH_LOGIN_INVALID_TICKET") {
+			s.discardFlow(ctx, flowID, pendingFlow.profile)
+			return s.beginLogin(ctx)
+		}
+		if hasErrorCode(raw, "BYTECLOUD_AUTH_LOGIN_DENIED") {
+			s.discardFlow(ctx, flowID, pendingFlow.profile)
+			return LoginResult{}, ErrDenied
+		}
+		// A transport failure must not invalidate an authorization in progress.
 		return LoginResult{}, commandError("complete ByteDance SSO", raw, err)
 	}
 	// A successful CLI invocation can still carry data.status=pending. Only
@@ -233,11 +245,16 @@ func (s *Service) Complete(ctx context.Context, flowID string) (LoginResult, err
 	switch result.Data.Status {
 	case "pending":
 		return LoginResult{}, ErrPending
+	case "expired", "invalid_ticket":
+		s.discardFlow(ctx, flowID, pendingFlow.profile)
+		return s.beginLogin(ctx)
+	case "denied":
+		s.discardFlow(ctx, flowID, pendingFlow.profile)
+		return LoginResult{}, ErrDenied
 	case "success", "already_authenticated", "not_required":
 		// Identity is still required below, even if this profile is already authenticated.
 	default:
-		s.discardFlow(ctx, flowID, pendingFlow.profile)
-		return LoginResult{}, fmt.Errorf("complete ByteDance SSO: login status %q; please start a new login", result.Data.Status)
+		return LoginResult{}, fmt.Errorf("complete ByteDance SSO: login status %q", result.Data.Status)
 	}
 	user := result.Data.AuthStatus.Identity
 	user.Username = strings.TrimSpace(user.Username)
