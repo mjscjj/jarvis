@@ -9,6 +9,7 @@ Jarvis 是运行在本地可信环境中的个人任务 Agent。它持续接收�
 3. [当前架构](docs/00-overview.md)：跨模块数据流与硬边界
 4. [文档导航](docs/README.md)：当前文档、提案、研究与交付物
 5. [OKR 模块当前实现](docs/modules/06-okr.md)：通用 OKR、Biz OKR 与世界模型的维护边界
+6. [Emily 完整研发环境](docs/summery/emily-development-environment.md)：开发 worktree、共享 OKR 数据、实例配置与提交规则
 
 ## 核心链路
 
@@ -41,7 +42,7 @@ Jarvis 是运行在本地可信环境中的个人任务 Agent。它持续接收�
 | Agent 详细开发规范 | `README.md` 的“AI Agent 详细开发规范” |
 | 当前跨模块架构 | `docs/00-overview.md` |
 | 数据模型与迁移 | `internal/domain/`, `internal/store/sqlite.go` |
-| OKR 产品模块 | `internal/okrworkspace/`, `internal/okrreview/`, `conf/okr-module.yaml`, `data/okr/` |
+| OKR 产品模块 | `internal/okrworkspace/`, `internal/okrreview/`, `conf/okr-module.yaml`, `data/okr/`；本机应用绑定在 `conf/okr-module.runtime.yaml` |
 | HTTP 路由 | `internal/api/router.go` |
 | 基线与本机配置 | `conf/config.yaml`, `conf/config.runtime.yaml` |
 | Agent 行为 | `conf/prompts/`, `conf/rules/`, `.agents/skills/` |
@@ -52,7 +53,7 @@ Jarvis 是运行在本地可信环境中的个人任务 Agent。它持续接收�
 
 文档不复制完整 DDL、路由、CLI help 或本机有效配置。
 
-有效配置是 `conf/config.yaml` 与同目录 `conf/config.runtime.yaml` 的合并结果：runtime 按叶子 key 覆盖基线，未出现的 key 保留基线值，两个文件都拒绝未知字段。**本机参数、身份和密钥写 runtime 文件，不改仓库基线。** runtime 文件不进 Git，权限保持 `600`。后台保存后需要重启；prompts、rules 和 Skills 按各自 reader 实时读取。
+有效配置是 `conf/config.yaml` 与同目录 `conf/config.runtime.yaml` 的合并结果：runtime 按叶子 key 覆盖基线，未出现的 key 保留基线值，两个文件都拒绝未知字段。OKR 模块同理由 `conf/okr-module.yaml` 和本机 `conf/okr-module.runtime.yaml` 合并。**本机参数、身份和密钥写 runtime 文件，不改仓库基线。** runtime 文件不进 Git，权限保持 `600`。后台保存后需要重启；prompts、rules 和 Skills 按各自 reader 实时读取。
 
 Jarvis 本体使用 lark-cli 当前默认身份，只服务 principal；OKR 页面登录使用独立低敏应用。网页登录、白名单与授权 API 域名排查见 [网页 SSO 登录接入](docs/summery/sso-web-login.md)：当前使用 CLI 授权，已记录 CN / i18n 超时对比与实际地址配置方法；个人 JWT SDK 方案尚未实施，真实账号完整登录仍待验收。
 
@@ -87,7 +88,7 @@ macOS 14+ Apple Silicon 用户优先使用 [DMG 安装与更新](docs/reference/
 
 该 Skill 负责依赖、飞书身份、CC Connect、服务、世界模型和真实端到端验收。不要绕过依赖门、身份和 CC 绑定，在 fresh clone 上直接注册服务。安装清单记录在 `var/install/<run-id>/INSTALL_CHECKLIST.md`。
 
-要求 Go 1.26.4 或更高版本、C 编译器、满足 Vite engines 的 Node（`^20.19.0` 或 `>=22.12.0`）/npm、jq、git、lark-cli、有效配置选定的 Agent CLI 和 Qdrant。SQLite 驱动依赖 CGO，构建脚本通过 `scripts/check-build-toolchain.sh` 检查。通用运行数据库在本机创建；可选 OKR 模块的产品数据库及资源随仓库保存在 `data/okr/`。
+要求 Go 1.26.4 或更高版本、C 编译器、满足 Vite engines 的 Node（`^20.19.0` 或 `>=22.12.0`）/npm、jq、git、lark-cli、有效配置选定的 Agent CLI 和 Qdrant。SQLite 驱动依赖 CGO，构建脚本通过 `scripts/check-build-toolchain.sh` 检查。通用运行数据库在本机创建；可选 OKR 模块的产品数据库及资源随仓库保存在 `data/okr/`。完整研发实例直接挂载当前线上这份目录；向开发分支和 main 提交时，都应取得它的一致快照。
 
 `bind-cc` 会立即验证 App ID/Secret。已有 Feishu `allow_from` 不是 Principal 本人时会停止，明确确认替换后才可使用 `--replace-allow-from`；`validate-binding` 拒绝缺失或通配的白名单。首次安装动作和 CLI 参数以安装 Skill、脚本 help 为准。
 

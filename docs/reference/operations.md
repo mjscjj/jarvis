@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: operational reference; scripts and service templates are source of truth
-> Last verified: 2026-09-11
+> Last verified: 2026-09-14
 
 ## 1. 两种运行形态
 
@@ -52,6 +52,8 @@ conf/config.yaml
 - runtime settings 和功能模块配置保存后需要重启；prompts、rules 和 Skills 按各自 reader 实时读取。
 - 文档示例不代表当前进程值，实际地址与依赖状态读取有效配置和 `/readyz`。
 
+OKR 模块另从 `conf/okr-module.yaml` 读取公共默认值，并以本机 `conf/okr-module.runtime.yaml` 覆盖指定字段。当前 Emily 的开发容器、应用绑定与模型登录文件属于该本机文件。完整研发环境的开发实例配置由 `scripts/emily-dev` 生成，详见[Emily 完整研发环境](../summery/emily-development-environment.md)。
+
 主进程向 Agent 继承 `JARVIS_API_BASE`、`JARVIS_CONFIG` 和工具 PATH；切换工作目录不会切换实例。多实例只隔离寻址与服务管理，数据库、上传和执行产物需分别配置；外部账号、Qdrant collection 和 Bot 长连接不会自动隔离。
 
 ## 3. 日常部署
@@ -65,6 +67,8 @@ conf/config.yaml
 脚本安装并构建前端、编译主服务，按当前系统只更新选定实例，再验证首页、`/healthz` 和 `/readyz`。macOS 复用稳定签名与 launchd 链路；Linux 注册并重启 user systemd unit。Chat 已由主服务承载，不再构建或启动独立 Chat sidecar。
 
 不带 `--skip-pull` 时，脚本先要求工作树干净并 fast-forward pull 当前 upstream。运行可能修改 Git 跟踪的 `data/okr/okr.db`；数据库及新增/修改的 OKR 产品资源必须保留并提交。只有明确决定放弃本机数据库改动、采用 Git 版本时才使用 `--remote-okr-db`。
+
+Emily 开发容器运行时挂载的就是线上 `data/okr/`；数据修改立即生效。Git worktree 的索引彼此独立，提交开发代码或向 main 合并时，要从共享目录取得 OKR 数据库的一致快照，并纳入同批产品资源。私有 Task、Message 主库和登录 token 不随代码提交。具体边界和当前实例启动命令见[研发环境文档](../summery/emily-development-environment.md)。
 
 升级脚本清理旧 Chat sidecar 的配置和当前实例服务；旧 Markdown 对话不迁入持久会话。新会话历史保留，但重启主服务会打断当前对话轮次。
 

@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: normative index
-> Last verified: 2026-09-11
+> Last verified: 2026-09-14
 
 文档按语义所有权物理分层。只有“当前实现”可以描述现行行为；字段、路由、默认值和 CLI 参数仍以代码与命令帮助为准。
 
@@ -26,6 +26,7 @@
 - [总结与洞察](modules/06-insight.md)
 - [插件系统](modules/07-plugins.md)
 - [OKR 模块当前实现](modules/06-okr.md)：通用 OKR、Biz OKR、正式 Progress 与 WorldProgress 的维护边界
+- [Emily 完整研发环境](summery/emily-development-environment.md)：开发 worktree、数据归属、路径配置与提交方式
 - [内置功能模块](design-app-modules.md)：模块注册、启停与生命周期
 - [双飞书应用身份](design-dual-app-identity.md)：主应用与 OKR 对外登录应用的分工
 - [OKR 世界模型](design-okr-world-model.md)：基于证据的实体映射与周期判断
@@ -58,6 +59,7 @@
 - `research/`：可复用的研究快照，不约束实现。
 - Git 历史承担实施计划、中间方案和已废弃设计的追溯；仓库不为“也许以后会看”保留第二份文件。仍影响当前架构的关键取舍提炼进 `decisions/`。
 - [旧版 OKR 与世界模型整合方案](summery/okr-jarvis-world-model-integration.md)：历史设计，不替代当前 OKR 模块文档。
+- [原始 OKR 单轮容器设计](summery/okr-chat-isolation-mvp-design.md)：历史模式，当前研发入口见完整研发环境文档。
 
 ## 正式交付物
 
@@ -70,7 +72,7 @@
 | 数据模型与迁移 | `internal/domain/`, `internal/store/sqlite.go` |
 | OKR 产品事实与迁移 | `internal/okrworkspace/`, `internal/okrreview/`, `data/okr/` |
 | HTTP 路由 | `internal/api/router.go` |
-| 配置 | `conf/config.yaml`, `conf/config.runtime.yaml`, `conf/modules.yaml`, `conf/okr-module.yaml` |
+| 配置 | `conf/config.yaml`, `conf/config.runtime.yaml`, `conf/modules.yaml`, `conf/okr-module.yaml`, `conf/okr-module.runtime.yaml`；两个 runtime 文件不入 Git |
 | 页面入口 | `web/src/App.tsx` |
 | Agent 行为 | `conf/prompts/`, `conf/rules/`, `.agents/skills/` |
 | Agent 工具 | `internal/toolcatalog/`, `scripts/jarvis-tools`, `scripts/lib/jarvis-tools/` |

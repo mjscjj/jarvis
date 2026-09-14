@@ -28,7 +28,7 @@ Jarvis 世界模型
 
 ## OKR 独立对话
 
-完整源码研发模式见 [Emily 开发环境](../summery/emily-development-environment.md)。配置 `chat.development_container` 后，OKR 对话在已有开发容器中执行，使用共享线上 OKR 数据和独立开发主库；公开路径按部署配置生成，不增加第二套业务路由。以下仅描述未设置该选项时的原始单轮容器模式及通用登录行为。
+当前 Emily 实例启用了[完整源码研发模式](../summery/emily-development-environment.md)：`chat.development_container` 指向常驻开发容器，容器可修改整个系统代码，直接读写同一份线上 `data/okr/`，Task、Message 等使用独立开发主库。入口路径由实例配置生成，不增加第二套业务路由。OKR 访客仍共用下述 OKR Chat 会话库；登录规则也相同。
 
 Biz OKR 页面底部对话按用户身份选择：既有白名单用户保留普通 Chat，其余已完成 Biz OKR 飞书登录的访客使用受限 `/api/okr-chat/*`。该接口在服务端验证飞书会话，所有访客共用一份 Chat 服务和 `var/okr-chat/chat.db`，共享会话列表、历史、草稿与附件；不按用户分库或建立运行实例。普通 `/api/chat/*` 和 M2/M3/M5 保持原有可信运行方式。
 
@@ -40,17 +40,17 @@ OKR 飞书登录会话已持久化在 Jarvis 私有运行主库的 `okr_workspac
 
 “正在验证字节身份”长时间不结束时，先按 [网页登录授权域名与超时排查](../summery/sso-web-login.md#当前-cli-授权域名与超时排查2026-09-14) 核对实际 API 地址。2026-09-14 已实测 CN 上游握手频繁超时、i18n BD 地址创建授权约 0.8 秒；具体数据、`auth.login_api_base_url` 部署配置与验证范围统一记录在该文档，不把延长等待当作域名问题的修复。
 
-`internal/okrchat/` 拥有容器执行、共享 OKR 聊天库装配和一份专用 Unix socket 出口；`internal/chat/` 复用会话、附件及流式协议。每轮 `docker run --network none`，挂载共享 OKR 附件和当前会话的 native/work 状态、项目完整 scripts/Skills（只读）、现有模型登录文件（只读），以及当前完整 `web/` → `/opt/jarvis/web`（可写）。不挂主库、普通 Chat、完整用户目录、宿主 MCP 配置或 Docker socket。脚本可以自由执行，但不能直接联网。
+`internal/okrchat/` 拥有容器执行和共享 OKR 聊天库装配；`internal/chat/` 复用会话、附件及流式协议。配置了 `chat.development_container` 时，对话进入常驻开发容器，完整源码可写，线上 `data/okr/` 可读写，开发实例拥有自己的 API 和空主库。没有配置该字段时，使用原始单轮容器：挂载 OKR 附件、会话状态和可写前端目录，通过受限工具出口调用 OKR 接口。两种模式均不挂载生产主库、普通 Chat、私人资料或 Docker socket，也没有直接网络。
 
-按用户明确要求，前端不是副本，也不隔离构建输出：所有 OKR 对话直接修改当前 `web/` 的源码、依赖及 `dist/`。容器复用部署脚本在当前 Linux 宿主安装的 `web/node_modules`，运行 `npm --prefix /opt/jarvis/web run typecheck` 和 `npm --prefix /opt/jarvis/web run build`；构建直接更新线上静态文件，无需重启后端，不另设预览服务或发布审批。未开放 npm 网络下载、后端源码或 Git 元数据；代码提交仍由宿主开发流程完成。此授权包括修改主站前端行为，原有隔离仅继续限制容器直接访问宿主数据及 API，不能把可修改的浏览器代码当作额外安全边界。
+完整研发模式修改的是开发 worktree；容器内用 `./scripts/jarvis-deploy --skip-pull` 构建、重启开发实例，生产前后端仍走宿主正常部署。开发目录不是线上源码副本的自动发布机制；OKR 产品数据是例外，它直接共享并立即影响线上。源码合并、产品数据快照及配置归属见[研发环境文档](../summery/emily-development-environment.md)。
 
-`internal/toolcatalog/okr_chat.go` 是受限 method/path 和工具说明的共同真源，默认拒绝未列出的请求。出口只将这些 OKR CRUD 请求转给固定主服务地址；模型通过精确域名 `:443` CONNECT 隧道维持原登录和 TLS，拒绝私网/回环目标。宿主 Agent 评审、Task、Todo、消息、普通会话、发通知、身份令牌及通用 HTTP 转发不开放。已授权用户自己上传或写进 OKR 的消息摘录仍是可读材料，不做语义脱敏。
+原始单轮容器的 `internal/toolcatalog/okr_chat.go` 以 method/path 清单限制工具请求。完整研发模式在开发容器内使用自己的完整 API，通过文件和进程边界隔离生产 Task、Todo、消息与普通会话；通知机器人和查人能力通过限定出口复用。已授权用户自己上传或写进 OKR 的消息摘录仍是可读材料，不做语义脱敏。
 
-`conf/prompts/okr-chat-system-prompt.md` 定义业务职责与停止边界，经 textstore 注册；不叠加普通 Chat 提示词或共享记忆。`conf/okr-module.yaml` 的 `chat` 控制启动，MVP 固定使用 Codex 0.154.0 + 标准 ChatGPT 登录，未支持自定义 provider、TRAE/Cursor 或直接访问飞书/Meego；Meego 已存快照可读。只复制 auth.json，不复制宿主 config.toml。认证文件刷新保存在 OKR 自己的 native 状态，宿主文件不被容器改写。
+`conf/prompts/okr-chat-system-prompt.md` 定义业务职责与停止边界，经 textstore 注册；不叠加普通 Chat 提示词或共享记忆。`conf/okr-module.yaml` 提供公共默认值；当前实例的 Chat 启用、容器名、模型登录文件以及飞书应用绑定在不入 Git 的 `conf/okr-module.runtime.yaml`。模型只使用所需登录文件，不复制宿主全量配置。
 
-部署统一执行 `./scripts/jarvis-deploy --skip-pull`，开启 chat 时会先构建 `deploy/okr-chat/` 镜像。需要可用的 Docker daemon 和宿主已有 Codex 登录。停止/超时回收当轮容器；重启只清理带本实例标记的遗留容器，不碰其它 Docker 工作负载。关闭 chat 不会回退到普通 Agent，也不删除已有独立会话。
+生产主服务部署统一执行 `./scripts/jarvis-deploy --skip-pull`。完整研发模式的首次配置与启动使用 `scripts/emily-dev --activate`；该命令同时构建开发容器、配置路径并按统一脚本部署两个实例。原始单轮模式启用时才构建 `deploy/okr-chat/` 镜像。关闭 OKR Chat 不删除已有独立会话。
 
-验证：`go test ./cmd/... ./internal/...`；`OKR_DOCKER_TEST=1 go test ./internal/okrchat -run TestDockerNetworkAndFilesystem -v`。设置 `OKR_CHAT_AUTH_FILE` 后 `TestDockerModelAndResume` 会进行真实模型调用，验证工具查询、续聊、持久化和取消回收。前端 `web/test/okrChat.browser.mjs` 验证独立 API、历史弹窗和附件地址。
+验证：`go test ./cmd/... ./internal/...`；原始单轮容器使用 `OKR_DOCKER_TEST=1 go test ./internal/okrchat -run TestDockerNetworkAndFilesystem -v`。在生产 worktree 根目录，完整研发模式使用 `EMILY_DEVELOPMENT_CHAT_ROOT=$PWD/var/okr-chat go test ./internal/okrchat -run TestDevelopmentModelCanInspectFullSource -v`。前端 `web/test/okrChat.browser.mjs` 验证独立 API、历史弹窗和附件地址。
 
 ## 数据所有权
 
@@ -109,7 +109,7 @@ Objective→KR、KR→Metric/Point 和 Owner 等 OKR 内部关系由 OKR 原生�
 ## 配置与启动
 
 - 模块开关：`conf/modules.yaml`。
-- OKR 数据库、图片、Biz 身份和 AI Review 运行配置：`conf/okr-module.yaml`。
+- OKR 数据库、图片、Biz 身份和 AI Review 的公共默认值：`conf/okr-module.yaml`；当前实例的应用身份、模型登录文件和开发容器绑定：不入 Git 的 `conf/okr-module.runtime.yaml`。
 - 启动装配、迁移和旧 ScheduledTask 绑定迁移：`cmd/jarvis-server/main.go`。
 - 历史 `agency-okr` 配置键和 ScheduledTask 模块绑定会在启动时幂等迁移为 `biz-okr`。
 - 通用迁移集合：`internal/okrworkspace/domain/models.go` 的 `CoreModels()`。
