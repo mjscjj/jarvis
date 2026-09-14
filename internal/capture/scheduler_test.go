@@ -32,3 +32,14 @@ func TestStartSchedulerRejectsInvalidSpec(t *testing.T) {
 		t.Fatal("StartScheduler() accepted invalid schedule")
 	}
 }
+
+func TestDisabledSchedulerHasNoDiscoveryOrScanJobs(t *testing.T) {
+	scheduler, err := StartScheduler(context.Background(), &Service{}, ScheduleConfig{Disabled: true}, log.New(io.Discard, "", 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(scheduler.Entries()) != 0 {
+		t.Fatal("disabled capture registered jobs")
+	}
+	<-scheduler.Stop().Done()
+}

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -79,7 +80,9 @@ type IdentityConfig struct {
 
 // ServerConfig Hertz 监听配置。
 type ServerConfig struct {
-	Addr string `yaml:"addr"` // 形如 0.0.0.0:18800
+	DevelopmentSocket string `yaml:"development_socket"` // Optional container ingress.
+	DevelopmentPath   string `yaml:"development_path"`   // Empty disables the extra installation route.
+	Addr              string `yaml:"addr"`               // 形如 0.0.0.0:18800
 	// PublicBaseURL 是这台部署对外可打开的根地址（形如 http://host.example:18800）。
 	// 分享链接和飞书卡片详情链接都优先使用它；留空表示沿用当前地址。
 	PublicBaseURL string   `yaml:"public_base_url"`
@@ -226,6 +229,8 @@ type LarkCLIConfig struct {
 // HotAgeHours/WarmAgeHours drive only the display-only tier label; related
 // chats are scanned at one uniform ScanSchedule cadence regardless of tier.
 type CaptureConfig struct {
+	// Omitted preserves existing installations; false disables automatic polling.
+	Enabled          *bool  `yaml:"enabled"`
 	PageSize         int    `yaml:"page_size"`
 	ScanWorkers      int    `yaml:"scan_workers"`
 	HotAgeHours      int    `yaml:"hot_age_hours"`
@@ -240,6 +245,10 @@ type CaptureConfig struct {
 	// AutoRelatedP2PTopN：discover 时按 active_time 轮换自动监听的内部真人私聊。
 	// 保留当前最活跃的前 N 个；pinned 私聊额外保留，服务号私聊不参与。
 	AutoRelatedP2PTopN int `yaml:"auto_related_p2p_top_n"`
+}
+
+func (c CaptureConfig) IsEnabled() bool {
+	return c.Enabled == nil || *c.Enabled
 }
 
 // CardApprovalConfig accepts authenticated localhost callbacks forwarded by
@@ -432,6 +441,15 @@ func (c *Config) validate() error {
 			return fmt.Errorf("server.public_base_url 必须是 http(s) 绝对地址，当前为 %q", c.Server.PublicBaseURL)
 		}
 		c.Server.PublicBaseURL = raw
+	}
+	if _, err := c.Server.WebBasePath(); err != nil {
+		return err
+	}
+	if c.Server.DevelopmentSocket != "" || c.Server.DevelopmentPath != "" {
+		prefix := c.Server.DevelopmentPath
+		if c.Server.DevelopmentSocket == "" || !filepath.IsAbs(c.Server.DevelopmentSocket) || prefix == "/" || !strings.HasPrefix(prefix, "/") || !strings.HasSuffix(prefix, "/") || path.Clean(prefix) != strings.TrimSuffix(prefix, "/") || strings.ContainsAny(prefix, "%\\?#") {
+			return fmt.Errorf("development proxy requires an absolute socket and a canonical non-root path ending in /")
+		}
 	}
 	if _, err := uilink.New(c.Server.Addr, c.Server.PublicBaseURL); err != nil {
 		return err

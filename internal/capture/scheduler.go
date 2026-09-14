@@ -15,6 +15,7 @@ import (
 // use per-tier cadences: discovery enumerates chats, and a single scan job
 // captures every related chat at one uniform interval.
 type ScheduleConfig struct {
+	Disabled bool
 	Discover string
 	Scan     string
 }
@@ -32,6 +33,9 @@ func StartScheduler(ctx context.Context, service *Service, cfg ScheduleConfig, l
 		cron.SkipIfStillRunning(cronLogger),
 		cron.Recover(cronLogger),
 	))
+	if cfg.Disabled {
+		return scheduler, nil
+	}
 	jobs := []struct {
 		name string
 		spec string

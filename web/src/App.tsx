@@ -36,6 +36,7 @@ import type { AuthUser as OKRAuthUser } from './okr/emily/types'
 import { useExecutingTaskCount } from './hooks/useExecutingTaskCount'
 import type { Plugin } from './types'
 import { AgentActivityIcon } from './components/AgentActivityIcon'
+import { appPath } from './appPath.ts'
 
 const { Sider, Content } = Layout
 const { Title } = Typography
@@ -93,6 +94,9 @@ function AppShell() {
   const { enabled: authEnabled, user, pending: principalLogin, error: principalLoginError, login, logout } = useAuth()
   const { context, navigate } = usePageContext()
   const weeklyShare = context.active_key === 'biz-okr' && isWeeklyShareViewState(context.view_state)
+  // A prefixed development page reuses the root OKR conversation and its
+  // existing Docker runtime. The prefix itself remains deployment config.
+  const developmentOKRChatBase = appPath('/') !== '/' ? new URL('/api/okr-chat', window.location.origin).href : undefined
   const principalDataEnabled = !authEnabled || user !== null
   const runtimeFailures = useRuntimeFailureCount(principalDataEnabled)
   const executingTasks = useExecutingTaskCount(principalDataEnabled)
@@ -561,11 +565,13 @@ function AppShell() {
               {pages[context.active_key]}
             </Suspense>
             <Suspense fallback={null}>
-              {principalDataEnabled && (context.active_key !== 'biz-okr' || isPrincipalOKRChatUser) &&
+              {principalDataEnabled && (context.active_key !== 'biz-okr' || (!developmentOKRChatBase && isPrincipalOKRChatUser)) &&
                 <Chat key="principal-chat" compact={context.active_key !== 'chat'} />}
-              {okrUser && !isPrincipalOKRChatUser &&
+              {developmentOKRChatBase && context.active_key === 'biz-okr' &&
+                <Chat key="development-okr-chat" compact isolated apiBase={developmentOKRChatBase} />}
+              {!developmentOKRChatBase && okrUser && !isPrincipalOKRChatUser &&
                 <Chat key="okr-chat" compact isolated hidden={context.active_key !== 'biz-okr'} />}
-              {context.active_key === 'biz-okr' && isPrincipalOKRChatUser && !principalDataEnabled &&
+              {!developmentOKRChatBase && context.active_key === 'biz-okr' && isPrincipalOKRChatUser && !principalDataEnabled &&
                 <div>
                   {principalLogin?.verification_url
                     ? <Button href={principalLogin.verification_url} target="_blank" rel="noreferrer">打开字节身份授权页</Button>

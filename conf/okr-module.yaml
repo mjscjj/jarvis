@@ -9,12 +9,13 @@ max_image_bytes: 10485760
 # Build deploy/okr-chat first, then set enabled and the existing Codex login file.
 # MVP supports the standard Codex ChatGPT connection; no host CLI config is mounted.
 chat:
-  enabled: true
+  development_container: ""
+  enabled: false
   image: "jarvis-okr-chat:0.154.0"
   model: "gpt-5.6-sol"
   reasoning_effort: "high"
   timeout_seconds: 600
-  auth_file: "/home/chujiejie.1/.codex/auth.json"
+  auth_file: ""
   model_hosts:
     - "chatgpt.com:443"
     - "auth.openai.com:443"
@@ -29,16 +30,14 @@ preview_review:
   sandbox: "workspace-write"
   timeout_seconds: 300
 
+# Application binding belongs in okr-module.runtime.yaml.
 identity:
   # Biz OKR uses its own low-sensitivity Feishu login instead of the optional
   # outer Jarvis ByteDance SSO gate.
-  enabled: true
-  # “Jarvis通知机器人”同时承载 Biz OKR 登录。这里仅签发登录用户自己的
-  # user token；广播使用 lark-cli 中显式选择的通知 Bot profile，不直接读取
-  # 这里的 secret，也不影响 lark-cli 当前默认的 Jarvis 主应用。
-  # 换应用后 open_id 会变（按应用隔离），union_id 不变，所以署名锚 union_id。
-  app_id: "cli_a96a2422f03bdbd7"
-  app_secret_env: "JARVIS_OKR_EMILY_APP_SECRET"
+  enabled: false
+  # Configure the selected login application in the instance override.
+  app_id: ""
+  app_secret_env: "JARVIS_OKR_APP_SECRET"
   session_ttl_hours: 8760 # 365 天；网页登录状态存于私有运行数据库
   cookie_secure: false
   feishu_base_url: "https://open.feishu.cn"

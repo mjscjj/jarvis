@@ -28,7 +28,7 @@ Jarvis 世界模型
 
 ## OKR 独立对话
 
-当前 Emily 实例启用了[完整源码研发模式](../summery/emily-development-environment.md)：`chat.development_container` 指向常驻开发容器，容器可修改整个系统代码，直接读写同一份线上 `data/okr/`，Task、Message 等使用独立开发主库。入口路径由实例配置生成，不增加第二套业务路由。OKR 访客仍共用下述 OKR Chat 会话库；登录规则也相同。
+当前 Emily 实例启用了[完整源码研发模式](../summery/emily-development-environment.md)：`chat.development_container` 指向常驻开发容器，容器可修改整个系统代码，直接读写同一份线上 `data/okr/`，Task、Message 等使用独立开发主库。入口路径由实例配置生成，不增加第二套业务路由。开发页面的对话框调用主站已有的 `/api/okr-chat/*`，复用同一会话库与飞书登录状态；模型执行仍进入研发容器。
 
 Biz OKR 页面底部对话按用户身份选择：既有白名单用户保留普通 Chat，其余已完成 Biz OKR 飞书登录的访客使用受限 `/api/okr-chat/*`。该接口在服务端验证飞书会话，所有访客共用一份 Chat 服务和 `var/okr-chat/chat.db`，共享会话列表、历史、草稿与附件；不按用户分库或建立运行实例。普通 `/api/chat/*` 和 M2/M3/M5 保持原有可信运行方式。
 

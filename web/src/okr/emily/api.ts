@@ -1,3 +1,4 @@
+import { appPath } from '../../appPath.ts'
 import { normalizeKRTitle } from './krTitle'
 import type { AuthStatus, CommentMention, Entry, EnumValues, FeishuDeviceLogin, FeishuDeviceLoginPoll, FeishuDocumentResult, FollowUpItem, FollowUpList, FollowUpStatus, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, OKRActivityEntry, OKRPlan, OKRPlanList, PageComment, PageCommentList, PersonAvatarItem, PointKind, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
 
@@ -364,7 +365,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     if (!(init?.body instanceof FormData) && init?.body != null && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json')
     }
-    response = await fetch(path, {
+    response = await fetch(appPath(path), {
       ...init,
       headers,
     })

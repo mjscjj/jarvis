@@ -5,7 +5,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-CONFIG_PATH="${REPO_ROOT}/conf/config.yaml"
+CONFIG_PATH="${JARVIS_CONFIG_PATH:-${REPO_ROOT}/conf/config.yaml}"
 SKIP_PULL=false
 REMOTE_OKR_DB=false
 FORCE_INTERRUPT=false
@@ -76,11 +76,13 @@ if [[ -n "$OKR_CHAT_IMAGE" ]]; then
   command -v docker >/dev/null 2>&1 || fail "OKR chat is enabled but Docker is missing"
   docker build --tag "$OKR_CHAT_IMAGE" "${REPO_ROOT}/deploy/okr-chat"
 fi
-source "${SCRIPT_DIR}/lib/retire-chat-sidecar.sh"
-retire_chat_sidecar "$(jq -er '.launchd_label' <<<"$INSTANCE")" "$REPO_ROOT"
+if [[ "${JARVIS_CONTAINER_DEPLOY:-}" != 1 ]]; then
+  source "${SCRIPT_DIR}/lib/retire-chat-sidecar.sh"
+  retire_chat_sidecar "$(jq -er '.launchd_label' <<<"$INSTANCE")" "$REPO_ROOT"
+fi
 
 npm --prefix "${REPO_ROOT}/web" ci
-npm --prefix "${REPO_ROOT}/web" run build
+VITE_BASE_PATH="$(jq -er '.web_base_path // "/"' <<<"$INSTANCE")" npm --prefix "${REPO_ROOT}/web" run build
 
 deploy_darwin() {
   command -v launchctl >/dev/null 2>&1 || fail "launchctl is required on macOS"
@@ -136,6 +138,26 @@ wait_health() {
   fail "$name did not become healthy at $base"
 }
 
+deploy_container() {
+  [[ -f /run/emily-development ]] || fail "container deployment marker is missing"
+  "${SCRIPT_DIR}/check-build-toolchain.sh"
+  mkdir -p bin var/log
+  go build -o bin/jarvis-server.next ./cmd/jarvis-server
+  if [[ -f var/server.pid ]] && kill -0 "$(cat var/server.pid)" 2>/dev/null; then
+    local previous_pid
+    previous_pid="$(cat var/server.pid)"
+    kill "$previous_pid"
+    for attempt in {1..30}; do
+      kill -0 "$previous_pid" 2>/dev/null || break
+      [[ "$(ps -o stat= -p "$previous_pid" 2>/dev/null)" == Z* ]] && break
+      sleep 1
+    done
+  fi
+  mv bin/jarvis-server.next bin/jarvis-server
+  nohup ./bin/jarvis-server -config "$CONFIG_PATH" >>var/log/jarvis-server.log 2>>var/log/jarvis-server.error.log </dev/null &
+  echo "$!" > var/server.pid
+}
+
 deploy_linux() {
   command -v systemctl >/dev/null 2>&1 || fail "systemctl is required on Linux"
   systemctl --user show-environment >/dev/null 2>&1 || fail "the user systemd manager is not reachable"
@@ -170,11 +192,15 @@ deploy_linux() {
   systemctl --user restart "$main_unit"
 }
 
+if [[ "${JARVIS_CONTAINER_DEPLOY:-}" == 1 ]]; then
+  deploy_container
+else
 case "$(uname -s)" in
   Darwin) deploy_darwin ;;
   Linux) deploy_linux ;;
   *) fail "unsupported operating system: $(uname -s)" ;;
 esac
+fi
 
 wait_health backend "$API_BASE"
 curl --fail --silent --show-error --max-time 5 -o /dev/null "$API_BASE/"

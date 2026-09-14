@@ -1,3 +1,4 @@
+import { appPath } from '../../appPath.ts'
 import { isDone, statusOf, weeklyScoreLabel } from './template.ts'
 import { priorityLabel, priorityOf } from './hierarchy.ts'
 import type { DocLink, ImageRef, Objective, WeekTemplateKey } from './types'
@@ -21,7 +22,7 @@ function appendAssets(lines: string[], docs: DocLink[], images: ImageRef[]) {
 		const url = /^https?:\/\//i.test(image.url)
 			? image.url
 			: image.url.startsWith('/') && typeof window !== 'undefined'
-				? `${window.location.origin}${image.url}`
+				? `${window.location.origin}${appPath(image.url)}`
 				: ''
 		if (url) lines.push(`  - ![${escapeInline(image.name || '图片')}](${url})`)
 	}

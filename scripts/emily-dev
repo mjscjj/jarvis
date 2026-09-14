@@ -1,0 +1,202 @@
+#!/usr/bin/python3
+"""Provision the full-source development container from a separate worktree.
+Run on the host. Never run edited development code on the host.
+"""
+import argparse
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import secrets
+from urllib.parse import urlsplit, urlunsplit
+import yaml
+
+ROOT = Path(__file__).resolve().parent.parent
+
+def run(args, **kwargs):
+    return subprocess.run([str(x) for x in args], check=True, **kwargs)
+
+def output(args, **kwargs):
+    return subprocess.check_output([str(x) for x in args], text=True, **kwargs).strip()
+
+def save_yaml(path, value):
+    path.write_text(yaml.safe_dump(value, allow_unicode=True, sort_keys=False))
+
+def module_config(root):
+    base = yaml.safe_load((root/'conf/okr-module.yaml').read_text())
+    overlay = root/'conf/okr-module.runtime.yaml'
+    if overlay.exists():
+        for key, value in yaml.safe_load(overlay.read_text()).items():
+            if isinstance(value, dict):
+                base.setdefault(key, {}).update(value)
+            else:
+                base[key] = value
+    return base
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--activate', action='store_true', help='build and verify development, then enable the configured host route and chat runtime')
+    parser.add_argument('--path', required=True, help='URL prefix, for example /dev/ or /sandbox/')
+    parser.add_argument('--worktree', type=Path, default=ROOT.parent/'emily-development')
+    parser.add_argument('--secret-file', type=Path, required=True,
+                        help='existing environment file containing the OKR notification app secret')
+    parser.add_argument('--directory-profile', required=True)
+    parser.add_argument('--notification-profile', required=True)
+    opts = parser.parse_args()
+    if not opts.path.startswith('/') or not opts.path.endswith('/') or opts.path == '/' or any(x in opts.path for x in ['..','//','?','#','%','\\']):
+        raise SystemExit('--path must be a canonical non-root path ending in /')
+    production = yaml.safe_load((ROOT/'conf/config.runtime.yaml').read_text())
+    public = urlsplit(production['server']['public_base_url'])
+    public_url = urlunsplit((public.scheme, public.netloc, opts.path, '', ''))
+    dev = opts.worktree.resolve()
+    if dev == ROOT:
+        raise SystemExit('development worktree must differ from production')
+    if not dev.exists():
+        run(['git','worktree','add','-b','codex/emily-development',dev,'HEAD'],cwd=ROOT)
+    state = ROOT/'var/emily-development'
+    sockets = Path('/tmp')/('emily-development-'+str(os.getuid()))
+    for p in [state, sockets, sockets/'egress', sockets/'ingress', state/'home', state/'tokens',
+              state/'go-mod', ROOT/'var/okr-chat/files', ROOT/'var/okr-chat/sessions', dev/'var/log']:
+        p.mkdir(parents=True,exist_ok=True,mode=0o700)
+    # Use the existing notification app, never the principal's user token files.
+    secret_env = module_config(ROOT)['identity']['app_secret_env']
+    secret = None
+    for line in opts.secret_file.read_text().splitlines():
+        if line.startswith(secret_env+'='):
+            secret = line.split('=',1)[1].strip().strip('"').strip("'")
+    if not secret or '\n' in secret:
+        raise SystemExit('notification app secret missing from the selected environment file')
+    env_file = state/'container.env'
+    env_file.write_text(secret_env+'='+secret+'\n')
+    env_file.chmod(0o600)
+    memory = dev/'data/shared-memory.md'
+    if not memory.exists():
+        memory.write_text('# 开发环境共享记忆\n\n仅保存开发环境的工作约定，不导入生产私人资料。\n')
+    config = yaml.safe_load((dev/'conf/config.yaml').read_text())
+    config['identity']['display_name'] = 'Emily 开发'
+    config['server'].update(addr='127.0.0.1:18812',public_base_url=public_url,development_socket='',development_path='')
+    config['sqlite']['path'] = 'var/development.db'
+    config['capture'].update(enabled=False,p2p_scan_enabled=False,auto_related_p2p_top_n=0)
+    for key in ['factengine','extract','execute','proactive','meeting_sweep','morning_brief','dailydigest','scheduled_task','card_approval']:
+        if key in config:
+            config[key]['enabled'] = False
+    # Keep login logic; credentials and sessions are independently stored here.
+    production = yaml.safe_load((ROOT/'conf/config.runtime.yaml').read_text())
+    config['extract']['principal_open_id'] = production['extract']['principal_open_id']
+    config['auth'] = production.get('auth',config['auth'])
+    config['auth']['login_api_base_url'] = 'https://cloud.byteintl.net'
+    for key in ['codex','execute','factengine','proactive','meeting_sweep','morning_brief']:
+        if key in config:
+            config[key]['bin'] = 'codex'
+            config[key]['model'] = 'gpt-5.6-sol'
+    config['execute']['repo_root'] = '/opt/jarvis'
+    config['execute']['runs_dir'] = 'var/runs'
+    config['chat'].update(enabled=True,model='gpt-5.6-sol',reasoning_effort='high')
+    save_yaml(dev/'conf/config.development.yaml',config)
+    config.pop('sqlite',None)
+    runtime_path = dev/'conf/config.runtime.yaml'
+    existing_runtime = yaml.safe_load(runtime_path.read_text()) if runtime_path.exists() else {}
+    existing_runtime.pop('sqlite',None)
+    for key, value in config.items():
+        if isinstance(value, dict):
+            existing_runtime[key] = {**existing_runtime.get(key, {}), **value}
+        else:
+            existing_runtime[key] = value
+    if not existing_runtime.get('dailydigest', {}).get('git_author'):
+        existing_runtime.setdefault('dailydigest', {})['git_author'] = 'Emily development'
+    approval = existing_runtime.setdefault('card_approval', {})
+    approval.update(enabled=True, principal_open_id=config['extract']['principal_open_id'])
+    if not approval.get('relay_secret'):
+        approval['relay_secret'] = secrets.token_hex(32)
+    save_yaml(runtime_path,existing_runtime)
+    runtime_path.chmod(0o600)
+    module = module_config(ROOT)
+    module['chat']['enabled'] = False
+    module['chat']['development_container'] = ''
+    module['preview_review'].update(bin='codex',model='gpt-5.6-sol')
+    module['identity']['token_dir'] = '/dev-state/tokens'
+    save_yaml(dev/'conf/okr-module.runtime.yaml',module)
+    if not (dev/'web/node_modules').exists():
+        shutil.copytree(ROOT/'web/node_modules', dev/'web/node_modules',symlinks=True)
+    # Copy only dependencies of this repository, not other projects' module cache.
+    modules = output(['go','list','-m','-json','all'],cwd=ROOT)
+    decoder = json.JSONDecoder()
+    mod_cache = Path(output(['go','env','GOMODCACHE'],cwd=ROOT)).resolve()
+    while modules.strip():
+        value, end = decoder.raw_decode(modules.lstrip())
+        modules = modules.lstrip()[end:]
+        if value.get('Main') or not value.get('Dir'):
+            continue
+        source = Path(value['Dir']).resolve()
+        target = state/'go-mod'/source.relative_to(mod_cache)
+        if not target.exists():
+            shutil.copytree(source,target,symlinks=True)
+    # The Go download cache holds module metadata; filter by go.sum modules.
+    for module_path,version,*_ in [line.split() for line in (ROOT/'go.sum').read_text().splitlines()]:
+        escape = lambda text: ''.join('!'+c.lower() if c.isupper() else c for c in text)
+        path = Path('cache/download')/escape(module_path)/'@v'
+        src = mod_cache/path
+        if not src.exists(): continue
+        dest = state/'go-mod'/path
+        dest.mkdir(parents=True,exist_ok=True)
+        version = version[:-7] if version.endswith('/go.mod') else version
+        for suffix in ['.mod','.info','.ziphash']:
+            file = src/(version+suffix)
+            if file.exists(): shutil.copy2(file,dest/file.name)
+    units = Path.home()/'.config/systemd/user'
+    units.mkdir(parents=True,exist_ok=True)
+    unit = units/'emily-development-gateway.service'
+    unit.write_text('[Unit]\nDescription=Emily development limited egress\n\n[Service]\n'
+                    +'ExecStart=/usr/bin/python3 '+str(ROOT/'deploy/emily-dev/gateway.py')
+                    +' --socket '+str(sockets/'egress/access.sock')+' --cli '+shutil.which('lark-cli')
+                    +' --directory-profile '+opts.directory_profile+' --notification-profile '+opts.notification_profile
+                    +'\nRestart=on-failure\nRestartSec=2\nUMask=0077\n\n[Install]\nWantedBy=default.target\n')
+    run(['systemctl','--user','daemon-reload'])
+    run(['systemctl','--user','enable','--now','emily-development-gateway.service'])
+    run(['docker','build','--network','host','-t','emily-development:local',ROOT/'deploy/emily-dev'])
+    existing = output(['docker','ps','-aq','--filter','name=^emily-development$'])
+    if existing:
+        run(['docker','rm','-f','emily-development'])
+    args = ['docker','run','-d','--init','--restart','unless-stopped','--name','emily-development',
+            '--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges',
+            '--pids-limit','1024','--memory','6g','--cpus','4','--user',f'{os.getuid()}:{os.getgid()}',
+            '--tmpfs','/tmp:rw,exec,nosuid,nodev,size=1g','--env-file',env_file]
+    def mount(source,target,readonly=False):
+        args.extend(['--mount',f'type=bind,src={source},dst={target}'+(',readonly' if readonly else '')])
+    mount(dev,'/opt/jarvis')
+    mount('/dev/null','/opt/jarvis/.git',True) # Do not expose the parent worktree Git directory.
+    mount(ROOT/'data/okr','/opt/jarvis/data/okr')
+    mount(state/'tokens','/opt/jarvis/data/okr/feishu-tokens')
+    mount(state,'/dev-state')
+    # Do not expose the host-side container env file as a second credential source.
+    mount('/dev/null','/dev-state/container.env',True)
+    mount(sockets/'egress','/run/emily-egress',True)
+    mount(sockets/'ingress','/run/emily-web')
+    mount(output(['go','env','GOROOT']),'/opt/go',True)
+    mount(Path(shutil.which('bytedcli')).resolve().parents[1],'/opt/bytedcli',True)
+    auth = module_config(ROOT)['chat']['auth_file']
+    mount(Path(auth).resolve(),'/credentials/auth.json',True)
+    mount(ROOT/'var/okr-chat/files','/attachments',True)
+    mount(ROOT/'var/okr-chat/sessions','/chat-state/sessions')
+    args.append('emily-development:local')
+    run(args)
+    print('Container started. Build/restart it with:')
+    print('docker exec emily-development ./scripts/jarvis-deploy --skip-pull')
+    print('Development ingress socket:',sockets/'ingress/web.sock')
+    if opts.activate:
+        run(['docker','exec','emily-development','./scripts/jarvis-deploy','--skip-pull'])
+        # Reload immediately before updating only the deployment-owned fields.
+        runtime_path = ROOT/'conf/config.runtime.yaml'
+        runtime = yaml.safe_load(runtime_path.read_text())
+        runtime.setdefault('server', {}).update(development_path=opts.path, development_socket=str(sockets/'ingress/web.sock'))
+        save_yaml(runtime_path,runtime)
+        module_path = ROOT/'conf/okr-module.runtime.yaml'
+        module = yaml.safe_load(module_path.read_text()) if module_path.exists() else {}
+        module.setdefault('chat', {}).update(enabled=True, development_container='emily-development')
+        save_yaml(module_path,module)
+        run([ROOT/'scripts/jarvis-deploy','--skip-pull'],cwd=ROOT)
+
+if __name__ == '__main__':
+    main()
