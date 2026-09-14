@@ -58,7 +58,7 @@ Jarvis 是运行在本地可信环境中的个人任务 Agent。它持续接收�
 
 有效配置是 `conf/config.yaml` 与同目录 `conf/config.runtime.yaml` 的合并结果：runtime 按叶子 key 覆盖基线，未出现的 key 保留基线值，两个文件都拒绝未知字段。OKR 模块同理由 `conf/okr-module.yaml` 和本机 `conf/okr-module.runtime.yaml` 合并。**本机参数、身份和密钥写 runtime 文件，不改仓库基线。** runtime 文件不进 Git，权限保持 `600`。后台保存后需要重启；prompts、rules 和 Skills 按各自 reader 实时读取。
 
-Jarvis 本体使用 lark-cli 当前默认身份，只服务 principal；OKR 页面登录使用独立低敏应用。网页登录、白名单与授权 API 域名排查见 [网页 SSO 登录接入](docs/summery/sso-web-login.md)：当前使用 CLI 授权，已记录 CN / i18n 超时对比与实际地址配置方法；个人 JWT SDK 方案尚未实施，真实账号完整登录仍待验收。
+Jarvis 本体只服务 principal；OKR 页面登录使用独立低敏应用。**所有面向人员的外部消息、提醒和通知统一由“Jarvis通知机器人”发送**，不得使用网页登录应用、Emily Bot、目录查询应用或 principal 的用户身份代发。人员目标以完整企业邮箱为跨应用真源；某个应用产生的 `open_id` 只能交给同一应用使用，跨应用发送优先按企业邮箱投递，禁止复用 `open_id`。网页登录、白名单与授权 API 域名排查见 [网页 SSO 登录接入](docs/summery/sso-web-login.md)：当前使用 CLI 授权，已记录 CN / i18n 超时对比与实际地址配置方法；个人 JWT SDK 方案尚未实施，真实账号完整登录仍待验收。
 
 `server.addr` 是实例后端监听地址的配置真源。主进程向 Agent 子进程导出 `JARVIS_API_BASE`、`JARVIS_CONFIG` 和仓库工具 PATH；切换工作目录不会切换实例。通用、世界模型、OKR/周报工具统一用 `scripts/jarvis-api-base`，优先采用继承地址，否则读取选定配置；配置错误直接失败，不扫描端口。模块工具的显式 `--base-url` 可指定其它实例。
 
@@ -293,6 +293,13 @@ M2 → M3 → M5 是一条通用流水线，每段只有一套协议。M3 用 `e
 - 代码只提供载体：`needs_human` 状态、一份可回答的 `question`、一个回答入口，以及事件流和 `effects` 记录。回答原样交回提问的同一个 Session，由模型理解；没有独立批准/驳回接口。
 
 **代码不判断风险，但必须记录后果。** 对外产生的副作用一律原样写进 `ExecutionRun.effects`，不校验、不重写、不拒绝未知类型。
+
+**对外人员触达身份。** 所有发给具体人员或群聊的外部消息，包括普通沟通、任务提醒、OKR/周报催填、AI 填写建议、结果通知和批量广播，统一使用“Jarvis通知机器人”作为发送身份。实现和 Skill 必须遵守以下边界：
+
+- 收件人的业务真源是完整企业邮箱；可保存 `union_id` 辅助关联，但不能把一个飞书应用解析出的 `open_id` 交给另一个应用发送。
+- 使用 Jarvis 通知应用时，优先按企业邮箱投递；只有 `open_id` 已由同一 Jarvis 通知应用解析并能证明 namespace 一致时，才允许按 `open_id` 投递。
+- 禁止使用 Emily Bot、OKR 网页登录应用、目录查询应用或 principal 的 user identity 发送这类消息；发送失败必须原样暴露，不能 fallback 成用户代发或其它 Bot。
+- 发送必须使用稳定幂等键，成功后以同一 Bot 回读并核对 `message_id`、目标会话和正文，再把真实外部副作用写入 `ExecutionRun.effects`。
 
 反面例子：
 
