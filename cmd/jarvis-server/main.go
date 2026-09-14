@@ -68,6 +68,7 @@ import (
 	"jarvis/internal/worldprogress"
 
 	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/app/middlewares/server/recovery"
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/common/hlog"
 	"gorm.io/gorm"
@@ -1151,7 +1152,7 @@ func main() {
 		}
 		defer closeOKRChat()
 	}
-	h := server.Default(
+	h := server.New(
 		server.WithHostPorts(cfg.Server.Addr),
 		// Chat accepts 12 MiB files (OKR images: 10 MiB). Reserve 64 KiB for
 		// multipart framing; each upload handler still enforces its file limit.
@@ -1160,7 +1161,6 @@ func main() {
 		// upload handlers still parse the form lazily through Hertz.
 		server.WithDisablePreParseMultipartForm(true),
 	)
-	h.Use(api.Compression())
 	h.Use(observability.Middleware())
 	apiRequestLog, err := observability.NewAPIRequestLogger(filepath.Join(runtimeRoot, "var", "log", "api-requests.jsonl"))
 	if err != nil {
@@ -1170,6 +1170,10 @@ func main() {
 	// Capture the original payload before the development proxy, authentication,
 	// owner compatibility or strict request decoding can consume/reject it.
 	h.Use(apiRequestLog.Middleware(strings.TrimRight(cfg.Server.DevelopmentPath, "/") + "/api/"))
+	// Recovery must run inside the journal, so a handler panic is recorded with
+	// the actual recovered HTTP status rather than the default pre-recovery 200.
+	h.Use(recovery.Recovery())
+	h.Use(api.Compression())
 	if okrModuleEnabled {
 		legacyOwners, loadErr := api.LoadLegacyOKROwners(filepath.Join(runtimeRoot, "data", "okr", "legacy-owner-identities.json"))
 		if loadErr != nil {

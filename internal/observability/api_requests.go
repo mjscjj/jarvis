@@ -70,6 +70,7 @@ func (l *APIRequestLogger) append(ctx context.Context, record apiRequestRecord) 
 	}
 }
 
+// Middleware must be registered before recovery to observe its final status.
 func (l *APIRequestLogger) Middleware(extraAPIPrefixes ...string) app.HandlerFunc {
 	prefixes := append([]string{"/api/"}, extraAPIPrefixes...)
 	return func(ctx context.Context, c *app.RequestContext) {

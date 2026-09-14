@@ -12,9 +12,42 @@ import (
 	"testing"
 
 	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/app/middlewares/server/recovery"
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/common/ut"
 )
+
+func TestAPIRequestLogRecordsRecoveredStatus(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "requests.jsonl")
+	logger, err := NewAPIRequestLogger(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = logger.Close() })
+	h := server.New()
+	// The journal must wrap recovery so its result line observes the final status.
+	h.Use(logger.Middleware(), recovery.Recovery())
+	h.GET("/api/panic", func(ctx context.Context, c *app.RequestContext) { panic("test failure") })
+	response := ut.PerformRequest(h.Engine, "GET", "/api/panic", nil).Result()
+	if response.StatusCode() != 500 {
+		t.Fatalf("status=%d", response.StatusCode())
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := bytes.Split(bytes.TrimSpace(data), []byte("\n"))
+	if len(lines) != 2 {
+		t.Fatalf("got %d lines", len(lines))
+	}
+	var result apiRequestRecord
+	if err := json.Unmarshal(lines[1], &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Event != "result" || result.Status != response.StatusCode() {
+		t.Fatalf("incorrect panic result: %+v", result)
+	}
+}
 
 func TestAPIRequestLogFullBodiesAndRejectedRequests(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "log", "requests.jsonl")
