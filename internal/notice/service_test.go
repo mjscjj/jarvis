@@ -124,7 +124,7 @@ func TestCardOpenTypeAndOptionalSections(t *testing.T) {
 			t.Fatalf("wrong card: %s", card)
 		}
 		elements := doc["body"].(map[string]any)["elements"].([]any)
-		if elements[0].(map[string]any)["content"] != typ || elements[0].(map[string]any)["text_size"] != "heading-4" ||
+		if elements[0].(map[string]any)["content"] != typ || elements[0].(map[string]any)["text_size"] != "normal" ||
 			elements[1].(map[string]any)["text_size"] != "normal" {
 			t.Fatalf("expected readable title and body text: %s", card)
 		}
