@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -55,10 +56,14 @@ type CommandRunner interface {
 	Run(context.Context, string, ...string) ([]byte, error)
 }
 
-type execRunner struct{}
+type execRunner struct{ apiBaseURL string }
 
-func (execRunner) Run(ctx context.Context, bin string, args ...string) ([]byte, error) {
-	return exec.CommandContext(ctx, bin, args...).CombinedOutput()
+func (r execRunner) Run(ctx context.Context, bin string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, bin, args...)
+	if r.apiBaseURL != "" {
+		cmd.Env = append(os.Environ(), "BYTECLOUD_CLI_API_BASE_URL="+r.apiBaseURL)
+	}
+	return cmd.CombinedOutput()
 }
 
 type flow struct {
@@ -87,8 +92,8 @@ type Service struct {
 	sessions map[string]session
 }
 
-func NewService(bin string, sessionTTL time.Duration, enabled bool, allowed []string) (*Service, error) {
-	return NewServiceWithRunner(bin, sessionTTL, enabled, allowed, execRunner{})
+func NewService(bin string, sessionTTL time.Duration, enabled bool, allowed []string, loginAPIBaseURL string) (*Service, error) {
+	return NewServiceWithRunner(bin, sessionTTL, enabled, allowed, execRunner{apiBaseURL: strings.TrimSpace(loginAPIBaseURL)})
 }
 
 func NewServiceWithRunner(bin string, sessionTTL time.Duration, enabled bool, allowed []string, runner CommandRunner) (*Service, error) {

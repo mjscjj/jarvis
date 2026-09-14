@@ -32,6 +32,15 @@ POST /api/v1/ai_auth/ai/auth/service_account_app/cli_registration
 
 ### 正确设置实际请求地址
 
+Jarvis 部署通过 `conf/config.runtime.yaml` 的以下字段配置网页登录 API：
+
+```yaml
+auth:
+  login_api_base_url: https://cloud.byteintl.net
+```
+
+`cmd/jarvis-server` 将配置传入 `internal/authn`，后者仅为自己的 bytedcli 子进程设置 `BYTECLOUD_CLI_API_BASE_URL`；授权创建、完成轮询与临时 profile 清理使用同一个地址，不修改宿主进程环境或后台工具的配置。留空沿用 CLI 自身配置，当前实例显式使用上面的 i18n BD 地址。
+
 实测当前版本只设置 `--site i18n`、`--site i18n-bd` 或 `--site i18n-tt`，创建授权仍访问 `cloud.bytedance.net`。站点参数不能代替授权 API 地址配置。以下环境变量才实际改变请求目标，已用本地诊断端点确认其生效路径：
 
 ```bash
@@ -50,7 +59,9 @@ API 请求目标、浏览器授权页 URL、SDK Partition 是不同配置。本�
 
 页面停在“正在验证字节身份”的复现链路是：`/api/auth/status` 正常返回未登录 → 创建授权的 CN 上游连接超时 → `/api/auth/login` 返回 502 → 前端把自动重试继续显示成验证中的转圈，隐藏了具体错误。当前代码已修正错误显示并保留自动重试；**错误显示修复不等于上游域名配置已经修正。**
 
-截至本次记录，只完成了独立命令的域名对比，线上网页登录尚未切换该 API 地址。已验证的是连接、创建授权与等待确认的轮询；真人授权完成、身份归属和浏览器进入仍需完整验收。样本支持当前部署优先使用 `cloud.byteintl.net`，不把这次测量推广成所有网络环境的永久结论。
+当前实例已通过 `auth.login_api_base_url` 配置 i18n BD 地址。域名对比验证的是连接、创建授权与等待确认的轮询；真人授权完成、身份归属和浏览器进入仍需完整验收。样本支持当前部署优先使用 `cloud.byteintl.net`，不把这次测量推广成所有网络环境的永久结论。
+
+配置接入并执行标准部署后，通过 `https://emily.bytedance.net` 连续六次调用 `/api/auth/login`，全部 HTTP 200，耗时 1.206–1.527 秒，中位数 1.299 秒；两次 `/api/auth/login/complete` 轮询均正常返回 `pending`，耗时 1.257 秒和 1.136 秒。真实浏览器访问普通对话页约 2.8 秒显示授权入口，验证转圈已退出。这些是部署后测量，包含网页网关与接口开销，与前面的独立 CLI 对比数据分别记录。
 
 ## 2026-09-11 个人 JWT SDK 方案（未实施）
 

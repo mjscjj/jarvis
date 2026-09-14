@@ -3,6 +3,7 @@ package authn
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +11,21 @@ import (
 
 type fakeRunner struct {
 	run func(string, []string) ([]byte, error)
+}
+
+func TestBrowserSSOEndpointOnlyOverridesChildEnvironment(t *testing.T) {
+	t.Setenv("BYTECLOUD_CLI_API_BASE_URL", "https://host-tools.example")
+	runner := execRunner{apiBaseURL: "https://cloud.byteintl.net"}
+	output, err := runner.Run(t.Context(), "sh", "-c", `printf '%s' "$BYTECLOUD_CLI_API_BASE_URL"`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(output) != "https://cloud.byteintl.net" {
+		t.Fatalf("SSO subprocess endpoint = %q", output)
+	}
+	if got := os.Getenv("BYTECLOUD_CLI_API_BASE_URL"); got != "https://host-tools.example" {
+		t.Fatalf("SSO changed the host tools environment: %q", got)
+	}
 }
 
 func (f fakeRunner) Run(_ context.Context, bin string, args ...string) ([]byte, error) {

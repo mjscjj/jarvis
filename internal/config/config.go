@@ -52,6 +52,8 @@ type AuthConfig struct {
 	// or enterprise email. An empty list with the gate on is a configuration
 	// error rather than "everyone".
 	Principals []string `yaml:"principals"`
+	// LoginAPIBaseURL only affects the CLI subprocess used for browser SSO.
+	LoginAPIBaseURL string `yaml:"login_api_base_url"`
 }
 
 func (c AuthConfig) IsEnabled() bool {
@@ -413,6 +415,13 @@ func (c *Config) validate() error {
 	}
 	if c.Auth.IsEnabled() && len(c.Auth.AllowedPrincipals()) == 0 {
 		return fmt.Errorf("auth.enabled 为 true 时 auth.principals 不能为空，否则没人进得来")
+	}
+	if raw := strings.TrimSpace(c.Auth.LoginAPIBaseURL); raw != "" {
+		parsed, err := url.Parse(raw)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+			return fmt.Errorf("auth.login_api_base_url 必须是 http(s) 绝对地址")
+		}
+		c.Auth.LoginAPIBaseURL = strings.TrimRight(raw, "/")
 	}
 	if c.Server.Addr == "" {
 		return fmt.Errorf("server.addr 不能为空")

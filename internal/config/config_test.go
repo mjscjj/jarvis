@@ -397,7 +397,7 @@ func TestAuthDefaultsDisabledAndRuntimeOverrideCanEnableIt(t *testing.T) {
 	if cfg.Auth.IsEnabled() {
 		t.Fatal("auth should default to disabled when omitted")
 	}
-	if err := os.WriteFile(RuntimeOverridePath(configPath), []byte("auth:\n  enabled: true\n  principals:\n    - lixiaolin\n    - chujiejie.1@bytedance.com\n"), 0o600); err != nil {
+	if err := os.WriteFile(RuntimeOverridePath(configPath), []byte("auth:\n  enabled: true\n  login_api_base_url: https://cloud.byteintl.net/\n  principals:\n    - lixiaolin\n    - chujiejie.1@bytedance.com\n"), 0o600); err != nil {
 		t.Fatalf("write runtime override: %v", err)
 	}
 	cfg, err = Load(configPath)
@@ -407,7 +407,20 @@ func TestAuthDefaultsDisabledAndRuntimeOverrideCanEnableIt(t *testing.T) {
 	if !cfg.Auth.IsEnabled() {
 		t.Fatal("runtime auth.enabled=true did not enable browser authentication")
 	}
+	if cfg.Auth.LoginAPIBaseURL != "https://cloud.byteintl.net" {
+		t.Fatalf("browser login API endpoint = %q", cfg.Auth.LoginAPIBaseURL)
+	}
 	if got := cfg.Auth.AllowedPrincipals(); len(got) != 2 || got[0] != "lixiaolin" || got[1] != "chujiejie.1@bytedance.com" {
 		t.Fatalf("auth principals = %#v", got)
+	}
+}
+
+func TestAuthRejectsRelativeLoginAPIBaseURL(t *testing.T) {
+	configPath := writeRuntimeSettingsTestConfig(t)
+	if err := os.WriteFile(RuntimeOverridePath(configPath), []byte("auth:\n  login_api_base_url: cloud.byteintl.net\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(configPath); err == nil || !strings.Contains(err.Error(), "auth.login_api_base_url") {
+		t.Fatalf("expected invalid login API URL error, got %v", err)
 	}
 }

@@ -13,6 +13,7 @@ identity:
 auth:
   enabled: false
   principals: []
+  login_api_base_url: ""                  # 只用于网页登录的 CLI 授权；当前服务器使用 https://cloud.byteintl.net
 
 server:
   addr: "127.0.0.1:18800"
