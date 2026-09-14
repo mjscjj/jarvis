@@ -2,13 +2,16 @@ package chat
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log"
 	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"jarvis/internal/agentidentity"
+	"jarvis/internal/domain"
 	"jarvis/internal/textstore"
 	"jarvis/internal/toolcatalog"
 
@@ -119,6 +122,24 @@ func (s *Service) Stream(ctx context.Context, req Request, emit func(Event) erro
 	if message == "" {
 		return fmt.Errorf("chat message is required")
 	}
+	err := s.streamOnce(ctx, req, emit)
+	if !errors.Is(err, ErrNativeThreadUnavailable) || strings.TrimSpace(req.ThreadID) == "" || ctx.Err() != nil {
+		return err
+	}
+	log.Printf("chat native thread recovery: session=%s reason=%v", req.SessionID, err)
+	// Clear the stale pointer before retry. Even if the new execution fails for
+	// an unrelated reason, the next user turn must not resume the lost thread.
+	if s.db != nil && req.SessionID != "" {
+		if clearErr := s.db.WithContext(ctx).Model(&domain.ChatSession{}).Where("id = ?", req.SessionID).Update("native_thread_id", nil).Error; clearErr != nil {
+			return fmt.Errorf("clear unavailable native chat thread: %w", clearErr)
+		}
+	}
+	req.ThreadID = ""
+	return s.streamOnce(ctx, req, emit)
+}
+
+func (s *Service) streamOnce(ctx context.Context, req Request, emit func(Event) error) error {
+	message := strings.TrimSpace(req.Message)
 	// 系统指引只在新会话（首轮）灌入；resume 时 codex 已持有会话历史，只需发用户消息，
 	// 避免每轮重复灌系统指引膨胀上下文。
 	prompt := message

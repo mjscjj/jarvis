@@ -103,7 +103,9 @@ func (s *Service) StreamSession(ctx context.Context, sessionID string, input Sen
 	}
 	var response strings.Builder
 	visibleHistory := ""
-	if row.NativeThreadID == nil {
+	// Keep durable visible history ready even while a native thread exists.
+	// It is only injected if that thread disappears and a fresh one is needed.
+	{
 		var prior []domain.ChatMessage
 		if err := s.db.WithContext(workCtx).Where("session_id = ? AND id <> ?", sessionID, userID).Order("created_at ASC, rowid ASC").Find(&prior).Error; err != nil {
 			return fmt.Errorf("read carried chat history: %w", err)
@@ -115,9 +117,11 @@ func (s *Service) StreamSession(ctx context.Context, sessionID string, input Sen
 		filesByMessage := map[string][]domain.ChatAttachment{}
 		for _, file := range priorFiles {
 			filesByMessage[*file.MessageID] = append(filesByMessage[*file.MessageID], file)
-			paths = append(paths, file.LocalPath)
-			if strings.HasPrefix(file.MIMEType, "image/") {
-				imagePaths = append(imagePaths, file.LocalPath)
+			if row.NativeThreadID == nil {
+				paths = append(paths, file.LocalPath)
+				if strings.HasPrefix(file.MIMEType, "image/") {
+					imagePaths = append(imagePaths, file.LocalPath)
+				}
 			}
 		}
 		var history strings.Builder

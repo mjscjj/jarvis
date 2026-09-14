@@ -14,6 +14,64 @@ import (
 	"jarvis/internal/domain"
 )
 
+type recoveringRuntime struct {
+	calls   []Request
+	prompts []string
+}
+
+func (r *recoveringRuntime) Prepare(req Request) (Request, error) { return req, nil }
+func (r *recoveringRuntime) DeleteSession(string) error           { return nil }
+func (r *recoveringRuntime) Stream(_ context.Context, req Request, prompt string, emit func(Event) error) error {
+	r.calls = append(r.calls, req)
+	r.prompts = append(r.prompts, prompt)
+	if req.ThreadID == "lost-thread" {
+		return fmt.Errorf("%w: no rollout found", ErrNativeThreadUnavailable)
+	}
+	if err := emit(Event{Kind: EventThread, ThreadID: "replacement-thread"}); err != nil {
+		return err
+	}
+	return emit(Event{Kind: EventDelta, Text: "继续完成"})
+}
+
+func TestLostNativeThreadReusesDurableSessionHistory(t *testing.T) {
+	svc := newPersistentTestService(t)
+	runtime := &recoveringRuntime{}
+	svc.runtime = runtime
+	svc.toolBlock = "ONLY_DEV_TOOLS"
+	session, err := svc.CreateSession(t.Context(), CreateSessionInput{Agent: "codex", Model: "gpt-5.5", ReasoningEffort: "medium"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range []domain.ChatMessage{
+		{ID: "old-user", SessionID: session.ID, Role: "user", Text: "旧问题"},
+		{ID: "old-answer", SessionID: session.ID, Role: "assistant", Text: "旧回答"},
+	} {
+		if err := svc.db.Create(&item).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := svc.db.Model(&domain.ChatSession{}).Where("id = ?", session.ID).Update("native_thread_id", "lost-thread").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.StreamSession(t.Context(), session.ID, SendInput{Message: "继续处理"}, func(Event) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if len(runtime.calls) != 2 || runtime.calls[0].ThreadID != "lost-thread" || runtime.calls[1].ThreadID != "" {
+		t.Fatalf("runtime calls = %+v", runtime.calls)
+	}
+	if !strings.Contains(runtime.prompts[1], "旧问题") || !strings.Contains(runtime.prompts[1], "旧回答") || !strings.Contains(runtime.prompts[1], "继续处理") {
+		t.Fatalf("recovery prompt lost history: %s", runtime.prompts[1])
+	}
+	view, err := svc.GetSession(t.Context(), session.ID)
+	var stored domain.ChatSession
+	if dbErr := svc.db.First(&stored, "id = ?", session.ID).Error; dbErr != nil {
+		t.Fatal(dbErr)
+	}
+	if err != nil || stored.NativeThreadID == nil || *stored.NativeThreadID != "replacement-thread" || len(view.Messages) != 4 || view.Messages[3].Text != "继续完成" {
+		t.Fatalf("recovered session = %+v, err = %v", view, err)
+	}
+}
+
 func TestSessionRunningAndRejectedInputRemainIntact(t *testing.T) {
 	svc := newPersistentTestService(t)
 	session, err := svc.CreateSession(t.Context(), CreateSessionInput{Agent: "codex", Model: "gpt-5.5", ReasoningEffort: "high", Draft: json.RawMessage(`{"text":"keep draft"}`)})
