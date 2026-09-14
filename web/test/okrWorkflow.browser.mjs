@@ -23,8 +23,10 @@ await context.route('**/api/**', async route => {
   const request = route.request(), url = new URL(request.url()), path = url.pathname, method = request.method()
   requests.push({ method, path })
   const ok = data => route.fulfill({ json: { code: 0, data } })
+  if (path === '/api/biz-okr/people/avatars') return ok({ people: [] })
   if (/^\/api\/(okr|biz-okr)\//.test(path) || path === '/api/people/search') {
-    const response = await fetch(backend + path + url.search, { method, headers: { 'content-type': request.headers()['content-type'] || 'application/json' }, body: method === 'GET' ? undefined : request.postDataBuffer() })
+    const backendPath = path === '/api/biz-okr/people/search' ? '/api/people/search' : path
+    const response = await fetch(backend + backendPath + url.search, { method, headers: { 'content-type': request.headers()['content-type'] || 'application/json' }, body: method === 'GET' ? undefined : request.postDataBuffer() })
     const body = await response.text()
     if (!response.ok && !expectedError) errors.push(`${method} ${path}: ${response.status} ${body}`)
     return route.fulfill({ status: response.status, contentType: 'application/json', body })
@@ -87,6 +89,13 @@ const go = async hash => {
   await page.goto(`${base}/#${hash}`)
   await page.reload()
   await page.locator('#okr-workspace-root h1').waitFor()
+}
+const exerciseOwnerFilter = async ownerName => {
+  await page.getByRole('button', { name: '筛选负责人', exact: true }).click()
+  const picker = page.getByRole('dialog', { name: '筛选负责人', exact: true })
+  await picker.getByPlaceholder('输入姓名或邮箱搜索').fill(ownerName)
+  await picker.getByRole('button').filter({ hasText: ownerName }).click()
+  await page.getByLabel(`移除${ownerName}筛选`, { exact: true }).click()
 }
 const pass = text => { checks.push(text); console.log('PASS:', text) }
 const board = (week = '2026-W36') => api(`/api/biz-okr/board?quarter=2026-Q3&week=${week}`)
@@ -160,10 +169,11 @@ try {
   await write(planPointPath, () => planPointRow.getByPlaceholder('工作项 ID').fill('regression-item'))
   await write(planPointPath, () => planPointRow.getByPlaceholder('链接（可选）').fill('https://example.test/meego/regression-item'))
   const detailedPlan = await api(`/api/biz-okr/plans/${planID}`)
-  assert.equal(detailedPlan.objectives[0].krs[0].owners[0].email, 'regression@example.test')
+  assert.equal(detailedPlan.objectives[0].krs[0].owners[0].email, 'owner@example.test')
   assert.equal(detailedPlan.objectives[0].krs[0].metrics[0].text, 'Plan 转化率达到 25%')
   assert(detailedPlan.objectives[0].krs[0].points[0].tags.some(tag => tag.value === '具体 KR 标签'))
   assert.equal(detailedPlan.objectives[0].krs[0].points[0].meego_work_item_id, 'regression-item')
+  await exerciseOwnerFilter('Regression Owner')
   await planPointRow.getByTitle('删除这个具体 KR', { exact: true }).click()
   await write(objectivePath, () => planPointRow.getByRole('button', { name: '确认', exact: true }).click())
   assert.equal((await api(`/api/biz-okr/plans/${planID}`)).objectives[0].krs[0].points.length, 0)
@@ -220,6 +230,7 @@ try {
 
   await go('/biz-okr?tab=review-fill&quarter=2026-Q3&week=2026-W36')
   await page.getByLabel('周次', { exact: true }).waitFor()
+  await exerciseOwnerFilter('Regression Owner')
   assert.deepEqual(await page.locator('select[aria-label="周次"] option').evaluateAll(options => options.map(option => option.value)), ['2026-W36'])
   const point = page.locator('#point-official-p')
   await point.getByRole('button', { name: '+ 一条进展', exact: true }).click()
@@ -264,6 +275,7 @@ try {
   assert.equal((await api(followUpPath)).update, '验收进展已记录')
   await go('/biz-okr?tab=review-meeting&quarter=2026-Q3&week=2026-W36')
   await page.getByText('跟进量化验收', { exact: true }).waitFor()
+  await exerciseOwnerFilter('Regression Owner')
   const followSelect = page.locator('tr').filter({ hasText: '跟进量化验收' }).locator('select')
   await write(followUpPath, () => followSelect.selectOption('done'))
   assert.equal(await page.getByRole('button', { name: '+ 一条进展', exact: true }).count(), 0)

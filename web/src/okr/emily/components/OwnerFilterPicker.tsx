@@ -6,6 +6,7 @@ import { PersonAvatar } from './PersonAvatar'
 
 const MAX_VISIBLE_CHIPS = 2
 const MAX_SUGGESTIONS = 5
+const MAX_SEARCH_RESULTS = 50
 const RECENT_OWNER_STORAGE_KEY = 'jarvis.okr.owner-filter-recents.v1'
 
 function readRecentKeys(): string[] {
@@ -46,7 +47,7 @@ export function OwnerFilterPicker({ options, ownerCounts, selectedKeys, onChange
     if (!clean) return rankKrOwnerSuggestions(options, recentKeys, ownerCounts, MAX_SUGGESTIONS)
     return options
       .filter((owner) => owner.name.toLocaleLowerCase().includes(clean) || owner.email.toLocaleLowerCase().includes(clean))
-      .slice(0, MAX_SUGGESTIONS)
+      .slice(0, MAX_SEARCH_RESULTS)
   }, [options, ownerCounts, query, recentKeys])
   const hiddenSelectedCount = Math.max(0, selectedOwners.length - MAX_VISIBLE_CHIPS)
 
@@ -163,7 +164,7 @@ export function OwnerFilterPicker({ options, ownerCounts, selectedKeys, onChange
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
                 onKeyDown={(event) => { if (event.key === 'Escape') closePicker() }}
-                placeholder="输入姓名搜索"
+                placeholder="输入姓名或邮箱搜索"
                 className="h-8 w-full rounded-md border border-slate-200 bg-white px-2.5 text-xs text-slate-700 outline-none placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
               />
             </div>
@@ -171,7 +172,7 @@ export function OwnerFilterPicker({ options, ownerCounts, selectedKeys, onChange
               {visibleOptions.map((owner) => {
                 const key = ownerIdentityKey(owner)
                 const selected = selectedSet.has(key)
-                const identity = duplicateNames.has(owner.name) && owner.email ? ` · ${owner.email.slice(-6)}` : ''
+                const identity = duplicateNames.has(owner.name) && owner.email ? ` · ${owner.email}` : ''
                 return (
                   <button key={key} type="button" onClick={() => toggle(key)} aria-pressed={selected} className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors ${selected ? 'bg-slate-50' : 'hover:bg-slate-50'}`}>
                     <PersonAvatar name={owner.name} email={owner.email} size="size-8 text-xs" tone="bg-slate-400" />

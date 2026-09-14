@@ -5,14 +5,11 @@ import { searchOKRPeople } from '../api'
 import { insertCommentMention, mentionQueryAtCaret, mentionsPresentInContent } from '../mentions'
 import { ownerOptions } from '../people'
 import type { CommentMention, Objective, PersonSearchItem } from '../types'
+import { PersonSearchResults } from './PersonSearchResults'
 
 export interface CommentDraft {
   content: string
   mentions: CommentMention[]
-}
-
-function personLabel(person: PersonSearchItem) {
-  return [person.department, person.email].filter(Boolean).join(' · ') || '飞书用户'
 }
 
 export function CommentMentionInput({ value, objectives, placeholder, rows, autoFocus, inputRef, onPaste, onChange, onSubmitShortcut }: {
@@ -115,16 +112,17 @@ export function CommentMentionInput({ value, objectives, placeholder, rows, auto
       />
       {trigger && (
         <div className="absolute right-0 left-0 top-full z-20 mt-1 max-h-52 overflow-auto rounded-lg border border-slate-200 bg-white p-1 shadow-xl">
-          {search.loading && <div className="px-2 py-2 text-[10px] text-slate-400">正在搜索飞书联系人…</div>}
-          {!search.loading && results.map((person, index) => (
-            <button key={person.email} type="button" disabled={person.isExternal} onMouseDown={(event) => event.preventDefault()} onClick={() => select(person)} className={`flex w-full items-center justify-between rounded-md px-2 py-2 text-left ${index === activeIndex ? 'bg-indigo-50' : 'hover:bg-slate-50'} disabled:cursor-not-allowed disabled:opacity-50`}>
-              <span className="text-[11px] font-medium text-slate-700">{person.name}{person.isExternal && <span className="ml-1 text-[9px] text-amber-600">外部，暂不可提醒</span>}</span>
-              <span className="ml-3 truncate text-[9px] text-slate-400">{personLabel(person)}</span>
-            </button>
-          ))}
-          {!search.loading && trigger.query.trim() && search.hasSearched && results.length === 0 && !search.error && <div className="px-2 py-2 text-[10px] text-slate-400">未找到可提醒的联系人</div>}
-          {!search.loading && !trigger.query.trim() && results.length === 0 && <div className="px-2 py-2 text-[10px] text-slate-400">输入姓名或邮箱搜索联系人</div>}
-          {search.error && <div className="px-2 py-2 text-[10px] text-red-600">{search.error}</div>}
+          <PersonSearchResults
+            people={results}
+            loading={search.loading}
+            error={search.error}
+            emptyMessage={trigger.query.trim() ? '未找到可提醒的联系人' : '输入姓名或邮箱搜索联系人'}
+            showEmpty={!trigger.query.trim() || search.hasSearched}
+            hasMore={search.hasMore}
+            activeIndex={activeIndex}
+            keepInputFocus
+            onSelect={select}
+          />
         </div>
       )}
       {value.mentions.length > 0 && (

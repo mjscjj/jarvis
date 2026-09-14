@@ -1,5 +1,6 @@
 import { appPath } from '../../appPath.ts'
 import { normalizeKRTitle } from './krTitle'
+import { createPeopleSearchCache } from './peopleSearchCache'
 import type { AuthStatus, CommentDelivery, CommentMention, Entry, EnumValues, FeishuDeviceLogin, FeishuDeviceLoginPoll, FeishuDocumentResult, FollowUpItem, FollowUpList, FollowUpStatus, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, OKRActivityEntry, OKRPlan, OKRPlanList, PageComment, PageCommentList, PersonAvatarItem, PointKind, RegionalAlignmentBoard, RegionalCode, RegionalDemand, RegionalPlanDecisionItem, RegionalRecapOverlay, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
 
 interface Envelope<T> {
@@ -1613,9 +1614,14 @@ export interface OKRDirectoryCandidate {
  is_external: boolean
  has_chatted: boolean
 }
-export async function searchOKRPeople(query: string, signal?: AbortSignal): Promise<{ candidates: OKRDirectoryCandidate[]; has_more: boolean }> {
- const result = await request<{candidates: OKRDirectoryCandidate[];has_more:boolean}>(`/api/biz-okr/people/search?q=${encodeURIComponent(query)}`, {signal})
+
+const cachedOKRPeopleSearch = createPeopleSearchCache<OKRDirectoryCandidate>(async (query) => {
+ const result = await request<{candidates: OKRDirectoryCandidate[];has_more:boolean}>(`/api/biz-okr/people/search?q=${encodeURIComponent(query)}`)
  return {...result, candidates: result.candidates.map(person => ({...person, department: person.department ?? '', is_external:false, has_chatted:false}))}
+})
+
+export async function searchOKRPeople(query: string, signal?: AbortSignal): Promise<{ candidates: OKRDirectoryCandidate[]; has_more: boolean }> {
+ return cachedOKRPeopleSearch(query, signal)
 }
 export async function retryCommentNotifications(id: string, email: string): Promise<CommentDelivery[]> {
  return request<CommentDelivery[]>(`/api/biz-okr/comments/${encodeURIComponent(id)}/notifications/retry`, { method:'POST', body:JSON.stringify({email}) })

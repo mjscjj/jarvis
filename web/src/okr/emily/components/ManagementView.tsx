@@ -2,11 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useBoard } from '../board'
 import { buildAllBusinessNavigation, buildKRHierarchy, businessCategoryOf, businessCategoryOptions, commonObjectiveBusinessCategory, filterObjectivesByHierarchy, isStructuralTag, objectivesForBusiness, priorityOf, withCompletePriorityNavigation, withSelectedBusinessCategory } from '../hierarchy'
 import { tagLabel } from '../labels'
-import { hasOwner, krOwners, ownerOptions } from '../people'
+import { krHasAnyOwner, krOwnerCounts, krOwnerOptions, krOwners, ownerIdentityKey, ownerOptions } from '../people'
 import type { Kr, KrOwner, KrPriority, KrTag, Objective } from '../types'
 import { BusinessCategoryTabs } from './BusinessCategoryTabs'
 import { FeishuPeoplePicker, FeishuPeoplePickerInput } from './FeishuPeoplePicker'
 import { HierarchyNav } from './HierarchyNav'
+import { OwnerFilterPicker } from './OwnerFilterPicker'
 import { PersonAvatar } from './PersonAvatar'
 import { KrDefinitionDetails } from './Table'
 import { TagEditor } from './TagEditor'
@@ -347,7 +348,7 @@ export function ManagementView({
   const { objectives, quarter, syncState, createObjective, swapObjectives, reorderObjectives, swapKrs } = useBoard()
   const commentInteraction = useCommentInteraction()
   const [query, setQuery] = useState('')
-  const [owner, setOwner] = useState('')
+  const [ownerFilters, setOwnerFilters] = useState<string[]>([])
   const [priority, setPriority] = useState('')
   const [tag, setTag] = useState('')
   // undefined means every category; '' is the untagged one, which is a real
@@ -364,9 +365,15 @@ export function ManagementView({
   const [objectiveQuarter, setObjectiveQuarter] = useState(quarter)
 	const [placementNotice, setPlacementNotice] = useState('')
 	const toolbarPriority = hierarchyNavigation ? '' : priority
-	const hasFilters = Boolean(query.trim() || owner || toolbarPriority || (showTags && tag) || businessCategory !== undefined || hierarchyPriority !== undefined || hierarchyObjectiveId)
+	const hasFilters = Boolean(query.trim() || ownerFilters.length || toolbarPriority || (showTags && tag) || businessCategory !== undefined || hierarchyPriority !== undefined || hierarchyObjectiveId)
 	const peopleOptions = useMemo(() => ownerOptions(objectives), [objectives])
-	const owners = useMemo(() => peopleOptions.map((person) => person.name), [peopleOptions])
+	const ownerFilterOptions = useMemo(() => krOwnerOptions(objectives), [objectives])
+	const ownersByKey = useMemo(() => new Map(ownerFilterOptions.map((owner) => [ownerIdentityKey(owner), owner])), [ownerFilterOptions])
+	const selectedOwners = useMemo(() => ownerFilters.flatMap((key) => {
+		const owner = ownersByKey.get(key)
+		return owner ? [owner] : []
+	}), [ownerFilters, ownersByKey])
+	const ownerCounts = useMemo(() => krOwnerCounts(objectives, ownerFilterOptions), [objectives, ownerFilterOptions])
 	const tags = useMemo(() => [...new Map(objectives.flatMap((objective) => objective.krs.flatMap((kr) => allTagsOf(kr).map((item) => [`${item.type}:${item.value}`, item] as const)))).entries()].map(([key, item]) => ({ key, ...item })).sort((left, right) => tagLabel(left.type, left.value).localeCompare(tagLabel(right.type, right.value))), [objectives])
 	const businessCategories = useMemo(() => [...new Set(objectives.flatMap((objective) => objective.krs.map(businessCategoryOf)).filter(Boolean))].sort(), [objectives])
   const filtered = useMemo(() => objectives.map((objective) => ({
@@ -374,9 +381,9 @@ export function ManagementView({
 		totalKrCount: objective.krs.length,
     krs: objective.krs.filter((kr) => {
       const matchesQuery = !query.trim() || `${objective.title} ${kr.title} ${kr.points.map((point) => point.title).join(' ')}`.toLowerCase().includes(query.trim().toLowerCase())
-				return matchesQuery && (!owner || hasOwner(kr.ownerName, owner)) && (!toolbarPriority || priorityOf(kr) === toolbarPriority) && (!showTags || !tag || allTagsOf(kr).some((item) => `${item.type}:${item.value}` === tag))
+				return matchesQuery && krHasAnyOwner(kr, selectedOwners) && (!toolbarPriority || priorityOf(kr) === toolbarPriority) && (!showTags || !tag || allTagsOf(kr).some((item) => `${item.type}:${item.value}` === tag))
     }),
-  })), [objectives, owner, query, showTags, tag, toolbarPriority])
+  })), [objectives, query, selectedOwners, showTags, tag, toolbarPriority])
 	const navigation = useMemo(() => buildKRHierarchy(filtered.filter((objective) => objective.krs.length > 0)), [filtered])
   // Counts read every filter except the category itself, so each tab states how
   // many rows picking it would leave. Objectives the other filters emptied
@@ -415,6 +422,13 @@ export function ManagementView({
 	const definitionIdsKey = useMemo(() => objectives.flatMap((objective) => objective.krs.map((kr) => kr.id)).join('\n'), [objectives])
 
 	useEffect(() => {
+		setOwnerFilters((current) => {
+			const valid = current.filter((key) => ownersByKey.has(key))
+			return valid.length === current.length ? current : valid
+		})
+	}, [ownersByKey])
+
+	useEffect(() => {
 		if (!hierarchyNavigation) return
 		setBusinessCategory(undefined)
 		setHierarchyPriority(undefined)
@@ -448,7 +462,7 @@ export function ManagementView({
 		const location = findCommentTargetLocation(objectives, comment)
 		if (!location) return
 		setQuery('')
-		setOwner('')
+		setOwnerFilters([])
 		setPriority('')
 		setTag('')
 		if (hierarchyNavigation) {
@@ -512,7 +526,7 @@ export function ManagementView({
 
   const clearFilters = () => {
     setQuery('')
-    setOwner('')
+    setOwnerFilters([])
     setPriority('')
     setTag('')
     setBusinessCategory(undefined)
@@ -546,7 +560,7 @@ export function ManagementView({
 		  {placementNotice && <div role="status" className="mt-3 flex items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-[10px] text-emerald-700"><span className="flex-1">{placementNotice}</span><button type="button" onClick={() => setPlacementNotice('')} className="text-emerald-500 hover:text-emerald-700">知道了</button></div>}
           <div className="mt-3 flex flex-wrap gap-1.5 rounded-xl border border-slate-200 bg-slate-50/70 p-2">
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索 O / KR 内容" className="h-8 min-w-48 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-[11px] outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-50 sm:max-w-72" />
-            <select value={owner} onChange={(event) => setOwner(event.target.value)} className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] text-slate-600 outline-none focus:border-blue-400"><option value="">全部负责人</option>{owners.map((item) => <option key={item} value={item}>{item}</option>)}</select>
+            <OwnerFilterPicker options={ownerFilterOptions} ownerCounts={ownerCounts} selectedKeys={ownerFilters} onChange={setOwnerFilters} />
 			{!hierarchyNavigation && <select value={priority} onChange={(event) => setPriority(event.target.value)} className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] text-slate-600 outline-none focus:border-blue-400"><option value="">全部优先级</option><option value="p0">P0</option><option value="p1">P1</option><option value="p2">P2</option></select>}
             {showTags && <select value={tag} onChange={(event) => setTag(event.target.value)} title={tags.find((item) => item.key === tag)?.value ?? '全部标签'} className="h-8 max-w-80 rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] text-slate-600 outline-none focus:border-blue-400"><option value="">全部标签</option>{tags.map((item) => <option key={item.key} value={item.key}>{tagLabel(item.type, item.value)}</option>)}</select>}
             {hasFilters && <button type="button" onClick={clearFilters} className="h-8 rounded-lg px-2.5 text-[10px] font-medium text-slate-500 hover:bg-white hover:text-slate-800">清空筛选</button>}

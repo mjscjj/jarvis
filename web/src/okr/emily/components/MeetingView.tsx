@@ -1,18 +1,18 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Select } from 'antd'
 import type { MouseEvent, ReactNode } from 'react'
 import { createFeishuDocument } from '../api'
 import { useBoard } from '../board'
 import { commentTargetFromThread, commentTargetKey, findCommentTargetLocation } from '../comments'
 import { commentSelectionElementId, commentTargetElementId, scrollToCommentSource, useCommentInteraction } from '../commenting'
 import { buildAllBusinessNavigation, buildKRHierarchy, businessCategoryOf, priorityLabel, priorityOf } from '../hierarchy'
-import { hasOwner, splitOwnerNames } from '../people'
+import { krHasAnyOwner, krOwnerCounts, krOwnerOptions, ownerIdentityKey } from '../people'
 import { collapseAllIds, KINDS } from '../rows'
 import { buildFullMeetingMarkdown } from '../meetingMarkdown'
 import { KIND_LABEL, isDone } from '../template'
 import { isReviewTemplate } from '../weekCatalog'
 import type { CommentTarget, Entry, KrPriority, Objective, Point, PointKind, TextSelection } from '../types'
 import { HierarchyNav } from './HierarchyNav'
+import { OwnerFilterPicker } from './OwnerFilterPicker'
 import { PersonAvatar } from './PersonAvatar'
 import { Images, Links, StatusSelect } from './ui'
 import { WeeklyScoreControl } from './WeeklyScoreControl'
@@ -319,18 +319,30 @@ export function MeetingView() {
   // Review-only affordances follow the loaded week's template, not the tab, so
   // a week can never be rendered in the other ceremony's format.
   const reviewMode = isReviewTemplate(templateKey)
-  const [ownerFilter, setOwnerFilter] = useState('')
+  const [ownerFilters, setOwnerFilters] = useState<string[]>([])
   const [closed, setClosed] = useState<Set<string>>(new Set())
   const [activeBusinessValue, setActiveBusinessValue] = useState<string>()
   const [activePriorityValue, setActivePriorityValue] = useState<string>()
   const [activeObjectiveId, setActiveObjectiveId] = useState('')
   const [exporting, setExporting] = useState(false)
   const [exportResult, setExportResult] = useState<{ url?: string; message?: string }>({})
-  const owners = useMemo(() => [...new Set(objectives.flatMap((objective) => objective.krs.flatMap((kr) => splitOwnerNames(kr.ownerName))))].sort(), [objectives])
+  const owners = useMemo(() => krOwnerOptions(objectives), [objectives])
+  const ownersByKey = useMemo(() => new Map(owners.map((owner) => [ownerIdentityKey(owner), owner])), [owners])
+  const selectedOwners = useMemo(() => ownerFilters.flatMap((key) => {
+    const owner = ownersByKey.get(key)
+    return owner ? [owner] : []
+  }), [ownerFilters, ownersByKey])
+  const ownerCounts = useMemo(() => krOwnerCounts(objectives, owners), [objectives, owners])
+  useEffect(() => {
+    setOwnerFilters((current) => {
+      const valid = current.filter((key) => ownersByKey.has(key))
+      return valid.length === current.length ? current : valid
+    })
+  }, [ownersByKey])
   const filteredObjectives = useMemo(() => objectives.map((objective) => ({
     ...objective,
-    krs: objective.krs.filter((kr) => !ownerFilter || hasOwner(kr.ownerName, ownerFilter)),
-  })).filter((objective) => objective.krs.length > 0), [objectives, ownerFilter])
+    krs: objective.krs.filter((kr) => krHasAnyOwner(kr, selectedOwners)),
+  })).filter((objective) => objective.krs.length > 0), [objectives, selectedOwners])
   const navigation = useMemo(() => buildKRHierarchy(filteredObjectives), [filteredObjectives])
   const meetingOverview = activeBusinessValue === undefined
   const allBusiness = useMemo(() => buildAllBusinessNavigation(navigation), [navigation])
@@ -345,7 +357,7 @@ export function MeetingView() {
     const location = findCommentTargetLocation(objectives, comment)
     if (!location) return
     const navigationKr = location.kr ?? location.objective.krs[0]
-    setOwnerFilter('')
+    setOwnerFilters([])
     if (navigationKr) {
       setActiveBusinessValue(businessCategoryOf(navigationKr))
       setActivePriorityValue(priorityOf(navigationKr))
@@ -392,16 +404,16 @@ export function MeetingView() {
           <button type="button" onClick={collapseAll} className="border-l border-slate-200 px-2 py-1 text-slate-500 hover:bg-slate-50 hover:text-slate-700">折叠到 KR</button>
         </div>
         <span className="ml-auto text-[11px] text-slate-400">负责人</span>
-        <Select
-          aria-label="筛选负责人"
-          size="small"
-          className="w-40"
-          value={ownerFilter}
-          allowClear={Boolean(ownerFilter)}
-          showSearch={{ filterOption: (input, option) => (option?.label ?? '').toLocaleLowerCase().includes(input.trim().toLocaleLowerCase()) }}
-          options={[{ value: '', label: '全部负责人' }, ...owners.map((owner) => ({ value: owner, label: owner }))]}
-          notFoundContent="未找到匹配的负责人"
-          onChange={(value) => { setOwnerFilter(value ?? ''); setActiveBusinessValue(undefined); setActivePriorityValue(undefined); setActiveObjectiveId('') }}
+        <OwnerFilterPicker
+          options={owners}
+          ownerCounts={ownerCounts}
+          selectedKeys={ownerFilters}
+          onChange={(keys) => {
+            setOwnerFilters(keys)
+            setActiveBusinessValue(undefined)
+            setActivePriorityValue(undefined)
+            setActiveObjectiveId('')
+          }}
         />
         <span className="h-4 w-px bg-slate-200" />
 		<button type="button" disabled={exporting || objectives.length === 0} onClick={() => void exportToFeishu()} className="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">{exporting ? '导出中…' : reviewMode ? '导出 OKR Review' : '导出全部 OKR'}</button>

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestUserDirectorySharedCacheDoesNotWaitForAvatars(t *testing.T) {
@@ -55,5 +56,42 @@ esac`
 	other.initUserCache("ou_other")
 	if _, ok := other.cachedPage("甲"); ok {
 		t.Fatal("cache leaked across directory identities")
+	}
+}
+
+func TestUserDirectoryCacheTTLAndNormalizedKeys(t *testing.T) {
+	now := time.Now()
+	d := &Directory{userCache: directoryCache{
+		Queries: map[string]directoryPage{
+			"alice": {People: []DirectoryPerson{{Email: "alice@example.test"}}, At: now.Add(-299 * time.Minute)},
+			"old":   {People: []DirectoryPerson{{Email: "old@example.test"}}, At: now.Add(-301 * time.Minute)},
+			"empty": {People: []DirectoryPerson{}, At: now.Add(-time.Minute)},
+			"blank": {People: []DirectoryPerson{}, At: now.Add(-3 * time.Minute)},
+		},
+		People: map[string]cachedDirectoryPerson{
+			"alice@example.test": {Person: DirectoryPerson{Email: "alice@example.test"}, At: now.Add(-99 * time.Hour)},
+			"old@example.test":   {Person: DirectoryPerson{Email: "old@example.test"}, At: now.Add(-101 * time.Hour)},
+		},
+	}}
+
+	if _, ok := d.cachedPage("  ALICE "); !ok {
+		t.Fatal("positive query should remain cached for 300 minutes and use a normalized key")
+	}
+	if _, ok := d.cachedPage("old"); ok {
+		t.Fatal("positive query older than 300 minutes should expire")
+	}
+	if _, ok := d.cachedPage("empty"); !ok {
+		t.Fatal("empty query should remain cached for 2 minutes")
+	}
+	if _, ok := d.cachedPage("blank"); ok {
+		t.Fatal("empty query older than 2 minutes should expire")
+	}
+
+	d.saveUserCache()
+	if _, ok := d.userCache.People["alice@example.test"]; !ok {
+		t.Fatal("identity should remain cached for 100 hours")
+	}
+	if _, ok := d.userCache.People["old@example.test"]; ok {
+		t.Fatal("identity older than 100 hours should expire")
 	}
 }

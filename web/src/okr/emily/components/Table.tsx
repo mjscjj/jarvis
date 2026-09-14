@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { getMeegoPreview } from '../api'
 import { useBoard } from '../board'
 import { buildAllBusinessNavigation, buildKRHierarchy, priorityOf } from '../hierarchy'
-import { krHasAnyOwner, krOwnerOptions, ownerIdentityKey, splitOwnerNames } from '../people'
+import { krHasAnyOwner, krOwnerCounts, krOwnerOptions, ownerIdentityKey, splitOwnerNames } from '../people'
 import { canAddMetric } from '../metricEditing'
 import { collapseAllIds, KINDS } from '../rows'
 import { KIND_LABEL, isDone, statusOf } from '../template'
@@ -613,10 +613,7 @@ export function KrTable({ readOnly = false, definitionsReadOnly = false, progres
 	const [activeObjectiveId, setActiveObjectiveId] = useState('')
 	const owners = useMemo(() => krOwnerOptions(objectives), [objectives])
 	const ownersByKey = useMemo(() => new Map(owners.map((owner) => [ownerIdentityKey(owner), owner])), [owners])
-	const ownerKRCounts = useMemo(() => new Map(owners.map((owner) => [
-		ownerIdentityKey(owner),
-		objectives.reduce((count, objective) => count + objective.krs.filter((kr) => krHasAnyOwner(kr, [owner])).length, 0),
-	])), [objectives, owners])
+	const ownerKRCounts = useMemo(() => krOwnerCounts(objectives, owners), [objectives, owners])
 	const selectedOwners = useMemo(() => ownerFilters.flatMap((key) => {
 		const owner = ownersByKey.get(key)
 		return owner ? [owner] : []
