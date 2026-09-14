@@ -208,13 +208,13 @@ func prepare(raw json.RawMessage, links *uilink.Resolver) (cardInput, json.RawMe
 	if strings.TrimSpace(in.IdempotencyKey) == "" || len(in.IdempotencyKey) > 50 {
 		return invalid("idempotency_key must be non-empty and at most 50 bytes")
 	}
-	elements := []any{markdown(in.Type), markdown(in.Content)}
+	elements := []any{heading(in.Type), markdown(in.Content)}
 	for _, link := range in.Links {
 		u, err := url.Parse(link.URL)
 		if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") || strings.TrimSpace(link.Label) == "" {
 			return invalid("links require a label and an absolute http(s) URL")
 		}
-		elements = append(elements, map[string]any{"tag": "button", "text": plain(link.Label), "type": "default", "size": "small",
+		elements = append(elements, map[string]any{"tag": "button", "text": plain(link.Label), "type": "default", "size": "medium",
 			"behaviors": []any{map[string]any{"type": "open_url", "default_url": link.URL}}})
 	}
 	if strings.TrimSpace(in.Details) != "" {
@@ -263,8 +263,11 @@ func prepare(raw json.RawMessage, links *uilink.Resolver) (cardInput, json.RawMe
 }
 
 func plain(s string) map[string]any { return map[string]any{"tag": "plain_text", "content": s} }
+func heading(s string) map[string]any {
+	return map[string]any{"tag": "markdown", "content": s, "text_size": "heading-4"}
+}
 func markdown(s string) map[string]any {
-	return map[string]any{"tag": "markdown", "content": s, "text_size": "notation"}
+	return map[string]any{"tag": "markdown", "content": s, "text_size": "normal"}
 }
 func panel(title, content string) map[string]any {
 	return map[string]any{"tag": "collapsible_panel", "expanded": false, "header": map[string]any{"title": plain(title)}, "elements": []any{markdown(content)}}

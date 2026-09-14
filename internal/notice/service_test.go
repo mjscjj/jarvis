@@ -124,18 +124,24 @@ func TestCardOpenTypeAndOptionalSections(t *testing.T) {
 			t.Fatalf("wrong card: %s", card)
 		}
 		elements := doc["body"].(map[string]any)["elements"].([]any)
-		if elements[0].(map[string]any)["content"] != typ || elements[1].(map[string]any)["text_size"] != "notation" {
-			t.Fatalf("expected small inline text: %s", card)
+		if elements[0].(map[string]any)["content"] != typ || elements[0].(map[string]any)["text_size"] != "heading-4" ||
+			elements[1].(map[string]any)["text_size"] != "normal" {
+			t.Fatalf("expected readable title and body text: %s", card)
 		}
-		if strings.Contains(string(card), "heading-") {
-			t.Fatalf("unexpected headline: %s", card)
+		if elements[2].(map[string]any)["size"] != "medium" {
+			t.Fatalf("link button must use a readable size: %s", card)
 		}
 		if len(elements) != 5 {
 			t.Fatalf("elements = %d", len(elements))
 		}
 		for _, element := range elements[3:] {
-			if element.(map[string]any)["expanded"] != false {
+			panel := element.(map[string]any)
+			if panel["expanded"] != false {
 				t.Fatal("details must start folded")
+			}
+			inner := panel["elements"].([]any)[0].(map[string]any)
+			if inner["text_size"] != "normal" {
+				t.Fatalf("folded detail text must use normal size: %s", card)
 			}
 		}
 		if strings.Contains(string(card), "callback") || !strings.Contains(string(card), "794196753520925") {
