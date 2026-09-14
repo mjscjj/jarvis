@@ -28,6 +28,7 @@ var (
 type Service struct {
 	db              *gorm.DB
 	commentNotifier CommentMentionNotifier
+	people          peopleDirectory
 }
 
 func NewService(db *gorm.DB) (*Service, error) {
@@ -200,7 +201,7 @@ type ReminderSummary struct {
 }
 
 type ReminderRecipient struct {
-	OwnerOpenID   string       `json:"owner_open_id"`
+	OwnerEmail    string       `json:"owner_email"`
 	OwnerName     string       `json:"owner_name"`
 	DueCount      int          `json:"due_count"`
 	FilledCount   int          `json:"filled_count"`
@@ -227,7 +228,7 @@ type KRView struct {
 	ID                string       `json:"id"`
 	Title             string       `json:"title"`
 	DeleteToken       string       `json:"delete_token,omitempty"`
-	OwnerOpenID       string       `json:"owner_open_id"`
+	OwnerEmail        string       `json:"owner_email"`
 	OwnerName         string       `json:"owner_name"`
 	MetricNote        string       `json:"metric_note"`
 	Version           int32        `json:"version"`
@@ -244,18 +245,12 @@ type ScoreView struct {
 	Version int32   `json:"version"`
 }
 
-type OwnerView struct {
-	OpenID            string `json:"open_id"`
-	Name              string `json:"name"`
-	IdentityNamespace string `json:"identity_namespace,omitempty"`
-}
+type OwnerView = domain.PersonRef
 
-const OwnerIdentityNamespaceMainFeishuApp = "main_feishu_app"
-
-func storedOwnerView(openID, name string) OwnerView {
-	view := OwnerView{OpenID: openID, Name: name}
-	if strings.TrimSpace(openID) != "" {
-		view.IdentityNamespace = OwnerIdentityNamespaceMainFeishuApp
+func storedOwnerView(email, name string, unionID ...string) OwnerView {
+	view := OwnerView{Email: domain.NormalizeEmail(email), Name: name}
+	if len(unionID) > 0 {
+		view.UnionID = unionID[0]
 	}
 	return view
 }
@@ -637,7 +632,7 @@ func (s *Service) ReminderPreview(ctx context.Context, quarter, week string) (Re
 	}
 
 	type recipientAccumulator struct {
-		openID  string
+		email   string
 		name    string
 		due     int
 		filled  int
@@ -649,7 +644,7 @@ func (s *Service) ReminderPreview(ctx context.Context, quarter, week string) (Re
 	}
 	ownersByKR := make(map[string][]OwnerView, len(records))
 	for _, link := range ownerLinks {
-		ownersByKR[link.KRID] = append(ownersByKR[link.KRID], storedOwnerView(link.OpenID, link.Name))
+		ownersByKR[link.KRID] = append(ownersByKR[link.KRID], storedOwnerView(link.Email, link.Name, link.UnionID))
 	}
 	owners := map[string]*recipientAccumulator{}
 	for _, record := range records {
@@ -660,9 +655,9 @@ func (s *Service) ReminderPreview(ctx context.Context, quarter, week string) (Re
 		pointCount := pointCountByKR[record.ID]
 		filled := pointCount > 0 && len(filledPointsByKR[record.ID]) == pointCount
 		for _, recordOwner := range recordOwners {
-			openID := strings.TrimSpace(recordOwner.OpenID)
+			email := strings.TrimSpace(recordOwner.Email)
 			name := strings.TrimSpace(recordOwner.Name)
-			key := openID
+			key := email
 			if key == "" {
 				key = "name:" + strings.ToLower(name)
 			}
@@ -674,7 +669,7 @@ func (s *Service) ReminderPreview(ctx context.Context, quarter, week string) (Re
 			}
 			owner := owners[key]
 			if owner == nil {
-				owner = &recipientAccumulator{openID: openID, name: name, missing: []ReminderKR{}}
+				owner = &recipientAccumulator{email: email, name: name, missing: []ReminderKR{}}
 				owners[key] = owner
 			}
 			owner.due++
@@ -688,9 +683,9 @@ func (s *Service) ReminderPreview(ctx context.Context, quarter, week string) (Re
 
 	for _, owner := range owners {
 		missingCount := len(owner.missing)
-		canRemind := strings.HasPrefix(owner.openID, "ou_")
+		canRemind := domain.ValidEmail(owner.email)
 		recipient := ReminderRecipient{
-			OwnerOpenID: owner.openID, OwnerName: owner.name, DueCount: owner.due,
+			OwnerEmail: owner.email, OwnerName: owner.name, DueCount: owner.due,
 			FilledCount: owner.filled, MissingCount: missingCount,
 			NeedsReminder: missingCount > 0, CanRemind: canRemind,
 			MissingKRs: owner.missing,
@@ -703,7 +698,7 @@ func (s *Service) ReminderPreview(ctx context.Context, quarter, week string) (Re
 			if canRemind {
 				recipient.Message = fmt.Sprintf("%s，你好。本周（%s）KR 进展还有 %d 条待填写：%s。请在周会前打开 Emily 完成更新，谢谢。", owner.name, week, missingCount, strings.Join(titles, "；"))
 			} else if owner.name != "未分配" {
-				recipient.Message = fmt.Sprintf("负责人%s缺少有效 open_id，暂时无法催办：%s。请先由人完善负责人身份。", owner.name, strings.Join(titles, "；"))
+				recipient.Message = fmt.Sprintf("负责人%s缺少有效 email，暂时无法催办：%s。请先由人完善负责人身份。", owner.name, strings.Join(titles, "；"))
 			} else {
 				recipient.Message = fmt.Sprintf("以下 KR 尚未分配负责人：%s。请先补充负责人，再发起催办。", strings.Join(titles, "；"))
 			}
@@ -851,9 +846,9 @@ func (s *Service) loadKRDefinitionWithGuard(ctx context.Context, record domain.K
 	}
 	view := KRView{ID: record.ID, Title: record.Title, MetricNote: record.MetricNote, Version: record.Version, Metrics: []MetricView{}, Points: []PointView{}, Tags: []TagView{}, Owners: []OwnerView{}}
 	for _, owner := range owners {
-		view.Owners = append(view.Owners, storedOwnerView(owner.OpenID, owner.Name))
-		if view.OwnerOpenID == "" && strings.TrimSpace(owner.OpenID) != "" {
-			view.OwnerOpenID = owner.OpenID
+		view.Owners = append(view.Owners, storedOwnerView(owner.Email, owner.Name, owner.UnionID))
+		if view.OwnerEmail == "" && strings.TrimSpace(owner.Email) != "" {
+			view.OwnerEmail = owner.Email
 		}
 	}
 	ownerNames := make([]string, 0, len(view.Owners))
@@ -874,7 +869,7 @@ func (s *Service) loadKRDefinitionWithGuard(ctx context.Context, record domain.K
 	}
 	pointOwnersByID := make(map[string][]OwnerView, len(points))
 	for _, owner := range pointOwners {
-		pointOwnersByID[owner.PointID] = append(pointOwnersByID[owner.PointID], storedOwnerView(owner.OpenID, owner.Name))
+		pointOwnersByID[owner.PointID] = append(pointOwnersByID[owner.PointID], storedOwnerView(owner.Email, owner.Name, owner.UnionID))
 	}
 	for _, point := range points {
 		pointView := PointView{ID: point.ID, Version: point.Version, Kind: point.Kind, Title: point.Title, Tags: pointTagsByID[point.ID], Owners: pointOwnersByID[point.ID], Entries: []ProgressView{}, PreviousEntries: []ProgressView{}}
@@ -1017,6 +1012,14 @@ func (s *Service) ReplaceGenericKRCore(ctx context.Context, id string, input Rep
 
 func (s *Service) replaceKRCore(ctx context.Context, id string, input ReplaceKRInput, includeBiz bool) (KRView, error) {
 	owners := normalizeOwners(input.Owners)
+	if err := s.verifyPeople(ctx, owners); err != nil {
+		return KRView{}, err
+	}
+	for i := range input.Points {
+		if err := s.verifyPeople(ctx, input.Points[i].Owners); err != nil {
+			return KRView{}, err
+		}
+	}
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		weeklySchemaPresent := tx.Migrator().HasTable(&domain.KRProgress{})
 		removesChildren, err := krDefinitionRemovesChildren(tx, id, input)
@@ -1194,7 +1197,10 @@ func replaceKROwners(tx *gorm.DB, id string, owners []OwnerView) error {
 		return fmt.Errorf("replace owners: %w", err)
 	}
 	for index, owner := range owners {
-		if err := tx.Create(&domain.KROwner{KRID: id, PersonID: ownerPersonID(owner), OwnerKey: ownerKey(owner), OpenID: owner.OpenID, Name: owner.Name, SortOrder: index}).Error; err != nil {
+		if owner.Email != "" && !domain.ValidEmail(owner.Email) {
+			return fmt.Errorf("负责人邮箱无效，请刷新后重新选人")
+		}
+		if err := tx.Create(&domain.KROwner{KRID: id, PersonID: ownerPersonID(owner), OwnerKey: ownerKey(owner), Email: domain.NormalizeEmail(owner.Email), UnionID: owner.UnionID, Name: owner.Name, SortOrder: index}).Error; err != nil {
 			return fmt.Errorf("create owner: %w", err)
 		}
 	}
@@ -1206,7 +1212,10 @@ func replacePointOwners(tx *gorm.DB, pointID string, owners []OwnerView) error {
 		return fmt.Errorf("replace point owners: %w", err)
 	}
 	for index, owner := range owners {
-		if err := tx.Create(&domain.PointOwner{PointID: pointID, PersonID: ownerPersonID(owner), OwnerKey: ownerKey(owner), OpenID: owner.OpenID, Name: owner.Name, SortOrder: index}).Error; err != nil {
+		if owner.Email != "" && !domain.ValidEmail(owner.Email) {
+			return fmt.Errorf("负责人邮箱无效，请刷新后重新选人")
+		}
+		if err := tx.Create(&domain.PointOwner{PointID: pointID, PersonID: ownerPersonID(owner), OwnerKey: ownerKey(owner), Email: domain.NormalizeEmail(owner.Email), UnionID: owner.UnionID, Name: owner.Name, SortOrder: index}).Error; err != nil {
 			return fmt.Errorf("create point owner: %w", err)
 		}
 	}
@@ -1280,6 +1289,9 @@ func (s *Service) CreateBizKR(ctx context.Context, objectiveID string, input Cre
 }
 
 func (s *Service) createKR(ctx context.Context, objectiveID, title string, owners []OwnerView, createdBy string) (string, error) {
+	if err := s.verifyPeople(ctx, owners); err != nil {
+		return "", err
+	}
 	objectiveID = strings.TrimSpace(objectiveID)
 	title = strings.TrimSpace(title)
 	createdBy = strings.TrimSpace(createdBy)
@@ -1987,13 +1999,13 @@ func normalizeOwners(input []OwnerView) []OwnerView {
 	result := make([]OwnerView, 0, len(owners))
 	seen := map[string]struct{}{}
 	for _, owner := range owners {
-		owner.OpenID = strings.TrimSpace(owner.OpenID)
+		owner.Email = domain.NormalizeEmail(owner.Email)
 		owner.Name = strings.TrimSpace(owner.Name)
-		owner.IdentityNamespace = ""
+		owner.UnionID = strings.TrimSpace(owner.UnionID)
 		if owner.Name == "" {
 			continue
 		}
-		key := strings.ToLower(owner.OpenID)
+		key := owner.Email
 		if key == "" {
 			key = "name:" + strings.ToLower(owner.Name)
 		}
@@ -2019,7 +2031,11 @@ func (s *Service) krOwnerName(ctx context.Context, krID string) (string, error) 
 }
 
 func ownerKey(owner OwnerView) string {
-	sum := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(owner.OpenID)) + "\x00" + strings.ToLower(strings.TrimSpace(owner.Name))))
+	key := domain.NormalizeEmail(owner.Email)
+	if key == "" {
+		key = "unresolved:" + strings.TrimSpace(owner.Name)
+	}
+	sum := sha256.Sum256([]byte(key))
 	return fmt.Sprintf("owner-%x", sum[:12])
 }
 

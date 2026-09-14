@@ -11,6 +11,7 @@ import (
 
 	"jarvis/internal/okrworkspace/domain"
 
+	"github.com/cloudwego/hertz/pkg/common/hlog"
 	"gorm.io/gorm"
 )
 
@@ -26,31 +27,32 @@ type CommentMention = domain.CommentMention
 type CommentImage = domain.ImageRef
 
 type CommentView struct {
-	ID                 string           `json:"id"`
-	Version            int32            `json:"version"`
-	DeleteToken        string           `json:"delete_token"`
-	PlanID             string           `json:"plan_id,omitempty"`
-	ParentID           string           `json:"parent_id,omitempty"`
-	TargetType         string           `json:"target_type"`
-	TargetID           string           `json:"target_id,omitempty"`
-	TargetTitle        string           `json:"target_title,omitempty"`
-	SelectedText       string           `json:"selected_text,omitempty"`
-	SelectionStart     int              `json:"selection_start,omitempty"`
-	SelectionEnd       int              `json:"selection_end,omitempty"`
-	SelectionPrefix    string           `json:"selection_prefix,omitempty"`
-	SelectionSuffix    string           `json:"selection_suffix,omitempty"`
-	AuthorOpenID       string           `json:"author_open_id,omitempty"`
-	AuthorUnionID      string           `json:"author_union_id,omitempty"`
-	AuthorName         string           `json:"author_name"`
-	Content            string           `json:"content"`
-	Mentions           []CommentMention `json:"mentions"`
-	Images             []CommentImage   `json:"images"`
-	NotificationErrors []string         `json:"notification_errors,omitempty"`
-	Todo               bool             `json:"todo"`
-	Resolved           bool             `json:"resolved"`
-	CreatedAt          time.Time        `json:"created_at"`
-	UpdatedAt          time.Time        `json:"updated_at"`
-	Replies            []CommentView    `json:"replies"`
+	ID                 string                `json:"id"`
+	Version            int32                 `json:"version"`
+	DeleteToken        string                `json:"delete_token"`
+	PlanID             string                `json:"plan_id,omitempty"`
+	ParentID           string                `json:"parent_id,omitempty"`
+	TargetType         string                `json:"target_type"`
+	TargetID           string                `json:"target_id,omitempty"`
+	TargetTitle        string                `json:"target_title,omitempty"`
+	SelectedText       string                `json:"selected_text,omitempty"`
+	SelectionStart     int                   `json:"selection_start,omitempty"`
+	SelectionEnd       int                   `json:"selection_end,omitempty"`
+	SelectionPrefix    string                `json:"selection_prefix,omitempty"`
+	SelectionSuffix    string                `json:"selection_suffix,omitempty"`
+	AuthorOpenID       string                `json:"author_open_id,omitempty"`
+	AuthorUnionID      string                `json:"author_union_id,omitempty"`
+	AuthorName         string                `json:"author_name"`
+	Content            string                `json:"content"`
+	Mentions           []CommentMention      `json:"mentions"`
+	Images             []CommentImage        `json:"images"`
+	Notifications      []CommentDeliveryView `json:"notifications,omitempty"`
+	NotificationErrors []string              `json:"notification_errors,omitempty"`
+	Todo               bool                  `json:"todo"`
+	Resolved           bool                  `json:"resolved"`
+	CreatedAt          time.Time             `json:"created_at"`
+	UpdatedAt          time.Time             `json:"updated_at"`
+	Replies            []CommentView         `json:"replies"`
 }
 
 type CommentList struct {
@@ -120,7 +122,7 @@ func (service *Service) Comments(ctx context.Context, quarter, week string) (Com
 		Order("created_at ASC").Find(&rows).Error; err != nil {
 		return CommentList{}, fmt.Errorf("list page comments: %w", err)
 	}
-	return buildCommentList(quarter, week, rows)
+	return service.buildCommentList(ctx, quarter, week, rows)
 }
 
 func (service *Service) PlanComments(ctx context.Context, planID string) (CommentList, error) {
@@ -134,7 +136,7 @@ func (service *Service) PlanComments(ctx context.Context, planID string) (Commen
 		Order("created_at ASC").Find(&rows).Error; err != nil {
 		return CommentList{}, fmt.Errorf("list plan comments: %w", err)
 	}
-	result, err := buildCommentList(plan.Quarter, "", rows)
+	result, err := service.buildCommentList(ctx, plan.Quarter, "", rows)
 	if err != nil {
 		return CommentList{}, err
 	}
@@ -199,6 +201,9 @@ func (service *Service) CreateComment(ctx context.Context, input CreateCommentIn
 	}
 	mentions, err := normalizeCommentMentions(input.Content, input.Mentions)
 	if err != nil {
+		return CommentView{}, err
+	}
+	if err := service.verifyPeople(ctx, mentions); err != nil {
 		return CommentView{}, err
 	}
 	input.Mentions = mentions
@@ -298,7 +303,12 @@ func (service *Service) CreateComment(ctx context.Context, input CreateCommentIn
 			row.SelectedText, row.SelectionStart, row.SelectionEnd = parent.SelectedText, parent.SelectionStart, parent.SelectionEnd
 			row.SelectionPrefix, row.SelectionSuffix = parent.SelectionPrefix, parent.SelectionSuffix
 		}
-		return tx.Create(&row).Error
+		if err := tx.Create(&row).Error; err != nil {
+			return err
+		}
+		txService := *service
+		txService.db = tx
+		return txService.prepareCommentDeliveries(ctx, row, input.AuthorEmail, input.AuthorUnionID, input.SourceTab)
 	}); err != nil {
 		return CommentView{}, fmt.Errorf("create page comment: %w", err)
 	}
@@ -307,7 +317,13 @@ func (service *Service) CreateComment(ctx context.Context, input CreateCommentIn
 	if err != nil {
 		return CommentView{}, err
 	}
-	view.NotificationErrors = service.notifyCreatedComment(ctx, row, input.AuthorEmail, input.Mentions, input.SourceTab)
+	view.Notifications, err = service.deliverComment(ctx, row.ID, "")
+	if err != nil {
+		hlog.CtxErrorf(ctx, "comment saved but notification ledger failed comment=%s: %v", row.ID, err)
+		view.NotificationErrors = []string{"评论已保存，通知状态暂时无法读取，请刷新查看"}
+		return view, nil
+	}
+	view.NotificationErrors = deliveryWarnings(view.Notifications)
 	return view, nil
 }
 
@@ -323,6 +339,11 @@ func (service *Service) UpdateComment(ctx context.Context, id string, input Upda
 		return CommentView{}, fmt.Errorf("expected_version must be positive")
 	}
 
+	if input.Mentions != nil {
+		if err := service.verifyPeople(ctx, *input.Mentions); err != nil {
+			return CommentView{}, err
+		}
+	}
 	var row domain.PageComment
 	err := service.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.First(&row, "id = ?", id).Error; err != nil {
@@ -415,7 +436,8 @@ func (service *Service) UpdateComment(ctx context.Context, id string, input Upda
 	if err != nil {
 		return CommentView{}, err
 	}
-	return view, nil
+	view.Notifications, err = service.commentDeliveries(ctx, row.ID)
+	return view, err
 }
 
 func (service *Service) DeleteComment(ctx context.Context, id string, input DeleteCommentInput) error {
@@ -461,7 +483,7 @@ func (service *Service) DeleteComment(ctx context.Context, id string, input Dele
 	return nil
 }
 
-func buildCommentList(quarter, week string, rows []domain.PageComment) (CommentList, error) {
+func (service *Service) buildCommentList(ctx context.Context, quarter, week string, rows []domain.PageComment) (CommentList, error) {
 	roots := make([]CommentView, 0)
 	rootIndex := make(map[string]int)
 	for _, row := range rows {
@@ -496,6 +518,19 @@ func buildCommentList(quarter, week string, rows []domain.PageComment) (CommentL
 		roots[index].DeleteToken, err = deletionToken(thread)
 		if err != nil {
 			return CommentList{}, err
+		}
+	}
+	for i := range roots {
+		var err error
+		roots[i].Notifications, err = service.commentDeliveries(ctx, roots[i].ID)
+		if err != nil {
+			return CommentList{}, err
+		}
+		for j := range roots[i].Replies {
+			roots[i].Replies[j].Notifications, err = service.commentDeliveries(ctx, roots[i].Replies[j].ID)
+			if err != nil {
+				return CommentList{}, err
+			}
 		}
 	}
 	return CommentList{Quarter: quarter, Week: week, Count: len(rows), Comments: roots}, nil
@@ -566,44 +601,34 @@ func normalizeCommentMentions(content string, mentions []CommentMention) ([]Comm
 		return nil, fmt.Errorf("comment mentions exceed %d people", maxCommentMentions)
 	}
 	normalized := make([]CommentMention, 0, len(mentions))
-	seenOpenIDs := make(map[string]bool, len(mentions))
+	seenEmails := make(map[string]bool, len(mentions))
 	seenNames := make(map[string]string, len(mentions))
 	for _, mention := range mentions {
-		mention.OpenID = strings.TrimSpace(mention.OpenID)
+		mention.Email = domain.NormalizeEmail(mention.Email)
 		mention.Name = strings.TrimSpace(mention.Name)
-		if mention.OpenID == "" || mention.Name == "" {
-			return nil, fmt.Errorf("every comment mention requires open_id and name")
+		if mention.Email == "" || mention.Name == "" {
+			return nil, fmt.Errorf("每个 @ 人员需要完整企业邮箱和姓名，请刷新后重新选择")
 		}
-		if !validCommentMentionOpenID(mention.OpenID) {
-			return nil, fmt.Errorf("comment mention open_id %q is invalid", mention.OpenID)
+		if !validCommentMentionEmail(mention.Email) {
+			return nil, fmt.Errorf("comment mention email %q is invalid", mention.Email)
 		}
 		if !strings.Contains(content, "@"+mention.Name) {
 			return nil, fmt.Errorf("comment mention %q is not present in content", mention.Name)
 		}
-		if existing, ok := seenNames[mention.Name]; ok && existing != mention.OpenID {
+		if existing, ok := seenNames[mention.Name]; ok && existing != mention.Email {
 			return nil, fmt.Errorf("comment cannot mention two people with the same display name %q", mention.Name)
 		}
-		seenNames[mention.Name] = mention.OpenID
-		if seenOpenIDs[mention.OpenID] {
+		seenNames[mention.Name] = mention.Email
+		if seenEmails[mention.Email] {
 			continue
 		}
-		seenOpenIDs[mention.OpenID] = true
+		seenEmails[mention.Email] = true
 		normalized = append(normalized, mention)
 	}
 	return normalized, nil
 }
 
-func validCommentMentionOpenID(value string) bool {
-	if !strings.HasPrefix(value, "ou_") || len(value) <= len("ou_") {
-		return false
-	}
-	for _, char := range value[len("ou_"):] {
-		if (char < 'a' || char > 'z') && (char < 'A' || char > 'Z') && (char < '0' || char > '9') && char != '_' && char != '-' {
-			return false
-		}
-	}
-	return true
-}
+func validCommentMentionEmail(value string) bool { return domain.ValidEmail(value) }
 
 func commentMentionsPresentInContent(content string, mentions []CommentMention) []CommentMention {
 	present := make([]CommentMention, 0, len(mentions))

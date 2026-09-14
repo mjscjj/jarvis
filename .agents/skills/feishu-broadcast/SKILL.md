@@ -14,7 +14,7 @@ description: 使用“Jarvis通知机器人”向一批已确定的公司内收�
 在执行任何写命令前，先形成可审计的广播计划：
 
 - 广播目的和来源 Task；
-- 去重后的收件人稳定身份、姓名和最终文案；优先使用跨应用稳定的 `union_id`，没有时使用精确回读的企业邮箱；
+- 去重后的收件人稳定身份、姓名和最终文案；OKR 使用已核验的完整企业邮箱；其他调用的 `union_id` 必须确认适用于通知应用；
 - 收件人范围的证据，不能按姓名猜 `open_id`；
 - 哪些收件人共享完全相同的内容，哪些是个性化内容；
 - 重跑查重依据，以及每条个性化消息的稳定幂等键。
@@ -23,17 +23,9 @@ description: 使用“Jarvis通知机器人”向一批已确定的公司内收�
 
 ### 跨 App 身份归一
 
-`open_id` 按飞书 App 隔离，不能把主 Jarvis App 下的 `ou_...` 直接交给通知 App。调用方已经提供 `union_id` 时直接使用；只提供主 App `open_id` 时，先找到 App ID 为 `cli_a96a0c8d82b85cb1` 的唯一 lark-cli profile，并核验 Bot 是 Jarvis Bot、user 是 principal，再用 principal 的只读人员查询精确解析企业邮箱：
+OKR 的 `owners.email` / `mentions.email` 已由固定人员目录核验，直接作为发送地址；不再依赖旧主应用做运行时 ID 转换，也不按姓名或邮箱前缀猜收件人。
 
-```bash
-lark-cli --profile '<main Jarvis profile>' auth status --json --verify
-lark-cli --profile '<main Jarvis profile>' contact +search-user \
-  --user-ids '<main-app open_id>' \
-  --as user --format json
-```
-
-响应必须恰好返回一人，`open_id` 必须与输入完全相同，姓名需与广播计划一致或有明确中英文别名证据，并取得唯一的 `enterprise_email` 或 `email`。查不到、多人、身份冲突或没有邮箱时跳过并报告身份缺口；不得按姓名到通知 App 猜另一个 `open_id`。主 Jarvis profile 在这里只做身份只读归一，绝不用于发送广播。
-
+其他来源若只有裸 `open_id`，必须先查明其来源应用，在该应用下精确取得邮箱；来源未知时停止该收件项。不能把一个应用的 ID 交给另一个应用解析。
 ## 2. 固定并核验通知机器人身份
 
 通知应用的稳定身份是：
@@ -41,7 +33,7 @@ lark-cli --profile '<main Jarvis profile>' contact +search-user \
 - App ID：`cli_a96a2422f03bdbd7`
 - Bot 名称：`Jarvis通知机器人`
 
-先运行 `lark-cli profile list`。优先使用环境变量 `JARVIS_BROADCAST_LARK_PROFILE` 指定的 profile；未指定时，只能选择 App ID 与上面完全一致的唯一 profile。找不到或存在多个无法区分的 profile 时停止，不得改用当前默认 profile。
+OKR 调用从当前实例 `conf/okr-module.yaml` 及 runtime 覆盖读取 `feishu.app_id / cli_profile`（当前 `jarvis-notify-audit`）。先用 `lark-cli profile list` 与 `auth status --verify` 核验 profile 对应实际应用；显式绑定不匹配就停止，不使用全局默认 profile。其他广播调用也必须明确绑定通知应用。
 
 后续每条命令都显式带上同一个 `--profile` 和 `--as bot`。发送前执行：
 
@@ -53,7 +45,7 @@ lark-cli --profile '<broadcast profile>' api GET '/open-apis/application/v2/app/
   --as bot --format json
 ```
 
-只有 Bot `status=ready`、`verified=true`、App ID 和 Bot 名称完全匹配，并且权限中包含 `im:message:send_as_bot` 与 `im:message:send_multi_users` 时才继续。应用可用范围必须覆盖全部目标；范围外失败原样记录，不能通过拉群绕过。
+只有 Bot `status=ready`、`verified=true`、App ID 和 Bot 名称完全匹配，并且权限中包含 `im:message:send_as_bot`（只有使用批量接口才额外要求 `im:message:send_multi_users`） 时才继续。应用可用范围必须覆盖全部目标；范围外失败原样记录，不能通过拉群绕过。
 
 ## 3. 选择投递方式
 

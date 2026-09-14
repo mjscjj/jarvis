@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { searchFeishuPeople } from './api'
-import type { ResolveResult } from './types'
+import type { ResolveCandidate } from './types'
 
-interface FeishuPeopleSearchOptions {
+interface SearchResult<C> { candidates: C[]; has_more: boolean }
+
+interface FeishuPeopleSearchOptions<C> {
+  searchFn?: (query: string, signal?: AbortSignal) => Promise<SearchResult<C>>
   active?: boolean
   debounceMs?: number | null
 }
@@ -11,10 +14,10 @@ interface FeishuPeopleSearchOptions {
 // every single- and multi-select surface: cancellation, loading, result shape,
 // ambiguity and upstream errors. Callers only decide how a selected person is
 // displayed and persisted in their own domain.
-export function useFeishuPeopleSearch(options: FeishuPeopleSearchOptions = {}) {
+export function useFeishuPeopleSearch<C = ResolveCandidate>(options: FeishuPeopleSearchOptions<C> = {}) {
   const { active = true, debounceMs = null } = options
   const [query, setQueryState] = useState('')
-  const [result, setResult] = useState<ResolveResult | null>(null)
+  const [result, setResult] = useState<SearchResult<C> | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [searchedQuery, setSearchedQuery] = useState('')
@@ -59,9 +62,9 @@ export function useFeishuPeopleSearch(options: FeishuPeopleSearchOptions = {}) {
     setLoading(true)
     setError('')
     try {
-      const next = await searchFeishuPeople(clean, controller.signal)
+      const next = await (options.searchFn ?? searchFeishuPeople)(clean, controller.signal)
       if (controller.signal.aborted) return
-      setResult(next)
+      setResult(next as SearchResult<C>)
       setSearchedQuery(clean)
     } catch (cause) {
       if (!controller.signal.aborted) {
@@ -74,7 +77,7 @@ export function useFeishuPeopleSearch(options: FeishuPeopleSearchOptions = {}) {
         setLoading(false)
       }
     }
-  }, [active, query, reset])
+  }, [active, query, reset, options.searchFn])
 
   useEffect(() => {
     if (!active) {

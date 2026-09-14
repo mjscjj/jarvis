@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useFeishuPeopleSearch } from '../../../useFeishuPeopleSearch'
-import { getPeopleAvatars } from '../api'
+import { searchOKRPeople } from '../api'
 import { useBoard } from '../board'
 import { addOrResolveOwner, joinOwnerNames, ownerIdentityKey, ownerOptions, splitOwnerNames } from '../people'
 import type { Kr, KrOwner, PersonSearchItem, Point } from '../types'
@@ -12,23 +12,23 @@ export function FeishuPeoplePickerInput({ owners, options, onChange, compact = f
   const panel = useRef<HTMLSpanElement>(null)
   const input = useRef<HTMLInputElement>(null)
   const [open, setOpen] = useState(false)
-	const peopleSearch = useFeishuPeopleSearch({ active: open, debounceMs: 280 })
+	const peopleSearch = useFeishuPeopleSearch({ searchFn: searchOKRPeople, active: open, debounceMs: 280 })
 	const [resultAvatars, setResultAvatars] = useState<Record<string, string>>({})
 	const [panelStyle, setPanelStyle] = useState<React.CSSProperties>({ position: 'fixed', top: 0, left: 0 })
-	const selectedOpenIds = useMemo(() => new Set(owners.map((owner) => owner.openId).filter(Boolean)), [owners])
+	const selectedOpenIds = useMemo(() => new Set(owners.map((owner) => owner.email).filter(Boolean)), [owners])
 	const remoteResults = useMemo<PersonSearchItem[]>(() => peopleSearch.candidates.map((person) => ({
-		openId: person.open_id,
+		email: person.email,
 		name: person.name,
 		department: person.department,
-		email: person.email,
+        unionId: person.union_id,
 		isExternal: person.is_external,
 		hasChatted: person.has_chatted,
 	})), [peopleSearch.candidates])
 
   const localResults = useMemo(() => options
-		.filter((item) => item.openId && !selectedOpenIds.has(item.openId) && (!peopleSearch.query.trim() || item.name.toLowerCase().includes(peopleSearch.query.trim().toLowerCase())))
+		.filter((item) => item.email && !selectedOpenIds.has(item.email) && (!peopleSearch.query.trim() || item.name.toLowerCase().includes(peopleSearch.query.trim().toLowerCase())))
 		.slice(0, 6)
-		.map((owner) => ({ openId: owner.openId, name: owner.name, department: '当前 OKR 负责人', email: '', isExternal: false, hasChatted: false })), [options, peopleSearch.query, selectedOpenIds])
+		.map((owner) => ({ email: owner.email, name: owner.name, department: '当前 OKR 负责人', isExternal: false, hasChatted: false })), [options, peopleSearch.query, selectedOpenIds])
 
   useEffect(() => {
     if (!open) return
@@ -80,30 +80,11 @@ export function FeishuPeoplePickerInput({ owners, options, onChange, compact = f
 	}, [open, owners.length, placePanel])
 
   useEffect(() => {
-		const clean = peopleSearch.searchedQuery
-		if (!open || !clean) {
-			setResultAvatars({})
-      return
-    }
-    const controller = new AbortController()
-		setResultAvatars({})
-		// 头像接口本身就是按 query 搜人，用这一次查询覆盖整屏结果；
-		// 逐个结果按姓名查会同时占满 lark-cli 仅有的两个并发槽，把下一次搜索堵死。
-		void getPeopleAvatars([clean], controller.signal)
-			.then((people) => {
-				if (controller.signal.aborted) return
-				setResultAvatars(Object.fromEntries(people.filter((item) => item.openId && item.avatarUrl).map((item) => [item.openId, item.avatarUrl])))
-			})
-			.catch((reason) => {
-				if (!controller.signal.aborted) console.warn('飞书头像读取失败', clean, reason)
-			})
-    return () => {
-      controller.abort()
-    }
-  }, [open, peopleSearch.searchedQuery])
+    setResultAvatars(Object.fromEntries(peopleSearch.candidates.filter(p => p.avatar_url).map(p => [p.email, p.avatar_url!])))
+  }, [peopleSearch.candidates])
 
   const add = (person: PersonSearchItem) => {
-		onChange(addOrResolveOwner(owners, { openId: person.openId, name: person.name }))
+		onChange(addOrResolveOwner(owners, { email: person.email, name: person.name, unionId: person.unionId }))
 		peopleSearch.reset()
     setOpen(false)
   }
@@ -113,15 +94,15 @@ export function FeishuPeoplePickerInput({ owners, options, onChange, compact = f
   }
 
 	const searching = Boolean(peopleSearch.query.trim())
-	const visibleResults = searching ? remoteResults.filter((item) => !selectedOpenIds.has(item.openId)) : localResults
+	const visibleResults = searching ? remoteResults.filter((item) => !selectedOpenIds.has(item.email)) : localResults
 
   return (
     <span ref={root} className={`group/people relative inline-flex max-w-full min-w-0 items-center ${compact && !small ? '-space-x-1' : small ? 'flex-wrap gap-0.5' : 'flex-wrap gap-1'}`}>
       {owners.map((owner, index) => (
-        small ? <button type="button" key={`${ownerIdentityKey(owner)}:${index}`} onClick={openPicker} title={owner.name} aria-label={`管理关联人：${owner.name}`} className="inline-flex min-h-4 max-w-full items-center gap-1 rounded px-0.5 py-0 !text-[8px] leading-3 text-slate-500 hover:bg-slate-100"><PersonAvatar name={owner.name} openId={owner.openId} size="size-3 text-[7px]" /><span className="min-w-0 break-words text-left">{owner.name}</span></button> : compact ? <span key={`${ownerIdentityKey(owner)}:${index}`} title={owner.name} className={`relative inline-flex size-6 items-center justify-center rounded-full ring-2 ring-white ${owner.openId ? 'bg-slate-50' : 'bg-amber-50'}`}>
-          <PersonAvatar name={owner.name} openId={owner.openId} size="size-5 text-[8px]" tone={owner.openId ? 'bg-slate-300' : 'bg-amber-400'} />
-        </span> : <span key={`${ownerIdentityKey(owner)}:${index}`} title={owner.openId ? undefined : '身份未解析，请搜索飞书联系人后重新选择'} className={`group/person inline-flex h-5 items-center gap-1 rounded-full pr-1.5 pl-1 text-[10px] ring-1 ${owner.openId ? 'bg-slate-50 text-slate-600 ring-slate-200' : 'bg-amber-50 text-amber-700 ring-amber-200'}`}>
-          <PersonAvatar name={owner.name} openId={owner.openId} tone={owner.openId ? 'bg-slate-300' : 'bg-amber-400'} />
+        small ? <button type="button" key={`${ownerIdentityKey(owner)}:${index}`} onClick={openPicker} title={owner.name} aria-label={`管理关联人：${owner.name}`} className="inline-flex min-h-4 max-w-full items-center gap-1 rounded px-0.5 py-0 !text-[8px] leading-3 text-slate-500 hover:bg-slate-100"><PersonAvatar name={owner.name} email={owner.email} size="size-3 text-[7px]" /><span className="min-w-0 break-words text-left">{owner.name}</span></button> : compact ? <span key={`${ownerIdentityKey(owner)}:${index}`} title={owner.name} className={`relative inline-flex size-6 items-center justify-center rounded-full ring-2 ring-white ${owner.email ? 'bg-slate-50' : 'bg-amber-50'}`}>
+          <PersonAvatar name={owner.name} email={owner.email} size="size-5 text-[8px]" tone={owner.email ? 'bg-slate-300' : 'bg-amber-400'} />
+        </span> : <span key={`${ownerIdentityKey(owner)}:${index}`} title={owner.email ? undefined : '身份未解析，请搜索飞书联系人后重新选择'} className={`group/person inline-flex h-5 items-center gap-1 rounded-full pr-1.5 pl-1 text-[10px] ring-1 ${owner.email ? 'bg-slate-50 text-slate-600 ring-slate-200' : 'bg-amber-50 text-amber-700 ring-amber-200'}`}>
+          <PersonAvatar name={owner.name} email={owner.email} tone={owner.email ? 'bg-slate-300' : 'bg-amber-400'} />
           {owner.name}
           <button type="button" onClick={() => remove(index)} title="移除人员" className="text-slate-300 hover:text-red-500">×</button>
         </span>
@@ -139,13 +120,13 @@ export function FeishuPeoplePickerInput({ owners, options, onChange, compact = f
           </span>
           {compact && !small && owners.length > 0 && <span className="block border-b border-slate-100 p-2">
             <span className="mb-1.5 block text-[9px] text-slate-400">已关联</span>
-            <span className="flex flex-wrap gap-1">{owners.map((owner, index) => <span key={`${ownerIdentityKey(owner)}:${index}`} className="inline-flex h-6 items-center gap-1 rounded-full bg-slate-50 pr-1 pl-1.5 text-[10px] text-slate-600 ring-1 ring-slate-200"><PersonAvatar name={owner.name} openId={owner.openId} />{owner.name}<button type="button" onClick={() => remove(index)} title={`移除${owner.name}`} className="text-slate-300 hover:text-red-500">×</button></span>)}</span>
+            <span className="flex flex-wrap gap-1">{owners.map((owner, index) => <span key={`${ownerIdentityKey(owner)}:${index}`} className="inline-flex h-6 items-center gap-1 rounded-full bg-slate-50 pr-1 pl-1.5 text-[10px] text-slate-600 ring-1 ring-slate-200"><PersonAvatar name={owner.name} email={owner.email} />{owner.name}<button type="button" onClick={() => remove(index)} title={`移除${owner.name}`} className="text-slate-300 hover:text-red-500">×</button></span>)}</span>
           </span>}
           <span className="block max-h-64 overflow-auto p-1">
 			{peopleSearch.loading && <span className="block px-2 py-3 text-center text-[10px] text-slate-400">正在搜索飞书联系人…</span>}
 			{!peopleSearch.loading && visibleResults.map((person) => (
-              <button key={person.openId || person.name} type="button" onClick={() => add(person)} className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-slate-50">
-                <PersonAvatar name={person.name} openId={person.openId} ownUrl={searching ? resultAvatars[person.openId] ?? '' : undefined} size="size-7 text-[10px]" tone="bg-slate-400" />
+              <button key={person.email || person.name} type="button" onClick={() => add(person)} className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-slate-50">
+                <PersonAvatar name={person.name} email={person.email} ownUrl={searching ? resultAvatars[person.email] ?? '' : undefined} size="size-7 text-[10px]" tone="bg-slate-400" />
                 <span className="min-w-0">
 				  <span className="block text-[11px] font-medium text-slate-700">{person.name}{person.isExternal && <span className="ml-1 text-[9px] font-normal text-amber-600">外部</span>}</span>
 				  <span className="block truncate text-[9px] text-slate-400">{[person.department, person.email].filter(Boolean).join(' · ') || '飞书用户'}</span>
@@ -169,11 +150,11 @@ export function FeishuPeoplePicker({ kr, compact = false, small = false }: { kr:
 	const people = useMemo(() => splitOwnerNames(kr.ownerName), [kr.ownerName])
 	const owners = useMemo<KrOwner[]>(() => {
 		if (kr.owners?.length) return kr.owners
-		return people.map((name, index) => ({ name, openId: index === 0 ? (kr.ownerOpenId ?? '') : '' }))
-	}, [kr.ownerOpenId, kr.owners, people])
+		return people.map((name, index) => ({ name, email: index === 0 ? (kr.ownerEmail ?? '') : '' }))
+	}, [kr.ownerEmail, kr.owners, people])
 	return <FeishuPeoplePickerInput owners={owners} options={options} compact={compact} small={small} onChange={(nextOwners) => {
 		const nextNames = joinOwnerNames(nextOwners.map((owner) => owner.name))
-		setKrOwner(kr.id, nextNames, nextOwners[0]?.openId ?? '', nextOwners)
+		setKrOwner(kr.id, nextNames, nextOwners[0]?.email ?? '', nextOwners)
 	}} />
 }
 

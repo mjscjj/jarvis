@@ -98,7 +98,9 @@ func migrateLegacyKROwnerProjection(db *gorm.DB) error {
 		for index, name := range names {
 			owner := OwnerView{Name: strings.TrimSpace(name)}
 			if index == 0 {
-				owner.OpenID = strings.TrimSpace(record.OwnerOpenID)
+				if strings.TrimSpace(record.OwnerOpenID) != "" {
+					return fmt.Errorf("legacy KR owner projection requires explicit email migration before startup")
+				}
 			}
 			owners = append(owners, owner)
 		}

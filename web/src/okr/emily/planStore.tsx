@@ -550,12 +550,12 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
       const kr = findKr(draft, krId)
       if (kr) kr.title = title
     }),
-    setKrOwner: (krId, ownerName, ownerOpenId, owners) => mutate((draft) => {
+    setKrOwner: (krId, ownerName, ownerEmail, owners) => mutate((draft) => {
       const kr = findKr(draft, krId)
       if (!kr) return
       kr.ownerName = ownerName
-      kr.ownerOpenId = ownerOpenId ?? ''
-      kr.owners = owners ?? ownerName.split(/[、,，;；]/).map((name) => ({ name: name.trim(), openId: '' })).filter((owner) => owner.name)
+      kr.ownerEmail = ownerEmail ?? ''
+      kr.owners = owners ?? ownerName.split(/[、,，;；]/).map((name) => ({ name: name.trim(), email: '' })).filter((owner) => owner.name)
     }),
     setKrBusinessCategory: (krId, category) => mutate((draft) => {
       const kr = findKr(draft, krId)
@@ -607,7 +607,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
           title: input.title,
           owners,
           ownerName: owners.map((owner) => owner.name).join('、'),
-          ownerOpenId: owners[0]?.openId ?? '',
+          ownerEmail: owners[0]?.email ?? '',
           metricNote: '',
           metrics: [],
           points: [],

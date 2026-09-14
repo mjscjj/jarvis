@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ClipboardEventHandler, KeyboardEvent, ReactNode, RefObject } from 'react'
 import { useFeishuPeopleSearch } from '../../../useFeishuPeopleSearch'
+import { searchOKRPeople } from '../api'
 import { insertCommentMention, mentionQueryAtCaret, mentionsPresentInContent } from '../mentions'
 import { ownerOptions } from '../people'
 import type { CommentMention, Objective, PersonSearchItem } from '../types'
@@ -30,16 +31,16 @@ export function CommentMentionInput({ value, objectives, placeholder, rows, auto
   const [trigger, setTrigger] = useState(() => undefined as ReturnType<typeof mentionQueryAtCaret>)
   const [activeIndex, setActiveIndex] = useState(0)
   const [selectionError, setSelectionError] = useState('')
-  const search = useFeishuPeopleSearch({ active: Boolean(trigger), debounceMs: 250 })
-  const selected = useMemo(() => new Set(value.mentions.map((mention) => mention.openId)), [value.mentions])
+  const search = useFeishuPeopleSearch({ searchFn: searchOKRPeople, active: Boolean(trigger), debounceMs: 250 })
+  const selected = useMemo(() => new Set(value.mentions.map((mention) => mention.email)), [value.mentions])
 
   const localResults = useMemo<PersonSearchItem[]>(() => ownerOptions(objectives)
-    .filter((owner) => owner.openId && !selected.has(owner.openId) && (!trigger?.query || owner.name.toLowerCase().includes(trigger.query.toLowerCase())))
+    .filter((owner) => owner.email && !selected.has(owner.email) && (!trigger?.query || owner.name.toLowerCase().includes(trigger.query.toLowerCase())))
     .slice(0, 6)
-    .map((owner) => ({ openId: owner.openId, name: owner.name, department: '当前 OKR 负责人', email: '', isExternal: false, hasChatted: false })), [objectives, selected, trigger?.query])
+    .map((owner) => ({ email: owner.email, name: owner.name, department: '当前 OKR 负责人', isExternal: false, hasChatted: false })), [objectives, selected, trigger?.query])
   const remoteResults = useMemo<PersonSearchItem[]>(() => search.candidates
-    .map((person) => ({ openId: person.open_id, name: person.name, department: person.department, email: person.email, isExternal: person.is_external, hasChatted: person.has_chatted }))
-    .filter((person) => person.openId && !selected.has(person.openId)), [search.candidates, selected])
+    .map((person) => ({ email: person.email, unionId: person.union_id, name: person.name, department: person.department, isExternal: person.is_external, hasChatted: person.has_chatted }))
+    .filter((person) => person.email && !selected.has(person.email)), [search.candidates, selected])
   const results = trigger?.query.trim() ? remoteResults : localResults
 
   useEffect(() => {
@@ -55,7 +56,7 @@ export function CommentMentionInput({ value, objectives, placeholder, rows, auto
   const select = (person: PersonSearchItem) => {
     if (!trigger || person.isExternal) return
     try {
-      const next = insertCommentMention(value.content, trigger, { openId: person.openId, name: person.name }, value.mentions)
+      const next = insertCommentMention(value.content, trigger, { email: person.email, name: person.name }, value.mentions)
       onChange({ content: next.content, mentions: next.mentions })
       setTrigger(undefined)
       setSelectionError('')
@@ -116,7 +117,7 @@ export function CommentMentionInput({ value, objectives, placeholder, rows, auto
         <div className="absolute right-0 left-0 top-full z-20 mt-1 max-h-52 overflow-auto rounded-lg border border-slate-200 bg-white p-1 shadow-xl">
           {search.loading && <div className="px-2 py-2 text-[10px] text-slate-400">正在搜索飞书联系人…</div>}
           {!search.loading && results.map((person, index) => (
-            <button key={person.openId} type="button" disabled={person.isExternal} onMouseDown={(event) => event.preventDefault()} onClick={() => select(person)} className={`flex w-full items-center justify-between rounded-md px-2 py-2 text-left ${index === activeIndex ? 'bg-indigo-50' : 'hover:bg-slate-50'} disabled:cursor-not-allowed disabled:opacity-50`}>
+            <button key={person.email} type="button" disabled={person.isExternal} onMouseDown={(event) => event.preventDefault()} onClick={() => select(person)} className={`flex w-full items-center justify-between rounded-md px-2 py-2 text-left ${index === activeIndex ? 'bg-indigo-50' : 'hover:bg-slate-50'} disabled:cursor-not-allowed disabled:opacity-50`}>
               <span className="text-[11px] font-medium text-slate-700">{person.name}{person.isExternal && <span className="ml-1 text-[9px] text-amber-600">外部，暂不可提醒</span>}</span>
               <span className="ml-3 truncate text-[9px] text-slate-400">{personLabel(person)}</span>
             </button>
@@ -128,7 +129,7 @@ export function CommentMentionInput({ value, objectives, placeholder, rows, auto
       )}
       {value.mentions.length > 0 && (
         <div className="mt-1 flex flex-wrap gap-1">
-          {value.mentions.map((mention) => <span key={mention.openId} className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[9px] font-medium text-indigo-600">@{mention.name}</span>)}
+          {value.mentions.map((mention) => <span key={mention.email} className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[9px] font-medium text-indigo-600">@{mention.name}</span>)}
         </div>
       )}
       {selectionError && <div className="mt-1 text-[10px] text-red-600">{selectionError}</div>}

@@ -27,20 +27,20 @@ func TestWeeklyScoresArePreviewOnlyAndVersionedPerTarget(t *testing.T) {
 
 	if _, err := service.ReplaceWeeklyScore(t.Context(), WeeklyScoreInput{
 		Quarter: objective.Quarter, Week: classic.Week, TargetKind: domain.WeeklyScoreTargetKR,
-		TargetID: kr.ID, Score: 0.7, UpdatedBy: "ou_owner",
+		TargetID: kr.ID, Score: 0.7, UpdatedBy: "owner@example.test",
 	}); err == nil {
 		t.Fatal("classic week accepted a score")
 	}
 	if _, err := service.ReplaceWeeklyScore(t.Context(), WeeklyScoreInput{
 		Quarter: objective.Quarter, Week: preview.Week, TargetKind: domain.WeeklyScoreTargetKR,
-		TargetID: kr.ID, Score: 0.75, UpdatedBy: "ou_owner",
+		TargetID: kr.ID, Score: 0.75, UpdatedBy: "owner@example.test",
 	}); err == nil {
 		t.Fatal("score with unsupported precision succeeded")
 	}
 
 	parent, err := service.ReplaceWeeklyScore(t.Context(), WeeklyScoreInput{
 		Quarter: objective.Quarter, Week: preview.Week, TargetKind: domain.WeeklyScoreTargetKR,
-		TargetID: kr.ID, Score: 0.7, UpdatedBy: "ou_owner",
+		TargetID: kr.ID, Score: 0.7, UpdatedBy: "owner@example.test",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -50,7 +50,7 @@ func TestWeeklyScoresArePreviewOnlyAndVersionedPerTarget(t *testing.T) {
 	}
 	pointResult, err := service.ReplaceWeeklyScore(t.Context(), WeeklyScoreInput{
 		Quarter: objective.Quarter, Week: preview.Week, TargetKind: domain.WeeklyScoreTargetPoint,
-		TargetID: strategy.ID, Score: 0.5, UpdatedBy: "ou_owner",
+		TargetID: strategy.ID, Score: 0.5, UpdatedBy: "owner@example.test",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -64,13 +64,13 @@ func TestWeeklyScoresArePreviewOnlyAndVersionedPerTarget(t *testing.T) {
 	}
 	if _, err := service.ReplaceWeeklyScore(t.Context(), WeeklyScoreInput{
 		Quarter: objective.Quarter, Week: preview.Week, TargetKind: domain.WeeklyScoreTargetPoint,
-		TargetID: strategy.ID, Score: 0.6, ExpectedVersion: 0, UpdatedBy: "ou_stale",
+		TargetID: strategy.ID, Score: 0.6, ExpectedVersion: 0, UpdatedBy: "stale@example.test",
 	}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("second first-write score error = %v, want ErrConflict", err)
 	}
 	updated, err := service.ReplaceWeeklyScore(t.Context(), WeeklyScoreInput{
 		Quarter: objective.Quarter, Week: preview.Week, TargetKind: domain.WeeklyScoreTargetPoint,
-		TargetID: strategy.ID, Score: 0.8, ExpectedVersion: 1, UpdatedBy: "ou_owner",
+		TargetID: strategy.ID, Score: 0.8, ExpectedVersion: 1, UpdatedBy: "owner@example.test",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -84,7 +84,7 @@ func TestWeeklyScoresArePreviewOnlyAndVersionedPerTarget(t *testing.T) {
 	}
 	if _, err := service.ReplaceWeeklyScore(t.Context(), WeeklyScoreInput{
 		Quarter: objective.Quarter, Week: preview.Week, TargetKind: domain.WeeklyScoreTargetPoint,
-		TargetID: strategy.ID, Score: 0.3, ExpectedVersion: 0, UpdatedBy: "ou_owner",
+		TargetID: strategy.ID, Score: 0.3, ExpectedVersion: 0, UpdatedBy: "owner@example.test",
 	}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("stale score error = %v, want ErrConflict", err)
 	}
@@ -103,7 +103,7 @@ func TestWeeklyScoresArePreviewOnlyAndVersionedPerTarget(t *testing.T) {
 	}
 	deleted, err := service.DeleteWeeklyScore(t.Context(), DeleteWeeklyScoreInput{
 		Quarter: objective.Quarter, Week: preview.Week, TargetKind: domain.WeeklyScoreTargetKR,
-		TargetID: kr.ID, ExpectedVersion: 1, UpdatedBy: "ou_owner",
+		TargetID: kr.ID, ExpectedVersion: 1, UpdatedBy: "owner@example.test",
 	})
 	if err != nil {
 		t.Fatal(err)

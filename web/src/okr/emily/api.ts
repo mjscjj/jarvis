@@ -1,6 +1,6 @@
 import { appPath } from '../../appPath.ts'
 import { normalizeKRTitle } from './krTitle'
-import type { AuthStatus, CommentMention, Entry, EnumValues, FeishuDeviceLogin, FeishuDeviceLoginPoll, FeishuDocumentResult, FollowUpItem, FollowUpList, FollowUpStatus, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, OKRActivityEntry, OKRPlan, OKRPlanList, PageComment, PageCommentList, PersonAvatarItem, PointKind, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
+import type { AuthStatus, CommentDelivery, CommentMention, Entry, EnumValues, FeishuDeviceLogin, FeishuDeviceLoginPoll, FeishuDocumentResult, FollowUpItem, FollowUpList, FollowUpStatus, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, OKRActivityEntry, OKRPlan, OKRPlanList, PageComment, PageCommentList, PersonAvatarItem, PointKind, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
 
 interface Envelope<T> {
   code: number
@@ -24,14 +24,14 @@ interface APIKr {
   id: string
   title: string
 	delete_token?: string
-  owner_open_id: string
+  owner_email: string
 	owner_name: string
-	owners: Array<{ open_id: string; name: string; identity_namespace?: 'main_feishu_app' }>
+	owners: Array<{ email: string; name: string; union_id?: string }>
 	metric_note: string
   version: number
 	weekly_core_version: number
   metrics: Array<{ id: string; text: string; light?: Light; images?: Entry['images'] }>
-	  points: Array<{ id: string; version: number; kind: PointKind; title: string; meego_work_item_id?: string; meego_url?: string; tags: KrTag[]; owners?: Array<{ open_id: string; name: string; identity_namespace?: 'main_feishu_app' }>; entries: APIEntry[]; previous_entries: APIEntry[]; score?: WeeklyScore }>
+	  points: Array<{ id: string; version: number; kind: PointKind; title: string; meego_work_item_id?: string; meego_url?: string; tags: KrTag[]; owners?: Array<{ email: string; name: string; union_id?: string }>; entries: APIEntry[]; previous_entries: APIEntry[]; score?: WeeklyScore }>
   tags: KrTag[]
   score?: WeeklyScore
 }
@@ -56,10 +56,10 @@ interface APIPlanObjective {
     id: string
     title: string
     version?: number
-    owners: Array<{ open_id: string; name: string; identity_namespace?: 'main_feishu_app' }>
+    owners: Array<{ email: string; name: string; union_id?: string }>
     metric_note: string
     metrics: Array<{ id: string; text: string; light?: Light; images?: Entry['images'] }>
-    points: Array<{ id: string; version?: number; kind?: PointKind; title?: string; meego_work_item_id?: string; meego_url?: string; owners?: Array<{ open_id: string; name: string; identity_namespace?: 'main_feishu_app' }>; tags?: KrTag[] }>
+    points: Array<{ id: string; version?: number; kind?: PointKind; title?: string; meego_work_item_id?: string; meego_url?: string; owners?: Array<{ email: string; name: string; union_id?: string }>; tags?: KrTag[] }>
     tags: KrTag[]
   }>
 }
@@ -94,7 +94,7 @@ interface APIPointDefinitionPatchResult {
 	delete_token?: string
 	plan_delete_token?: string
 	title: string
-	owners: Array<{ open_id: string; name: string; identity_namespace?: 'main_feishu_app' }>
+	owners: Array<{ email: string; name: string; union_id?: string }>
 }
 
 export interface PointDefinitionPatchResult {
@@ -164,9 +164,10 @@ interface APIPageComment {
   author_open_id?: string
   author_name: string
   content: string
-  mentions?: Array<{ open_id: string; name: string }>
+  mentions?: Array<{ email: string; name: string }>
   images?: ImageRef[]
   notification_errors?: string[]
+  notifications?: CommentDelivery[]
   todo?: boolean
   resolved?: boolean
   created_at: string
@@ -188,7 +189,7 @@ interface APIFollowUpItem {
   week: string
   version: number
   topic: string
-  owners: Array<{ open_id: string; name: string }>
+  owners: Array<{ email: string; name: string; union_id?: string }>
   status: FollowUpStatus
   assign_date: string
   update: string
@@ -255,7 +256,7 @@ interface APIReminderPreview {
     missing_count: number
   }
   recipients: Array<{
-    owner_open_id: string
+    owner_email: string
     owner_name: string
     due_count: number
     filled_count: number
@@ -397,9 +398,9 @@ function fromAPIKr(value: APIKr): Kr {
     id: value.id,
     title: normalizeKRTitle(value.title),
 	deleteToken: value.delete_token,
-    ownerOpenId: value.owner_open_id,
+    ownerEmail: value.owner_email,
     ownerName: value.owner_name,
-    owners: (value.owners ?? []).map((owner): KrOwner => ({ openId: owner.open_id, name: owner.name, identityNamespace: owner.identity_namespace })),
+    owners: (value.owners ?? []).map((owner): KrOwner => ({ email: owner.email, name: owner.name, unionId: owner.union_id })),
 		metricNote: value.metric_note,
     version: value.version,
 		weeklyCoreVersion: value.weekly_core_version,
@@ -412,7 +413,7 @@ function fromAPIKr(value: APIKr): Kr {
       meegoWorkItemId: point.meego_work_item_id ?? '',
       meegoUrl: point.meego_url ?? '',
       tags: point.tags ?? [],
-      owners: (point.owners ?? []).map((owner): KrOwner => ({ openId: owner.open_id, name: owner.name, identityNamespace: owner.identity_namespace })),
+      owners: (point.owners ?? []).map((owner): KrOwner => ({ email: owner.email, name: owner.name, unionId: owner.union_id })),
       score: point.score,
       entries: point.entries.map((entry) => ({
         id: entry.id,
@@ -450,9 +451,9 @@ function fromAPIPlanObjectives(value: APIPlanObjective[]): Objective[] {
         id: kr.id,
         title: normalizeKRTitle(kr.title),
         version: kr.version ?? 0,
-        owners: (kr.owners ?? []).map((owner): KrOwner => ({ openId: owner.open_id, name: owner.name, identityNamespace: owner.identity_namespace })),
+        owners: (kr.owners ?? []).map((owner): KrOwner => ({ email: owner.email, name: owner.name, unionId: owner.union_id })),
         ownerName: (kr.owners ?? []).map((owner) => owner.name).filter(Boolean).join('、'),
-        ownerOpenId: (kr.owners ?? []).find((owner) => owner.open_id)?.open_id ?? '',
+        ownerEmail: (kr.owners ?? []).find((owner) => owner.email)?.email ?? '',
         metricNote: kr.metric_note,
         weeklyCoreVersion: 0,
         metrics: (kr.metrics ?? []).map((metric) => ({ ...metric, images: metric.images ?? [] })),
@@ -464,7 +465,7 @@ function fromAPIPlanObjectives(value: APIPlanObjective[]): Objective[] {
           meegoWorkItemId: point.meego_work_item_id ?? '',
           meegoUrl: point.meego_url ?? '',
           tags: point.tags ?? [],
-          owners: (point.owners ?? []).map((owner): KrOwner => ({ openId: owner.open_id, name: owner.name, identityNamespace: owner.identity_namespace })),
+          owners: (point.owners ?? []).map((owner): KrOwner => ({ email: owner.email, name: owner.name, unionId: owner.union_id })),
           entries: [],
           previousEntries: [],
         })),
@@ -483,7 +484,7 @@ function toAPIPlanObjective(objective: Objective): APIPlanObjective {
       id: kr.id,
       title: normalizeKRTitle(kr.title),
       version: kr.version ?? 0,
-      owners: (kr.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
+      owners: (kr.owners ?? []).map((owner) => ({ email: owner.email, name: owner.name, union_id: owner.unionId })),
       metric_note: kr.metricNote ?? '',
       metrics: kr.metrics.map((metric) => ({ id: metric.id, text: metric.text, light: metric.light, images: metric.images ?? [] })),
       points: kr.points.map((point) => ({
@@ -494,7 +495,7 @@ function toAPIPlanObjective(objective: Objective): APIPlanObjective {
 					title: point.title,
 					meego_work_item_id: point.meegoWorkItemId ?? '',
 					meego_url: point.meegoUrl ?? '',
-					owners: (point.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
+					owners: (point.owners ?? []).map((owner) => ({ email: owner.email, name: owner.name, union_id: owner.unionId })),
 					tags: point.tags ?? [],
 				} : {}),
       })),
@@ -702,9 +703,9 @@ export async function patchPointDefinition(input: { pointId: string; planId?: st
   const path = input.planId
     ? `/api/biz-okr/plans/${encodeURIComponent(input.planId)}/points/${encodeURIComponent(input.pointId)}/definition`
     : `/api/okr/points/${encodeURIComponent(input.pointId)}/definition`
-	  const body: { expected_version: number; title?: string; owners?: Array<{ open_id: string; name: string }>; kind?: PointKind; meego_work_item_id?: string; meego_url?: string; tags?: KrTag[] } = { expected_version: input.expectedVersion }
+	  const body: { expected_version: number; title?: string; owners?: Array<{ email: string; name: string }>; kind?: PointKind; meego_work_item_id?: string; meego_url?: string; tags?: KrTag[] } = { expected_version: input.expectedVersion }
 	  if (input.title !== undefined) body.title = input.title
-	  if (input.owners !== undefined) body.owners = input.owners.map((owner) => ({ open_id: owner.openId, name: owner.name }))
+	  if (input.owners !== undefined) body.owners = input.owners.map((owner) => ({ email: owner.email, name: owner.name, union_id: owner.unionId }))
 	  if (input.kind !== undefined) body.kind = input.kind
 	  if (input.meegoWorkItemId !== undefined) body.meego_work_item_id = input.meegoWorkItemId
 	  if (input.meegoUrl !== undefined) body.meego_url = input.meegoUrl
@@ -717,7 +718,7 @@ export async function patchPointDefinition(input: { pointId: string; planId?: st
 		deleteToken: value.delete_token,
 		planDeleteToken: value.plan_delete_token,
 	    title: value.title,
-	    owners: (value.owners ?? []).map((owner) => ({ openId: owner.open_id, name: owner.name, identityNamespace: owner.identity_namespace })),
+	    owners: (value.owners ?? []).map((owner) => ({ email: owner.email, name: owner.name, unionId: owner.union_id })),
 	  }
 }
 
@@ -800,9 +801,10 @@ function fromAPIComment(value: APIPageComment): PageComment {
     authorOpenId: value.author_open_id,
     authorName: value.author_name,
     content: value.content,
-    mentions: (value.mentions ?? []).map((mention) => ({ openId: mention.open_id, name: mention.name })),
+    mentions: (value.mentions ?? []).map((mention) => ({ email: mention.email, name: mention.name })),
     images: value.images ?? [],
     notificationErrors: value.notification_errors,
+    notifications: value.notifications,
     todo: value.todo ?? false,
     resolved: value.resolved ?? false,
     createdAt: value.created_at,
@@ -859,7 +861,7 @@ function fromAPIFollowUp(value: APIFollowUpItem): FollowUpItem {
     week: value.week,
     version: value.version,
     topic: value.topic,
-    owners: value.owners.map((owner) => ({ openId: owner.open_id, name: owner.name })),
+    owners: value.owners.map((owner) => ({ email: owner.email, name: owner.name, unionId: owner.union_id })),
     status: value.status,
     assignDate: value.assign_date,
     update: value.update,
@@ -880,7 +882,7 @@ function followUpBody(item: FollowUpItem) {
     quarter: item.quarter,
     week: item.week,
     topic: item.topic,
-    owners: item.owners.map((owner) => ({ open_id: owner.openId, name: owner.name })),
+    owners: item.owners.map((owner) => ({ email: owner.email, name: owner.name, union_id: owner.unionId })),
     status: item.status,
     assign_date: item.assignDate,
     update: item.update,
@@ -959,7 +961,7 @@ export async function createComment(input: {
       selection_prefix: input.selectionPrefix ?? '',
       selection_suffix: input.selectionSuffix ?? '',
       content: input.content,
-      mentions: (input.mentions ?? []).map((mention) => ({ open_id: mention.openId, name: mention.name })),
+      mentions: (input.mentions ?? []).map((mention) => ({ email: mention.email, name: mention.name })),
       images: input.images ?? [],
     }),
   })
@@ -993,7 +995,7 @@ export async function createPlanComment(planId: string, input: {
       selection_prefix: input.selectionPrefix ?? '',
       selection_suffix: input.selectionSuffix ?? '',
       content: input.content,
-      mentions: (input.mentions ?? []).map((mention) => ({ open_id: mention.openId, name: mention.name })),
+      mentions: (input.mentions ?? []).map((mention) => ({ email: mention.email, name: mention.name })),
       images: input.images ?? [],
     }),
   })
@@ -1053,7 +1055,7 @@ export async function updateComment(comment: Pick<PageComment, 'id' | 'version'>
     body: JSON.stringify({
       ...patch,
       expected_version: comment.version,
-      mentions: patch.mentions?.map((mention) => ({ open_id: mention.openId, name: mention.name })),
+      mentions: patch.mentions?.map((mention) => ({ email: mention.email, name: mention.name })),
     }),
   })
   return fromAPIComment(value)
@@ -1087,7 +1089,7 @@ export async function getReminderPreview(quarter: string, week: string): Promise
       missingCount: value.summary.missing_count,
     },
     recipients: value.recipients.map((recipient) => ({
-      ownerOpenId: recipient.owner_open_id,
+      ownerEmail: recipient.owner_email,
       ownerName: recipient.owner_name,
       dueCount: recipient.due_count,
       filledCount: recipient.filled_count,
@@ -1118,7 +1120,7 @@ function fromAPIReminderBatch(value: APIReminderBatch): ReminderBatch {
       missingCount: value.summary.missing_count,
     },
     recipients: value.recipients.map((recipient) => ({
-      ownerOpenId: recipient.owner_open_id,
+      ownerEmail: recipient.owner_email,
       ownerName: recipient.owner_name,
       dueCount: recipient.due_count,
       filledCount: recipient.filled_count,
@@ -1345,7 +1347,7 @@ export async function replaceKRDefinition(kr: Kr): Promise<Kr> {
 	const body = {
 		expected_version: kr.version ?? 0,
 		title: kr.title,
-		owners: (kr.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
+		owners: (kr.owners ?? []).map((owner) => ({ email: owner.email, name: owner.name, union_id: owner.unionId })),
 	}
 	return fromAPIKr(await request<APIKr>(`/api/okr/krs/${encodeURIComponent(kr.id)}/definition`, {
 		method: 'PUT',
@@ -1363,7 +1365,7 @@ export async function replaceKR(kr: Kr): Promise<Kr> {
 			expected_version: kr.version ?? 0,
 			delete_token: kr.deleteToken ?? '',
 			title: kr.title,
-			owners: (kr.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
+			owners: (kr.owners ?? []).map((owner) => ({ email: owner.email, name: owner.name, union_id: owner.unionId })),
 			metric_note: kr.metricNote,
       metrics: kr.metrics,
       points: kr.points.map((point) => ({
@@ -1374,7 +1376,7 @@ export async function replaceKR(kr: Kr): Promise<Kr> {
 					title: point.title,
 					meego_work_item_id: point.meegoWorkItemId ?? '',
 					meego_url: point.meegoUrl ?? '',
-					owners: (point.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
+					owners: (point.owners ?? []).map((owner) => ({ email: owner.email, name: owner.name, union_id: owner.unionId })),
 					tags: point.tags ?? [],
 				} : {}),
       })),
@@ -1393,9 +1395,9 @@ export async function replaceKR(kr: Kr): Promise<Kr> {
   }
 }
 
-export async function getPeopleAvatars(names: string[], signal?: AbortSignal): Promise<PersonAvatarItem[]> {
-  const value = await request<{ people: Array<{ open_id: string; name: string; avatar_url: string }> }>(`/api/biz-okr/people/avatars?names=${encodeURIComponent(names.join(','))}`, { signal })
-  return value.people.map((item) => ({ openId: item.open_id, name: item.name, avatarUrl: item.avatar_url }))
+export async function getPeopleAvatars(emails: string[], signal?: AbortSignal): Promise<PersonAvatarItem[]> {
+  const value = await request<{ people: Array<{ email: string; name: string; avatar_url: string }> }>(`/api/biz-okr/people/avatars?emails=${encodeURIComponent(emails.join(','))}`, { signal })
+  return value.people.map((item) => ({ email: item.email, name: item.name, avatarUrl: item.avatar_url }))
 }
 
 export async function createObjective(input: { quarter: string; title: string }): Promise<Objective> {
@@ -1450,7 +1452,7 @@ export async function createKR(objectiveId: string, input: { title: string; owne
 			method: 'POST',
 			body: JSON.stringify({
 				title: normalizeKRTitle(input.title),
-				owners: (input.owners ?? []).map((owner) => ({ open_id: owner.openId, name: owner.name })),
+				owners: (input.owners ?? []).map((owner) => ({ email: owner.email, name: owner.name, union_id: owner.unionId })),
 			tags: [
 				{ type: 'business_category', value: input.businessCategory },
 				{ type: 'priority', value: input.priority },
@@ -1465,4 +1467,21 @@ export async function deleteKR(kr: Kr): Promise<void> {
 		method: 'DELETE',
 		body: JSON.stringify({ expected_version: kr.version ?? 0, delete_token: kr.deleteToken ?? '' }),
   })
+}
+
+export interface OKRDirectoryCandidate {
+ email: string
+ name: string
+ union_id?: string
+ avatar_url?: string
+ department: string
+ is_external: boolean
+ has_chatted: boolean
+}
+export async function searchOKRPeople(query: string, signal?: AbortSignal): Promise<{ candidates: OKRDirectoryCandidate[]; has_more: boolean }> {
+ const result = await request<{candidates: OKRDirectoryCandidate[];has_more:boolean}>(`/api/biz-okr/people/search?q=${encodeURIComponent(query)}`, {signal})
+ return {...result, candidates: result.candidates.map(person => ({...person, department: person.department ?? '', is_external:false, has_chatted:false}))}
+}
+export async function retryCommentNotifications(id: string, email: string): Promise<CommentDelivery[]> {
+ return request<CommentDelivery[]>(`/api/biz-okr/comments/${encodeURIComponent(id)}/notifications/retry`, { method:'POST', body:JSON.stringify({email}) })
 }

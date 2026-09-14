@@ -20,18 +20,18 @@ func TestPlanLifecycleKeepsOfficialOKRRowsUntouched(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	created, err := service.CreatePlan(t.Context(), CreatePlanInput{Quarter: "2026-Q3", Title: "Q3 Draft", CreatedBy: "ou_editor"})
+	created, err := service.CreatePlan(t.Context(), CreatePlanInput{Quarter: "2026-Q3", Title: "Q3 Draft", CreatedBy: "editor@example.test"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	created, err = service.CreatePlanObjective(t.Context(), created.ID, PlanObjectiveView{
 		ID: "plan-o-1", Title: "计划目标", KRs: []PlanKRView{{
-			ID: "plan-kr-1", Title: "计划 KR", Owners: []OwnerView{{OpenID: "ou_a", Name: "甲"}},
+			ID: "plan-kr-1", Title: "计划 KR", Owners: []OwnerView{{Email: "a@example.test", Name: "甲"}},
 			Tags:    []TagView{{Type: domain.TagTypeBusinessCategory, Value: "增长"}, {Type: domain.TagTypePriority, Value: "p0"}},
 			Metrics: []MetricView{{ID: "plan-m-1", Text: "核心目标 100", Light: domain.LightGreen}},
-			Points:  []PlanPointView{{ID: "plan-p-1", Kind: domain.PointKindStrategy, Title: "策略 KR", MeegoWorkItemID: "MEEGO-1", MeegoURL: "https://meego.test/MEEGO-1", Owners: []OwnerView{{OpenID: "ou_b", Name: "乙"}}, Tags: []TagView{{Type: "custom", Value: "待评审"}}}},
+			Points:  []PlanPointView{{ID: "plan-p-1", Kind: domain.PointKindStrategy, Title: "策略 KR", MeegoWorkItemID: "MEEGO-1", MeegoURL: "https://meego.test/MEEGO-1", Owners: []OwnerView{{Email: "b@example.test", Name: "乙"}}, Tags: []TagView{{Type: "custom", Value: "待评审"}}}},
 		}},
-	}, "ou_editor")
+	}, "editor@example.test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,7 +39,7 @@ func TestPlanLifecycleKeepsOfficialOKRRowsUntouched(t *testing.T) {
 		t.Fatalf("created plan = %+v", created)
 	}
 	kr := created.Objectives[0].KRs[0]
-	if kr.Owners[0].IdentityNamespace != OwnerIdentityNamespaceMainFeishuApp || kr.Points[0].Owners[0].IdentityNamespace != OwnerIdentityNamespaceMainFeishuApp {
+	if kr.Owners[0].Email == "" || kr.Points[0].Owners[0].Email == "" {
 		t.Fatalf("plan owner namespaces = kr:%+v point:%+v", kr.Owners, kr.Points[0].Owners)
 	}
 
@@ -79,7 +79,7 @@ func TestPlanAllowsDraftPlaceholders(t *testing.T) {
 				{ID: "plan-p-2", Kind: domain.PointKindProduct, Title: ""},
 			},
 		}},
-	}, "ou_editor")
+	}, "editor@example.test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -161,7 +161,7 @@ func TestPlanPointDefinitionPatchesDoNotOverwriteSiblingPoints(t *testing.T) {
 		t.Fatal(err)
 	}
 	productTitle := "罗沙填写的产品 KR"
-	owners := []OwnerView{{OpenID: "ou_luosha", Name: "罗沙"}}
+	owners := []OwnerView{{Email: "luosha@example.test", Name: "罗沙"}}
 	productResult, err := service.PatchPlanPointDefinition(t.Context(), plan.ID, "product-point", PatchPointDefinitionInput{ExpectedVersion: 0, Title: &productTitle, Owners: &owners, UpdatedBy: "product-editor"})
 	if err != nil {
 		t.Fatal(err)

@@ -13,6 +13,7 @@ CONFIG_PATH="$CONFIG_DIR/config.yaml"
 SERVER_BIN="$REPO_ROOT/bin/jarvis-server-okr-e2e"
 BASE_URL="${JARVIS_OKR_E2E_BASE_URL:-http://127.0.0.1:18803}"
 OWNER_OPEN_ID="${JARVIS_OKR_E2E_OWNER_OPEN_ID:-}"
+OWNER_EMAIL="${JARVIS_OKR_E2E_OWNER_EMAIL:-}"
 OWNER_NAME="${JARVIS_OKR_E2E_OWNER_NAME:-本机测试用户}"
 FIXTURE_PATH="$RUNTIME_DIR/fixture.json"
 
@@ -37,6 +38,7 @@ commands:
 
 environment:
   JARVIS_OKR_E2E_OWNER_OPEN_ID   Required by prepare/seed; must start with ou_
+  JARVIS_OKR_E2E_OWNER_EMAIL     Required verified full email for business owners
   JARVIS_OKR_E2E_OWNER_NAME      Optional display name (default: 本机测试用户)
   JARVIS_OKR_E2E_BASE_URL        Optional URL (default: http://127.0.0.1:18803)
 
@@ -52,6 +54,7 @@ fail() {
 
 require_owner() {
   [[ "$OWNER_OPEN_ID" =~ ^ou_[A-Za-z0-9]+$ ]] || fail "JARVIS_OKR_E2E_OWNER_OPEN_ID must be a real ou_ open_id"
+  [[ "$OWNER_EMAIL" == *@*.* ]] || fail "JARVIS_OKR_E2E_OWNER_EMAIL must be a verified full email"
   [[ -n "$OWNER_NAME" ]] || fail "JARVIS_OKR_E2E_OWNER_NAME is empty"
 }
 
@@ -126,6 +129,15 @@ identity:
   feishu_base_url: "https://open.feishu.cn"
   feishu_account_url: "https://accounts.feishu.cn"
 YAML
+
+  # The harness receives an explicit binding; it must not use the CLI default.
+  : "${JARVIS_OKR_E2E_FEISHU_APP_ID:?set the notification app ID}"
+  : "${JARVIS_OKR_E2E_FEISHU_PROFILE:?set the notification CLI profile}"
+  jq -n --arg app "$JARVIS_OKR_E2E_FEISHU_APP_ID" --arg profile "$JARVIS_OKR_E2E_FEISHU_PROFILE" \
+    --arg identity "${JARVIS_OKR_E2E_DIRECTORY_IDENTITY:-bot}" \
+    --arg directory_app "${JARVIS_OKR_E2E_DIRECTORY_APP_ID:-}" \
+    --arg directory_profile "${JARVIS_OKR_E2E_DIRECTORY_PROFILE:-}" \
+    '{feishu:{app_id:$app,cli_profile:$profile,directory_identity:$identity,directory_app_id:$directory_app,directory_profile:$directory_profile}}' >"$CONFIG_DIR/okr-module.runtime.yaml"
 
   cat >"$CONFIG_DIR/config.runtime.yaml" <<YAML
 server:
@@ -217,10 +229,10 @@ seed() {
 
   objective_response="$(api_write POST /api/okr/objectives '{"quarter":"2026-Q3","title":"E2E：跑通单人季度 OKR"}' | require_code_zero)"
   objective_id="$(jq -er '.data.id' <<<"$objective_response")"
-	kr_response="$(api_write POST "/api/biz-okr/objectives/$objective_id/krs" "$(jq -cn --arg open_id "$OWNER_OPEN_ID" --arg name "$OWNER_NAME" '{title:"E2E：验证一周填写到双周汇总",owners:[{open_id:$open_id,name:$name}],tags:[{type:"business_category",value:"E2E 测试"},{type:"priority",value:"p1"}]}')" | require_code_zero)"
+	kr_response="$(api_write POST "/api/biz-okr/objectives/$objective_id/krs" "$(jq -cn --arg email "$OWNER_EMAIL" --arg name "$OWNER_NAME" '{title:"E2E：验证一周填写到双周汇总",owners:[{email:$email,name:$name}],tags:[{type:"business_category",value:"E2E 测试"},{type:"priority",value:"p1"}]}')" | require_code_zero)"
   kr_id="$(jq -er '.data.id' <<<"$kr_response")"
 
-  api_write PUT "/api/biz-okr/krs/$kr_id" "$(jq -cn --arg open_id "$OWNER_OPEN_ID" --arg name "$OWNER_NAME" --arg kr_id "$kr_id" '{
+  api_write PUT "/api/biz-okr/krs/$kr_id" "$(jq -cn --arg email "$OWNER_EMAIL" --arg name "$OWNER_NAME" --arg kr_id "$kr_id" '{
     expected_version:0,
     title:"E2E：验证一周填写到双周汇总",
 		metric_note:"测试口径：两个拆解点均有周进展即视为当周填写完成。",
@@ -230,7 +242,7 @@ seed() {
       {id:($kr_id+"-product"),kind:"product",title:"产品：交付一个可回读结果",meego_work_item_id:"",meego_url:"",tags:[]}
     ],
 		tags:[{type:"business_category",value:"E2E 测试"},{type:"priority",value:"p1"},{type:"scenario",value:"minimal-e2e"}],
-    owners:[{open_id:$open_id,name:$name}]
+    owners:[{email:$email,name:$name}]
   }')" | require_code_zero >/dev/null
 
   "$SCRIPT_DIR/okr-module-tools" --base-url "$BASE_URL" open-week --quarter 2026-Q3 --week 2026-W35 | require_code_zero >/dev/null
@@ -246,9 +258,9 @@ seed() {
     --arg kr_id "$kr_id" \
     --arg strategy_point_id "$strategy_point_id" \
     --arg product_point_id "$product_point_id" \
-    --arg owner_open_id "$OWNER_OPEN_ID" \
+    --arg owner_email "$OWNER_EMAIL" \
     --arg owner_name "$OWNER_NAME" \
-    '{quarter:"2026-Q3",baseline_week:"2026-W35",current_week:"2026-W36",objective_id:$objective_id,kr_id:$kr_id,strategy_point_id:$strategy_point_id,product_point_id:$product_point_id,owner_open_id:$owner_open_id,owner_name:$owner_name}' >"$FIXTURE_PATH"
+    '{quarter:"2026-Q3",baseline_week:"2026-W35",current_week:"2026-W36",objective_id:$objective_id,kr_id:$kr_id,strategy_point_id:$strategy_point_id,product_point_id:$product_point_id,owner_email:$owner_email,owner_name:$owner_name}' >"$FIXTURE_PATH"
   echo "seeded fixture: $FIXTURE_PATH"
 }
 

@@ -31,14 +31,14 @@ test('OKR lens derives the principal objective roots and known world owners from
     title: '稳定交付',
     krs: [{
       id: 'kr-1', title: '完成上线', metricNote: '', metrics: [], entries: [],
-      owners: [{ openId: 'ou_me', name: '我' }, { openId: 'ou_dynamic', name: '临时协作者' }],
-      points: [{ id: 'point-1', kind: 'strategy', title: '灰度发布', entries: [], owners: [{ openId: 'ou_person', name: '协作者' }] }],
+      owners: [{ unionId: 'ou_me', name: '我' }, { unionId: 'ou_dynamic', name: '临时协作者' }],
+      points: [{ id: 'point-1', kind: 'strategy', title: '灰度发布', entries: [], owners: [{ unionId: 'ou_person', name: '协作者' }] }],
     }],
   }]
   const identities = [
-    { openId: 'ou_me', pageType: 'principal' as const, pageId: 1 },
-    { openId: 'ou_me', pageType: 'person' as const, pageId: 99 },
-    { openId: 'ou_person', pageType: 'person' as const, pageId: 3 },
+    { unionId: 'ou_me', pageType: 'principal' as const, pageId: 1 },
+    { unionId: 'ou_me', pageType: 'person' as const, pageId: 99 },
+    { unionId: 'ou_person', pageType: 'person' as const, pageId: 3 },
   ]
   const graph = buildOKRGraph({ objectives, relations: [], activePages: pages, fullIndex: index, identities, objectiveId: 'o-1' })
 

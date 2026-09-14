@@ -56,11 +56,15 @@ type CommentMentionNotification struct {
 }
 
 type CommentMentionNotifier interface {
-	NotifyCommentMention(context.Context, CommentMentionNotification) error
+	NotifyCommentMention(context.Context, CommentMentionNotification) (string, error)
+	VerifyCommentMention(context.Context, string) error
+	AppID() string
 }
 
 type commentBroadcastSender interface {
-	SendCardToMainAppUser(context.Context, string, string, string, string, string) error
+	SendCardToEmail(context.Context, string, string, string, string) (string, error)
+	VerifyMessage(context.Context, string) error
+	AppID() string
 }
 
 type BotCommentMentionNotifier struct {
@@ -82,17 +86,17 @@ func NewBotCommentMentionNotifier(sender commentBroadcastSender, publicBaseURL s
 	return &BotCommentMentionNotifier{sender: sender, publicBaseURL: publicBaseURL}, nil
 }
 
-func (n *BotCommentMentionNotifier) NotifyCommentMention(ctx context.Context, input CommentMentionNotification) error {
+func (n *BotCommentMentionNotifier) AppID() string { return n.sender.AppID() }
+func (n *BotCommentMentionNotifier) VerifyCommentMention(ctx context.Context, id string) error {
+	return n.sender.VerifyMessage(ctx, id)
+}
+func (n *BotCommentMentionNotifier) NotifyCommentMention(ctx context.Context, input CommentMentionNotification) (string, error) {
 	card, err := formatCommentMentionCard(input, n.commentURL(input))
 	if err != nil {
-		return fmt.Errorf("build comment notification card: %w", err)
+		return "", fmt.Errorf("build comment notification card: %w", err)
 	}
-	digest := sha256.Sum256([]byte(input.CommentID + "\x00" + input.Recipient.OpenID + "\x00" + card))
-	idempotencyKey := "okr-cmt-" + hex.EncodeToString(digest[:16])
-	if err := n.sender.SendCardToMainAppUser(ctx, input.Recipient.OpenID, input.Recipient.Name, input.AuthorEmail, card, idempotencyKey); err != nil {
-		return err
-	}
-	return nil
+	digest := sha256.Sum256([]byte(input.CommentID + "\x00" + input.Recipient.Email))
+	return n.sender.SendCardToEmail(ctx, input.Recipient.Email, input.AuthorEmail, card, "okr-cmt-"+hex.EncodeToString(digest[:16]))
 }
 
 func (n *BotCommentMentionNotifier) commentURL(input CommentMentionNotification) string {
@@ -223,13 +227,6 @@ func commentSourceTabLabel(tab string) string {
 	}
 }
 
-func (service *Service) notifyCreatedComment(ctx context.Context, row domain.PageComment, authorEmail string, mentions []CommentMention, sourceTab string) []string {
-	if len(mentions) == 0 {
-		return nil
-	}
-	return service.notifyCommentRecipients(ctx, row, authorEmail, mentions, sourceTab)
-}
-
 type commentHierarchy struct {
 	ObjectiveTitle string
 	KRID           string
@@ -238,25 +235,6 @@ type commentHierarchy struct {
 	PointKind      domain.PointKind
 	PointTitle     string
 	TargetText     string
-}
-
-func (service *Service) notifyCommentRecipients(ctx context.Context, row domain.PageComment, authorEmail string, mentions []CommentMention, sourceTab string) []string {
-	notification, err := service.commentMentionNotification(ctx, row, sourceTab)
-	if err != nil {
-		return []string{fmt.Sprintf("生成飞书 Bot 评论提醒失败：%v", err)}
-	}
-	notification.AuthorEmail = strings.TrimSpace(authorEmail)
-	errorsByRecipient := make([]string, 0)
-	for _, mention := range mentions {
-		if service.commentNotifier == nil {
-			return []string{"飞书 Bot 评论提醒未配置"}
-		}
-		notification.Recipient = mention
-		if err := service.commentNotifier.NotifyCommentMention(ctx, notification); err != nil {
-			errorsByRecipient = append(errorsByRecipient, fmt.Sprintf("提醒 %s 失败：%v", mention.Name, err))
-		}
-	}
-	return errorsByRecipient
 }
 
 func pointKindLabel(kind domain.PointKind) string {

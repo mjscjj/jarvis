@@ -45,7 +45,7 @@ export function OwnerFilterPicker({ options, ownerCounts, selectedKeys, onChange
     const clean = query.trim().toLocaleLowerCase()
     if (!clean) return rankKrOwnerSuggestions(options, recentKeys, ownerCounts, MAX_SUGGESTIONS)
     return options
-      .filter((owner) => owner.name.toLocaleLowerCase().includes(clean) || owner.openId.toLocaleLowerCase().includes(clean))
+      .filter((owner) => owner.name.toLocaleLowerCase().includes(clean) || owner.email.toLocaleLowerCase().includes(clean))
       .slice(0, MAX_SUGGESTIONS)
   }, [options, ownerCounts, query, recentKeys])
   const hiddenSelectedCount = Math.max(0, selectedOwners.length - MAX_VISIBLE_CHIPS)
@@ -133,7 +133,7 @@ export function OwnerFilterPicker({ options, ownerCounts, selectedKeys, onChange
         const key = ownerIdentityKey(owner)
         return (
           <span key={key} className="group/owner-filter inline-flex h-7 shrink-0 items-center gap-1 rounded-full border border-slate-200 bg-slate-50 py-0.5 pr-1.5 pl-1 text-[11px] font-medium text-slate-600 shadow-sm">
-            <PersonAvatar name={owner.name} openId={owner.openId} size="size-5 text-[9px]" tone="bg-slate-400" />
+            <PersonAvatar name={owner.name} email={owner.email} size="size-5 text-[9px]" tone="bg-slate-400" />
             <span className="max-w-20 truncate">{owner.name}</span>
             <button type="button" onClick={() => remove(key)} title={`移除${owner.name}筛选`} aria-label={`移除${owner.name}筛选`} className="ml-0.5 text-sm leading-none text-slate-300 hover:text-red-500">×</button>
           </span>
@@ -171,10 +171,10 @@ export function OwnerFilterPicker({ options, ownerCounts, selectedKeys, onChange
               {visibleOptions.map((owner) => {
                 const key = ownerIdentityKey(owner)
                 const selected = selectedSet.has(key)
-                const identity = duplicateNames.has(owner.name) && owner.openId ? ` · ${owner.openId.slice(-6)}` : ''
+                const identity = duplicateNames.has(owner.name) && owner.email ? ` · ${owner.email.slice(-6)}` : ''
                 return (
                   <button key={key} type="button" onClick={() => toggle(key)} aria-pressed={selected} className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors ${selected ? 'bg-slate-50' : 'hover:bg-slate-50'}`}>
-                    <PersonAvatar name={owner.name} openId={owner.openId} size="size-8 text-xs" tone="bg-slate-400" />
+                    <PersonAvatar name={owner.name} email={owner.email} size="size-8 text-xs" tone="bg-slate-400" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-xs font-semibold text-slate-700">{owner.name}</span>
                       <span className="mt-0.5 block truncate text-[10px] text-slate-400">当前 OKR 负责人{identity}</span>

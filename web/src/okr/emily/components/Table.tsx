@@ -242,12 +242,12 @@ function krOwners(kr: Kr): KrOwner[] {
   if (kr.owners?.length) return kr.owners.filter((owner) => owner.name.trim())
   return splitOwnerNames(kr.ownerName).map((name, index) => ({
     name,
-    openId: index === 0 ? (kr.ownerOpenId ?? '') : '',
+    email: index === 0 ? (kr.ownerEmail ?? '') : '',
   }))
 }
 
 function ownerTone(owner: KrOwner) {
-  const identity = owner.openId || owner.name
+  const identity = owner.email || owner.name
   let hash = 0
   for (const character of identity) hash = ((hash << 5) - hash + character.codePointAt(0)!) | 0
   return OWNER_TONES[(hash >>> 0) % OWNER_TONES.length]
@@ -255,10 +255,10 @@ function ownerTone(owner: KrOwner) {
 
 function KrOwnerBadge({ owner, compact = false }: { owner: KrOwner; compact?: boolean }) {
   const tone = ownerTone(owner)
-  if (compact) return <span title={owner.name} aria-label={owner.name} className={`inline-flex max-w-full items-center gap-1 rounded px-0.5 py-0 text-[8px] leading-3 text-slate-500`}><PersonAvatar name={owner.name} openId={owner.openId} size="size-3 text-[7px]" tone={tone.avatar} /><span className="min-w-0 break-words">{owner.name}</span></span>
+  if (compact) return <span title={owner.name} aria-label={owner.name} className={`inline-flex max-w-full items-center gap-1 rounded px-0.5 py-0 text-[8px] leading-3 text-slate-500`}><PersonAvatar name={owner.name} email={owner.email} size="size-3 text-[7px]" tone={tone.avatar} /><span className="min-w-0 break-words">{owner.name}</span></span>
   return (
     <span title={`负责人：${owner.name}`} className={`inline-flex h-6 items-center gap-1 rounded-full border py-0.5 pr-2 pl-1 text-[10px] font-semibold shadow-sm ${tone.badge}`}>
-      <PersonAvatar name={owner.name} openId={owner.openId} size="size-4 text-[8px]" tone={tone.avatar} />
+      <PersonAvatar name={owner.name} email={owner.email} size="size-4 text-[8px]" tone={tone.avatar} />
       <span className="max-w-24 truncate">{owner.name}</span>
     </span>
   )
@@ -279,7 +279,7 @@ function KrHeader({ objectiveId, kr, open, onToggle, onMoveUp, onMoveDown, readO
             </div>
             <div aria-label="KR 负责人" className="flex max-w-[48%] shrink-0 flex-wrap items-center justify-end gap-1">
               {!readOnly && <FeishuPeoplePicker kr={kr} />}
-              {readOnly && krOwners(kr).map((owner, index) => <KrOwnerBadge key={`${owner.openId || owner.name}:${index}`} owner={owner} />)}
+              {readOnly && krOwners(kr).map((owner, index) => <KrOwnerBadge key={`${owner.email || owner.name}:${index}`} owner={owner} />)}
             </div>
             {!readOnly && <MoveButtons label="条 KR" onUp={onMoveUp} onDown={onMoveDown} />}
           </div>
@@ -324,7 +324,7 @@ function PointHeader({ reviewUnderLabel = false, compactPresentation = false, ob
 
   const pointFooter = <>
         {!readOnly && <span className={compactPresentation ? 'flex min-w-0 max-w-full flex-wrap items-center gap-1' : 'flex max-w-[45%] shrink-0 flex-wrap items-center justify-end gap-1 pt-0.5'}><PointPeoplePicker krId={krId} point={point} small={compactPresentation} /></span>}
-        {readOnly && (point.owners?.length ?? 0) > 0 && <span aria-label="具体 KR 负责人" className={compactPresentation ? 'flex min-w-0 max-w-full flex-wrap items-center gap-1' : 'flex max-w-[45%] shrink-0 flex-wrap items-center justify-end gap-1 pt-0.5'}>{point.owners?.map((owner, ownerIndex) => <KrOwnerBadge key={`${owner.openId || owner.name}:${ownerIndex}`} owner={owner} compact={compactPresentation} />)}</span>}
+        {readOnly && (point.owners?.length ?? 0) > 0 && <span aria-label="具体 KR 负责人" className={compactPresentation ? 'flex min-w-0 max-w-full flex-wrap items-center gap-1' : 'flex max-w-[45%] shrink-0 flex-wrap items-center justify-end gap-1 pt-0.5'}>{point.owners?.map((owner, ownerIndex) => <KrOwnerBadge key={`${owner.email || owner.name}:${ownerIndex}`} owner={owner} compact={compactPresentation} />)}</span>}
 
         {!readOnly && <MoveButtons label="条具体 KR" onUp={onMoveUp} onDown={onMoveDown} />}
         {!structureReadOnly && (confirmDelete ? (

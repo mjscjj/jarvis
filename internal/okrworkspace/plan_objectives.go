@@ -43,6 +43,9 @@ func (s *Service) CreatePlanObjective(ctx context.Context, planID string, object
 	if err != nil {
 		return PlanView{}, err
 	}
+	if err := s.verifyPlanPeople(ctx, normalized); err != nil {
+		return PlanView{}, err
+	}
 	objective = normalized[0]
 	if objective.ID == "" {
 		return PlanView{}, fmt.Errorf("objective id is required")
@@ -128,6 +131,9 @@ func (s *Service) UpdatePlanObjective(ctx context.Context, planID, objectiveID s
 	}
 	normalized, err := normalizePlanObjectives([]PlanObjectiveView{input.Objective})
 	if err != nil {
+		return PlanView{}, err
+	}
+	if err := s.verifyPlanPeople(ctx, normalized); err != nil {
 		return PlanView{}, err
 	}
 	objective := normalized[0]

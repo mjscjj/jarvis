@@ -1,7 +1,7 @@
 import type { Kr, KrOwner } from './types'
 
 function ownerSignature(owners: KrOwner[] | undefined): string[] {
-  return (owners ?? []).map((owner) => `${owner.openId ?? ''}\u0000${owner.name}`)
+  return (owners ?? []).map((owner) => `${owner.email ?? ''}\u0000${owner.name}`)
 }
 
 // Names exactly the parent fields a filling week may push back to the shared

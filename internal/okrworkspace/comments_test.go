@@ -16,9 +16,9 @@ type commentMentionNotifierStub struct {
 	err   error
 }
 
-func (stub *commentMentionNotifierStub) NotifyCommentMention(_ context.Context, notification CommentMentionNotification) error {
+func (stub *commentMentionNotifierStub) NotifyCommentMention(_ context.Context, notification CommentMentionNotification) (string, error) {
 	stub.items = append(stub.items, notification)
-	return stub.err
+	return "om_test_notice", stub.err
 }
 
 func TestCommentRecordsAuthorUnionIDThroughReadBack(t *testing.T) {
@@ -435,7 +435,7 @@ func TestCommentMentionNotifiesWithWeekObjectiveKRAndExactContent(t *testing.T) 
 	created, err := service.CreateComment(t.Context(), CreateCommentInput{
 		Quarter: week.Quarter, Week: week.Week, TargetType: "point", TargetID: point.ID,
 		AuthorOpenID: "ou_alice", AuthorName: "Alice", Content: content,
-		Mentions: []CommentMention{{OpenID: "ou_zhangruoyi", Name: "张若怡"}},
+		Mentions: []CommentMention{{Email: "zhangruoyi@example.test", Name: "张若怡"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -444,7 +444,7 @@ func TestCommentMentionNotifiesWithWeekObjectiveKRAndExactContent(t *testing.T) 
 		t.Fatalf("created = %#v, notifications = %#v", created, stub.items)
 	}
 	got := stub.items[0]
-	if got.Recipient.OpenID != "ou_zhangruoyi" || got.AuthorName != "Alice" || got.Week != week.Week || got.ObjectiveTitle != objective.Title || got.KRTitle != kr.Title || got.Content != content || got.Tab != "review-fill" {
+	if got.Recipient.Email != "zhangruoyi@example.test" || got.AuthorName != "Alice" || got.Week != week.Week || got.ObjectiveTitle != objective.Title || got.KRTitle != kr.Title || got.Content != content || got.Tab != "review-fill" {
 		t.Fatalf("notification = %#v", got)
 	}
 }
@@ -464,12 +464,12 @@ func TestCommentMentionFailureKeepsCommentAndReportsDeliveryError(t *testing.T) 
 	}
 	created, err := service.CreateComment(t.Context(), CreateCommentInput{
 		Quarter: "2026-Q3", Week: "2026-W35", Content: "@Bob 请确认",
-		Mentions: []CommentMention{{OpenID: "ou_bob", Name: "Bob"}},
+		Mentions: []CommentMention{{Email: "bob@example.test", Name: "Bob"}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(created.NotificationErrors) != 1 || !strings.Contains(created.NotificationErrors[0], "飞书返回 403") {
+	if len(created.NotificationErrors) != 1 || !strings.Contains(created.NotificationErrors[0], "待核验") || strings.Contains(created.NotificationErrors[0], "403") {
 		t.Fatalf("notification errors = %#v", created.NotificationErrors)
 	}
 	list, err := service.Comments(t.Context(), "2026-Q3", "2026-W35")
@@ -493,19 +493,19 @@ func TestCommentMentionRequiresSelectedTokenAndEditsDoNotNotify(t *testing.T) {
 	}
 	if _, err := service.CreateComment(t.Context(), CreateCommentInput{
 		Quarter: "2026-Q3", Week: "2026-W35", Content: "没有 token",
-		Mentions: []CommentMention{{OpenID: "ou_bob", Name: "Bob"}},
+		Mentions: []CommentMention{{Email: "bob@example.test", Name: "Bob"}},
 	}); err == nil || !strings.Contains(err.Error(), "not present") {
 		t.Fatalf("missing mention token error = %v", err)
 	}
 	created, err := service.CreateComment(t.Context(), CreateCommentInput{
 		Quarter: "2026-Q3", Week: "2026-W35", AuthorName: "Alice", Content: "@Bob 初次提醒",
-		Mentions: []CommentMention{{OpenID: "ou_bob", Name: "Bob"}},
+		Mentions: []CommentMention{{Email: "bob@example.test", Name: "Bob"}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	content := "@Bob 已提醒，@Carol 新加入"
-	mentions := []CommentMention{{OpenID: "ou_bob", Name: "Bob"}, {OpenID: "ou_carol", Name: "Carol"}}
+	mentions := []CommentMention{{Email: "bob@example.test", Name: "Bob"}, {Email: "carol@example.test", Name: "Carol"}}
 	if _, err := service.UpdateComment(t.Context(), created.ID, UpdateCommentInput{
 		ExpectedVersion: created.Version, Content: &content, Mentions: &mentions,
 	}); err != nil {
@@ -527,8 +527,8 @@ func TestReviewMeetingPointCommentOnlyNotifiesExplicitMention(t *testing.T) {
 	kr := domain.KR{ID: "owner-kr", ObjectiveID: objective.ID, Title: "完成核心工具升级"}
 	point := domain.KRPoint{ID: "owner-point", KRID: kr.ID, Kind: domain.PointKindProduct, Title: "交付 AM 助手完整原文"}
 	owners := []domain.KROwner{
-		{KRID: kr.ID, PersonID: 1, OwnerKey: "owner-a", OpenID: "ou_owner_a", Name: "负责人甲", SortOrder: 0},
-		{KRID: kr.ID, PersonID: 2, OwnerKey: "owner-b", OpenID: "ou_owner_b", Name: "负责人乙", SortOrder: 1},
+		{KRID: kr.ID, PersonID: 1, OwnerKey: "owner-a", Email: "owner_a@example.test", Name: "负责人甲", SortOrder: 0},
+		{KRID: kr.ID, PersonID: 2, OwnerKey: "owner-b", Email: "owner_b@example.test", Name: "负责人乙", SortOrder: 1},
 	}
 	for _, row := range []any{&week, &objective, &kr, &point, &owners} {
 		if err := db.Create(row).Error; err != nil {
@@ -548,7 +548,7 @@ func TestReviewMeetingPointCommentOnlyNotifiesExplicitMention(t *testing.T) {
 		TargetType: "point", TargetID: point.ID, TargetTitle: point.Title,
 		SelectedText: "AM 助手", SelectionStart: 3, SelectionEnd: 8,
 		AuthorOpenID: "ou_author", AuthorName: "张若怡", Content: "@负责人乙 请补充验收结果",
-		Mentions: []CommentMention{{OpenID: "ou_owner_b", Name: "负责人乙"}},
+		Mentions: []CommentMention{{Email: "owner_b@example.test", Name: "负责人乙"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -557,7 +557,7 @@ func TestReviewMeetingPointCommentOnlyNotifiesExplicitMention(t *testing.T) {
 		t.Fatalf("created = %#v, notifications = %#v", created, stub.items)
 	}
 	notification := stub.items[0]
-	if notification.Recipient.OpenID != "ou_owner_b" || notification.Tab != commentSourceTabReviewMeeting || notification.KRID != kr.ID || notification.KRTitle != kr.Title || notification.ObjectiveTitle != objective.Title || notification.OriginalText != "AM 助手" {
+	if notification.Recipient.Email != "owner_b@example.test" || notification.Tab != commentSourceTabReviewMeeting || notification.KRID != kr.ID || notification.KRTitle != kr.Title || notification.ObjectiveTitle != objective.Title || notification.OriginalText != "AM 助手" {
 		t.Fatalf("notification context = %#v", notification)
 	}
 }
@@ -568,7 +568,7 @@ func TestReviewMeetingCommentResolvesWeekSeededMetricToItsKR(t *testing.T) {
 	objective := domain.Objective{ID: "weekly-metric-o", Quarter: week.Quarter, Title: "提升经营效率"}
 	kr := domain.KR{ID: "weekly-metric-kr", ObjectiveID: objective.ID, Title: "完成核心工具升级"}
 	core := domain.WeeklyKRCore{KRID: kr.ID, Week: week.Week, Metrics: []domain.WeeklyMetric{{ID: "week-only-metric", Text: "本周实际覆盖率 86%"}}}
-	owner := domain.KROwner{KRID: kr.ID, PersonID: 1, OwnerKey: "owner", OpenID: "ou_weekly_owner", Name: "周度负责人"}
+	owner := domain.KROwner{KRID: kr.ID, PersonID: 1, OwnerKey: "owner", Email: "weekly_owner@example.test", Name: "周度负责人"}
 	for _, row := range []any{&week, &objective, &kr, &core, &owner} {
 		if err := db.Create(row).Error; err != nil {
 			t.Fatal(err)
@@ -586,7 +586,7 @@ func TestReviewMeetingCommentResolvesWeekSeededMetricToItsKR(t *testing.T) {
 		Quarter: week.Quarter, Week: week.Week, SourceTab: commentSourceTabReviewMeeting,
 		TargetType: "metric", TargetID: "week-only-metric", TargetTitle: "客户端快照",
 		AuthorOpenID: "ou_author", AuthorName: "张若怡", Content: "@周度负责人 请核对覆盖率",
-		Mentions: []CommentMention{{OpenID: owner.OpenID, Name: owner.Name}},
+		Mentions: []CommentMention{{Email: owner.Email, Name: owner.Name}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -602,10 +602,10 @@ func TestPlanPointCommentWithoutMentionDoesNotNotifyOwners(t *testing.T) {
 	objective := domain.Objective{ID: "point-owner-o", PlanID: plan.ID, Quarter: plan.Quarter, Title: "扩大业务增长"}
 	kr := domain.KR{ID: "point-owner-kr", ObjectiveID: objective.ID, Title: "提升平台收益"}
 	point := domain.KRPoint{ID: "point-owner-point", KRID: kr.ID, Kind: domain.PointKindStrategy, Title: "优化激励策略"}
-	krOwner := domain.KROwner{KRID: kr.ID, PersonID: 1, OwnerKey: "parent", OpenID: "ou_parent", Name: "上层负责人"}
+	krOwner := domain.KROwner{KRID: kr.ID, PersonID: 1, OwnerKey: "parent", Email: "parent@example.test", Name: "上层负责人"}
 	pointOwners := []domain.PointOwner{
-		{PointID: point.ID, PersonID: 2, OwnerKey: "point-a", OpenID: "ou_point_a", Name: "具体负责人甲", SortOrder: 0},
-		{PointID: point.ID, PersonID: 3, OwnerKey: "point-b", OpenID: "ou_point_b", Name: "具体负责人乙", SortOrder: 1},
+		{PointID: point.ID, PersonID: 2, OwnerKey: "point-a", Email: "point_a@example.test", Name: "具体负责人甲", SortOrder: 0},
+		{PointID: point.ID, PersonID: 3, OwnerKey: "point-b", Email: "point_b@example.test", Name: "具体负责人乙", SortOrder: 1},
 	}
 	for _, row := range []any{&plan, &objective, &kr, &point, &krOwner, &pointOwners} {
 		if err := db.Create(row).Error; err != nil {
@@ -638,7 +638,7 @@ func TestPlanCommentNotifiesExplicitMentionWithCanonicalTargetText(t *testing.T)
 	objective := domain.Objective{ID: "owner-plan-o", PlanID: plan.ID, Quarter: plan.Quarter, Title: "扩大业务增长"}
 	kr := domain.KR{ID: "owner-plan-kr", ObjectiveID: objective.ID, Title: "交付增长方案"}
 	metric := domain.KRMetric{ID: "owner-plan-metric", KRID: kr.ID, Text: "覆盖率达到 90%"}
-	owner := domain.KROwner{KRID: kr.ID, PersonID: 1, OwnerKey: "owner", OpenID: "ou_plan_owner", Name: "Plan 负责人"}
+	owner := domain.KROwner{KRID: kr.ID, PersonID: 1, OwnerKey: "owner", Email: "plan_owner@example.test", Name: "Plan 负责人"}
 	for _, row := range []any{&plan, &objective, &kr, &metric, &owner} {
 		if err := db.Create(row).Error; err != nil {
 			t.Fatal(err)
@@ -655,7 +655,7 @@ func TestPlanCommentNotifiesExplicitMentionWithCanonicalTargetText(t *testing.T)
 	created, err := service.CreatePlanComment(t.Context(), plan.ID, CreateCommentInput{
 		TargetType: "metric", TargetID: metric.ID, TargetTitle: "客户端可能过期的文本",
 		AuthorOpenID: "ou_author", AuthorName: "张若怡", Content: "@Plan 负责人 请确认目标值",
-		Mentions: []CommentMention{{OpenID: owner.OpenID, Name: owner.Name}},
+		Mentions: []CommentMention{{Email: owner.Email, Name: owner.Name}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -664,7 +664,7 @@ func TestPlanCommentNotifiesExplicitMentionWithCanonicalTargetText(t *testing.T)
 		t.Fatalf("created = %#v, notifications = %#v", created, stub.items)
 	}
 	got := stub.items[0]
-	if got.Recipient.OpenID != owner.OpenID || got.Tab != commentSourceTabOKRPlan || got.PlanTitle != plan.Title || got.KRID != kr.ID || got.OriginalText != metric.Text {
+	if got.Recipient.Email != owner.Email || got.Tab != commentSourceTabOKRPlan || got.PlanTitle != plan.Title || got.KRID != kr.ID || got.OriginalText != metric.Text {
 		t.Fatalf("plan owner notification = %#v", got)
 	}
 }
@@ -721,4 +721,9 @@ func TestCommentRejectsUnknownSourceTabBeforePersisting(t *testing.T) {
 	if err := db.Model(&domain.PageComment{}).Count(&count).Error; err != nil || count != 0 {
 		t.Fatalf("persisted comments = %d, err = %v", count, err)
 	}
+}
+
+func (stub *commentMentionNotifierStub) AppID() string { return "test-app" }
+func (stub *commentMentionNotifierStub) VerifyCommentMention(context.Context, string) error {
+	return stub.err
 }

@@ -131,7 +131,7 @@ export interface Kr {
   metricNote: string
   metrics: MetricLine[]
   points: Point[]
-  ownerOpenId?: string
+  ownerEmail?: string
   ownerName?: string
 	owners?: KrOwner[]
 	version?: number
@@ -141,9 +141,9 @@ export interface Kr {
 }
 
 export interface KrOwner {
-  openId: string
+  email: string
   name: string
-  identityNamespace?: 'main_feishu_app'
+  unionId?: string
 }
 
 export interface KrTag {
@@ -152,13 +152,13 @@ export interface KrTag {
 }
 
 export interface PersonAvatarItem {
-  openId: string
+  email: string
   name: string
   avatarUrl: string
 }
 
 export interface PersonSearchItem {
-  openId: string
+  unionId?: string
   name: string
   department: string
 	email: string
@@ -254,11 +254,21 @@ export interface OKRActivityEntry {
 }
 
 export interface CommentMention {
-  openId: string
+  unionId?: string
+  email: string
   name: string
 }
 
+export interface CommentDelivery {
+ email: string
+ name: string
+ status: string
+ message_id?: string
+ error?: string
+}
+
 export interface PageComment {
+ notifications?: CommentDelivery[]
   id: string
   version: number
   deleteToken: string
@@ -360,7 +370,7 @@ export interface ReminderPreview {
 }
 
 export interface ReminderRecipient {
-  ownerOpenId: string
+  ownerEmail: string
   ownerName: string
   dueCount: number
   filledCount: number

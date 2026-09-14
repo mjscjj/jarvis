@@ -1,0 +1,185 @@
+#!/usr/bin/env python3
+"""Explicit, offline OKR identity migration. Never sends notifications.
+Resolve reads the live DB and source applications; dry-run changes only an
+in-memory SQLite backup; apply requires all DB writers to have been stopped.
+"""
+import argparse, concurrent.futures, datetime, hashlib, json, os, re, sqlite3, subprocess
+from pathlib import Path
+
+OWNERS = {'okr_workspace_kr_owner':'kr_id', 'okr_workspace_point_owner':'point_id'}
+JSON_COLUMNS = {'okr_workspace_comment':['mentions'], 'okr_workspace_follow_up':['owners'],
+                'okr_workspace_reminder_batch':['recipients_json']}
+
+def email(value):
+    value = value.strip()
+    if not re.fullmatch(r'[^\s<>@]+@[^\s<>@]+\.[^\s<>@]+', value):
+        raise ValueError('invalid full email: '+value)
+    local, domain = value.rsplit('@',1)
+    return local+'@'+domain.lower()
+
+def connect(path):
+    db=sqlite3.connect('file:'+str(Path(path).resolve())+'?mode=ro',uri=True)
+    db.row_factory=sqlite3.Row
+    return db
+
+def tables(db):
+    return {r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+
+def refs(db):
+    result={}
+    def add(oid,name):
+        if oid: result.setdefault(oid,set()).add(name.strip())
+    for table in OWNERS.keys() & tables(db):
+        for row in db.execute('SELECT open_id,name FROM '+table): add(*row)
+    def walk(v):
+        if isinstance(v,list):
+            for x in v: walk(x)
+        elif isinstance(v,dict):
+            add(v.get('open_id',''),v.get('name',''))
+            add(v.get('owner_open_id',''),v.get('owner_name',''))
+            for x in v.values(): walk(x)
+    for table,cols in JSON_COLUMNS.items():
+        if table not in tables(db): continue
+        for col in cols:
+            for row in db.execute('SELECT '+col+' FROM '+table):
+                if row[0]: walk(json.loads(row[0]))
+    return result
+
+def cli(profile,*args):
+    env={k:v for k,v in os.environ.items() if k not in {'LARKSUITE_CLI_APP_ID','LARKSUITE_CLI_APP_SECRET','LARKSUITE_CLI_USER_ACCESS_TOKEN','LARKSUITE_CLI_TENANT_ACCESS_TOKEN','LARKSUITE_CLI_PROFILE'}}
+    r=subprocess.run(['lark-cli','--profile',profile,*args,'--format','json'],capture_output=True,text=True,timeout=60,env=env)
+    if r.returncode: raise ValueError('source query failed for profile '+profile)
+    obj=json.loads(r.stdout)
+    if obj.get('ok') is False: raise ValueError('source query rejected for profile '+profile)
+    return obj
+
+def resolve(args):
+    required=refs(connect(args.db))
+    bindings=[]
+    for spec in args.source:
+        profile,app=spec.split('=',1)
+        r=subprocess.run(['lark-cli','--profile',profile,'auth','status','--verify','--json'],capture_output=True,text=True,timeout=60)
+        status=json.loads(r.stdout)
+        if r.returncode or status.get('appId') != app or not status.get('verified'): raise ValueError('unverified source '+profile)
+        bindings.append((profile,app))
+    evidence={'version':1,'resolved_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'people':{},'unresolved':{}}
+    def one(item):
+        oid,names=item
+        for profile,app in bindings:
+            try:
+                users=cli(profile,'contact','+search-user','--user-ids',oid,'--as','user').get('data',{}).get('users',[])
+                if len(users)!=1 or users[0].get('open_id')!=oid: continue
+                u=users[0]
+                if u.get('is_cross_tenant'): continue
+                address=email(u.get('enterprise_email') or u.get('email',''))
+                name=u.get('localized_name','')
+                return oid,{'email':address,'name':name,'stored_names':sorted(names),'source_app_id':app,'source_profile':profile,'source_open_id':oid},None
+            except (ValueError,subprocess.TimeoutExpired): continue
+        return oid,None,{'reason':'no exact source match','stored_names':sorted(names)}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+        for oid,person,error in pool.map(one,required.items()):
+            evidence['people' if person else 'unresolved'][oid]=person or error
+    target=Path(args.evidence)
+    with os.fdopen(os.open(target,os.O_WRONLY|os.O_CREAT|os.O_TRUNC,0o600),'w') as f: json.dump(evidence,f,ensure_ascii=False,indent=2)
+    print(json.dumps({'resolved':len(evidence['people']),'unresolved':evidence['unresolved']},ensure_ascii=False))
+    return 1 if evidence['unresolved'] else 0
+
+def migrate(db,evidence):
+    mapping=evidence['people']; required=refs(db)
+    unresolved=evidence.get('display_only_owners',{})
+    missing=sorted(set(required)-set(mapping)-set(unresolved))
+    if missing: raise ValueError('unresolved IDs: '+','.join(missing))
+    for oid,names in required.items():
+        if oid in unresolved:
+            if not unresolved[oid].get('reason') or not set(names).issubset(set(unresolved[oid]['stored_names'])): raise ValueError('invalid unresolved owner '+oid)
+            continue
+        p=mapping[oid]
+        email(p['email'])
+        if p['source_open_id']!=oid or not p['source_app_id'] or not set(names).issubset(set(p.get('stored_names',[p['name']]))):
+            raise ValueError('unverified identity '+oid)
+    counts={}
+    for table,parent in OWNERS.items():
+        if table not in tables(db): continue
+        cols={r[1] for r in db.execute('PRAGMA table_info('+table+')')}
+        for col in ['email','union_id']:
+            if col not in cols: db.execute('ALTER TABLE '+table+' ADD COLUMN '+col+" TEXT NOT NULL DEFAULT ''")
+        rows=list(db.execute('SELECT * FROM '+table+' ORDER BY '+parent+',sort_order'))
+        changed=0; seen=set(); updates=[]
+        for row in rows:
+            r=dict(row); p=mapping.get(r['open_id'])
+            if r['open_id'] in unresolved: r['open_id']='';r['email']='';r['union_id']=''
+            if p:
+                r['email']=email(p['email']);r['union_id']=p.get('union_id','');r['open_id']='';r['name']=p['name']
+            key=r['email'] or 'unresolved:'+r['name'].strip()
+            r['owner_key']='owner-'+hashlib.sha256(key.encode()).hexdigest()[:24]
+            r['person_id']=int.from_bytes(hashlib.sha256(r['owner_key'].encode()).digest()[:8],'big') & ((1<<63)-1) or 1
+            unique=(r[parent],r['person_id'])
+            if unique in seen: raise ValueError('duplicate owner after migration: '+str(unique))
+            seen.add(unique)
+            if r!=dict(row): changed+=1
+            updates.append(r)
+        if changed:
+            db.execute('DELETE FROM '+table)
+            for r in updates:
+                db.execute('INSERT INTO '+table+' ('+','.join(r)+') VALUES ('+','.join('?' for _ in r)+')',list(r.values()))
+        counts[table]=changed
+        # An older shared process cannot reintroduce app-local business IDs.
+        for event in ['INSERT','UPDATE']:
+            db.execute('CREATE TRIGGER IF NOT EXISTS '+table+'_email_guard_'+event.lower()+' BEFORE '+event+' ON '+table+" WHEN NEW.open_id <> '' BEGIN SELECT RAISE(ABORT, 'OKR email migration: obsolete writer'); END")
+    def rewrite(v,canonical=False):
+        if isinstance(v,list): return [rewrite(x,canonical) for x in v]
+        if not isinstance(v,dict): return v
+        r={k:rewrite(x,canonical) for k,x in v.items()}
+        for old,new,name in [('open_id','email','name'),('owner_open_id','owner_email','owner_name')]:
+            if old in r:
+                oid=r.pop(old)
+                if oid in unresolved:
+                    if table!='okr_workspace_reminder_batch': raise ValueError('unresolved active recipient '+oid)
+                    r[new]='';r['can_remind']=False
+                else: r[new]=email(mapping[oid]['email']) if oid else ''
+                r.pop('identity_namespace',None)
+                if oid in mapping and canonical: r[name]=mapping[oid]['name']
+        return r
+    for table,cols in JSON_COLUMNS.items():
+        if table not in tables(db): continue
+        for col in cols:
+            count=0
+            for row in list(db.execute('SELECT id,'+col+' FROM '+table)):
+                if not row[col]: continue
+                before=json.loads(row[col]);after=rewrite(before,table!='okr_workspace_comment')
+                if before!=after:
+                    db.execute('UPDATE '+table+' SET '+col+'=? WHERE id=?',(json.dumps(after,ensure_ascii=False,separators=(',',':')),row['id']));count+=1
+            counts[table+'.'+col]=count
+            for event in ['INSERT','UPDATE']:
+                db.execute('CREATE TRIGGER IF NOT EXISTS '+table+'_'+col+'_email_guard_'+event.lower()+' BEFORE '+event+' ON '+table+' WHEN NEW.'+col+" LIKE '%\"open_id\"%' OR NEW."+col+" LIKE '%\"owner_open_id\"%' BEGIN SELECT RAISE(ABORT, 'OKR email migration: obsolete writer'); END")
+    if refs(db): raise ValueError('legacy business identity remains')
+    if db.execute('PRAGMA integrity_check').fetchone()[0]!='ok': raise ValueError('integrity check failed')
+    return counts
+
+def main():
+    p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument('mode',choices=['resolve','dry-run','apply']);p.add_argument('--db',required=True);p.add_argument('--evidence',required=True)
+    p.add_argument('--source',action='append',default=[],help='profile=app_id, only for resolve')
+    p.add_argument('--backup',help='new backup path; required for apply after stopping all writers')
+    args=p.parse_args()
+    if args.mode=='resolve': return resolve(args)
+    evidence=json.loads(Path(args.evidence).read_text())
+    source=connect(args.db)
+    if args.mode=='dry-run':
+        db=sqlite3.connect(':memory:');source.backup(db);db.row_factory=sqlite3.Row
+    else:
+        if not args.backup or Path(args.backup).exists(): raise ValueError('apply requires a NEW --backup path')
+        with sqlite3.connect(args.backup) as backup: source.backup(backup)
+        os.chmod(args.backup,0o600)
+        db=sqlite3.connect(args.db,timeout=5);db.row_factory=sqlite3.Row
+    source.close()
+    db.execute('BEGIN IMMEDIATE')
+    try:
+        counts=migrate(db,evidence)
+        db.commit()
+    except Exception:
+        db.rollback();raise
+    print(json.dumps({'mode':args.mode,'changes':counts},ensure_ascii=False))
+    db.close()
+    return 0
+if __name__=='__main__': raise SystemExit(main())

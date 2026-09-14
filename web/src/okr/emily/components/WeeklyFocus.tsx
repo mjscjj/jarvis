@@ -19,7 +19,7 @@ function targetLabel(comment: PageComment) {
 }
 
 function ownerKey(owner: KrOwner) {
-  return owner.openId || `name:${owner.name}`
+  return owner.email || `name:${owner.name}`
 }
 
 /** Review progress gaps, structured follow-ups, and legacy meeting-comment todo markers. */

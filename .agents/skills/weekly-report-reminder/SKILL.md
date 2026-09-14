@@ -78,13 +78,13 @@ scripts/biz-okr-tools board --quarter '<quarter>' --week '<previous_week>'
 - 填写链接必须指向本次季度、周次的周报填写页；没有可靠的对外地址时报告缺口，不编造链接；
 - 不增加 mention、“同步：”、截止时间或模板以外的话术。
 
-把所有收件人与正文先冻结成一份广播计划，每项包含来源 `owner_open_id`、`owner_name`、四类去重 KR ID、完整文案和稳定幂等键。不得根据姓名猜 `open_id`。
+把所有收件人与正文先冻结成一份广播计划，每项包含已核验 `owner_email`、`owner_name`、四类去重 KR ID、完整文案和稳定幂等键。不得根据姓名猜 `open_id`。
 
 ## 5. 通过广播 Skill 发送第一轮
 
-发送飞书消息是具体外部副作用，由当前执行 Agent 按统一审批策略和任务上下文判断是否需要先请示。发送前读取 `feishu-broadcast` Skill，使用其中写死的“Jarvis通知机器人”和个性化广播路径；不得搜索、复用或创建助手群，也不得切换为默认 Jarvis Bot。
+发送飞书消息是具体外部副作用，由当前执行 Agent 按统一审批策略和任务上下文判断是否需要先请示。发送前读取 `feishu-broadcast` Skill，使用 OKR 配置指定的“Jarvis通知机器人”和个性化广播路径；不得搜索、复用或创建助手群，也不得切换为CLI 默认 Bot。
 
-来源 `owner_open_id` 属于主 Jarvis App，必须先按 `feishu-broadcast` 的跨 App 身份归一步骤精确核验身份并取得企业邮箱，再由通知 App 逐人直发；不得把来源 `open_id` 原样交给通知 App。
+Owner 已使用完整企业邮箱，按当前 OKR 模块固定的通知应用配置逐人直发；不再做旧主应用 ID 转换。
 
 幂等键不得超过 50 字符，同一季度、周次、负责人重跑必须复用同一键。单人发送失败不重发已经确认成功的收件人；继续处理其余人，并逐项保留真实 `message_id` 或原始失败原因。
 
@@ -92,12 +92,12 @@ scripts/biz-okr-tools board --quarter '<quarter>' --week '<previous_week>'
 
 第二轮必须重复第 3 节的两周 Board 读取和判断，不得复用第一轮的问题快照。按最终 Prompt 的 O-KR 顺序、问题标签顺序和负责人去重规则渲染一条完整群消息；零问题时跳过。
 
-发送前读取 `feishu-send-message` Skill：
+发送前读取 `lark-im` Skill：
 
-1. 用 principal user 身份回读 Prompt 中固定 `chat_id` 的真实群名与 Bot 成员；
-2. 目标必须仍为 Prompt 指定的群，Jarvis Bot 必须是群成员；
-3. 把 `owner_open_id` 渲染为真实 `<at user_id="...">姓名</at>`，不额外提及 principal；
-4. 用 Jarvis Bot 向固定 `chat_id` 主动发送，幂等键不超过 50 字符；
+1. 用同一显式通知 profile 的 Bot 身份回读 Prompt 中固定 `chat_id` 的真实群名与 Bot 成员；
+2. 目标必须仍为 Prompt 指定的群，当前 OKR 配置指定的通知 Bot 必须是群成员；
+3. 群接口确需临时 ID 时，先在同一通知应用内按完整邮箱精确查询，再渲染为真实 `<at user_id="...">姓名</at>`，不额外提及 principal；
+4. 用当前 OKR 配置指定的通知 Bot 向固定 `chat_id` 主动发送，幂等键不超过 50 字符；
 5. 取得唯一 `om_...` 后用同一 Bot 回读，确认目标群和内容。
 
 群名不匹配、Bot 不在群内、发送或回读失败时保留原始错误，不换群、不切换 user 身份或其它 Bot 发送。

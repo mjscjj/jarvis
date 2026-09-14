@@ -23,22 +23,22 @@ func TestReplaceKRCorePersistsOwnersPerPoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	strategyOwners := []OwnerView{
-		{OpenID: "ou_a", Name: "甲"},
-		{OpenID: "ou_b", Name: "乙"},
-		{OpenID: "OU_A", Name: "甲"},
-		{OpenID: "ou_c", Name: "  "},
+		{Email: "a@example.test", Name: "甲"},
+		{Email: "b@example.test", Name: "乙"},
+		{Email: "a@example.test", Name: "甲"},
+		{Email: "c@example.test", Name: "  "},
 	}
 	if _, err := service.PatchPointDefinition(t.Context(), strategy.ID, PatchPointDefinitionInput{ExpectedVersion: 0, Owners: &strategyOwners}); err != nil {
 		t.Fatal(err)
 	}
-	productOwners := []OwnerView{{OpenID: "ou_c", Name: "丙"}}
+	productOwners := []OwnerView{{Email: "c@example.test", Name: "丙"}}
 	if _, err := service.PatchPointDefinition(t.Context(), product.ID, PatchPointDefinitionInput{ExpectedVersion: 0, Owners: &productOwners}); err != nil {
 		t.Fatal(err)
 	}
 	updated, err := service.ReplaceKRCore(t.Context(), kr.ID, ReplaceKRInput{
 		ExpectedVersion: 0,
 		Title:           kr.Title,
-		Owners:          []OwnerView{{OpenID: "ou_kr", Name: "KR 负责人"}},
+		Owners:          []OwnerView{{Email: "kr@example.test", Name: "KR 负责人"}},
 		// Stale point owners in a parent snapshot are deliberately ignored.
 		Points: []PointView{
 			{ID: strategy.ID, Kind: strategy.Kind, Title: strategy.Title, Tags: []TagView{}, Owners: []OwnerView{}},
@@ -49,10 +49,10 @@ func TestReplaceKRCorePersistsOwnersPerPoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantStrategy := []OwnerView{
-		{OpenID: "ou_a", Name: "甲", IdentityNamespace: OwnerIdentityNamespaceMainFeishuApp},
-		{OpenID: "ou_b", Name: "乙", IdentityNamespace: OwnerIdentityNamespaceMainFeishuApp},
+		{Email: "a@example.test", Name: "甲", UnionID: ""},
+		{Email: "b@example.test", Name: "乙", UnionID: ""},
 	}
-	wantProduct := []OwnerView{{OpenID: "ou_c", Name: "丙", IdentityNamespace: OwnerIdentityNamespaceMainFeishuApp}}
+	wantProduct := []OwnerView{{Email: "c@example.test", Name: "丙", UnionID: ""}}
 	if !reflect.DeepEqual(updated.Points[0].Owners, wantStrategy) || !reflect.DeepEqual(updated.Points[1].Owners, wantProduct) {
 		t.Fatalf("point owners = %+v / %+v", updated.Points[0].Owners, updated.Points[1].Owners)
 	}
@@ -100,7 +100,7 @@ func TestReplaceKRCoreClearsOwnersOfRemovedPoints(t *testing.T) {
 	current, err := service.ReplaceKRCore(t.Context(), kr.ID, ReplaceKRInput{
 		ExpectedVersion: 0,
 		Title:           kr.Title,
-		Points:          []PointView{{ID: point.ID, Kind: point.Kind, Title: point.Title, Tags: []TagView{}, Owners: []OwnerView{{OpenID: "ou_a", Name: "甲"}}}},
+		Points:          []PointView{{ID: point.ID, Kind: point.Kind, Title: point.Title, Tags: []TagView{}, Owners: []OwnerView{{Email: "a@example.test", Name: "甲"}}}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -129,7 +129,7 @@ func TestDeleteKRRemovesPointOwners(t *testing.T) {
 	point := domain.KRPoint{ID: "point-delete", KRID: kr.ID, Kind: domain.PointKindStrategy, Title: "具体KR"}
 	for _, row := range []any{
 		&objective, &kr, &point,
-		&domain.PointOwner{PointID: point.ID, PersonID: 7, OwnerKey: "owner-7", OpenID: "ou_a", Name: "甲"},
+		&domain.PointOwner{PointID: point.ID, PersonID: 7, OwnerKey: "owner-7", Email: "a@example.test", Name: "甲"},
 	} {
 		if err := db.Create(row).Error; err != nil {
 			t.Fatal(err)

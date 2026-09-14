@@ -520,7 +520,11 @@ func main() {
 	var okrActivityStore *okrworkspace.ActivityStore
 	var okrIdentityService *okrAuth.Service
 	var okrTokenStore *okrAuth.TokenStore
+	var okrDirectory *larkcli.Directory
 	if okrModuleEnabled {
+		if err := okrworkspace.ValidatePersonIdentityMigration(okrDB); err != nil {
+			log.Fatalf("OKR identity migration required: %v", err)
+		}
 		okrWorkspaceService, err = okrworkspace.NewService(okrDB)
 		if err != nil {
 			fatalf("initialize OKR workspace service failed: %v", err)
@@ -535,10 +539,16 @@ func main() {
 		}
 	}
 	if bizOKRModuleEnabled {
-		broadcastSender, notifierErr := larkcli.NewBroadcastSender(startupCtx, larkClient, os.Getenv("JARVIS_BROADCAST_LARK_PROFILE"))
+		broadcastSender, notifierErr := larkcli.NewBroadcastSender(startupCtx, larkClient, okrModuleConfig.Feishu.AppID, okrModuleConfig.Feishu.Profile)
 		if notifierErr != nil {
 			fatalf("initialize Feishu broadcast sender failed: %v", notifierErr)
 		}
+		directoryApp, directoryProfile, directoryIdentity := okrModuleConfig.Feishu.DirectoryBinding()
+		okrDirectory, err = larkcli.NewDirectory(startupCtx, larkClient, directoryApp, directoryProfile, directoryIdentity, filepath.Join(filepath.Dir(okrModuleConfig.Identity.TokenDir), "directory-cache.json"))
+		if err != nil {
+			fatalf("initialize explicit OKR directory failed: %v", err)
+		}
+		okrWorkspaceService.SetPeopleDirectory(okrDirectory)
 		commentMentionNotifier, notifierErr := okrworkspace.NewBotCommentMentionNotifier(broadcastSender, cfg.Server.PublicBaseURL)
 		if notifierErr != nil {
 			fatalf("initialize OKR comment mention notifier failed: %v", notifierErr)
@@ -1219,7 +1229,7 @@ func main() {
 			fatalf("initialize OKR preview review service failed: %v", err)
 		}
 		bizOKRModuleDeps = &api.BizOKRModuleDependencies{
-			Workspace: okrWorkspaceService, Activity: okrActivityStore, Identity: okrIdentityService, Documents: larkClient, People: resolveService,
+			Workspace: okrWorkspaceService, Activity: okrActivityStore, Identity: okrIdentityService, Documents: larkClient, People: resolveService, Directory: okrDirectory,
 			Enabled:       func(ctx context.Context) (bool, error) { return appModuleService.Enabled(ctx, "biz-okr") },
 			PreviewReview: previewReviewService,
 		}

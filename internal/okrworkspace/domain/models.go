@@ -178,10 +178,7 @@ func ValidFollowUpStatus(value FollowUpStatus) bool {
 	return value == FollowUpStatusNotStarted || value == FollowUpStatusInProgress || value == FollowUpStatusDone || value == FollowUpStatusAbandoned
 }
 
-type FollowUpOwner struct {
-	OpenID string `json:"open_id"`
-	Name   string `json:"name"`
-}
+type FollowUpOwner = PersonRef
 
 // FollowUpItem is the Biz-OKR-owned source of truth for Review follow-up
 // rows. Owners stay as one JSON value because the product only reads and edits
@@ -348,39 +345,41 @@ func (PointTag) TableName() string { return "okr_workspace_point_tag" }
 
 // PointOwner is the persisted owner of one concrete strategy/product
 // decomposition. It mirrors KROwner so both levels resolve identities the same
-// way; OpenID stays empty until a human or Agent resolves a real Feishu user.
+// way; Email stays empty until a human or Agent resolves a real Feishu user.
 type PointOwner struct {
 	PointID   string `gorm:"primaryKey;size:64"`
 	PersonID  uint64 `gorm:"primaryKey;index:idx_okr_workspace_point_owner_person_id"`
 	OwnerKey  string `gorm:"not null;default:'';size:64;index:idx_okr_workspace_point_owner_key"`
-	OpenID    string `gorm:"not null;default:'';index:idx_okr_workspace_point_owner_open_id"`
+	Email     string `gorm:"not null;default:'';index:idx_okr_workspace_point_owner_email"`
 	Name      string `gorm:"not null"`
 	SortOrder int    `gorm:"not null;default:0"`
+	UnionID   string `gorm:"not null;default:''"`
+	// LegacyOpenID is migration evidence only; never used for business identity.
+	LegacyOpenID string `gorm:"column:open_id;not null;default:''" json:"-"`
 }
 
 func (PointOwner) TableName() string { return "okr_workspace_point_owner" }
 
 // KROwner is the only persisted owner source. PersonID is a stable local key;
-// OpenID stays empty until a human or Agent resolves a real Feishu identity.
+// Email stays empty until a human or Agent resolves a real Feishu identity.
 type KROwner struct {
 	KRID      string `gorm:"primaryKey;size:64"`
 	PersonID  uint64 `gorm:"primaryKey;index:idx_okr_workspace_kr_owner_person_id"`
 	OwnerKey  string `gorm:"not null;default:'';size:64;index:idx_okr_workspace_owner_key"`
-	OpenID    string `gorm:"not null;default:'';index:idx_okr_workspace_owner_open_id"`
+	Email     string `gorm:"not null;default:'';index:idx_okr_workspace_owner_email"`
 	Name      string `gorm:"not null"`
 	SortOrder int    `gorm:"not null;default:0"`
+	UnionID   string `gorm:"not null;default:''"`
+	// LegacyOpenID is migration evidence only; never used for business identity.
+	LegacyOpenID string `gorm:"column:open_id;not null;default:''" json:"-"`
 }
 
 func (KROwner) TableName() string { return "okr_workspace_kr_owner" }
 
 // CommentMention is an explicit Feishu identity selected by the commenter.
-// Name is a display snapshot; OpenID belongs to the main Jarvis App and is
-// normalized to enterprise email before the notification App sends. Keeping
-// the pair distinguishes a real mention from somebody merely typing "@name".
-type CommentMention struct {
-	OpenID string `json:"open_id"`
-	Name   string `json:"name"`
-}
+// Name is a display snapshot; Email is the verified complete enterprise address.
+// Keeping the pair distinguishes a selected person from merely typing "@name".
+type CommentMention = PersonRef
 
 // PageComment is a lightweight document-style discussion thread scoped either
 // to a weekly OKR page or to one Biz OKR Plan. A non-empty PlanID denotes the
@@ -478,5 +477,5 @@ func IdentityModels() []any {
 // domain. Existing table names are intentionally preserved so enabling the
 // split never rewrites or loses historical data.
 func BizModels() []any {
-	return []any{&OKRPlan{}, &KRTag{}, &PointTag{}, &FollowUpItem{}, &WeeklyScore{}, &PageComment{}, &MeegoSyncSnapshot{}, &ReminderBatch{}}
+	return []any{&OKRPlan{}, &KRTag{}, &PointTag{}, &FollowUpItem{}, &WeeklyScore{}, &PageComment{}, &CommentDelivery{}, &MeegoSyncSnapshot{}, &ReminderBatch{}}
 }

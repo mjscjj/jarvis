@@ -19,6 +19,7 @@ type Config struct {
 	DatabasePath  string              `yaml:"database_path"`
 	UploadDir     string              `yaml:"upload_dir"`
 	MaxImageBytes int64               `yaml:"max_image_bytes"`
+	Feishu        FeishuConfig        `yaml:"feishu"`
 	Identity      IdentityConfig      `yaml:"identity"`
 	PreviewReview PreviewReviewConfig `yaml:"preview_review"`
 	Chat          ChatConfig          `yaml:"chat"`
@@ -60,6 +61,21 @@ type PreviewReviewConfig struct {
 
 func (c PreviewReviewConfig) Timeout() time.Duration {
 	return time.Duration(c.TimeoutSeconds) * time.Second
+}
+
+type FeishuConfig struct {
+	AppID             string `yaml:"app_id"`
+	Profile           string `yaml:"cli_profile"`
+	DirectoryProfile  string `yaml:"directory_profile"`
+	DirectoryAppID    string `yaml:"directory_app_id"`
+	DirectoryIdentity string `yaml:"directory_identity"`
+}
+
+func (f FeishuConfig) DirectoryBinding() (string, string, string) {
+	if f.DirectoryIdentity == "user" {
+		return f.DirectoryAppID, f.DirectoryProfile, "user"
+	}
+	return f.AppID, f.Profile, "bot"
 }
 
 type IdentityConfig struct {
@@ -140,6 +156,19 @@ func load(path string, includeBiz bool) (Config, error) {
 		}
 	} else if !os.IsNotExist(err) {
 		return Config{}, fmt.Errorf("read OKR instance config %s: %w", overlayPath, err)
+	}
+	if cfg.Feishu.AppID == "" {
+		cfg.Feishu.AppID = cfg.Identity.AppID
+	}
+	if cfg.Identity.AppID != "" && cfg.Feishu.AppID != cfg.Identity.AppID {
+		return Config{}, fmt.Errorf("OKR login and notification application must match; migrate identity.app_id to feishu.app_id")
+	}
+	cfg.Identity.AppID = cfg.Feishu.AppID
+	if cfg.Feishu.DirectoryIdentity != "" && cfg.Feishu.DirectoryIdentity != "bot" && cfg.Feishu.DirectoryIdentity != "user" {
+		return Config{}, fmt.Errorf("invalid explicit directory identity")
+	}
+	if cfg.Feishu.DirectoryIdentity == "user" && (cfg.Feishu.DirectoryAppID == "" || cfg.Feishu.DirectoryProfile == "") {
+		return Config{}, fmt.Errorf("directory user mode requires explicit app and profile")
 	}
 	if err := cfg.validateCore(); err != nil {
 		return Config{}, fmt.Errorf("validate OKR module config %s: %w", path, err)

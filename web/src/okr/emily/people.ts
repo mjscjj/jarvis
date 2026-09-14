@@ -13,16 +13,16 @@ export function hasOwner(value: string | undefined, owner: string) {
 }
 
 export function ownerIdentityKey(owner: KrOwner) {
-	return owner.openId ? `open_id:${owner.openId}` : `name:${owner.name}`
+	return owner.email ? `email:${owner.email}` : `name:${owner.name}`
 }
 
 export function krOwners(kr: Kr): KrOwner[] {
 	if (kr.owners?.length) return kr.owners
-	return splitOwnerNames(kr.ownerName).map((name, index) => ({ name, openId: index === 0 ? (kr.ownerOpenId ?? '') : '' }))
+	return splitOwnerNames(kr.ownerName).map((name, index) => ({ name, email: index === 0 ? (kr.ownerEmail ?? '') : '' }))
 }
 
 function normalizedOwner(owner: KrOwner): KrOwner {
-	return { name: owner.name.trim(), openId: owner.openId.trim() }
+	return { name: owner.name.trim(), email: owner.email.trim(), ...(owner.unionId ? { unionId: owner.unionId } : {}) }
 }
 
 export function krOwnerOptions(objectives: Objective[]): KrOwner[] {
@@ -33,18 +33,18 @@ export function krOwnerOptions(objectives: Objective[]): KrOwner[] {
 			const owner = normalizedOwner(rawOwner)
 			if (!owner.name) continue
 			byIdentity.set(ownerIdentityKey(owner), owner)
-			if (owner.openId) resolvedNames.add(owner.name)
+			if (owner.email) resolvedNames.add(owner.name)
 		}
 	}
 	return [...byIdentity.values()]
-		.filter((owner) => owner.openId || !resolvedNames.has(owner.name))
-		.sort((left, right) => left.name.localeCompare(right.name) || left.openId.localeCompare(right.openId))
+		.filter((owner) => owner.email || !resolvedNames.has(owner.name))
+		.sort((left, right) => left.name.localeCompare(right.name) || left.email.localeCompare(right.email))
 }
 
 export function ownerMatches(left: KrOwner, right: KrOwner): boolean {
 	const normalizedLeft = normalizedOwner(left)
 	const normalizedRight = normalizedOwner(right)
-	if (normalizedLeft.openId && normalizedRight.openId) return normalizedLeft.openId === normalizedRight.openId
+	if (normalizedLeft.email && normalizedRight.email) return normalizedLeft.email === normalizedRight.email
 	return Boolean(normalizedLeft.name) && normalizedLeft.name === normalizedRight.name
 }
 
@@ -67,10 +67,10 @@ export function rankKrOwnerSuggestions(options: KrOwner[], recentKeys: string[],
 }
 
 export function addOrResolveOwner(owners: KrOwner[], candidate: KrOwner): KrOwner[] {
-	const normalized = { name: candidate.name.trim(), openId: candidate.openId.trim() }
-	if (!normalized.name || !normalized.openId) return owners
-	if (owners.some((owner) => owner.openId === normalized.openId)) return owners
-	const unresolvedIndex = owners.findIndex((owner) => !owner.openId && owner.name === normalized.name)
+	const normalized = { name: candidate.name.trim(), email: candidate.email.trim(), ...(candidate.unionId ? { unionId: candidate.unionId } : {}) }
+	if (!normalized.name || !normalized.email) return owners
+	if (owners.some((owner) => owner.email === normalized.email)) return owners
+	const unresolvedIndex = owners.findIndex((owner) => !owner.email && owner.name === normalized.name)
 	if (unresolvedIndex < 0) return [...owners, normalized]
 	return owners.map((owner, index) => index === unresolvedIndex ? normalized : owner)
 }
@@ -78,15 +78,16 @@ export function addOrResolveOwner(owners: KrOwner[], candidate: KrOwner): KrOwne
 export function ownerOptions(objectives: Objective[]): KrOwner[] {
 	const byName = new Map<string, KrOwner>()
 	for (const kr of objectives.flatMap((objective) => objective.krs)) {
-		const krOwners = kr.owners?.length
+		const krOwners: KrOwner[] = kr.owners?.length
 			? kr.owners
-			: splitOwnerNames(kr.ownerName).map((name, index) => ({ name, openId: index === 0 ? (kr.ownerOpenId ?? '') : '' }))
+			: splitOwnerNames(kr.ownerName).map((name, index) => ({ name, email: index === 0 ? (kr.ownerEmail ?? '') : '' }))
 		const structured = [...krOwners, ...kr.points.flatMap((point) => point.owners ?? [])]
 		for (const owner of structured) {
 			const name = owner.name.trim()
 			if (!name) continue
-			const previous = byName.get(name)
-			if (!previous || (!previous.openId && owner.openId)) byName.set(name, { name, openId: owner.openId.trim() })
+			const key = owner.email || `unresolved:${name}`
+			const previous = byName.get(key)
+			if (!previous || (!previous.email && owner.email)) byName.set(key, { name, email: owner.email.trim(), unionId: owner.unionId })
 		}
 	}
 	return [...byName.values()].sort((left, right) => left.name.localeCompare(right.name))

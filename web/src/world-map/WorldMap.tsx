@@ -262,8 +262,8 @@ export default function WorldMap() {
       loadAllPersons(controller.signal),
     ]).then(async ([board, relationResult, profile, people]) => {
       const identities: OKRWorldIdentity[] = [
-        ...(profile.saved && profile.id > 0 ? [{ openId: profile.open_id, pageType: 'principal' as const, pageId: profile.id }] : []),
-        ...people.map((person) => ({ openId: person.open_id, pageType: 'person' as const, pageId: person.id })),
+        ...(profile.saved && profile.id > 0 ? [{ pageType: 'principal' as const, pageId: profile.id }] : []),
+        ...people.map((person) => ({ unionId: person.union_id ?? undefined, pageType: 'person' as const, pageId: person.id })),
       ]
       const loaded = await loadPageRefs(okrWorldPageRefs(board.objectives, relationResult.items, identities), pageCache.current, controller.signal)
       if (controller.signal.aborted) return

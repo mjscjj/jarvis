@@ -83,12 +83,12 @@ func TestOKRPlanRoutesUseOwnLifecycle(t *testing.T) {
 	if created.Data.ID == "" || created.Data.Version != 0 || created.Data.CreatedBy != "jarvis" {
 		t.Fatalf("created plan = %+v", created.Data)
 	}
-	objectiveBody := `{"id":"plan-o","title":"计划 O","krs":[{"id":"plan-kr","title":"计划 KR","owners":[{"open_id":"ou_a","name":"甲"}],"metric_note":"口径","metrics":[{"id":"plan-m","text":"核心目标","light":"green","images":[]}],"points":[{"id":"plan-p","kind":"product","title":"产品 KR","owners":[],"tags":[]}],"tags":[{"type":"business_category","value":"直播"},{"type":"priority","value":"p1"}]}]}`
+	objectiveBody := `{"id":"plan-o","title":"计划 O","krs":[{"id":"plan-kr","title":"计划 KR","owners":[{"email":"a@example.test","name":"甲"}],"metric_note":"口径","metrics":[{"id":"plan-m","text":"核心目标","light":"green","images":[]}],"points":[{"id":"plan-p","kind":"product","title":"产品 KR","owners":[],"tags":[]}],"tags":[{"type":"business_category","value":"直播"},{"type":"priority","value":"p1"}]}]}`
 	objectiveResponse := ut.PerformRequest(h.Engine, "POST", "/api/biz-okr/plans/"+created.Data.ID+"/objectives", &ut.Body{Body: strings.NewReader(objectiveBody), Len: len(objectiveBody)}).Result()
 	if objectiveResponse.StatusCode() != 201 {
 		t.Fatalf("create objective status=%d body=%s", objectiveResponse.StatusCode(), objectiveResponse.Body())
 	}
-	pointPatchBody := `{"title":"更新后的产品 KR","owners":[{"open_id":"ou_b","name":"乙"}]}`
+	pointPatchBody := `{"title":"更新后的产品 KR","owners":[{"email":"b@example.test","name":"乙"}]}`
 	pointPatchResponse := ut.PerformRequest(h.Engine, "PATCH", "/api/biz-okr/plans/"+created.Data.ID+"/points/plan-p/definition", &ut.Body{Body: strings.NewReader(pointPatchBody), Len: len(pointPatchBody)}).Result()
 	if pointPatchResponse.StatusCode() != 200 {
 		t.Fatalf("patch plan point status=%d body=%s", pointPatchResponse.StatusCode(), pointPatchResponse.Body())

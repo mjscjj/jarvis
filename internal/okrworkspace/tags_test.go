@@ -17,7 +17,7 @@ func TestReplaceKRTagsPreservesDefinitionsAndWeeklyFacts(t *testing.T) {
 	for _, row := range []any{
 		&objective, &kr, &point, &progress,
 		&domain.KRMetric{ID: "metric-tags", KRID: kr.ID, Text: "流量 100", Light: domain.LightGreen},
-		&domain.KROwner{KRID: kr.ID, OwnerKey: "ou_owner", OpenID: "ou_owner", Name: "负责人"},
+		&domain.KROwner{KRID: kr.ID, OwnerKey: "owner@example.test", Email: "owner@example.test", Name: "负责人"},
 		&domain.KRTag{KRID: kr.ID, Type: "region", Value: "eu"},
 		&domain.WeeklyReportWeek{Quarter: objective.Quarter, Week: progress.Week, OpenedBy: "test"},
 	} {
@@ -34,7 +34,7 @@ func TestReplaceKRTagsPreservesDefinitionsAndWeeklyFacts(t *testing.T) {
 		t.Fatal(err)
 	}
 	tags := []TagView{{Type: "custom", Value: "双周报-官网SEO"}, {Type: "region", Value: "eu"}}
-	updated, err := service.ReplaceKRTags(t.Context(), kr.ID, ReplaceKRTagsInput{ExpectedVersion: before.Version, Tags: tags, UpdatedBy: "ou_editor"})
+	updated, err := service.ReplaceKRTags(t.Context(), kr.ID, ReplaceKRTagsInput{ExpectedVersion: before.Version, Tags: tags, UpdatedBy: "editor@example.test"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,10 +59,10 @@ func TestReplaceKRTagsPreservesDefinitionsAndWeeklyFacts(t *testing.T) {
 	if err := db.First(&stored, "id = ?", kr.ID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if stored.UpdatedBy != "ou_editor" || stored.ObjectiveID != objective.ID {
+	if stored.UpdatedBy != "editor@example.test" || stored.ObjectiveID != objective.ID {
 		t.Fatalf("stored KR = %+v", stored)
 	}
-	cleared, err := service.ReplaceKRTags(t.Context(), kr.ID, ReplaceKRTagsInput{ExpectedVersion: updated.Version, Tags: []TagView{}, UpdatedBy: "ou_editor"})
+	cleared, err := service.ReplaceKRTags(t.Context(), kr.ID, ReplaceKRTagsInput{ExpectedVersion: updated.Version, Tags: []TagView{}, UpdatedBy: "editor@example.test"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,7 +132,7 @@ func TestReplacePointTagsUsesParentKRVersionAndPreservesDefinitions(t *testing.T
 	longValue := "只标记这一条策略要点并完整展示标签的全部业务语义"
 	updated, err := service.ReplacePointTags(t.Context(), point.ID, ReplacePointTagsInput{
 		ExpectedVersion: 0,
-		UpdatedBy:       "ou_editor",
+		UpdatedBy:       "editor@example.test",
 		Tags:            []TagView{{Type: "management_focus", Value: longValue}},
 	})
 	if err != nil {

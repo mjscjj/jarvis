@@ -350,11 +350,11 @@ func withPlanOwnerIdentityNamespaces(objectives []PlanObjectiveView) []PlanObjec
 		for krIndex := range objectives[objectiveIndex].KRs {
 			kr := &objectives[objectiveIndex].KRs[krIndex]
 			for ownerIndex, owner := range kr.Owners {
-				kr.Owners[ownerIndex] = storedOwnerView(owner.OpenID, owner.Name)
+				kr.Owners[ownerIndex] = storedOwnerView(owner.Email, owner.Name, owner.UnionID)
 			}
 			for pointIndex := range kr.Points {
 				for ownerIndex, owner := range kr.Points[pointIndex].Owners {
-					kr.Points[pointIndex].Owners[ownerIndex] = storedOwnerView(owner.OpenID, owner.Name)
+					kr.Points[pointIndex].Owners[ownerIndex] = storedOwnerView(owner.Email, owner.Name, owner.UnionID)
 				}
 			}
 		}

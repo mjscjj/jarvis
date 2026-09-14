@@ -26,7 +26,7 @@ export interface BoardApi {
   syncState: SyncState
   hasPendingChanges: boolean
 	setKrTitle: (objId: string, krId: string, title: string) => void
-	setKrOwner: (krId: string, ownerName: string, ownerOpenId?: string, owners?: KrOwner[]) => void
+	setKrOwner: (krId: string, ownerName: string, ownerEmail?: string, owners?: KrOwner[]) => void
 	setKrBusinessCategory: (krId: string, category: string) => void
 	setKrPriority: (krId: string, priority: KrPriority | '') => void
 	createObjective: (input: { quarter: string; title: string }) => Promise<void>

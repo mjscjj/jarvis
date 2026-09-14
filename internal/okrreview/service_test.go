@@ -58,7 +58,7 @@ func previewBoard() okrworkspace.Board {
 					{ID: "m-1", Text: "CPL $5.93", Light: domain.LightGreen},
 					{ID: "m-2", Text: "HVR 16%", Light: domain.LightYellow},
 				},
-				Owners: []okrworkspace.OwnerView{{OpenID: "ou_1", Name: "Anqi Feng"}},
+				Owners: []okrworkspace.OwnerView{{Email: "1@example.test", Name: "Anqi Feng"}},
 				Tags:   []okrworkspace.TagView{{Type: "custom", Value: "双周报"}},
 				Points: []okrworkspace.PointView{{
 					ID: "p-1", Kind: domain.PointKindStrategy, Title: "线索线上化",
@@ -83,7 +83,7 @@ func previewPlan() okrworkspace.PlanView {
 			ID: "plan-o-1", Title: "O1：建立增长飞轮",
 			KRs: []okrworkspace.PlanKRView{{
 				ID: "plan-kr-1", Title: "KR1：提升高质量线索", MetricNote: "以季度末数据为准",
-				Owners:  []okrworkspace.OwnerView{{OpenID: "ou_1", Name: "Anqi Feng"}},
+				Owners:  []okrworkspace.OwnerView{{Email: "1@example.test", Name: "Anqi Feng"}},
 				Metrics: []okrworkspace.MetricView{{ID: "plan-m-1", Text: "HVR 从 12% 提升至 16%"}},
 				Points: []okrworkspace.PlanPointView{{
 					ID: "plan-p-1", Kind: domain.PointKindStrategy, Title: "完成线索分层策略",

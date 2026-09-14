@@ -88,7 +88,7 @@ func TestCoreAndBizBoardsShareDefinitionsAndDifferOnlyByBizFields(t *testing.T) 
 	point := domain.KRPoint{ID: "point-board", KRID: kr.ID, Kind: domain.PointKindStrategy, Title: "策略要点", MeegoWorkItemID: "wi-7", MeegoURL: "https://meego.example/wi-7"}
 	for _, value := range []any{
 		&objective, &kr, &point,
-		&domain.KROwner{KRID: kr.ID, OpenID: "ou_owner", Name: "负责人"},
+		&domain.KROwner{KRID: kr.ID, Email: "owner@example.test", Name: "负责人"},
 		&domain.KRTag{KRID: kr.ID, Type: domain.TagTypeBusinessCategory, Value: "公会业务"},
 		&domain.PointTag{PointID: point.ID, Type: "custom", Value: "双周报"},
 	} {
@@ -170,7 +170,7 @@ func TestCoreAndWeeklyWritesHaveSeparateOwnership(t *testing.T) {
 
 	core, err := service.ReplaceKRCore(t.Context(), kr.ID, ReplaceKRInput{
 		ExpectedVersion: 0, Title: "新 OKR 标题", MetricNote: "季度口径",
-		Owners:  []OwnerView{{OpenID: "ou_a", Name: "甲"}, {OpenID: "ou_b", Name: "乙"}},
+		Owners:  []OwnerView{{Email: "a@example.test", Name: "甲"}, {Email: "b@example.test", Name: "乙"}},
 		Metrics: []MetricView{{ID: metric.ID, Text: "新核心指标", Light: domain.LightYellow}},
 		Points:  []PointView{{ID: point.ID}},
 		Tags:    []TagView{{Type: domain.TagTypeBusinessCategory, Value: "公会业务"}, {Type: domain.TagTypePriority, Value: "p0"}},
@@ -807,7 +807,7 @@ func TestCoreWorkspaceSupportsFormalProgressWithoutBizSchema(t *testing.T) {
 	decomposed, err := service.ReplaceGenericKRCore(t.Context(), created.ID, ReplaceGenericKRInput{
 		ExpectedVersion: 0, Title: "更新后的通用 KR", MetricNote: "季度口径",
 		Metrics: []MetricView{{ID: "metric-core-only", Text: "完成率 100%", Light: domain.LightGreen}},
-		Points:  []GenericPointView{{ID: "point-core-only", Kind: domain.PointKindStrategy, Title: "完成通用拆解", Owners: []OwnerView{{OpenID: "ou_owner", Name: "负责人"}}}},
+		Points:  []GenericPointView{{ID: "point-core-only", Kind: domain.PointKindStrategy, Title: "完成通用拆解", Owners: []OwnerView{{Email: "owner@example.test", Name: "负责人"}}}},
 	})
 	if err != nil {
 		t.Fatal(err)

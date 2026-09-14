@@ -145,7 +145,7 @@ try {
   await write(planPointPath, () => planPointRow.getByPlaceholder('工作项 ID').fill('regression-item'))
   await write(planPointPath, () => planPointRow.getByPlaceholder('链接（可选）').fill('https://example.test/meego/regression-item'))
   const detailedPlan = await api(`/api/biz-okr/plans/${planID}`)
-  assert.equal(detailedPlan.objectives[0].krs[0].owners[0].open_id, 'ou_regression')
+  assert.equal(detailedPlan.objectives[0].krs[0].owners[0].email, 'regression@example.test')
   assert.equal(detailedPlan.objectives[0].krs[0].metrics[0].text, 'Plan 转化率达到 25%')
   assert(detailedPlan.objectives[0].krs[0].points[0].tags.some(tag => tag.value === '具体 KR 标签'))
   assert.equal(detailedPlan.objectives[0].krs[0].points[0].meego_work_item_id, 'regression-item')

@@ -7,6 +7,7 @@ import type { CommentOKRContext } from '../comments'
 import type { CommentMention, CommentTarget, ImageRef, Objective, PageComment } from '../types'
 import { CommentContent, CommentMentionInput } from './CommentMentionInput'
 import type { CommentDraft } from './CommentMentionInput'
+import { CommentDeliveryStatus } from './CommentDeliveryStatus'
 import { PersonAvatar } from './PersonAvatar'
 import { Images, usePastedImageUpload } from './ui'
 
@@ -26,8 +27,8 @@ function targetLabel(type: PageComment['targetType']) {
   return ({ page: '整页', objective: 'O', kr: 'KR', metric: '核心数据', point: '具体 KR', entry: '进展条目', follow_up: '待跟进事项' } as const)[type]
 }
 
-function Avatar({ name, openId, small = false }: { name: string; openId?: string; small?: boolean }) {
-  return <PersonAvatar name={name} openId={openId} size={small ? 'size-6 text-[10px]' : 'size-7 text-[11px]'} tone="bg-indigo-400" />
+function Avatar({ name, email, small = false }: { name: string; email?: string; small?: boolean }) {
+  return <PersonAvatar name={name} email={email} size={small ? 'size-6 text-[10px]' : 'size-7 text-[11px]'} tone="bg-indigo-400" />
 }
 
 function wasEdited(comment: PageComment) {
@@ -100,7 +101,7 @@ function EditableCommentBody({ comment, objectives, compact = false, footer, onE
   const save = async () => {
     const content = value.content.trim()
     const mentionsUnchanged = value.mentions.length === comment.mentions.length
-      && value.mentions.every((mention, index) => mention.openId === comment.mentions[index]?.openId && mention.name === comment.mentions[index]?.name)
+      && value.mentions.every((mention, index) => mention.email === comment.mentions[index]?.email && mention.name === comment.mentions[index]?.name)
     const imagesUnchanged = JSON.stringify(images) === JSON.stringify(comment.images ?? [])
     if ((!content && images.length === 0) || saving || imageUploading || (content === comment.content && mentionsUnchanged && imagesUnchanged)) {
       if (content === comment.content && mentionsUnchanged && imagesUnchanged) setEditing(false)
@@ -147,7 +148,8 @@ function EditableCommentBody({ comment, objectives, compact = false, footer, onE
     <>
       {comment.content && <p className={`whitespace-pre-wrap break-words text-slate-700 ${compact ? 'mt-0.5 text-[12px] leading-[18px]' : 'mt-1 text-[13px] leading-5'}`}><CommentContent content={comment.content} mentions={comment.mentions} /></p>}
       {(comment.images?.length ?? 0) > 0 && <div className="mt-2"><Images value={comment.images ?? []} onChange={() => undefined} readOnly maxDisplayWidth={300} /></div>}
-      {notificationErrorText(comment) && <div className="mt-1 text-[10px] text-amber-700">评论已保存，但{notificationErrorText(comment)}</div>}
+      <CommentDeliveryStatus comment={comment} />
+      {!comment.notifications?.length && notificationErrorText(comment) && <div className="mt-1 text-[10px] text-amber-700">评论已保存，但{notificationErrorText(comment)}</div>}
       <div className="mt-1.5 flex min-h-5 items-center gap-2 text-[11px]">
         {footer}
         <button type="button" onClick={() => { setEditing(true); setConfirmingDelete(false) }} className="font-medium text-slate-400 hover:text-indigo-600">编辑</button>
@@ -253,7 +255,7 @@ function CommentThread({ comment, objectives, createReply, showSource, okrContex
     <article id={`comment-${comment.id}`} className={`border-b border-slate-100 px-4 py-3.5 last:border-b-0 ${comment.resolved ? 'bg-slate-50/60' : ''}`}>
       {showSource && <div className="mb-2.5"><CommentSourceCard source={comment} context={okrContext} onNavigate={() => onNavigateToSource(comment)} /></div>}
       <div className="flex items-start gap-2.5">
-        <Avatar name={comment.authorName} openId={comment.authorOpenId} />
+        <Avatar name={comment.authorName} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-[12px] font-semibold text-slate-700">{comment.authorName}</span>
@@ -272,7 +274,7 @@ function CommentThread({ comment, objectives, createReply, showSource, okrContex
             <div className="mt-2 space-y-2.5 border-l-2 border-slate-100 pl-3">
               {comment.replies.map((reply) => (
                 <div id={`comment-${reply.id}`} key={reply.id} className="flex items-start gap-2">
-                  <Avatar name={reply.authorName} openId={reply.authorOpenId} small />
+                  <Avatar name={reply.authorName} small />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2"><span className="text-[11px] font-semibold text-slate-600">{reply.authorName}</span><time className="text-[10px] text-slate-400">{displayTime(reply.createdAt)}</time>{wasEdited(reply) && <span className="text-[9px] text-slate-300">已编辑</span>}</div>
                     <EditableCommentBody comment={reply} objectives={objectives} compact onEdit={onEdit} onDelete={onDelete} />

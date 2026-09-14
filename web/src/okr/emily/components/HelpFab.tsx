@@ -1,24 +1,24 @@
 import { useEffect, useRef, useState } from 'react'
 
-// 填写页遇到问题时找谁。open_id 取自 Emily pro 小组的真实成员，换人要改这里。
-const FEISHU_CHAT = 'https://applink.larkoffice.com/client/chat/open?openId='
+// 填写页遇到问题时找谁。email 取自 Emily pro 小组的真实成员，换人要改这里。
+const FEISHU_CHAT = 'https://applink.larkoffice.com/client/chat/open?email='
 
 const CONTACTS = [
   {
-    openId: 'ou_4f9796d856ffa67c1b32206f6e81e5bf',
+    email: 'ou_4f9796d856ffa67c1b32206f6e81e5bf',
     title: 'OKR 填写规范',
     detail: '填写口径、字段含义',
     person: '张若怡 (Penny)',
   },
   {
-    openId: 'ou_cfd9e106436c46adf20aaf9fe076c65d',
+    email: 'ou_cfd9e106436c46adf20aaf9fe076c65d',
     title: '技术支持',
     detail: '页面报错、功能问题',
     person: '储节节 (Jiejie Chu)',
   },
 ]
 
-const DESIGNER = { openId: 'ou_0a60892810f8dc26f1a5156b352198c9', name: '李潇琳 (Claire Li)' }
+const DESIGNER = { email: 'ou_0a60892810f8dc26f1a5156b352198c9', name: '李潇琳 (Claire Li)' }
 
 /**
  * 右下角的飞书求助入口，位于快捷对话栏上方。
@@ -51,8 +51,8 @@ export function HelpFab() {
         <div role="dialog" aria-label="帮助与反馈" className="absolute right-0 bottom-[calc(100%+10px)] w-64 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_12px_32px_rgba(15,23,42,0.16)]">
           {CONTACTS.map((contact) => (
             <a
-              key={contact.openId}
-              href={`${FEISHU_CHAT}${contact.openId}`}
+              key={contact.email}
+              href={`${FEISHU_CHAT}${contact.email}`}
               target="_blank"
               rel="noreferrer"
               className="block border-b border-slate-100 px-3 py-2.5 transition-colors hover:bg-slate-50"
@@ -63,7 +63,7 @@ export function HelpFab() {
             </a>
           ))}
           <a
-            href={`${FEISHU_CHAT}${DESIGNER.openId}`}
+            href={`${FEISHU_CHAT}${DESIGNER.email}`}
             target="_blank"
             rel="noreferrer"
             className="block bg-slate-50/70 px-3 py-2 text-[10px] text-slate-400 transition-colors hover:text-slate-600"

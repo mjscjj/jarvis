@@ -91,7 +91,7 @@ export function ReminderPreview({ quarter, week, onClose, readOnly = false }: { 
           ) : (
             <div className="grid gap-2 lg:grid-cols-2">
               {visibleState.data.recipients.filter((recipient) => recipient.needsReminder).map((recipient) => (
-                <article key={recipient.ownerOpenId || recipient.ownerName} className="rounded-md border border-slate-200 bg-slate-50/60 p-3">
+                <article key={recipient.ownerEmail || recipient.ownerName} className="rounded-md border border-slate-200 bg-slate-50/60 p-3">
                   <div className="mb-2 flex items-center justify-between gap-2">
                     <div className="text-xs font-medium text-slate-700">
                       {recipient.ownerName}

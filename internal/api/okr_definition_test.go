@@ -73,7 +73,7 @@ func TestKRDefinitionRouteNeverWritesPoints(t *testing.T) {
 		}
 	}
 
-	body := `{"expected_version":0,"title":"新 KR 标题","owners":[{"open_id":"ou_new","name":"新负责人"}]}`
+	body := `{"expected_version":0,"title":"新 KR 标题","owners":[{"email":"new@example.test","name":"新负责人"}]}`
 	response := ut.PerformRequest(h.Engine, "PUT", "/api/okr/krs/kr-1/definition", &ut.Body{Body: strings.NewReader(body), Len: len(body)}).Result()
 	if response.StatusCode() != 200 {
 		t.Fatalf("definition status=%d body=%s", response.StatusCode(), response.Body())
@@ -157,7 +157,7 @@ func TestPointDefinitionRoutePatchesOnlyOneExistingPoint(t *testing.T) {
 		id, body string
 	}{
 		{"strategy", `{"expected_version":0,"title":"新策略"}`},
-		{"product", `{"expected_version":0,"title":"新产品","owners":[{"open_id":"ou_owner","name":"负责人"}]}`},
+		{"product", `{"expected_version":0,"title":"新产品","owners":[{"email":"owner@example.test","name":"负责人"}]}`},
 	} {
 		response := ut.PerformRequest(h.Engine, "PATCH", "/api/okr/points/"+request.id+"/definition", &ut.Body{Body: strings.NewReader(request.body), Len: len(request.body)}).Result()
 		if response.StatusCode() != 200 {
@@ -229,7 +229,7 @@ func TestGenericKRRouteCanMaintainDecompositionWithoutBizSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	body := `{"expected_version":0,"title":"已拆解 KR","metric_note":"季度口径","metrics":[{"id":"metric-1","text":"完成率 100%","light":"green","images":[]}],"points":[{"id":"point-1","kind":"strategy","title":"通用拆解点","owners":[{"open_id":"ou_owner","name":"负责人"}]}],"owners":[]}`
+	body := `{"expected_version":0,"title":"已拆解 KR","metric_note":"季度口径","metrics":[{"id":"metric-1","text":"完成率 100%","light":"green","images":[]}],"points":[{"id":"point-1","kind":"strategy","title":"通用拆解点","owners":[{"email":"owner@example.test","name":"负责人"}]}],"owners":[]}`
 	response := ut.PerformRequest(h.Engine, "PUT", "/api/okr/krs/kr-generic", &ut.Body{Body: strings.NewReader(body), Len: len(body)}).Result()
 	if response.StatusCode() != 200 {
 		t.Fatalf("generic replace status=%d body=%s", response.StatusCode(), response.Body())

@@ -19,7 +19,7 @@ func TestFollowUpLifecycleIsScopedVersionedAndIdempotent(t *testing.T) {
 	}
 	input := FollowUpInput{
 		ID: "followup-source-row", ExpectedVersion: 0, Quarter: "2026-Q3", Week: "2026-W36",
-		Topic: "对齐 AI 计划", Owners: []domain.FollowUpOwner{{OpenID: "ou_owner", Name: "张月仁"}},
+		Topic: "对齐 AI 计划", Owners: []domain.FollowUpOwner{{Email: "owner@example.test", Name: "张月仁"}},
 		Status: domain.FollowUpStatusInProgress, AssignDate: "2026-07-07", Update: "已约会",
 		SourceKey: "lark:doc:row", SourcePayload: datatypes.JSON(`{"revision":1}`), SortOrder: 2,
 	}

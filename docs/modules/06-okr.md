@@ -84,7 +84,7 @@ OKR 飞书登录会话已持久化在 Jarvis 私有运行主库的 `okr_workspac
 - API 前缀：`/api/biz-okr/*`。
 - 原子工具：`scripts/biz-okr-tools`。
 - 页面入口：`web/src/modules/registry.tsx` 注册的 `Biz OKR`（内部 key 为 `biz-okr`），复用当前 `web/src/okr/` 页面实现。
-- Biz 组合视图读取通用 OKR 和正式 Progress，再叠加标签、评分、评论与 Meego 信息；它不是第二份 OKR 真源。评论复用同一张讨论表，但生命周期明确分为 `(quarter, week)` 周页面和 `plan_id` Plan 页面两种作用域；Plan 评论不会借用或污染任一周次。评论中的 `@` 同时保存可见原文和经人员选择器解析的主应用 `open_id`。只有创建评论时的显式 `@` 会触发通知；页面和 Owner 不再隐式扩大收件人，编辑只更新评论与 mention 数据。通知边界先用 principal 的只读人员查询将该 `open_id` 精确归一为企业邮箱，再固定由“Jarvis通知机器人”发送紧凑 Card 2.0：主体只展示“原文”和“评论”，页面、周期/Plan、O、KR 与具体 KR 收进默认折叠的上下文，并提供 Emily“查看并回复”深链；发送后回读消息确认。不使用默认 Jarvis Bot，也不在身份解析失败时按姓名猜测。投递失败作为本次响应告警返回，不回滚评论。
+- Biz 组合视图读取通用 OKR 和正式 Progress，再叠加标签、评分、评论与 Meego 信息；它不是第二份 OKR 真源。评论复用同一张讨论表，但生命周期明确分为 `(quarter, week)` 周页面和 `plan_id` Plan 页面两种作用域；Plan 评论不会借用或污染任一周次。评论中的 `@` 同时保存可见原文和经固定人员目录核验的完整企业邮箱。只有创建评论时的显式 `@` 会触发通知；页面和 Owner 不再隐式扩大收件人，编辑只更新评论与 mention 数据。通知边界直接使用已核验完整企业邮箱，通过 `feishu.app_id / cli_profile` 固定的通知机器人发送并回读 Card 2.0。通知意图与评论同事务保存，回执单独持久化；失败不回滚评论，已成功的不重发，有消息 ID 的未知结果只回读核验。原始 CLI 错误保留服务日志，页面显示简洁状态。
 - Review 的结构化待跟进事项支持 `not_started`、`in_progress`、`done`、`abandoned` 四种状态；Review 会议页只开放状态编辑，其余字段保持只读。
 - 正式 Progress 的写入仍调用 `/api/okr/*`，写完再回读 Biz 组合视图，防止页面本地状态丢失 Biz 字段。
 - 多人填写使用细粒度乐观并发：已有实体按 `version` 做 CAS，首次周核心数据与首次评分从版本 1 开始；页面以服务端最新结果为基线重放保存期间的新草稿，评分和 Meego 确认只合并自己负责的字段。Objective/KR 排序使用范围顺序快照，评论编辑使用版本；级联删除以及从 KR 中移除 Metric/Point 都在同一写入临界区校验覆盖子项/回复的删除快照。冲突返回 409 并保留可继续处理的本地输入，不允许旧页面静默覆盖或删除协作者刚保存的数据。
@@ -106,7 +106,7 @@ OKR 飞书登录会话已持久化在 Jarvis 私有运行主库的 `okr_workspac
 
 周报催填的收件人判断和个性化文案仍由 Biz OKR Prompt/Skill 所有；实际外发统一调用无模块门禁的 `feishu-broadcast` Skill，由“Jarvis通知机器人”直接私聊负责人并返回逐人送达回执，不再创建或维护 OKR 催填助手群。
 
-Objective→KR、KR→Metric/Point 和 Owner 等 OKR 内部关系由 OKR 原生结构派生，不复制进 `EntityRelation`。OKR 全景把当前 Principal 直接连到季度顶层 Objective，并按 `open_id` 将 KR/Point Owner 连到已经存在的 Principal/Person；不会为未建模的 Owner 创建人物。只有 OKR 到 Project、KeyMatter、Resource 等跨模块、有证据的强关系才进入通用关系存储。
+Objective→KR、KR→Metric/Point 和 Owner 等 OKR 内部关系由 OKR 原生结构派生，不复制进 `EntityRelation`。OKR 全景把当前 Principal 直接连到季度顶层 Objective，并按 可选的已核验 `union_id` 将 KR/Point Owner 连到已经存在的 Principal/Person；不会为未建模的 Owner 创建人物。只有 OKR 到 Project、KeyMatter、Resource 等跨模块、有证据的强关系才进入通用关系存储。
 
 ## 配置与启动
 
@@ -146,3 +146,13 @@ Objective→KR、KR→Metric/Point 和 Owner 等 OKR 内部关系由 OKR 原生�
 | HTTP 路由速查 | `docs/reference/http-api.md`；最终以注册代码为准 |
 
 修改时先判断语义属于通用 OKR、Biz 业务包装还是 Jarvis 世界模型，再改对应所有者；不要因为当前共用一个 Service 或目录，就把三类语义重新混回去。
+
+### 稳定飞书人员身份（2026-09-14）
+
+业务 Owner、Follow-up 与评论 mentions 统一使用 `email,name,union_id?`，邮箱必须完整；邮箱前缀只用于搜索。`open_id` 只在飞书接口内部及作者认证留痕中使用。`owner_key/person_id` 从邮箱派生，姓名不改变身份。旧客户端提交 `open_id` 会被拒绝，需刷新。
+
+通知与登录共用 `feishu.app_id`；每条通知显式选择 `feishu.cli_profile`，启动校验实际 App ID。目录默认使用同应用 Bot，需通讯录基本资料、邮箱权限及相应数据范围。权限未开通时，仅允许显式配置 `directory_identity: user`、`directory_app_id`、`directory_profile` 的过渡目录；不继承 CLI 默认身份。头像按同目录的精确邮箱匹配，缺图显示姓名占位。
+
+`POST /api/biz-okr/comments/:comment_id/notifications/retry` 只处理既有收件意图；已投递不再发，未知但有回执只核验，未知且无回执不盲目重试。编辑评论不产生新通知；历史评论迁移不补发。
+
+历史数据必须在停写后经 `scripts/okr-email-migrate` 的 `resolve → dry-run → apply --backup` 显式迁移。脚本保留原始备份，核验所有映射，事务更新所有业务引用，拒绝冲突；触发器阻止旧进程重新写入裸 ID。查不到的历史 Owner 可在证据文件中明确声明为 `display_only_owners`，保留姓名、邮箱为空且不可通知；评论/跟进事项的未解析收件人仍中止迁移。

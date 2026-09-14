@@ -691,18 +691,18 @@ export function BoardProvider({
       const kr = findKr(draft, krId)
       if (kr) kr.title = title
     }),
-    setKrOwner: (krId, ownerName, ownerOpenId, owners) => mutate(krId, (draft) => {
+    setKrOwner: (krId, ownerName, ownerEmail, owners) => mutate(krId, (draft) => {
       const kr = findKr(draft, krId)
       if (kr) {
         kr.ownerName = ownerName
-        if (ownerOpenId !== undefined) kr.ownerOpenId = ownerOpenId
+        if (ownerEmail !== undefined) kr.ownerEmail = ownerEmail
         if (owners !== undefined) {
           kr.owners = owners
         } else {
           const previous = kr.owners ?? []
           kr.owners = ownerName.split(/[、,，;；]/).map((name) => name.trim()).filter(Boolean).map((name, index) => ({
             name,
-            openId: previous.find((owner) => owner.name === name)?.openId ?? (index === 0 ? (ownerOpenId ?? kr.ownerOpenId ?? '') : ''),
+            email: previous.find((owner) => owner.name === name)?.email ?? (index === 0 ? (ownerEmail ?? kr.ownerEmail ?? '') : ''),
           }))
         }
       }

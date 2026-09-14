@@ -230,15 +230,15 @@ test('mention query follows the active at token at the caret', () => {
 test('selecting a mention inserts visible text and keeps stable identity metadata', () => {
   const trigger = mentionQueryAtCaret('请 @张', 5)
   assert.ok(trigger)
-  const inserted = insertCommentMention('请 @张', trigger, { openId: 'ou_zhang', name: '张若怡' }, [])
+  const inserted = insertCommentMention('请 @张', trigger, { email: 'zhang@example.test', name: '张若怡' }, [])
   assert.equal(inserted.content, '请 @张若怡 ')
-  assert.deepEqual(inserted.mentions, [{ openId: 'ou_zhang', name: '张若怡' }])
+  assert.deepEqual(inserted.mentions, [{ email: 'zhang@example.test', name: '张若怡' }])
   assert.equal(inserted.caret, inserted.content.length)
 })
 
 test('removing visible at text also removes its notification identity', () => {
   assert.deepEqual(mentionsPresentInContent('@Bob 保留，Carol 已删', [
-    { openId: 'ou_bob', name: 'Bob' },
-    { openId: 'ou_carol', name: 'Carol' },
-  ]), [{ openId: 'ou_bob', name: 'Bob' }])
+    { email: 'bob@example.test', name: 'Bob' },
+    { email: 'carol@example.test', name: 'Carol' },
+  ]), [{ email: 'bob@example.test', name: 'Bob' }])
 })

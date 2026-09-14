@@ -57,7 +57,7 @@ func TestOKRBrowserWorkflow(t *testing.T) {
 		&domain.KRMetric{ID: "official-m", KRID: "official-kr", Text: "正式目标 100", Light: domain.LightGreen},
 		&domain.KRPoint{ID: "official-p", KRID: "official-kr", Kind: domain.PointKindStrategy, Title: "策略执行要点"},
 		&domain.KRPoint{ID: "official-product", KRID: "official-kr", Kind: domain.PointKindProduct, Title: "产品交付要点", SortOrder: 1},
-		&domain.KROwner{KRID: "official-kr", PersonID: 1, Name: "Regression Owner", OpenID: "ou_regression"},
+		&domain.KROwner{KRID: "official-kr", PersonID: 1, Name: "Regression Owner", Email: "ou_regression"},
 		&domain.KRTag{KRID: "official-kr", Type: domain.TagTypeBusinessCategory, Value: "增长"},
 		&domain.KRTag{KRID: "official-kr", Type: domain.TagTypePriority, Value: "p1"},
 	} {

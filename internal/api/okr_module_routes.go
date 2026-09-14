@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"jarvis/internal/background"
+	"jarvis/internal/larkcli"
 	"jarvis/internal/okrreview"
 	"jarvis/internal/okrworkspace"
 	okrAuth "jarvis/internal/okrworkspace/auth"
@@ -32,6 +33,7 @@ type BizOKRModuleDependencies struct {
 	Identity  *okrAuth.Service
 	Documents MarkdownDocumentCreator
 	People    *background.ResolveService
+	Directory *larkcli.Directory
 	Enabled   func(context.Context) (bool, error)
 	// PreviewReview runs the advisory OKR Plan and progress review agent.
 	PreviewReview *okrreview.Service
@@ -117,8 +119,8 @@ func RegisterBizOKRModuleRoutes(h *server.Hertz, deps BizOKRModuleDependencies) 
 	h.POST("/api/biz-okr/auth/feishu/device/:login_id/poll", requireEnabled, PollOKRFeishuDeviceLogin(deps.Identity))
 	h.POST("/api/biz-okr/auth/logout", requireEnabled, LogoutOKR(deps.Identity))
 	// Deprecated browser-cache compatibility route; see SearchWorkspacePeople.
-	h.GET("/api/biz-okr/people/search", requireEnabled, SearchWorkspacePeople(deps.People))
-	h.GET("/api/biz-okr/people/avatars", requireEnabled, GetWorkspacePeopleAvatars(deps.People))
+	h.GET("/api/biz-okr/people/search", requireEnabled, SearchOKRDirectory(deps.Directory))
+	h.GET("/api/biz-okr/people/avatars", requireEnabled, GetOKRDirectoryAvatars(deps.Directory))
 	h.GET("/api/biz-okr/activity", requireEnabled, GetOKRActivities(deps.Activity))
 	h.GET("/api/biz-okr/plans", requireEnabled, ListOKRPlans(deps.Workspace))
 	h.POST("/api/biz-okr/plans", requireEnabled, recordOKRActivity(deps.Activity, okrActivitySpec{Surface: "plan", Action: "plan_created"}, CreateOKRPlan(deps.Workspace)))
@@ -145,6 +147,7 @@ func RegisterBizOKRModuleRoutes(h *server.Hertz, deps BizOKRModuleDependencies) 
 	h.GET("/api/biz-okr/comments", requireEnabled, GetComments(deps.Workspace))
 	h.POST("/api/biz-okr/comments", requireEnabled, requireIdentity, CreateComment(deps.Workspace))
 	h.PUT("/api/biz-okr/comments/:comment_id", requireEnabled, requireIdentity, UpdateComment(deps.Workspace))
+	h.POST("/api/biz-okr/comments/:comment_id/notifications/retry", requireEnabled, requireIdentity, RetryOKRCommentNotifications(deps.Workspace))
 	h.DELETE("/api/biz-okr/comments/:comment_id", requireEnabled, requireIdentity, DeleteComment(deps.Workspace))
 	h.GET("/api/biz-okr/follow-ups", requireEnabled, GetFollowUps(deps.Workspace))
 	h.GET("/api/biz-okr/follow-ups/:follow_up_id", requireEnabled, GetFollowUp(deps.Workspace))

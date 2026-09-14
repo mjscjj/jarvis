@@ -122,6 +122,7 @@ func New(opts Options) (*Client, error) {
 // mirror the live lark-cli JSON (verified on this machine): the display name is
 // localized_name, not name, and there is no en_name/avatar/title.
 type UserCandidate struct {
+	IsActivated     *bool  `json:"is_activated"`
 	OpenID          string `json:"open_id"`
 	LocalizedName   string `json:"localized_name"`
 	Email           string `json:"email"`
@@ -339,6 +340,18 @@ func (c *Client) runRaw(ctx context.Context, input string, formatArgs []string, 
 		cmd.Stdin = strings.NewReader(input)
 	}
 	cmd.Env = environmentWithTimezone(c.timezone)
+	if len(args) >= 2 && args[0] == "--profile" {
+		filtered := cmd.Env[:0]
+		for _, entry := range cmd.Env {
+			key, _, _ := strings.Cut(entry, "=")
+			switch key {
+			case "LARKSUITE_CLI_APP_ID", "LARKSUITE_CLI_APP_SECRET", "LARKSUITE_CLI_USER_ACCESS_TOKEN", "LARKSUITE_CLI_TENANT_ACCESS_TOKEN", "LARKSUITE_CLI_PROFILE":
+				continue
+			}
+			filtered = append(filtered, entry)
+		}
+		cmd.Env = filtered
+	}
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout

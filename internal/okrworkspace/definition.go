@@ -17,6 +17,9 @@ type ReplaceKRDefinitionInput struct {
 }
 
 func (s *Service) ReplaceKRDefinition(ctx context.Context, id string, input ReplaceKRDefinitionInput) (KRView, error) {
+	if err := s.verifyPeople(ctx, input.Owners); err != nil {
+		return KRView{}, err
+	}
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return KRView{}, fmt.Errorf("kr_id is required")

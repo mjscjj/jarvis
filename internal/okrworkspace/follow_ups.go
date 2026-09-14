@@ -92,6 +92,9 @@ func (s *Service) GetFollowUp(ctx context.Context, id string) (FollowUpView, err
 
 func (s *Service) CreateFollowUp(ctx context.Context, input FollowUpInput) (FollowUpView, error) {
 	input = normalizeFollowUpInput(input)
+	if err := s.verifyPeople(ctx, input.Owners); err != nil {
+		return FollowUpView{}, err
+	}
 	if err := validateFollowUpInput(input, true); err != nil {
 		return FollowUpView{}, err
 	}
@@ -125,6 +128,9 @@ func (s *Service) CreateFollowUp(ctx context.Context, input FollowUpInput) (Foll
 func (s *Service) UpdateFollowUp(ctx context.Context, id string, input FollowUpInput) (FollowUpView, error) {
 	id = strings.TrimSpace(id)
 	input = normalizeFollowUpInput(input)
+	if err := s.verifyPeople(ctx, input.Owners); err != nil {
+		return FollowUpView{}, err
+	}
 	if id == "" {
 		return FollowUpView{}, fmt.Errorf("follow_up_id is required")
 	}
@@ -194,8 +200,8 @@ func normalizeFollowUpInput(input FollowUpInput) FollowUpInput {
 	owners := make([]domain.FollowUpOwner, 0, len(input.Owners))
 	seen := make(map[string]struct{}, len(input.Owners))
 	for _, owner := range input.Owners {
-		owner.OpenID, owner.Name = strings.TrimSpace(owner.OpenID), strings.TrimSpace(owner.Name)
-		key := owner.OpenID
+		owner.Email, owner.Name = strings.TrimSpace(owner.Email), strings.TrimSpace(owner.Name)
+		key := owner.Email
 		if key == "" {
 			key = "name:" + owner.Name
 		}
@@ -226,8 +232,8 @@ func validateFollowUpInput(input FollowUpInput, creating bool) error {
 		}
 	}
 	for _, owner := range input.Owners {
-		if owner.OpenID == "" || owner.Name == "" {
-			return fmt.Errorf("every follow-up owner requires open_id and name")
+		if !domain.ValidEmail(owner.Email) || owner.Name == "" {
+			return fmt.Errorf("every follow-up owner requires email and name")
 		}
 	}
 	if !json.Valid(input.SourcePayload) {

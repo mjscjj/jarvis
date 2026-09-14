@@ -28,9 +28,9 @@ export function insertCommentMention(
   const token = `@${mention.name}`
   const needsSpace = trigger.end >= content.length || !/^\s/.test(content.slice(trigger.end))
   const nextContent = `${content.slice(0, trigger.start)}${token}${needsSpace ? ' ' : ''}${content.slice(trigger.end)}`
-  const sameName = current.find((item) => item.name === mention.name && item.openId !== mention.openId)
+  const sameName = current.find((item) => item.name === mention.name && item.email !== mention.email)
   if (sameName) throw new Error(`已有同名 @${mention.name}，请先移除后再选择`)
-  const nextMentions = current.some((item) => item.openId === mention.openId) ? current : [...current, mention]
+  const nextMentions = current.some((item) => item.email === mention.email) ? current : [...current, mention]
   return {
     content: nextContent,
     mentions: nextMentions,

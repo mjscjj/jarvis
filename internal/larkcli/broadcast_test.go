@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestBroadcastSenderUsesDedicatedAppAndNormalizesMainAppIdentity(t *testing.T) {
+func TestBroadcastSenderUsesExplicitAppAndEmailWithoutUserCredentials(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell fixture is Unix-only")
 	}
@@ -26,9 +26,6 @@ case "$*" in
     ;;
   "--profile notify api GET /open-apis/application/v2/app/visibility --params "*" --as bot --format json")
     printf '%s' '{"ok":true,"data":{"is_visible_to_all":1}}'
-    ;;
-  "--profile main contact +search-user --user-ids ou_recipient --as user --format json")
-    printf '%s' '{"ok":true,"data":{"users":[{"open_id":"ou_recipient","localized_name":"接收人","enterprise_email":"recipient@example.com"}],"has_more":false}}'
     ;;
   "--profile notify api POST /open-apis/im/v1/messages --params "*" --data "*" --as bot --format json")
     case "$*" in
@@ -50,11 +47,11 @@ esac
 	if err != nil {
 		t.Fatal(err)
 	}
-	sender, err := NewBroadcastSender(t.Context(), client, "")
+	sender, err := NewBroadcastSender(t.Context(), client, "cli_a96a2422f03bdbd7", "notify")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sender.SendCardToMainAppUser(t.Context(), "ou_recipient", "接收人", "author@example.com", `{"schema":"2.0"}`, "comment-key"); err != nil {
+	if _, err := sender.SendCardToEmail(t.Context(), "recipient@example.com", "author@example.com", `{"schema":"2.0"}`, "comment-key"); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -68,7 +65,7 @@ func TestBroadcastSenderRejectsWrongPreferredProfileWithoutFallback(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = NewBroadcastSender(t.Context(), client, "wrong")
+	_, err = NewBroadcastSender(t.Context(), client, "cli_a96a2422f03bdbd7", "wrong")
 	if err == nil || !strings.Contains(err.Error(), "uses app") {
 		t.Fatalf("error = %v, want wrong app rejection", err)
 	}
@@ -93,11 +90,11 @@ esac
 	if err != nil {
 		t.Fatal(err)
 	}
-	sender, err := NewBroadcastSender(t.Context(), client, "notify")
+	sender, err := NewBroadcastSender(t.Context(), client, "cli_a96a2422f03bdbd7", "notify")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := sender.SendCardToMainAppUser(t.Context(), "ou_self", "作者", "AUTHOR@example.com", `{"schema":"2.0"}`, "comment-key"); err != nil {
+	if _, err := sender.SendCardToEmail(t.Context(), "author@example.com", "author@example.com", `{"schema":"2.0"}`, "comment-key"); err != nil {
 		t.Fatal(err)
 	}
 }

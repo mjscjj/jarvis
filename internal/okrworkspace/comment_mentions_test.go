@@ -15,10 +15,12 @@ type commentBroadcastSenderStub struct {
 	idempotencyKey string
 }
 
-func (stub *commentBroadcastSenderStub) SendCardToMainAppUser(_ context.Context, openID, name, authorEmail, card, idempotencyKey string) error {
-	stub.openID, stub.name, stub.authorEmail, stub.card, stub.idempotencyKey = openID, name, authorEmail, card, idempotencyKey
-	return nil
+func (stub *commentBroadcastSenderStub) SendCardToEmail(_ context.Context, email, authorEmail, card, idempotencyKey string) (string, error) {
+	stub.openID, stub.authorEmail, stub.card, stub.idempotencyKey = email, authorEmail, card, idempotencyKey
+	return "om_test_notice", nil
 }
+func (stub *commentBroadcastSenderStub) VerifyMessage(context.Context, string) error { return nil }
+func (stub *commentBroadcastSenderStub) AppID() string                               { return "test-app" }
 
 func TestBotCommentMentionNotificationContainsRequiredContextAndDeepLink(t *testing.T) {
 	sender := &commentBroadcastSenderStub{}
@@ -27,11 +29,11 @@ func TestBotCommentMentionNotificationContainsRequiredContextAndDeepLink(t *test
 		t.Fatal(err)
 	}
 	input := CommentMentionNotification{
-		Recipient: CommentMention{OpenID: "ou_bob", Name: "Bob"}, CommentID: "comment-1", AuthorName: "Alice", AuthorEmail: "alice@example.com",
+		Recipient: CommentMention{Email: "bob@example.test", Name: "Bob"}, CommentID: "comment-1", AuthorName: "Alice", AuthorEmail: "alice@example.com",
 		Quarter: "2026-Q3", Week: "2026-W35", ObjectiveTitle: "O 原文", KRTitle: "KR 原文",
 		OriginalText: "对应字段 *原文*", Content: "@Bob 请确认 [原文]", Tab: "review-meeting",
 	}
-	if err := notifier.NotifyCommentMention(t.Context(), input); err != nil {
+	if _, err := notifier.NotifyCommentMention(t.Context(), input); err != nil {
 		t.Fatal(err)
 	}
 	var card struct {
@@ -90,7 +92,7 @@ func TestBotCommentMentionNotificationContainsRequiredContextAndDeepLink(t *test
 	if !strings.Contains(sender.card, "https://emily.example.com/#/weekly-report?") || !strings.Contains(sender.card, "comment_id=comment-1") || !strings.Contains(sender.card, "tab=review-meeting") || !strings.Contains(sender.card, "week=2026-W35") || len(sender.idempotencyKey) > 50 || !strings.HasPrefix(sender.idempotencyKey, "okr-cmt-") {
 		t.Fatalf("card = %q, idempotency key = %q", sender.card, sender.idempotencyKey)
 	}
-	if sender.openID != "ou_bob" || sender.name != "Bob" || sender.authorEmail != "alice@example.com" {
+	if sender.openID != "bob@example.test" || sender.authorEmail != "alice@example.com" {
 		t.Fatalf("recipient forwarding = %#v", sender)
 	}
 }
@@ -102,12 +104,12 @@ func TestBotCommentMentionNotificationBuildsPlanDeepLink(t *testing.T) {
 		t.Fatal(err)
 	}
 	input := CommentMentionNotification{
-		Recipient: CommentMention{OpenID: "ou_owner", Name: "负责人"},
+		Recipient: CommentMention{Email: "owner@example.test", Name: "负责人"},
 		CommentID: "comment-plan", AuthorName: "张若怡", Quarter: "2026-Q4", PlanID: "plan-1",
 		PlanTitle: "2026 Q4 Biz OKR Plan", ObjectiveTitle: "O 原文", KRTitle: "KR 原文",
 		OriginalText: "指标原文", Content: "@负责人 请确认", Tab: commentSourceTabOKRPlan,
 	}
-	if err := notifier.NotifyCommentMention(t.Context(), input); err != nil {
+	if _, err := notifier.NotifyCommentMention(t.Context(), input); err != nil {
 		t.Fatal(err)
 	}
 	for _, expected := range []string{

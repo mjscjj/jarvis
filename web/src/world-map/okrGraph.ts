@@ -12,18 +12,18 @@ export interface OKRGraphInput {
 }
 
 export interface OKRWorldIdentity {
-  openId: string
+  unionId?: string
   pageType: 'principal' | 'person'
   pageId: number
 }
 
-function identitiesByOpenID(identities: OKRWorldIdentity[]): Map<string, OKRWorldIdentity> {
+function identitiesByUnionID(identities: OKRWorldIdentity[]): Map<string, OKRWorldIdentity> {
   const result = new Map<string, OKRWorldIdentity>()
   for (const identity of identities) {
-    const openID = identity.openId.trim()
+    const openID = identity.unionId?.trim() || `page:${identity.pageType}:${identity.pageId}`
     if (!openID) continue
     const existing = result.get(openID)
-    if (!existing || identity.pageType === 'principal') result.set(openID, { ...identity, openId: openID })
+    if (!existing || identity.pageType === 'principal') result.set(openID, { ...identity, unionId: openID })
   }
   return result
 }
@@ -68,12 +68,12 @@ export function okrWorldPageRefs(objectives: Objective[], relations: EntityRelat
     if (!Number.isSafeInteger(id) || id <= 0) continue
     refs.set(nodeKey(worldType, id), { type: worldType, id })
   }
-  const ownerOpenIDs = new Set(objectives.flatMap((objective) => objective.krs.flatMap((kr) => [
-    ...(kr.owners ?? []).map((owner) => owner.openId),
-    ...kr.points.flatMap((point) => (point.owners ?? []).map((owner) => owner.openId)),
+  const ownerUnionIDs = new Set(objectives.flatMap((objective) => objective.krs.flatMap((kr) => [
+    ...(kr.owners ?? []).map((owner) => owner.unionId),
+    ...kr.points.flatMap((point) => (point.owners ?? []).map((owner) => owner.unionId)),
   ])))
-  for (const identity of identitiesByOpenID(identities).values()) {
-    if (identity.pageType !== 'principal' && !ownerOpenIDs.has(identity.openId)) continue
+  for (const identity of identitiesByUnionID(identities).values()) {
+    if (identity.pageType !== 'principal' && !ownerUnionIDs.has(identity.unionId)) continue
     if (!Number.isSafeInteger(identity.pageId) || identity.pageId <= 0) continue
     refs.set(nodeKey(identity.pageType, identity.pageId), { type: identity.pageType, id: identity.pageId })
   }
@@ -168,7 +168,7 @@ export function buildOKRGraph(input: OKRGraphInput): WorldGraph {
   const seenLinks = new Set<string>()
   const indexes = new Map(input.fullIndex.map((item) => [nodeKey(item.type, item.id), item]))
   const activePages = new Map(input.activePages.map((page) => [nodeKey(page.type, page.id), page]))
-  const identities = identitiesByOpenID(input.identities ?? [])
+  const identities = identitiesByUnionID(input.identities ?? [])
   const principal = [...identities.values()].find((identity) => identity.pageType === 'principal')
 
   const addIdentityNode = (identity: OKRWorldIdentity): string | undefined => {
@@ -179,9 +179,9 @@ export function buildOKRGraph(input: OKRGraphInput): WorldGraph {
     nodes.set(key, pageNode(identity.pageType, identity.pageId, item, activePages))
     return key
   }
-  const addOwnerLinks = (source: string, owners: Array<{ openId: string }> | undefined) => {
-    for (const openID of new Set((owners ?? []).map((owner) => owner.openId).filter(Boolean))) {
-      const identity = identities.get(openID)
+  const addOwnerLinks = (source: string, owners: Array<{ unionId?: string }> | undefined) => {
+    for (const openID of new Set((owners ?? []).map((owner) => owner.unionId).filter(Boolean))) {
+      const identity = identities.get(openID!)
       if (!identity) continue
       const target = addIdentityNode(identity)
       if (!target) continue

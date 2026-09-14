@@ -9,13 +9,13 @@ function kr(patch: Partial<Kr> = {}): Kr {
     title: 'KR1：公会大会顺利落地',
     metricNote: '主干指标说明',
     metrics: [{ id: 'm-1', text: '入驻 1200 家', light: 'green', images: [] }],
-    owners: [{ name: '张三', openId: 'ou_zhang' }],
+    owners: [{ name: '张三', email: 'zhang@example.test' }],
     tags: [{ type: 'business_category', value: '公会业务' }],
     points: [{
       id: 'p-1',
       kind: 'strategy',
       title: '策略要点',
-      owners: [{ name: '李四', openId: 'ou_li' }],
+      owners: [{ name: '李四', email: 'li@example.test' }],
       tags: [],
       entries: [{ id: 'e-1', status: 'in_progress', text: '本周进展', docs: [], images: [] }],
     }],
@@ -26,9 +26,9 @@ function kr(patch: Partial<Kr> = {}): Kr {
 test('KR 措辞和人员的改动会被认成父级定义改动', () => {
   const baseline = kr()
   assert.notEqual(definitionSignature(baseline), definitionSignature(kr({ title: '改过的 KR 标题' })))
-  assert.notEqual(definitionSignature(baseline), definitionSignature(kr({ owners: [{ name: '王五', openId: 'ou_wang' }] })))
+  assert.notEqual(definitionSignature(baseline), definitionSignature(kr({ owners: [{ name: '王五', email: 'wang@example.test' }] })))
   assert.notEqual(definitionSignature(baseline), definitionSignature(kr({
-    owners: [{ name: '张三', openId: 'ou_zhang' }, { name: '新增的人', openId: 'ou_new' }],
+    owners: [{ name: '张三', email: 'zhang@example.test' }, { name: '新增的人', email: 'new@example.test' }],
   })))
 })
 
@@ -58,8 +58,8 @@ test('周次数据和标签的改动不会被当成定义改动', () => {
   })))
 })
 
-test('同一个人换 open_id 算改动，缺 open_id 不会和有 open_id 混为一谈', () => {
-  const withOpenId = kr({ owners: [{ name: '张三', openId: 'ou_zhang' }] })
-  const withoutOpenId = kr({ owners: [{ name: '张三', openId: '' }] })
+test('同一个人换 email 算改动，缺 email 不会和有 email 混为一谈', () => {
+  const withOpenId = kr({ owners: [{ name: '张三', email: 'zhang@example.test' }] })
+  const withoutOpenId = kr({ owners: [{ name: '张三', email: '' }] })
   assert.notEqual(definitionSignature(withOpenId), definitionSignature(withoutOpenId))
 })

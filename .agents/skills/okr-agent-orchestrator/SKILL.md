@@ -35,7 +35,7 @@ ScheduledTask 触发时，`action_key` 只标识产品里的固定行动，`prom
 - 正式周次与 Progress：`scripts/okr-module-tools progress-scope|weeks|open-week|progress-board|get-weekly-kr|replace-weekly-core|create-progress|update-progress|delete-progress`。正式进展归通用 OKR；写前回读版本，写后回读；
 - Biz 周报组合视图：`scripts/biz-okr-tools scope|board|get-weekly-kr`；删除整周及 Biz 附属记录使用它的 `delete-week`；
 - 评论协作：`scripts/biz-okr-tools comments|create-comment|update-comment|delete-comment`；待跟进事项评论使用 `target_type=follow_up` 和事项稳定 ID，创建前先回读事项并保持季度、周次一致；
-- Review 待跟进事项：`follow-ups|get-follow-up|create-follow-up|update-follow-up|delete-follow-up`；状态只使用 `not_started|in_progress|done|abandoned`，分别表示未开始、进行中、已完成和废弃；Owner 使用已解析的飞书 `open_id + name`，写前回读条目版本；
+- Review 待跟进事项：`follow-ups|get-follow-up|create-follow-up|update-follow-up|delete-follow-up`；状态只使用 `not_started|in_progress|done|abandoned`，分别表示未开始、进行中、已完成和废弃；Owner 使用已解析的飞书 完整企业 `email + name`（可带已核验 `union_id`），写前回读条目版本；
 - Meego 差异：`meego-preview|point-meego-preview|record-meego-observation|confirm-meego-progress`；
 - 催填按绑定 Prompt 读取目标周与上一有效周的完整 Biz Board；材料导出使用 `create-feishu-document`；
 - 已确认关系、Message、Clue、Fact、Page 和调度：`jarvis-tools`；

@@ -30,13 +30,16 @@ preview_review:
   sandbox: "workspace-write"
   timeout_seconds: 300
 
+feishu:
+  app_id: ""
+  cli_profile: ""
+
 # Application binding belongs in okr-module.runtime.yaml.
 identity:
   # Biz OKR uses its own low-sensitivity Feishu login instead of the optional
   # outer Jarvis ByteDance SSO gate.
   enabled: false
   # Configure the selected login application in the instance override.
-  app_id: ""
   app_secret_env: "JARVIS_OKR_APP_SECRET"
   session_ttl_hours: 8760 # 365 天；网页登录状态存于私有运行数据库
   cookie_secure: false

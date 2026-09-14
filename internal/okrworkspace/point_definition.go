@@ -75,6 +75,9 @@ func (s *Service) patchPointDefinition(ctx context.Context, planID, pointID stri
 	}
 	if input.Owners != nil {
 		normalized := normalizeOwners(*input.Owners)
+		if err := s.verifyPeople(ctx, normalized); err != nil {
+			return PointDefinitionPatchResult{}, err
+		}
 		input.Owners = &normalized
 	}
 	if input.Kind != nil && !domain.ValidPointKind(*input.Kind) {
@@ -188,7 +191,7 @@ func (s *Service) pointDefinitionResult(ctx context.Context, pointID string) (Po
 	}
 	owners := make([]OwnerView, 0, len(records))
 	for _, owner := range records {
-		owners = append(owners, storedOwnerView(owner.OpenID, owner.Name))
+		owners = append(owners, storedOwnerView(owner.Email, owner.Name, owner.UnionID))
 	}
 	result := PointDefinitionPatchResult{PointID: point.ID, Version: point.Version, Title: point.Title, Owners: owners}
 	var kr domain.KR
