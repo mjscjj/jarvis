@@ -49,7 +49,9 @@ Cookie 的名称空间和 Path、相对重定向也随代理前缀变化。
 主机使用 `/usr/bin/python3`（需要 PyYAML）、Docker、Go、npm、已配置的 lark-cli：
 
 ```bash
-./scripts/emily-dev --path /dev/ --secret-file /path/to/existing-okr-app.env --activate
+./scripts/emily-dev --path /dev/ --secret-file /path/to/existing-okr-app.env \
+  --directory-profile YOUR_DIRECTORY_PROFILE \
+  --notification-profile YOUR_NOTIFICATION_PROFILE --activate
 ```
 
 初始化脚本从现有公开域名和 `--path` 生成开发实例的 `public_base_url`，
@@ -58,7 +60,7 @@ Cookie 的名称空间和 Path、相对重定向也随代理前缀变化。
 不修改公司的域名网关。源码位于旁边的 `emily-development` worktree，分支 `codex/emily-development`。
 入口通过生产服务中的可选代理连接容器 Unix socket；生产网关原有根路径转发即可覆盖它。
 
-`conf/okr-module.yaml` 的 `chat.development_container: emily-development` 将生产 OKR 对话的执行环境切到该容器，
+`conf/okr-module.runtime.yaml` 的 `chat.development_container: emily-development` 将生产 OKR 对话的执行环境切到该容器，
 对话列表仍保存在现有共享的 `var/okr-chat/chat.db`。新会话使用完整研发工具说明；旧会话不会被自动改写。
 
 容器内重新构建使用 `./scripts/jarvis-deploy --skip-pull`。没有 systemd 或宿主部署能力，
@@ -83,3 +85,25 @@ Cookie 的名称空间和 Path、相对重定向也随代理前缀变化。
 - 容器不能读取生产主库、Docker socket，也不能直接连接生产 API。
 - 浏览器显示飞书登录入口，无页面异常；全部开发 API 请求均携带 `/dev/` 前缀。
 - 生产和开发健康检查均通过；真实用户完成授权后的登录尚未端到端实测。
+
+## 代码、实例配置与 main 的归属
+
+| 内容 | 真源与维护方式 | 是否进入 main |
+|---|---|---|
+| Docker、路径代理、配置加载、对话适配器、部署脚本和测试 | 当前仓库源代码；功能分支评审合入 | 是，作为可选公共能力 |
+| 模块公共默认值 | `conf/okr-module.yaml`；Chat 和应用登录默认关闭，容器名、应用 ID、个人登录文件为空 | 是 |
+| 生产路径前缀、socket、公开地址 | 本机 `conf/config.runtime.yaml` | 否，已忽略 |
+| 当前 Chat 启用、容器名、Codex 登录文件、飞书应用绑定 | 本机 `conf/okr-module.runtime.yaml`，覆盖公共默认值后执行同一套严格校验 | 否，已忽略 |
+| 开发实例端口、空主库、后台开关、token 目录 | 开发 worktree 的 `config.development.yaml` 与两个 `*.runtime.yaml`，由初始化脚本生成；SQLite 路径仍由专用基础配置负责 | 否，不再改写公共 YAML |
+| 通讯录与通知 Bot profile | 初始化参数，生成到本机 systemd unit | 否；公共代码不内置当前 profile |
+| secret、用户 token、缓存、运行日志 | 系统环境文件或 `var/` 等本机状态目录 | 否 |
+| 架构、操作方法、维护约定 | 本文；模块文档只链接本文 | 是，随代码同一提交维护 |
+| 当前 Emily 地址、实测结果 | 本文交付记录，明确是实例示例 | 可进入说明文档，不作为默认配置 |
+| `data/okr/okr.db` 和产品图片 | 按本项目要求随实例分支提交 | 不随通用能力 PR 自动带入 main，产品数据另行审核 |
+
+合入 main 时以完整开发环境能力为独立 PR，不直接合并整个 OKR MVP 分支的历史。
+PR 纳入本表的公共能力及测试、文档，排除实例产品数据和其他无关业务修改；
+共享 OKR 数据仍按当前实例约定直接修改。现阶段代码提交在 OKR MVP 分支，尚未合入 main。
+
+今后修改公开行为，同一提交更新本文和相应测试；更换本机路径、授权或容器绑定，
+只修改运行时配置并重新部署。`--activate` 写实例覆盖文件，不再污染公共默认配置。

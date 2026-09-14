@@ -14,8 +14,8 @@ import socket
 import socketserver
 import subprocess
 
-MAIN = 'cli_a96a0c8d82b85cb1'
-BOT = 'jarvis-notify-audit'
+MAIN = 'directory'
+BOT = 'notification'
 HOSTS = {
     'chatgpt.com', 'auth.openai.com', 'api.openai.com',
     'open.feishu.cn', 'accounts.feishu.cn', 'passport.feishu.cn',
@@ -154,7 +154,10 @@ if __name__ == '__main__':
     p = argparse.ArgumentParser()
     p.add_argument('--socket', required=True)
     p.add_argument('--cli', required=True)
+    p.add_argument('--directory-profile', required=True)
+    p.add_argument('--notification-profile', required=True)
     opts = p.parse_args()
+    MAIN, BOT = opts.directory_profile, opts.notification_profile
     os.umask(0o077)
     if os.path.exists(opts.socket):
         os.unlink(opts.socket)

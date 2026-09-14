@@ -11,6 +11,7 @@ ENV HOME=/dev-state/home CODEX_HOME=/dev-state/home/.codex \
     GOCACHE=/dev-state/go-cache GOMODCACHE=/dev-state/go-mod GOPATH=/dev-state/go \
     PATH=/opt/go/bin:/opt/bytedcli/dist:/opt/jarvis/scripts:/usr/local/bin:/usr/bin:/bin \
     JARVIS_API_BASE=http://127.0.0.1:18812 JARVIS_CONTAINER_DEPLOY=1 \
+    JARVIS_CONFIG_PATH=/opt/jarvis/conf/config.development.yaml \
     GOFLAGS=-buildvcs=false
 WORKDIR /opt/jarvis
 ENTRYPOINT ["emily-dev-entrypoint"]

@@ -159,3 +159,28 @@ identity:
 		t.Fatalf("Load() error = %v, want Biz validation failure", err)
 	}
 }
+
+func TestInstanceOverlayPreservesDefaultsAndValidatesOverrides(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "okr-module.yaml")
+	if err := os.WriteFile(path, []byte("database_path: data/okr/okr.db\nupload_dir: data/okr/assets\nmax_image_bytes: 1024\nchat:\n  enabled: true\n  model: shared-model\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	overlay := filepath.Join(dir, "okr-module.runtime.yaml")
+	if err := os.WriteFile(overlay, []byte("chat:\n  development_container: local-container\n  enabled: false\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadCore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Chat.Model != "shared-model" || cfg.Chat.DevelopmentContainer != "local-container" || cfg.Chat.Enabled || cfg.DatabasePath != "data/okr/okr.db" {
+		t.Fatalf("unexpected merged config: %+v", cfg)
+	}
+	if err := os.WriteFile(overlay, []byte("chat:\n  typo: wrong\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadCore(path); err == nil {
+		t.Fatal("unknown instance field accepted")
+	}
+}

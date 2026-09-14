@@ -130,6 +130,17 @@ func load(path string, includeBiz bool) (Config, error) {
 	if err := decoder.Decode(&cfg); err != nil {
 		return Config{}, fmt.Errorf("decode OKR module config %s: %w", path, err)
 	}
+	// Instance values overlay the shared defaults before the same validation.
+	overlayPath := strings.TrimSuffix(path, filepath.Ext(path)) + ".runtime.yaml"
+	if overlay, err := os.ReadFile(overlayPath); err == nil {
+		decoder := yaml.NewDecoder(bytes.NewReader(overlay))
+		decoder.KnownFields(true)
+		if err := decoder.Decode(&cfg); err != nil {
+			return Config{}, fmt.Errorf("decode OKR instance config %s: %w", overlayPath, err)
+		}
+	} else if !os.IsNotExist(err) {
+		return Config{}, fmt.Errorf("read OKR instance config %s: %w", overlayPath, err)
+	}
 	if err := cfg.validateCore(); err != nil {
 		return Config{}, fmt.Errorf("validate OKR module config %s: %w", path, err)
 	}
