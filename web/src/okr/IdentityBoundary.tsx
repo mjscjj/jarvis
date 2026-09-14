@@ -140,7 +140,7 @@ export default function IdentityBoundary({ children }: { children: ReactNode | (
   return (
     <div className="relative">
 			{typeof children === 'function' ? children(auth) : children}
-      {auth.configured && <div className="fixed bottom-5 right-20 z-[60] flex items-center gap-2 rounded-full border border-slate-200 bg-white py-1.5 pr-3 pl-1.5 text-[11px] text-slate-500 shadow-md">{auth.user?.avatarUrl ? <img src={auth.user.avatarUrl} alt={auth.user.name} className="size-5 shrink-0 rounded-full object-cover" /> : <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-indigo-400 text-[9px] font-semibold text-white">{auth.user?.name?.slice(0, 1)}</span>}<span>{auth.user?.name}</span><button type="button" onClick={() => void logoutUser()} className="text-slate-400 hover:text-slate-700">退出</button></div>}
+      {auth.configured && <div className="fixed bottom-5 right-20 z-30 flex items-center gap-2 rounded-full border border-slate-200 bg-white py-1.5 pr-3 pl-1.5 text-[11px] text-slate-500 shadow-md">{auth.user?.avatarUrl ? <img src={auth.user.avatarUrl} alt={auth.user.name} className="size-5 shrink-0 rounded-full object-cover" /> : <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-indigo-400 text-[9px] font-semibold text-white">{auth.user?.name?.slice(0, 1)}</span>}<span>{auth.user?.name}</span><button type="button" onClick={() => void logoutUser()} className="text-slate-400 hover:text-slate-700">退出</button></div>}
     </div>
   )
 }
