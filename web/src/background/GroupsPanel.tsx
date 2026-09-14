@@ -141,7 +141,10 @@ export default function GroupsPanel() {
   }
 
   const columns: TableColumnsType<Group> = [
-    { title: '会话', dataIndex: 'name', render: (_, g) => <Text strong>{g.name || '未命名会话'}</Text> },
+    {
+      title: '会话', dataIndex: 'name', width: 280,
+      render: (_, g) => <Text strong ellipsis={{ tooltip: g.name || '未命名会话' }} style={{ display: 'block' }}>{g.name || '未命名会话'}</Text>,
+    },
     { title: '类型', dataIndex: 'chat_mode', width: 80, render: (m: string) => chatModeLabels[m] || m },
     { title: '分层', dataIndex: 'tier', width: 70, render: (t: string) => <Tag color={tierColors[t] || 'default'}>{tierLabels[t] || t}</Tag> },
     {
@@ -256,7 +259,7 @@ export default function GroupsPanel() {
     {error && <Alert type="error" showIcon title="会话背景操作失败" description={error} closable onClose={() => setError(undefined)} />}
     <Card className="table-card" variant="borderless">
       <Table<Group>
-        rowKey="id" columns={columns} dataSource={items} loading={loading} scroll={{ x: 1000 }}
+        rowKey="id" columns={columns} dataSource={items} loading={loading} scroll={{ x: 1480 }}
         onRow={(group) => ({
           onClick: () => openEdit(group),
           onKeyDown: (event) => { if (event.key === 'Enter') openEdit(group) },
