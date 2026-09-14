@@ -215,10 +215,12 @@ func ConfigurePrincipal(configPath, agentDisplayName, principalOpenID, gitAuthor
 			return nil, err
 		}
 	}
-	// 旧版本写进覆盖文件的键（lark_cli.profile、card_approval.profile 等）在这次
-	// 写回时一并剪掉，否则会永远残留并每次启动都被重复告警。
-	pruneUnknownRuntimeOverrideKeys(root)
 	setYAMLScalar(root, "identity", "display_name", agentDisplayName)
+	// The default lark-cli identity is now the only identity source. Remove the
+	// two keys written by older Jarvis versions so an existing runtime overlay
+	// can be migrated explicitly by rerunning configure-identity.
+	removeYAMLMappingKey(root, "lark_cli", "profile")
+	removeYAMLMappingKey(root, "card_approval", "profile")
 	setYAMLScalar(root, "extract", "principal_open_id", principalOpenID)
 	setYAMLScalar(root, "dailydigest", "git_author", gitAuthor)
 	setYAMLBool(root, "card_approval", "enabled", true)
@@ -318,6 +320,20 @@ func setYAMLBool(root *yaml.Node, section, key string, value bool) {
 	setYAMLScalar(root, section, key, fmt.Sprintf("%t", value))
 	valueNode := mappingValue(mappingValue(root, section), key)
 	valueNode.Tag = "!!bool"
+}
+
+func removeYAMLMappingKey(root *yaml.Node, section, key string) {
+	sectionNode := mappingValue(root, section)
+	if sectionNode == nil || sectionNode.Kind != yaml.MappingNode {
+		return
+	}
+	for i := 0; i+1 < len(sectionNode.Content); i += 2 {
+		if sectionNode.Content[i].Value != key {
+			continue
+		}
+		sectionNode.Content = append(sectionNode.Content[:i], sectionNode.Content[i+2:]...)
+		return
+	}
 }
 
 func mappingValue(mapping *yaml.Node, key string) *yaml.Node {

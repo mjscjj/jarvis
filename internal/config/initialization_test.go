@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -92,9 +93,9 @@ func TestConfigurePrincipalRejectsInvalidInputWithoutWriting(t *testing.T) {
 	}
 }
 
-// 覆盖文件是跨版本存活的本机文件，重跑初始化时遇到旧版本写下的未知段不该失败：
-// 剪掉它并保留用户仍然有效的设置，否则老用户升级后连初始化都走不完。
-func TestConfigurePrincipalPrunesUnknownExistingRuntimeField(t *testing.T) {
+// 覆盖文件是跨版本存活的本机文件，重跑初始化时遇到旧版本写下的未知段不该失败，
+// 否则老用户升级后连初始化都走不完。未知段原样留着，用户仍然有效的设置不受影响。
+func TestConfigurePrincipalToleratesUnknownExistingRuntimeField(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(configPath, []byte(runtimeSettingsTestYAML), 0o600); err != nil {
 		t.Fatal(err)
@@ -110,12 +111,15 @@ func TestConfigurePrincipalPrunesUnknownExistingRuntimeField(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(after), "unknown_section") || strings.Contains(string(after), "hidden") {
-		t.Fatalf("unknown runtime section was not pruned:\n%s", after)
+	if !strings.Contains(string(after), "unknown_section") {
+		t.Fatalf("未知段不该被写回悄悄删掉:\n%s", after)
 	}
-	cfg, err := Load(configPath)
+	cfg, dropped, err := LoadWithDroppedOverrideKeys(configPath)
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
+	}
+	if !slices.Equal(dropped, []string{"unknown_section"}) {
+		t.Fatalf("未知段应当被如实上报，实际 = %v", dropped)
 	}
 	if cfg.Extract.PrincipalOpenID != "ou_user" || cfg.LarkCLI.RateLimit != 7 {
 		t.Fatalf("configured config = extract:%q lark_cli.rate_limit:%v", cfg.Extract.PrincipalOpenID, cfg.LarkCLI.RateLimit)

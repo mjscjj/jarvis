@@ -402,23 +402,19 @@ func unknownRuntimeOverrideKeys(raw []byte) ([]string, error) {
 	if len(document.Content) == 0 {
 		return nil, nil
 	}
-	return pruneUnknownRuntimeOverrideKeys(document.Content[0]), nil
+	return unknownYAMLKeys(document.Content[0], reflect.TypeOf(Config{}), ""), nil
 }
 
-// pruneUnknownRuntimeOverrideKeys 就地删除 Config 结构不认识的键，返回被删除的
-// 完整键路径（形如 extract.open_todo_limit）。加载时作用在临时解析出的文档上，
-// 只为拿到清单；写回覆盖文件时作用在真实文档上，让残留键随这次写入消失，而不是
-// 每次启动都重复告警。
-func pruneUnknownRuntimeOverrideKeys(root *yaml.Node) []string {
-	return pruneUnknownYAMLKeys(root, reflect.TypeOf(Config{}), "")
-}
-
-func pruneUnknownYAMLKeys(mapping *yaml.Node, structType reflect.Type, prefix string) []string {
+// unknownYAMLKeys 只读遍历，收集 Config 结构不认识的键的完整路径（形如
+// extract.open_todo_limit）。解析时是 KnownFields(false) 真正丢弃了这些键，这里
+// 唯一的职责是让"丢了什么"能被报出来，而不是静默失效。
+//
+// 不认识的键下面的内容不再展开，只报最外层路径。
+func unknownYAMLKeys(mapping *yaml.Node, structType reflect.Type, prefix string) []string {
 	if mapping == nil || mapping.Kind != yaml.MappingNode || structType.Kind() != reflect.Struct {
 		return nil
 	}
-	var dropped []string
-	kept := make([]*yaml.Node, 0, len(mapping.Content))
+	var unknown []string
 	for i := 0; i+1 < len(mapping.Content); i += 2 {
 		key, value := mapping.Content[i], mapping.Content[i+1]
 		path := key.Value
@@ -427,14 +423,12 @@ func pruneUnknownYAMLKeys(mapping *yaml.Node, structType reflect.Type, prefix st
 		}
 		field, known := yamlStructField(structType, key.Value)
 		if !known {
-			dropped = append(dropped, path)
+			unknown = append(unknown, path)
 			continue
 		}
-		dropped = append(dropped, pruneUnknownYAMLKeys(value, field.Type, path)...)
-		kept = append(kept, key, value)
+		unknown = append(unknown, unknownYAMLKeys(value, field.Type, path)...)
 	}
-	mapping.Content = kept
-	return dropped
+	return unknown
 }
 
 func yamlStructField(structType reflect.Type, key string) (reflect.StructField, bool) {

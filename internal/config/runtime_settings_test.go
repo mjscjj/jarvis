@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -389,9 +390,9 @@ capture:
 	}
 }
 
-// 未知键只在加载时丢弃的话，会永远留在文件里、每次启动重复告警。写回是唯一的
-// 自愈时机：合并完就剪掉，同时不能碰用户仍然有效的设置。
-func TestUpdateRuntimeOverridePrunesUnknownKeys(t *testing.T) {
+// 老用户的覆盖文件里带着代码已不认识的键，设置页仍然要能正常保存：写回不因此
+// 失败，用户自己的设置不被连累，而残留键继续留在文件里并继续被如实上报。
+func TestUpdateRuntimeOverrideKeepsWorkingWithUnknownKeys(t *testing.T) {
 	configPath := writeRuntimeSettingsTestConfig(t)
 	overridePath := RuntimeOverridePath(configPath)
 	if err := os.WriteFile(overridePath, []byte(`extract:
@@ -422,23 +423,16 @@ card_approval:
 	if _, err := service.Update(context.Background(), input); err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
-	raw, err := os.ReadFile(overridePath)
-	if err != nil {
-		t.Fatalf("read runtime override: %v", err)
-	}
-	if strings.Contains(string(raw), "open_todo_limit") || strings.Contains(string(raw), "recent_task_limit") {
-		t.Fatalf("未知键在写回后仍然残留:\n%s", raw)
-	}
 	reloaded, dropped, err := LoadWithDroppedOverrideKeys(configPath)
 	if err != nil {
 		t.Fatalf("LoadWithDroppedOverrideKeys() error = %v", err)
 	}
-	if len(dropped) != 0 {
-		t.Fatalf("写回后仍然有被丢弃的键: %v", dropped)
+	if !slices.Equal(dropped, []string{"extract.open_todo_limit", "extract.recent_task_limit"}) {
+		t.Fatalf("写回后未知键应当原样留在文件里并继续上报，实际 = %v", dropped)
 	}
 	if reloaded.Extract.Concurrency != 5 || reloaded.Extract.PrincipalOpenID != "ou_owner" ||
 		reloaded.CardApproval.RelaySecret != "relay-secret" {
-		t.Fatalf("剪枝连累了用户自己的设置: %#v", reloaded.Extract)
+		t.Fatalf("写回连累了用户自己的设置: %#v", reloaded.Extract)
 	}
 }
 
