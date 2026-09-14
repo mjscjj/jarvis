@@ -82,11 +82,11 @@ Codex 原生 thread 丢失时，主站自动以同一网页会话中已保存的
 
 ## 共享 OKR 数据的提交方式
 
-开发容器运行时挂载生产 worktree 的 `data/okr/`。它直接修改这份产品数据，修改立即对线上 OKR 生效；开发实例的 Task、Message、网页登录会话和模型会话仍保存在各自的运行库里。
+开发容器运行时挂载 OKR MVP worktree 的 `data/okr/`。Dev worktree 的 `data/okr` 也由 `scripts/emily-share-okr-data` 配成指向它的本机符号链接，因此宿主两个目录和容器读写的是同一份实时数据库与图片。初始化脚本会自动配置该链接；重建 Dev worktree 后也可单独运行 `./scripts/emily-share-okr-data --worktree ../emily-development`。它会把 Dev 原有检出副本移到被 Git 忽略的 `var/okr-checkout-before-share-*`，不会用旧副本覆盖线上数据。开发实例的 Task、Message、网页登录会话和模型会话仍保存在各自运行库里。
 
-Git worktree 各有自己的索引和检出文件。开发 worktree 里看到的 `data/okr/okr.db` 路径，不等于容器实际挂载的生产目录。**只从正在使用的共享目录取得一个 SQLite 一致快照，并把它和同批新增或修改的 OKR 产品资源带入要合并的分支。** 不让两个 worktree 各自维护、提交不同的数据库版本。活跃库用 SQLite backup 生成快照，再写入目标分支的 Git 索引；也可以把已有的数据提交合入目标分支。两个分支若都需要记录这次产品变化，应使用同一快照。合入 main 后，main 保留这份产品数据的版本历史；部署不会创建第二套 OKR 库。
+**`codex/jarvis-okr-mvp` 是 OKR 产品数据的唯一提交分支。** Dev worktree 只通过链接修改实时数据；本机 Git 索引对 `data/okr` 使用 `skip-worktree`，并忽略这个链接，避免 Dev 的 `git add -A` 把旧快照或链接提交进去。产品改动提交时，从 OKR MVP worktree 的实时库做一次 SQLite backup 快照，把同批新增或修改的资源一起提交到该分支。Dev 分支只提交代码；无需再把数据库和图片镜像提交一遍。合入 main 时以 OKR MVP 的产品数据提交为来源，main 保留其版本历史；部署不会创建第二套 OKR 库。
 
-`git commit` 只记录快照，不会改动线上文件。`git checkout`、`git restore`、`git reset --hard`、带 `--remote-okr-db` 的部署以及可能替换数据库文件的合并/切换，才可能把旧 Git 版本写回正在使用的线上目录；操作前确认目标路径不是共享库。开发 worktree 中未挂载的旧检出文件也不能直接拿来提交。审核 PR 时确认数据库快照和图片属于同一批产品改动。
+`git commit` 只记录快照，不会改动线上文件。`git checkout`、`git restore`、`git reset --hard`、带 `--remote-okr-db` 的部署以及可能替换数据库文件的合并/切换，才可能把旧 Git 版本写回正在使用的线上目录；操作前确认目标路径不是共享库。不要在 Dev worktree 对 `data/okr` 执行 Git 恢复、切换或强制添加。审核 PR 时确认数据库快照和图片属于同一批产品改动。Git 分支的历史仍然独立；“实时共享”指本机这两个目录和开发容器读取同一物理文件，不表示 Dev 分支的旧 Git blob 会自动更新。
 
 这个规则也适用于只改 OKR 产品数据、没有改代码的提交。私有主库、登录 token 和运行日志不进入 Git。
 
@@ -115,14 +115,14 @@ Git worktree 各有自己的索引和检出文件。开发 worktree 里看到的
 | secret、用户 token、缓存、运行日志 | 系统环境文件或 `var/` 等本机状态目录 | 否 |
 | 架构、操作方法、维护约定 | 本文；模块文档只链接本文 | 是，随代码同一提交维护 |
 | 当前 Emily 地址、实测结果 | 本文交付记录，明确是实例示例 | 可进入说明文档，不作为默认配置 |
-| `data/okr/okr.db` 和产品图片 | 从运行中的共享目录取得同一份一致快照，带入目标分支 | 是，有数据改动就提交，并合入 main |
+| `data/okr/okr.db` 和产品图片 | OKR MVP worktree 的实时目录是唯一真源；Dev 目录链接到它，只从 OKR MVP 分支提交一致快照 | 是，有数据改动就从 OKR MVP 提交，并合入 main |
 
 合入 main 时以完整开发环境能力为独立 PR，不直接合并整个 OKR MVP 分支的历史。
 PR 纳入本表的公共能力、测试、文档，以及共享 OKR 产品数据库和资源；
 排除个人凭证、私有运行数据库、实例配置和其他无关业务修改。
-共享 OKR 数据仍按当前实例约定直接修改。现阶段代码提交在 OKR MVP 分支，尚未合入 main。
+共享 OKR 数据仍按当前实例约定直接修改。现阶段 OKR 数据提交在 OKR MVP 分支，尚未合入 main；Dev 分支中此前留下的相同数据快照只是历史记录，不能作为新的提交来源。
 
 今后修改公开行为，同一提交更新本文和相应测试；更换本机路径、授权或容器绑定，
 只修改运行时配置并重新部署。`--activate` 写实例覆盖文件，不再污染公共默认配置。
 
-开发和线上运行时没有两套 OKR 库；Git 分支可以记录同一次共享数据快照，不能把独立检出的旧库当成另一份运行数据。
+开发和线上运行时没有两套 OKR 库；Dev 的 `data/okr` 路径现在也指向这份库。Git 提交只从 OKR MVP 分支进行。

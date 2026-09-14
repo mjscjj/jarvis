@@ -157,6 +157,7 @@ def main():
     run(['systemctl','--user','enable','--now','emily-development-gateway.service'])
     run(['docker','build','--network','host','-t','emily-development:local',ROOT/'deploy/emily-dev'])
     existing = output(['docker','ps','-aq','--filter','name=^emily-development$'])
+    run([ROOT/'scripts/emily-share-okr-data','--worktree',dev])
     if existing:
         run(['docker','rm','-f','emily-development'])
     args = ['docker','run','-d','--init','--restart','unless-stopped','--name','emily-development',
@@ -167,8 +168,10 @@ def main():
         args.extend(['--mount',f'type=bind,src={source},dst={target}'+(',readonly' if readonly else '')])
     mount(dev,'/opt/jarvis')
     mount('/dev/null','/opt/jarvis/.git',True) # Do not expose the parent worktree Git directory.
-    mount(ROOT/'data/okr','/opt/jarvis/data/okr')
-    mount(state/'tokens','/opt/jarvis/data/okr/feishu-tokens')
+    # The development worktree links data/okr to this absolute host path.
+    # Bind that target inside the container so the same link resolves there.
+    mount(ROOT/'data/okr',ROOT/'data/okr')
+    mount(state/'tokens',ROOT/'data/okr/feishu-tokens')
     mount(state,'/dev-state')
     # Do not expose the host-side container env file as a second credential source.
     mount('/dev/null','/dev-state/container.env',True)

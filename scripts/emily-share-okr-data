@@ -1,0 +1,93 @@
+#!/usr/bin/python3
+"""Make the development worktree use the live OKR product directory.
+
+The OKR MVP worktree owns Git snapshots. This command changes only the local
+development checkout; it never copies or restores the running database.
+"""
+import argparse
+from pathlib import Path
+import shutil
+import subprocess
+from datetime import datetime, timezone
+
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def git(worktree, *args):
+    return subprocess.check_output(
+        ['git', '-C', str(worktree), *args], text=True
+    ).strip()
+
+
+def git_path(worktree, *args):
+    path = Path(git(worktree, *args))
+    return (path if path.is_absolute() else worktree / path).resolve()
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--worktree', type=Path, default=ROOT.parent / 'emily-development')
+    args = parser.parse_args()
+    dev = args.worktree.resolve()
+    live = ROOT / 'data/okr'
+    if dev == ROOT or not (live / 'okr.db').is_file():
+        raise SystemExit('expected separate development worktree and live data/okr/okr.db')
+    if git_path(dev, 'rev-parse', '--git-common-dir') != (ROOT / '.git').resolve():
+        raise SystemExit('development directory is not a worktree of this repository')
+
+    checkout = dev / 'data/okr'
+    if checkout.is_symlink():
+        if checkout.resolve() != live.resolve():
+            raise SystemExit(f'{checkout} points to a different directory')
+    else:
+        # Keep the old checkout as a local backup. It was never the running DB.
+        if checkout.exists():
+            backup = dev / 'var' / ('okr-checkout-before-share-' + datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ'))
+            backup.parent.mkdir(parents=True, exist_ok=True)
+            if backup.exists():
+                raise SystemExit(f'backup path already exists: {backup}')
+            checkout.rename(backup)
+            print(f'Old development checkout saved at {backup}')
+        checkout.parent.mkdir(parents=True, exist_ok=True)
+        checkout.symlink_to(live, target_is_directory=True)
+
+    # The shared path is for runtime access. Only the OKR MVP worktree stages it.
+    tracked = git(dev, 'ls-files', 'data/okr').splitlines()
+    if tracked:
+        subprocess.run(['git', '-C', str(dev), 'update-index', '--skip-worktree', '--', *tracked], check=True)
+    git_dir = git_path(dev, 'rev-parse', '--git-dir')
+    excludes = git_dir / 'info' / 'exclude-shared-okr'
+    excludes.parent.mkdir(parents=True, exist_ok=True)
+    existing = subprocess.run(
+        ['git', '-C', str(dev), 'config', '--get', 'core.excludesFile'],
+        text=True, capture_output=True, check=False,
+    ).stdout.strip()
+    if not excludes.exists():
+        inherited = Path(existing).expanduser() if existing else None
+        if inherited and inherited.is_file():
+            shutil.copyfile(inherited, excludes)
+        else:
+            excludes.write_text('')
+    if '/data/okr\n' not in excludes.read_text().splitlines(keepends=True):
+        with excludes.open('a') as file:
+            file.write('\n/data/okr\n')
+    subprocess.run(['git', '-C', str(dev), 'config', '--worktree', 'core.excludesFile', str(excludes)], check=True)
+    hook_path = git_dir / 'hooks' / 'pre-commit'
+    hook_path.parent.mkdir(parents=True, exist_ok=True)
+    hook = hook_path.read_text() if hook_path.exists() else '#!/bin/sh\n'
+    guard = ('# Shared OKR data is committed only from the OKR MVP worktree.\n'
+             'if test -n "$(git diff --cached --name-only -- data/okr)"; then\n'
+             '    echo "Commit data/okr from the OKR MVP worktree only." >&2\n'
+             '    exit 1\n'
+             'fi\n')
+    if guard.splitlines()[0] not in hook:
+        hook_path.write_text(hook.replace('#!/bin/sh\n', '#!/bin/sh\n' + guard, 1))
+        hook_path.chmod(0o700)
+    if git(dev, 'status', '--porcelain', '--', 'data/okr'):
+        raise SystemExit('development Git still reports data/okr changes')
+    print(f'{checkout} -> {checkout.resolve()}')
+
+
+if __name__ == '__main__':
+    main()

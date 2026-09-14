@@ -88,7 +88,7 @@ macOS 14+ Apple Silicon 用户优先使用 [DMG 安装与更新](docs/reference/
 
 该 Skill 负责依赖、飞书身份、CC Connect、服务、世界模型和真实端到端验收。不要绕过依赖门、身份和 CC 绑定，在 fresh clone 上直接注册服务。安装清单记录在 `var/install/<run-id>/INSTALL_CHECKLIST.md`。
 
-要求 Go 1.26.4 或更高版本、C 编译器、满足 Vite engines 的 Node（`^20.19.0` 或 `>=22.12.0`）/npm、jq、git、lark-cli、有效配置选定的 Agent CLI 和 Qdrant。SQLite 驱动依赖 CGO，构建脚本通过 `scripts/check-build-toolchain.sh` 检查。通用运行数据库在本机创建；可选 OKR 模块的产品数据库及资源随仓库保存在 `data/okr/`。完整研发实例直接挂载当前线上这份目录；向开发分支和 main 提交时，都应取得它的一致快照。
+要求 Go 1.26.4 或更高版本、C 编译器、满足 Vite engines 的 Node（`^20.19.0` 或 `>=22.12.0`）/npm、jq、git、lark-cli、有效配置选定的 Agent CLI 和 Qdrant。SQLite 驱动依赖 CGO，构建脚本通过 `scripts/check-build-toolchain.sh` 检查。通用运行数据库在本机创建；可选 OKR 模块的产品数据库及资源随仓库保存在 `data/okr/`。完整研发实例和 Dev worktree 都使用 OKR MVP worktree 的实时目录；产品数据只由 OKR MVP 分支提交一致快照，再合入 main。
 
 `bind-cc` 会立即验证 App ID/Secret。已有 Feishu `allow_from` 不是 Principal 本人时会停止，明确确认替换后才可使用 `--replace-allow-from`；`validate-binding` 拒绝缺失或通配的白名单。首次安装动作和 CLI 参数以安装 Skill、脚本 help 为准。
 
