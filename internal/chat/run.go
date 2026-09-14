@@ -140,7 +140,7 @@ func (s *Service) StreamSession(ctx context.Context, sessionID string, input Sen
 	if agentMessage == "" {
 		agentMessage = "请阅读并处理我附上的文件。"
 	}
-	req := Request{Message: agentMessage, ThreadID: valueOrEmpty(row.NativeThreadID), Agent: row.Agent, Model: row.Model, ReasoningEffort: row.ReasoningEffort, AttachmentPaths: paths, ImagePaths: imagePaths, Sources: input.Sources, VisibleHistory: visibleHistory}
+	req := Request{SessionID: sessionID, Message: agentMessage, ThreadID: valueOrEmpty(row.NativeThreadID), Agent: row.Agent, Model: row.Model, ReasoningEffort: row.ReasoningEffort, AttachmentPaths: paths, ImagePaths: imagePaths, Sources: input.Sources, VisibleHistory: visibleHistory}
 	assistantID, err := newID("cm_")
 	if err != nil {
 		return err

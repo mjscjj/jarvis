@@ -94,7 +94,7 @@ const pageLabels: Record<string, string> = {
 
 function AppShell() {
   const { name: agentName, rename: renameAgent } = useAgentIdentity()
-  const { enabled: authEnabled, user, logout } = useAuth()
+  const { enabled: authEnabled, user, pending: principalLogin, error: principalLoginError, login, logout } = useAuth()
   const { context, navigate } = usePageContext()
   const weeklyShare = context.active_key === 'biz-okr' && isWeeklyShareViewState(context.view_state)
   const principalDataEnabled = !authEnabled || user !== null
@@ -114,7 +114,7 @@ function AppShell() {
   const [okrUser, setOKRUser] = useState<OKRAuthUser>()
   // Feishu login can omit email; union_id keeps Claire and Chujiejie's
   // existing sessions recognizable across login apps.
-  const showOKRChat = ['on_af023f3c29b03b3d90cffedbc703b005', 'on_94b5aa46ca92b7aecd01031e5b2f0dc4'].includes(okrUser?.unionId ?? '') ||
+  const isPrincipalOKRChatUser = ['on_af023f3c29b03b3d90cffedbc703b005', 'on_94b5aa46ca92b7aecd01031e5b2f0dc4'].includes(okrUser?.unionId ?? '') ||
     ['lixiaolin', 'chujiejie.1'].includes(user?.username ?? '') || [user?.email, okrUser?.email]
       .some((email) => ['claire.li@bytedance.com', 'chujiejie.1@bytedance.com'].includes(email?.trim().toLowerCase() ?? ''))
   const [moduleLoadError, setModuleLoadError] = useState<string>()
@@ -535,7 +535,17 @@ function AppShell() {
               {pages[context.active_key]}
             </Suspense>
             <Suspense fallback={null}>
-              {principalDataEnabled && <Chat compact={context.active_key !== 'chat'} hidden={context.active_key === 'biz-okr' && !showOKRChat} />}
+              {principalDataEnabled && (context.active_key !== 'biz-okr' || isPrincipalOKRChatUser) &&
+                <Chat key="principal-chat" compact={context.active_key !== 'chat'} />}
+              {okrUser && !isPrincipalOKRChatUser &&
+                <Chat key="okr-chat" compact isolated hidden={context.active_key !== 'biz-okr'} />}
+              {context.active_key === 'biz-okr' && isPrincipalOKRChatUser && !principalDataEnabled &&
+                <div>
+                  {principalLogin?.verification_url
+                    ? <Button href={principalLogin.verification_url} target="_blank" rel="noreferrer">打开字节身份授权页</Button>
+                    : <Button onClick={() => void login()}>使用字节身份登录普通对话</Button>}
+                  {principalLoginError && <Alert type="error" title={principalLoginError} />}
+                </div>}
             </Suspense>
           </Content>
         </div>

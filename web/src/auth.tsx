@@ -55,7 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setPending(next)
   }, [])
 
-  const recover = useCallback((): Promise<void> => {
+  const recover = useCallback((forceLogin = false): Promise<void> => {
     if (inFlight.current) return inFlight.current
     if (signedOut.current || pendingRef.current) return Promise.resolve()
     // loading 表示「还没有可用身份」。已登录时被后台 401 触发的重新验证不能翻起
@@ -70,7 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // On an app-module route we never start the SSO device flow: the module
         // is open and runs its own visitor login. Only principal-only surfaces
         // fall through to loginWithByteDance.
-        if (!status.enabled || status.user || currentRouteIsModule()) {
+        if (!status.enabled || status.user || (!forceLogin && currentRouteIsModule())) {
           apply(status)
         } else {
           apply(await loginWithByteDance())
@@ -134,7 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signedOut.current = false
     pendingRef.current = null
     setPending(null)
-    return recover()
+    return recover(true)
   }, [recover])
 
   const logout = useCallback(async () => {

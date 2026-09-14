@@ -49,7 +49,7 @@ func isProtectedBrowserPath(path string) bool {
 // because it is not under `/api/`. Everything else on this instance — tasks,
 // the world model, prompts, settings, logs — belongs to the principal alone.
 func isPublicPath(path string, method []byte) bool {
-	for _, prefix := range []string{"/api/auth/", "/api/okr/", "/api/biz-okr/"} {
+	for _, prefix := range []string{"/api/auth/", "/api/okr/", "/api/biz-okr/", "/api/okr-chat/"} {
 		if strings.HasPrefix(path, prefix) {
 			return true
 		}

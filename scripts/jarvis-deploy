@@ -71,6 +71,11 @@ go run ./cmd/jarvis-config migrate-retired-config --config "$CONFIG_PATH"
 INSTANCE="$("${SCRIPT_DIR}/jarvis-instance" "$CONFIG_PATH")"
 CONFIG_PATH="$(jq -er '.config_path' <<<"$INSTANCE")"
 API_BASE="$(jq -er '.api_base' <<<"$INSTANCE")"
+OKR_CHAT_IMAGE="$(go run ./cmd/jarvis-config okr-chat-image --config "$CONFIG_PATH")"
+if [[ -n "$OKR_CHAT_IMAGE" ]]; then
+  command -v docker >/dev/null 2>&1 || fail "OKR chat is enabled but Docker is missing"
+  docker build --tag "$OKR_CHAT_IMAGE" "${REPO_ROOT}/deploy/okr-chat"
+fi
 source "${SCRIPT_DIR}/lib/retire-chat-sidecar.sh"
 retire_chat_sidecar "$(jq -er '.launchd_label' <<<"$INSTANCE")" "$REPO_ROOT"
 

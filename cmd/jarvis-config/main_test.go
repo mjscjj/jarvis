@@ -68,6 +68,29 @@ func TestRunAPIBaseUsesServerRuntimeConfig(t *testing.T) {
 	}
 }
 
+func TestOKRChatImageDeploymentConfig(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	for _, tc := range []struct {
+		chat, want string
+		fail       bool
+	}{
+		{"chat:\n  enabled: false\n", "", false},
+		{"chat:\n  enabled: true\n", "", true},
+		{"chat:\n  enabled: true\n  image: okr:test\n  model: test\n  reasoning_effort: medium\n  timeout_seconds: 10\n  auth_file: /login/auth.json\n  model_hosts: [api.openai.com:443]\n", "okr:test\n", false},
+	} {
+		raw := "database_path: data/okr/okr.db\nupload_dir: data/okr/assets\nmax_image_bytes: 1024\n" + tc.chat
+		if err := os.WriteFile(filepath.Join(dir, "okr-module.yaml"), []byte(raw), 0600); err != nil {
+			t.Fatal(err)
+		}
+		var out bytes.Buffer
+		err := run([]string{"okr-chat-image", "--config", path}, &out)
+		if (err != nil) != tc.fail || out.String() != tc.want {
+			t.Fatalf("output=%q err=%v", out.String(), err)
+		}
+	}
+}
+
 func TestRunConfigurePrincipal(t *testing.T) {
 	repoConfig := filepath.Join("..", "..", "conf", "config.yaml")
 	base, err := os.ReadFile(repoConfig)

@@ -54,6 +54,7 @@ type Event struct {
 // runner 封装 codex CLI 的流式调用。它持有已解析的 bin 与固定的模型/沙箱/
 // reasoning_effort/超时，Service 组装好 prompt 后交给它执行。
 type runner struct {
+	commandArgs     []string
 	agent           string
 	bin             string
 	model           string
@@ -188,7 +189,11 @@ func (r *runner) Stream(ctx context.Context, prompt, threadID string, imagePaths
 	runCtx, cancel := context.WithTimeout(ctx, r.timeout)
 	defer cancel()
 
-	command := exec.CommandContext(runCtx, r.bin, r.args(threadID, imagePaths)...)
+	args := r.commandArgs
+	if args == nil {
+		args = r.args(threadID, imagePaths)
+	}
+	command := exec.CommandContext(runCtx, r.bin, args...)
 	command.Env = append(os.Environ(), "JARVIS_AGENT_STAGE=chat")
 	command.Stdin = strings.NewReader(prompt)
 	// 自成进程组，取消时连同 CLI 派生的孙进程一起杀掉；否则 CommandContext
@@ -300,6 +305,13 @@ func parseCursorStream(stdout io.Reader, emit func(Event) error) error {
 		return fmt.Errorf("cursor stream is missing session id")
 	}
 	return nil
+}
+
+// StreamCommand reuses the native Codex JSONL protocol for an outer execution
+// adapter (for example docker run). The caller owns outer resource cleanup.
+func StreamCommand(ctx context.Context, bin string, args []string, prompt string, timeout time.Duration, emit func(Event) error) error {
+	r := &runner{agent: "codex", bin: bin, commandArgs: args, timeout: timeout}
+	return r.Stream(ctx, prompt, "", nil, emit)
 }
 
 func firstString(object map[string]any, keys ...string) string {

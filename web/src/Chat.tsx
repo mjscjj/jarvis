@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DeleteOutlined, DownloadOutlined, EditOutlined, FileOutlined, HistoryOutlined, InboxOutlined, MenuOutlined, PaperClipOutlined, PlusOutlined, SearchOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
 import { Alert, Button, Checkbox, Drawer, Dropdown, Empty, Input, Modal, Popover, Select, Spin, Tooltip, Typography } from 'antd'
 import type { MenuProps } from 'antd'
@@ -78,7 +78,17 @@ function isMissingChatSession(cause: unknown): boolean {
   return cause instanceof Error && cause.message.includes('chat record not found')
 }
 
-export default function Chat({ compact = false, hidden = false }: { compact?: boolean; hidden?: boolean }) {
+const ChatAPIContext = createContext('/api/chat')
+
+export default function Chat({ compact = false, hidden = false, isolated = false }: { compact?: boolean; hidden?: boolean; isolated?: boolean }) {
+  return <ChatAPIContext.Provider value={isolated ? '/api/okr-chat' : '/api/chat'}>
+    <ChatInner compact={compact} hidden={hidden} isolated={isolated} />
+  </ChatAPIContext.Provider>
+}
+
+function ChatInner({ compact, hidden, isolated }: { compact: boolean; hidden: boolean; isolated: boolean }) {
+  const [expanded, setExpanded] = useState(false)
+  const apiBase = useContext(ChatAPIContext)
   const { name: agentName, shortName } = useAgentIdentity()
   const { context, setViewState, navigate } = usePageContext()
   const [sessions, setSessions] = useState<ChatSession[]>([])
@@ -125,7 +135,7 @@ export default function Chat({ compact = false, hidden = false }: { compact?: bo
   const saveDraft = useCallback((id: string, draft: ChatSession['draft']) => {
     // Keep an older debounce request from overwriting a newer session-switch save.
     // Each caller reports its own error; a later edit can still retry after failure.
-    const write = draftWrite.current.catch(() => undefined).then(() => api<ChatSession>(`/api/chat/sessions/${id}`, {
+    const write = draftWrite.current.catch(() => undefined).then(() => api<ChatSession>(`${apiBase}/sessions/${id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ draft }),
     }))
     draftWrite.current = write
@@ -135,7 +145,7 @@ export default function Chat({ compact = false, hidden = false }: { compact?: bo
   const loadModels = useCallback(
     async (agent: string, force = false) => {
       if (!force && models[agent]) return models[agent]
-      const result = await api<ListEnvelope<ChatModel>>(`/api/chat/agents/${agent}/models`)
+      const result = await api<ListEnvelope<ChatModel>>(`${apiBase}/agents/${agent}/models`)
       setModels((current) => ({ ...current, [agent]: result.items }))
       return result.items
     },
@@ -143,7 +153,7 @@ export default function Chat({ compact = false, hidden = false }: { compact?: bo
   )
   const loadSessions = useCallback(
     async (nextArchived = archived, nextQuery = query) => {
-      const result = await api<ListEnvelope<ChatSession>>(`/api/chat/sessions?archived=${nextArchived}&query=${encodeURIComponent(nextQuery)}`)
+      const result = await api<ListEnvelope<ChatSession>>(`${apiBase}/sessions?archived=${nextArchived}&query=${encodeURIComponent(nextQuery)}`)
       setSessions(result.items)
       return result.items
     },
@@ -162,14 +172,14 @@ export default function Chat({ compact = false, hidden = false }: { compact?: bo
         if (activeID.current && activeID.current !== id) {
           await saveDraft(activeID.current, draftRef.current)
         }
-        const detail = await api<ChatSession>(`/api/chat/sessions/${id}`)
+        const detail = await api<ChatSession>(`${apiBase}/sessions/${id}`)
         if (request !== sessionRequest.current) return
         setActive(detail)
         activeID.current = detail.id
         setInput(detail.draft?.text || '')
         setAttachments(detail.pending_attachments || [])
         setError(undefined)
-        if (pageRef.current.context.active_key === 'chat') pageRef.current.setViewState({ session: detail.id })
+        if (!isolated && pageRef.current.context.active_key === 'chat') pageRef.current.setViewState({ session: detail.id })
         if (closeDrawer) setHistoryOpen(false)
         void loadModels(detail.agent).catch(reportError)
       } finally {
@@ -188,7 +198,7 @@ export default function Chat({ compact = false, hidden = false }: { compact?: bo
         const chosenModel = model || available.find((item) => item.default)?.id || available[0]?.id
         if (!chosenModel) throw new Error(`${agentLabel(chosenAgent)} 没有可用模型`)
         const chosen = available.find((item) => item.id === chosenModel)
-        const detail = await api<ChatSession>('/api/chat/sessions', {
+        const detail = await api<ChatSession>(`${apiBase}/sessions`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -216,11 +226,11 @@ export default function Chat({ compact = false, hidden = false }: { compact?: bo
     let alive = true
     void (async () => {
       try {
-        const [agentData, sessionData] = await Promise.all([api<ListEnvelope<ChatAgent>>('/api/chat/agents'), api<ListEnvelope<ChatSession>>('/api/chat/sessions?archived=false')])
+        const [agentData, sessionData] = await Promise.all([api<ListEnvelope<ChatAgent>>(`${apiBase}/agents`), api<ListEnvelope<ChatSession>>(`${apiBase}/sessions?archived=false`)])
         if (!alive) return
         setAgents(agentData.items)
         setSessions(sessionData.items)
-        const requested = pageRef.current.context.active_key === 'chat' ? pageRef.current.context.view_state.session : undefined
+        const requested = !isolated && pageRef.current.context.active_key === 'chat' ? pageRef.current.context.view_state.session : undefined
         if (requested) {
           try {
             await openSession(requested, false)
@@ -234,7 +244,7 @@ export default function Chat({ compact = false, hidden = false }: { compact?: bo
         else {
           const available = agentData.items.find((item) => item.default && item.available) || agentData.items.find((item) => item.available)
           if (!available) throw new Error('没有可用的底层 Agent，请先安装并登录 Codex、TRAE 或 Cursor')
-          const discovered = await api<ListEnvelope<ChatModel>>(`/api/chat/agents/${available.id}/models`)
+          const discovered = await api<ListEnvelope<ChatModel>>(`${apiBase}/agents/${available.id}/models`)
           if (!alive) return
           setModels((current) => ({
             ...current,
@@ -242,7 +252,7 @@ export default function Chat({ compact = false, hidden = false }: { compact?: bo
           }))
           const selected = discovered.items.find((item) => item.default) || discovered.items[0]
           if (!selected) throw new Error(`${available.name} 没有可用模型`)
-          const created = await api<ChatSession>('/api/chat/sessions', {
+          const created = await api<ChatSession>(`${apiBase}/sessions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -270,7 +280,7 @@ export default function Chat({ compact = false, hidden = false }: { compact?: bo
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    if (loading || context.active_key !== 'chat') return
+    if (isolated || loading || context.active_key !== 'chat') return
     const requested = context.view_state.session
     if (requested && requested !== activeID.current) void attempt((async () => {
       try {
@@ -300,7 +310,7 @@ export default function Chat({ compact = false, hidden = false }: { compact?: bo
 
   const refreshActive = useCallback(
     async (sessionID: string) => {
-      const detail = await api<ChatSession>(`/api/chat/sessions/${sessionID}`)
+      const detail = await api<ChatSession>(`${apiBase}/sessions/${sessionID}`)
       if (activeID.current === sessionID) setActive(detail)
       await loadSessions()
     },
@@ -352,7 +362,7 @@ export default function Chat({ compact = false, hidden = false }: { compact?: bo
     let timer: number
     const poll = async () => {
       try {
-        const detail = await api<ChatSession>(`/api/chat/sessions/${sessionID}`)
+        const detail = await api<ChatSession>(`${apiBase}/sessions/${sessionID}`)
         if (cancelled || activeID.current !== sessionID) return
         setActive(detail)
         if (!detail.running) return
@@ -383,7 +393,7 @@ export default function Chat({ compact = false, hidden = false }: { compact?: bo
     try {
       window.clearTimeout(draftTimer.current)
       await saveDraft(sessionID, { text: input, attachment_ids: attachments.map((item) => item.id) })
-      const response = await apiFetch(`/api/chat/sessions/${sessionID}/messages`, {
+      const response = await apiFetch(`${apiBase}/sessions/${sessionID}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -447,7 +457,7 @@ export default function Chat({ compact = false, hidden = false }: { compact?: bo
     }
   }, [active, attachments, context, input, models, refreshActive, running, uploading, switching, saving, creating, saveDraft])
   const stop = async () => {
-    if (active) await api<{ canceled: boolean }>(`/api/chat/sessions/${active.id}/cancel`, { method: 'POST' })
+    if (active) await api<{ canceled: boolean }>(`${apiBase}/sessions/${active.id}/cancel`, { method: 'POST' })
   }
   const uploadFiles = async (files: FileList | File[]) => {
     if (!active) return
@@ -468,7 +478,7 @@ export default function Chat({ compact = false, hidden = false }: { compact?: bo
       for (const file of items) {
         const form = new FormData()
         form.append('file', file)
-        uploaded.push(await api<ChatAttachment>(`/api/chat/sessions/${sessionID}/attachments`, { method: 'POST', body: form }))
+        uploaded.push(await api<ChatAttachment>(`${apiBase}/sessions/${sessionID}/attachments`, { method: 'POST', body: form }))
       }
       if (activeID.current === sessionID) setAttachments((current) => [...current, ...uploaded])
     } catch (cause) {
@@ -480,7 +490,7 @@ export default function Chat({ compact = false, hidden = false }: { compact?: bo
   const removeAttachment = async (file: ChatAttachment) => {
     if (!active) return
     try {
-      await api<{ deleted: boolean }>(`/api/chat/sessions/${active.id}/attachments/${file.id}`, { method: 'DELETE' })
+      await api<{ deleted: boolean }>(`${apiBase}/sessions/${active.id}/attachments/${file.id}`, { method: 'DELETE' })
       if (activeID.current === active.id) setAttachments((items) => items.filter((item) => item.id !== file.id))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -490,7 +500,7 @@ export default function Chat({ compact = false, hidden = false }: { compact?: bo
     if (!active) return
     setSaving(true)
     try {
-      const detail = await api<ChatSession>(`/api/chat/sessions/${active.id}`, {
+      const detail = await api<ChatSession>(`${apiBase}/sessions/${active.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patch),
@@ -550,7 +560,7 @@ export default function Chat({ compact = false, hidden = false }: { compact?: bo
       okText: '永久删除',
       okButtonProps: { danger: true },
       onOk: async () => {
-        await api<{ deleted: boolean }>(`/api/chat/sessions/${active.id}`, {
+        await api<{ deleted: boolean }>(`${apiBase}/sessions/${active.id}`, {
           method: 'DELETE',
         })
         window.clearTimeout(draftTimer.current)
@@ -582,7 +592,7 @@ export default function Chat({ compact = false, hidden = false }: { compact?: bo
   const sourcePicker = active && (
     <div className="chat-source-picker">
       <Text type="secondary">指定优先查询范围，不自动加载资料正文</Text>
-      {SOURCE_OPTIONS.map((source) => (
+      {(isolated ? [{ kind: 'okr', label: 'OKR 与当前附件' }] : SOURCE_OPTIONS).map((source) => (
         <Checkbox
           key={source.kind}
           disabled={switching || saving || creating}
@@ -642,7 +652,7 @@ export default function Chat({ compact = false, hidden = false }: { compact?: bo
     currentStream = active ? streamText[active.id] || (active.running && !running.has(active.id) ? active.messages?.find((item) => item.status === 'streaming')?.text || '上一轮仍在回复，完成后自动更新…' : '') : ''
   if (hidden) return null
 
-  if (compact) {
+  if (compact && !expanded) {
     const latest = activeRunning
       ? { id: 'stream', role: 'assistant' as const, text: currentStream || '', created_at: '', agent: active?.agent, model: active?.model }
       : [...displayMessages].reverse().find((item) => item.role === 'assistant')
@@ -658,7 +668,7 @@ export default function Chat({ compact = false, hidden = false }: { compact?: bo
       onSend={() => void attempt(send())} onStop={() => void attempt(stop())}
       onNew={() => void attempt(createSession())}
       onOpenSession={(id) => void attempt(openSession(id))}
-      onOpenHistory={() => navigate('chat', active ? { session: active.id } : {})}
+      onOpenHistory={() => isolated ? setExpanded(true) : navigate('chat', active ? { session: active.id } : {})}
       onRefreshSessions={() => { setArchived(false); setQuery(''); void attempt(loadSessions(false, '')) }}
       onAgent={(value) => void attempt(changeAgent(value))}
       onModel={(value) => void attempt(changeModel(value))}
@@ -676,7 +686,7 @@ export default function Chat({ compact = false, hidden = false }: { compact?: bo
       </div>
     )
 
-  return (
+  const workspace = (
     <section className="chat-workspace" aria-label={`${agentName} 对话工作区`}>
       <aside className="chat-history-pane">
         <div className="chat-history-heading">
@@ -954,6 +964,7 @@ export default function Chat({ compact = false, hidden = false }: { compact?: bo
       </Drawer>
     </section>
   )
+  return isolated && compact ? <Modal open width="95vw" footer={null} title="OKR 独立会话" onCancel={() => setExpanded(false)}>{workspace}</Modal> : workspace
 }
 
 function ChatMessageCard({ message, agentName, shortName, typing = false }: { message: ChatHistoryMessage; agentName: string; shortName: string; typing?: boolean }) {
@@ -993,7 +1004,8 @@ function ChatMessageCard({ message, agentName, shortName, typing = false }: { me
   )
 }
 function FileCard({ file, removable, onRemove }: { file: ChatAttachment; removable?: boolean; onRemove?: () => void }) {
-  const href = `/api/chat/attachments/${file.id}/content`
+  const apiBase = useContext(ChatAPIContext)
+  const href = `${apiBase}/attachments/${file.id}/content`
   return (
     <div className="chat-file-card">
       <a href={href} target="_blank" rel="noreferrer">

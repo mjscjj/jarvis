@@ -2,6 +2,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -32,7 +33,9 @@ import (
 	"jarvis/internal/workrule"
 	"jarvis/internal/worldprogress"
 
+	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
 	"gorm.io/gorm"
 )
 
@@ -83,6 +86,7 @@ type Dependencies struct {
 	Debug              *insight.DebugService
 	Logs               *insight.LogReader
 	Chat               *chat.Service
+	OKRChat            *chat.Service
 	PublicBaseURL      string           // 这台部署对外可打开的根地址；分享链接用它替换浏览器地址栏里的 IP
 	Capture            *capture.Service // 调试面板手动采集触发；nil 则不注册 /api/debug/capture/* 路由
 	RuntimeSettings    *config.RuntimeSettingsService
@@ -451,20 +455,29 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.PUT("/api/resources/:resource_id", UpdateResource(deps.Resources))
 	h.POST("/api/resources/:resource_id/touch", TouchResource(deps.Resources))
 	h.DELETE("/api/resources/:resource_id", DeleteResource(deps.Resources))
-	// 持久多 Agent 对话（SSE）。未启用（nil）则不注册整组路由。
+	// OKR visitors share one Chat service/store, separate from principal Chat.
 	if deps.Chat != nil {
-		h.GET("/api/chat/agents", ListChatAgents(deps.Chat))
-		h.GET("/api/chat/agents/:agent_id/models", ListChatModels(deps.Chat))
-		h.GET("/api/chat/sessions", ListChatSessions(deps.Chat))
-		h.POST("/api/chat/sessions", CreateChatSession(deps.Chat))
-		h.GET("/api/chat/sessions/:session_id", GetChatSession(deps.Chat))
-		h.PATCH("/api/chat/sessions/:session_id", UpdateChatSession(deps.Chat))
-		h.DELETE("/api/chat/sessions/:session_id", DeleteChatSession(deps.Chat))
-		h.POST("/api/chat/sessions/:session_id/messages", StreamChatSession(deps.Chat))
-		h.POST("/api/chat/sessions/:session_id/cancel", CancelChatSession(deps.Chat))
-		h.POST("/api/chat/sessions/:session_id/attachments", UploadChatAttachment(deps.Chat))
-		h.DELETE("/api/chat/sessions/:session_id/attachments/:attachment_id", DeleteChatAttachment(deps.Chat))
-		h.GET("/api/chat/attachments/:attachment_id/content", DownloadChatAttachment(deps.Chat))
+		registerChatRoutes(h, "/api/chat", deps.Chat)
+	}
+	if deps.OKRChat != nil {
+		if deps.BizOKRModule == nil || deps.BizOKRModule.Identity == nil || deps.BizOKRModule.Enabled == nil {
+			return fmt.Errorf("OKR chat requires Biz OKR identity and module gate")
+		}
+		requireEnabled := func(ctx context.Context, c *app.RequestContext) {
+			enabled, err := deps.BizOKRModule.Enabled(ctx)
+			if err != nil {
+				writeAPIError(c, consts.StatusInternalServerError, 50088, err)
+				c.Abort()
+				return
+			}
+			if !enabled {
+				writeAPIError(c, consts.StatusNotFound, 40488, fmt.Errorf("Biz OKR module is disabled"))
+				c.Abort()
+				return
+			}
+			c.Next(ctx)
+		}
+		registerChatRoutes(h, "/api/okr-chat", deps.OKRChat, requireEnabled, RequireOKRIdentity(deps.BizOKRModule.Identity))
 	}
 	h.GET("/api/web-config", GetWebConfig(deps.PublicBaseURL))
 	// 精确 API 路由优先于这个兜底。必须在进程注册根 StaticFS 之前拦住

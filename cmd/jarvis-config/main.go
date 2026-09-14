@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"jarvis/internal/config"
+	"jarvis/internal/okrworkspace/moduleconfig"
 )
 
 func main() {
@@ -22,6 +24,30 @@ func run(args []string, stdout io.Writer) error {
 		return fmt.Errorf("subcommand is required")
 	}
 	switch args[0] {
+	case "okr-chat-image":
+		flags := flag.NewFlagSet("okr-chat-image", flag.ContinueOnError)
+		path := flags.String("config", "conf/config.yaml", "base config path")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 0 {
+			return fmt.Errorf("unexpected positional arguments")
+		}
+		modulePath := filepath.Join(filepath.Dir(*path), "okr-module.yaml")
+		if _, err := os.Stat(modulePath); os.IsNotExist(err) {
+			return nil
+		}
+		cfg, err := moduleconfig.LoadCore(modulePath)
+		if err != nil {
+			return err
+		}
+		if err := cfg.Chat.Validate(); err != nil {
+			return err
+		}
+		if cfg.Chat.Enabled {
+			_, err = fmt.Fprintln(stdout, cfg.Chat.Image)
+		}
+		return err
 	case "api-base":
 		return runInstance(args[1:], stdout, true)
 	case "instance":

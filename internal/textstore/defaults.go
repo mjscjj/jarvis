@@ -3,10 +3,11 @@ package textstore
 import "jarvis/internal/prompttemplate"
 
 const (
-	InitiativeLevelKey  = "initiative_level"
-	SystemPromptM3Key   = "m3_system_prompt"
-	SystemPromptM5Key   = "m5_system_prompt"
-	SystemPromptChatKey = "chat_system_prompt"
+	InitiativeLevelKey     = "initiative_level"
+	SystemPromptM3Key      = "m3_system_prompt"
+	SystemPromptM5Key      = "m5_system_prompt"
+	SystemPromptChatKey    = "chat_system_prompt"
+	SystemPromptOKRChatKey = "okr_chat_system_prompt"
 	// SystemPromptCCKey drives the Feishu foreground Agent. It decides whether
 	// to answer in the current turn or create a durable manual Task for M5.
 	SystemPromptCCKey = "cc_system_prompt"
@@ -54,6 +55,7 @@ type definition struct {
 
 func definitions() []definition {
 	return []definition{
+		{key: SystemPromptOKRChatKey, name: "OKR 独立对话提示词", filename: "okr-chat-system-prompt.md", description: "OKR 容器对话的职责、材料范围与停止边界。", kind: "system_prompt", stage: "okr_chat"},
 		{
 			key: InitiativeLevelKey, name: "主动程度", filename: "initiative-level.md",
 			description: "后台主动发现、执行扩展与通知的档位：quiet（安静）、normal（普通）、active（活跃）；后续运行实时读取。",

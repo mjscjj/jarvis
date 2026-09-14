@@ -41,6 +41,9 @@ func agentBinary(id string) string {
 }
 
 func (s *Service) ListAgents(ctx context.Context) []AgentView {
+	if s.runtime != nil {
+		return []AgentView{{ID: s.runner.agent, Name: "OKR Docker", Available: true, Default: true}}
+	}
 	result := make([]AgentView, 0, 3)
 	for _, item := range []struct{ id, name string }{{"codex", "Codex"}, {"trae", "TRAE"}, {"cursor", "Cursor"}} {
 		view := AgentView{ID: item.id, Name: item.name, Default: item.id == s.runner.agent}
@@ -58,6 +61,12 @@ func (s *Service) ListAgents(ctx context.Context) []AgentView {
 }
 
 func (s *Service) ListModels(ctx context.Context, agent string) ([]ModelView, error) {
+	if s.runtime != nil {
+		if agent != s.runner.agent {
+			return nil, fmt.Errorf("agent is not available in this runtime")
+		}
+		return []ModelView{{ID: s.runner.model, Name: s.runner.model, Default: true, InputModalities: []string{"text", "image"}, ReasoningEfforts: []string{s.runner.reasoningEffort}, DefaultReasoningEffort: s.runner.reasoningEffort}}, nil
+	}
 	agent, err := normalizeAgent(agent)
 	if err != nil {
 		return nil, err

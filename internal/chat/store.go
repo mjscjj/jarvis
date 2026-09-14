@@ -129,6 +129,9 @@ func decodeSources(raw datatypes.JSON) []Source {
 }
 
 func (s *Service) CreateSession(ctx context.Context, input CreateSessionInput) (*SessionView, error) {
+	if s.runtime != nil && (input.Agent != s.runner.agent || input.Model != s.runner.model || input.ReasoningEffort != s.runner.reasoningEffort) {
+		return nil, fmt.Errorf("%w: this chat runtime uses a fixed agent, model and effort", ErrInvalidInput)
+	}
 	if err := s.requireDB(); err != nil {
 		return nil, err
 	}
@@ -335,6 +338,9 @@ func (s *Service) GetSession(ctx context.Context, id string) (*SessionView, erro
 }
 
 func (s *Service) UpdateSession(ctx context.Context, id string, input UpdateSessionInput) (*SessionView, error) {
+	if s.runtime != nil && ((input.Agent != nil && *input.Agent != s.runner.agent) || (input.Model != nil && *input.Model != s.runner.model) || (input.ReasoningEffort != nil && *input.ReasoningEffort != s.runner.reasoningEffort)) {
+		return nil, fmt.Errorf("%w: this chat runtime uses a fixed agent, model and effort", ErrInvalidInput)
+	}
 	if (input.Agent != nil || input.Model != nil || input.ReasoningEffort != nil) && s.sessionRunning(id) {
 		return nil, fmt.Errorf("%w: stop the active reply before changing its agent or model", ErrConflict)
 	}
@@ -410,6 +416,9 @@ func (s *Service) DeleteSession(ctx context.Context, id string) error {
 	}
 	if err := os.RemoveAll(filepath.Join(s.filesRoot, id)); err != nil {
 		return fmt.Errorf("delete chat session files: %w", err)
+	}
+	if s.runtime != nil {
+		return s.runtime.DeleteSession(id)
 	}
 	return nil
 }

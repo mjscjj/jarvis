@@ -44,6 +44,7 @@ import (
 	"jarvis/internal/morningbrief"
 	"jarvis/internal/notice"
 	"jarvis/internal/observability"
+	"jarvis/internal/okrchat"
 	"jarvis/internal/okrreview"
 	"jarvis/internal/okrworkspace"
 	okrAuth "jarvis/internal/okrworkspace/auth"
@@ -1116,6 +1117,22 @@ func main() {
 		}
 	}
 
+	var okrChatService *chat.Service
+	if bizOKRModuleEnabled && okrModuleConfig.Chat.Enabled {
+		host, port, splitErr := net.SplitHostPort(cfg.Server.Addr)
+		if splitErr != nil {
+			fatalf("OKR chat server address: %v", splitErr)
+		}
+		if host == "" || host == "0.0.0.0" || host == "::" {
+			host = "127.0.0.1"
+		}
+		var closeOKRChat func()
+		okrChatService, closeOKRChat, err = okrchat.Open(context.Background(), okrModuleConfig.Chat, filepath.Join(runtimeRoot, "var", "okr-chat"), runtimeRoot, "http://"+net.JoinHostPort(host, port), cfg.Identity.DisplayName, runtimePrompts)
+		if err != nil {
+			fatalf("initialize isolated OKR chat: %v", err)
+		}
+		defer closeOKRChat()
+	}
 	h := server.Default(
 		server.WithHostPorts(cfg.Server.Addr),
 		// Chat accepts 12 MiB files (OKR images: 10 MiB). Reserve 64 KiB for
@@ -1236,7 +1253,7 @@ func main() {
 		MorningBriefs:   morningBriefReader,
 		Worklog:         worklogService,
 		FactTimelineLoc: location,
-		Debug:           debugService, Logs: logReader, Chat: chatService, Capture: captureService,
+		Debug:           debugService, Logs: logReader, Chat: chatService, OKRChat: okrChatService, Capture: captureService,
 		PublicBaseURL:      cfg.Server.PublicBaseURL,
 		RuntimeSettings:    runtimeSettingsService,
 		SecurityAudit:      securityAuditService,

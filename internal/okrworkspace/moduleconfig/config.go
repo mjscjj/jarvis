@@ -21,6 +21,28 @@ type Config struct {
 	MaxImageBytes int64               `yaml:"max_image_bytes"`
 	Identity      IdentityConfig      `yaml:"identity"`
 	PreviewReview PreviewReviewConfig `yaml:"preview_review"`
+	Chat          ChatConfig          `yaml:"chat"`
+}
+
+// ChatConfig belongs only to the isolated OKR conversation surface.
+type ChatConfig struct {
+	Enabled         bool     `yaml:"enabled"`
+	Image           string   `yaml:"image"`
+	Model           string   `yaml:"model"`
+	ReasoningEffort string   `yaml:"reasoning_effort"`
+	TimeoutSeconds  int      `yaml:"timeout_seconds"`
+	AuthFile        string   `yaml:"auth_file"`
+	ModelHosts      []string `yaml:"model_hosts"`
+}
+
+func (c ChatConfig) Validate() error {
+	if !c.Enabled {
+		return nil
+	}
+	if c.Image == "" || c.Model == "" || c.ReasoningEffort == "" || c.TimeoutSeconds <= 0 || c.AuthFile == "" || len(c.ModelHosts) == 0 {
+		return fmt.Errorf("enabled OKR chat requires image, model, reasoning_effort, timeout_seconds, auth_file and model_hosts")
+	}
+	return nil
 }
 
 // PreviewReviewConfig drives the one-shot OKR Preview review agent. The review
@@ -178,6 +200,12 @@ func (c Config) validateCore() error {
 }
 
 func (c Config) validateBiz() error {
+	if err := c.Chat.Validate(); err != nil {
+		return err
+	}
+	if c.Chat.Enabled && !c.Identity.Enabled {
+		return fmt.Errorf("enabled OKR chat requires Biz OKR visitor identity")
+	}
 	if err := c.PreviewReview.validate(); err != nil {
 		return err
 	}

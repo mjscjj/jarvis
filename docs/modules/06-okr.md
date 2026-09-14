@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: normative
-> Last verified: 2026-09-10, current working tree
+> Last verified: 2026-09-14, current working tree
 
 本文只维护 OKR 模块当前已经落地的边界和常用修改入口。长期拆分原则、双 Progress 的设计理由及后续阶段见 [通用 OKR 插件与 Biz OKR 拆分设计](../design-okr-plugin-and-biz-okr.md)。字段、路由和运行配置仍以代码与配置文件为最终真源。
 
@@ -25,6 +25,22 @@ Jarvis 世界模型
 - `internal/plugin` 仍只负责 Codebase、Meego、Oncall 等外部线索采集插件；OKR 不进入这套采集器运行时。
 
 模块注册和依赖的代码真源是 `internal/appmodule/module.go`，仓库默认开关是 `conf/modules.yaml`。插件管理页用一张目录同时展示通用 `OKR 插件` 与 Codebase、Meego、Oncall；启用后都在左侧“插件”下出现自己的页面。底层仍按能力区分：OKR 复用 `appmodule` 的业务生命周期，后三者使用 `internal/plugin` 的授权、调度和 Clue 采集运行时。`biz-okr` 是依赖 OKR 插件的独立业务应用，用户可见名称为 `Biz OKR`，在左侧有自己的入口，并在系统设置中管理启停。`biz-okr=on, okr=off` 是非法组合，会因依赖缺失而失败；关闭模块不会删除数据。旧配置键 `agency-okr` 会在启动时原子迁移为 `biz-okr`。
+
+## OKR 独立对话
+
+Biz OKR 页面底部对话按用户身份选择：既有白名单用户保留普通 Chat，其余已完成 Biz OKR 飞书登录的访客使用受限 `/api/okr-chat/*`。该接口在服务端验证飞书会话，所有访客共用一份 Chat 服务和 `var/okr-chat/chat.db`，共享会话列表、历史、草稿与附件；不按用户分库或建立运行实例。普通 `/api/chat/*` 和 M2/M3/M5 保持原有可信运行方式。
+
+向普通 Biz OKR 访客开放域名时，部署本机的 `auth.enabled` 必须开启，并在 `auth.principals` 中只列允许进入普通 Jarvis 的用户；Biz OKR 和 `/api/okr-chat/*` 仍使用飞书登录。白名单用户若只有飞书会话，页面会提示再完成字节身份登录后使用普通 Chat。Docker 工具隔离限制的是对话 Agent 的数据出口，不能代替浏览器 API 的外层登录。
+
+`internal/okrchat/` 拥有容器执行、共享 OKR 聊天库装配和一份专用 Unix socket 出口；`internal/chat/` 复用会话、附件及流式协议。每轮 `docker run --network none`，只挂载共享 OKR 附件和当前会话的 native/work 状态、项目完整 scripts/Skills（只读）、现有模型登录文件（只读）。不挂主库、普通 Chat、完整用户目录、宿主 MCP 配置或 Docker socket。脚本可以自由执行，但不能直接联网。
+
+`internal/toolcatalog/okr_chat.go` 是受限 method/path 和工具说明的共同真源，默认拒绝未列出的请求。出口只将这些 OKR CRUD 请求转给固定主服务地址；模型通过精确域名 `:443` CONNECT 隧道维持原登录和 TLS，拒绝私网/回环目标。宿主 Agent 评审、Task、Todo、消息、普通会话、发通知、身份令牌及通用 HTTP 转发不开放。已授权用户自己上传或写进 OKR 的消息摘录仍是可读材料，不做语义脱敏。
+
+`conf/prompts/okr-chat-system-prompt.md` 定义业务职责与停止边界，经 textstore 注册；不叠加普通 Chat 提示词或共享记忆。`conf/okr-module.yaml` 的 `chat` 控制启动，MVP 固定使用 Codex 0.154.0 + 标准 ChatGPT 登录，未支持自定义 provider、TRAE/Cursor 或直接访问飞书/Meego；Meego 已存快照可读。只复制 auth.json，不复制宿主 config.toml。认证文件刷新保存在 OKR 自己的 native 状态，宿主文件不被容器改写。
+
+部署统一执行 `./scripts/jarvis-deploy --skip-pull`，开启 chat 时会先构建 `deploy/okr-chat/` 镜像。需要可用的 Docker daemon 和宿主已有 Codex 登录。停止/超时回收当轮容器；重启只清理带本实例标记的遗留容器，不碰其它 Docker 工作负载。关闭 chat 不会回退到普通 Agent，也不删除已有独立会话。
+
+验证：`go test ./cmd/... ./internal/...`；`OKR_DOCKER_TEST=1 go test ./internal/okrchat -run TestDockerNetworkAndFilesystem -v`。设置 `OKR_CHAT_AUTH_FILE` 后 `TestDockerModelAndResume` 会进行真实模型调用，验证工具查询、续聊、持久化和取消回收。前端 `web/test/okrChat.browser.mjs` 验证独立 API、历史弹窗和附件地址。
 
 ## 数据所有权
 

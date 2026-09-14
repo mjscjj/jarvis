@@ -18,6 +18,7 @@ import (
 // Request is one normalized Agent turn. ThreadID is provider-native adapter
 // state; the durable Jarvis session ID is owned by store.go.
 type Request struct {
+	SessionID       string
 	Message         string
 	ThreadID        string
 	Agent           string
@@ -37,6 +38,9 @@ type Source struct {
 
 // Options 构造 Service 所需的全部依赖。
 type Options struct {
+	Runtime         Runtime
+	PromptKey       string
+	ToolBlock       string
 	AgentName       string
 	Bin             string
 	Model           string
@@ -50,6 +54,9 @@ type Options struct {
 
 // Service owns prompt assembly, persistent sessions, and Agent adapters.
 type Service struct {
+	runtime   Runtime
+	promptKey string
+	toolBlock string
 	runner    *runner
 	db        *gorm.DB
 	filesRoot string
@@ -60,6 +67,14 @@ type Service struct {
 	active    map[string]context.CancelFunc
 }
 
+// Runtime replaces only execution, never session persistence. Prepare maps
+// attachment paths into the execution environment before prompt assembly.
+type Runtime interface {
+	Prepare(Request) (Request, error)
+	Stream(context.Context, Request, string, func(Event) error) error
+	DeleteSession(string) error
+}
+
 // NewService 构造对话 Service。fail-fast：任一必填项缺失或非法直接返回 error。
 func NewService(opts Options) (*Service, error) {
 	if err := agentidentity.ValidateName(opts.AgentName); err != nil {
@@ -67,6 +82,9 @@ func NewService(opts Options) (*Service, error) {
 	}
 	if opts.Prompts == nil {
 		return nil, fmt.Errorf("chat service prompt reader is required")
+	}
+	if opts.Runtime != nil && (strings.TrimSpace(opts.PromptKey) == "" || strings.TrimSpace(opts.ToolBlock) == "") {
+		return nil, fmt.Errorf("custom chat runtime requires its own prompt and tool block")
 	}
 	r, err := newRunner(opts.Bin, opts.Model, opts.Sandbox, opts.ReasoningEffort, opts.Timeout)
 	if err != nil {
@@ -77,6 +95,7 @@ func NewService(opts Options) (*Service, error) {
 		filesRoot = filepath.Join("data", "chat")
 	}
 	return &Service{
+		runtime: opts.Runtime, promptKey: opts.PromptKey, toolBlock: opts.ToolBlock,
 		runner: r,
 		db:     opts.DB, filesRoot: filesRoot, prompts: opts.Prompts,
 		sandbox: opts.Sandbox, timeout: opts.Timeout, active: make(map[string]context.CancelFunc),
@@ -86,6 +105,16 @@ func NewService(opts Options) (*Service, error) {
 // Stream 执行一轮对话。emit 逐条收到 thread/delta 事件；正常结束返回 nil
 // （handler 据此发 done），任何异常返回 error（handler 据此发 error 事件）。
 func (s *Service) Stream(ctx context.Context, req Request, emit func(Event) error) error {
+	if s.runtime != nil {
+		if (req.Agent != "" && req.Agent != s.runner.agent) || (req.Model != "" && req.Model != s.runner.model) {
+			return fmt.Errorf("this chat runtime uses a fixed agent and model")
+		}
+		var err error
+		req, err = s.runtime.Prepare(req)
+		if err != nil {
+			return err
+		}
+	}
 	message := strings.TrimSpace(req.Message)
 	if message == "" {
 		return fmt.Errorf("chat message is required")
@@ -106,6 +135,9 @@ func (s *Service) Stream(ctx context.Context, req Request, emit func(Event) erro
 			return err
 		}
 		prompt = built
+	}
+	if s.runtime != nil {
+		return s.runtime.Stream(ctx, req, prompt, emit)
 	}
 	r := s.runner
 	if req.Agent != "" || req.Model != "" || req.ReasoningEffort != "" {
@@ -133,12 +165,19 @@ func (s *Service) Stream(ctx context.Context, req Request, emit func(Event) erro
 // buildPrompt 组装首轮 prompt：系统指引 + 工具入口 + 用户显式输入。
 func (s *Service) buildPrompt(ctx context.Context, req Request) (string, error) {
 	var b strings.Builder
-	systemPrompt, err := s.prompts.Content(ctx, textstore.SystemPromptChatKey)
+	key := s.promptKey
+	if key == "" {
+		key = textstore.SystemPromptChatKey
+	}
+	systemPrompt, err := s.prompts.Content(ctx, key)
 	if err != nil {
 		return "", fmt.Errorf("read chat system prompt: %w", err)
 	}
 	b.WriteString(systemPrompt)
-	toolCatalog, err := toolcatalog.Block(toolcatalog.StageChat)
+	toolCatalog := s.toolBlock
+	if toolCatalog == "" {
+		toolCatalog, err = toolcatalog.Block(toolcatalog.StageChat)
+	}
 	if err != nil {
 		return "", fmt.Errorf("build chat tool catalog: %w", err)
 	}
