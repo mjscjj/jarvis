@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"jarvis/internal/chat"
 	"jarvis/internal/observability"
@@ -15,6 +16,8 @@ import (
 	"github.com/cloudwego/hertz/pkg/common/hlog"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
 )
+
+const chatSSEHeartbeatInterval = 15 * time.Second
 
 func ListChatAgents(service *chat.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
@@ -116,6 +119,8 @@ func StreamChatSession(service *chat.Service) app.HandlerFunc {
 				hlog.CtxErrorf(ctx, "close chat session stream failed error=%+v", err)
 			}
 		}()
+		heartbeat := startSSEHeartbeat(w, chatSSEHeartbeatInterval)
+		defer heartbeat.Stop()
 		emit := func(ev chat.Event) error {
 			if ev.Kind == chat.EventAccepted {
 				return w.WriteEvent("accepted", []byte(`{}`))
@@ -131,6 +136,9 @@ func StreamChatSession(service *chat.Service) app.HandlerFunc {
 			return fmt.Errorf("unknown chat event %s", ev.Kind)
 		}
 		err := service.StreamSession(ctx, c.Param("session_id"), input, emit)
+		// Join the heartbeat writer before the terminal frame and response close so
+		// no comment can race with done/stopped/error or leak past this request.
+		heartbeat.Stop()
 		if err != nil {
 			event := "error"
 			if errors.Is(err, context.Canceled) {

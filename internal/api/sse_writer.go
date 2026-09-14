@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/network"
@@ -16,6 +17,17 @@ import (
 type sseWriter struct {
 	writer network.ExtWriter
 	mu     sync.Mutex
+}
+
+type sseCommentWriter interface {
+	WriteComment(string) error
+}
+
+type sseHeartbeat struct {
+	ticker *time.Ticker
+	stop   chan struct{}
+	done   chan struct{}
+	once   sync.Once
 }
 
 func newSSEWriter(c *app.RequestContext) *sseWriter {
@@ -55,6 +67,44 @@ func (w *sseWriter) WriteEvent(eventType string, data []byte) error {
 		return err
 	}
 	return w.writer.Flush()
+}
+
+func (w *sseWriter) WriteComment(comment string) error {
+	if strings.ContainsAny(comment, "\r\n") {
+		return fmt.Errorf("SSE comment contains CR or LF")
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if _, err := fmt.Fprintf(w.writer, ": %s\n\n", comment); err != nil {
+		return err
+	}
+	return w.writer.Flush()
+}
+
+func startSSEHeartbeat(writer sseCommentWriter, interval time.Duration) *sseHeartbeat {
+	h := &sseHeartbeat{ticker: time.NewTicker(interval), stop: make(chan struct{}), done: make(chan struct{})}
+	go func() {
+		defer close(h.done)
+		for {
+			select {
+			case <-h.ticker.C:
+				if err := writer.WriteComment("keepalive"); err != nil {
+					return
+				}
+			case <-h.stop:
+				return
+			}
+		}
+	}()
+	return h
+}
+
+func (h *sseHeartbeat) Stop() {
+	h.once.Do(func() {
+		h.ticker.Stop()
+		close(h.stop)
+		<-h.done
+	})
 }
 
 func (w *sseWriter) Close() error {

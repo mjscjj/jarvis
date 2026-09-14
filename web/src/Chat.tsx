@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DeleteOutlined, DownloadOutlined, EditOutlined, FileOutlined, HistoryOutlined, InboxOutlined, MenuOutlined, PaperClipOutlined, PlusOutlined, SearchOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
-import { Alert, Button, Checkbox, Drawer, Dropdown, Empty, Input, Modal, Popover, Select, Spin, Tooltip, Typography } from 'antd'
+import { Alert, Button, Drawer, Dropdown, Empty, Input, Modal, Select, Spin, Tooltip, Typography } from 'antd'
 import type { MenuProps } from 'antd'
 import type { TextAreaRef } from 'antd/es/input/TextArea'
 import { useAgentIdentity } from './agentIdentity'
@@ -8,7 +8,7 @@ import { usePageContext } from './pageContext'
 import { apiFetch } from './api'
 import MarkdownReport from './components/MarkdownReport'
 import ChatDock from './components/ChatDock'
-import type { ChatAgent, ChatAttachment, ChatHistoryMessage, ChatModel, ChatSession, ChatSource } from './types'
+import type { ChatAgent, ChatAttachment, ChatHistoryMessage, ChatModel, ChatSession } from './types'
 import './styles/chat.css'
 
 const { Text } = Typography
@@ -21,12 +21,6 @@ interface ListEnvelope<T> {
   items: T[]
 }
 
-const SOURCE_OPTIONS: ChatSource[] = [
-  { kind: 'workspace', label: '工作资料（按需查询）' },
-  { kind: 'tasks', label: '任务与当前进展' },
-  { kind: 'world', label: '世界模型' },
-  { kind: 'messages', label: '已采集消息与资料' },
-]
 const SUGGESTIONS = [
   ['看清进展', '我现在最需要关注什么？'],
   ['理解材料', '帮我阅读这份材料，提炼结论和疑问'],
@@ -52,9 +46,6 @@ function parseSSEBlock(block: string): { event: string; data: string } {
 }
 function agentLabel(agent: string): string {
   return ({ codex: 'Codex', trae: 'TRAE', cursor: 'Cursor' } as Record<string, string>)[agent] || agent
-}
-function sourceLabel(source: ChatSource): string {
-  return SOURCE_OPTIONS.find((option) => option.kind === source.kind)?.label || source.label
 }
 function dayGroup(value: string): string {
   const date = new Date(value),
@@ -322,7 +313,7 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
         body: JSON.stringify({
           message: text,
           attachment_ids: attachments.map((item) => item.id),
-          sources: active.sources.map((source) => ({ ...source, label: sourceLabel(source) })),
+          sources: [],
         }),
       })
       if (!response.ok || !response.body) throw new Error(`对话请求失败：HTTP ${response.status}`)
@@ -510,24 +501,6 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
   }
 
   const activeRunning = active ? running.has(active.id) || Boolean(active.running) : false
-  const sourcePicker = active && (
-    <div className="chat-source-picker">
-      <Text type="secondary">指定优先查询范围，不自动加载资料正文</Text>
-      {SOURCE_OPTIONS.map((source) => (
-        <Checkbox
-          key={source.kind}
-          disabled={switching || saving || creating}
-          checked={active.sources.some((item) => item.kind === source.kind)}
-          onChange={(event) => {
-            const sources = event.target.checked ? [...active.sources.filter((item) => item.kind !== source.kind), source] : active.sources.filter((item) => item.kind !== source.kind)
-            void attempt(updateSession({ sources }))
-          }}
-        >
-          {source.label}
-        </Checkbox>
-      ))}
-    </div>
-  )
   const menuItems: MenuProps['items'] = [
     { key: 'export', icon: <DownloadOutlined />, label: '导出 Markdown' },
     {
@@ -582,7 +555,6 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
       error={error} onDismissError={() => setError(undefined)}
       replyText={activeRunning ? currentStream || '正在思考…' : latest?.text || (latest?.attachments?.length ? '已生成附件，点击查看' : '')}
       replyContent={latest && <ChatMessageCard message={latest} agentName={agentName} shortName={shortName} typing={activeRunning} />}
-      sources={sourcePicker}
       onSend={() => void attempt(send())} onStop={() => void attempt(stop())}
       onNew={() => void attempt(createSession())}
       onOpenSession={(id) => void attempt(openSession(id))}
@@ -679,7 +651,6 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
                 <EditOutlined />
               </button>
             )}
-            <span>{active?.sources.length ? `按需查询 ${active.sources.map(sourceLabel).join('、')}` : '需要资料时按需查询'}</span>
           </div>
           <Tooltip title="导出 Markdown">
             <Button type="text" icon={<DownloadOutlined />} onClick={exportSession} />
@@ -749,26 +720,6 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
           }}
         >
           <div className="chat-composer-card">
-            {!!active?.sources.length && (
-              <div className="chat-source-chips">
-                {active.sources.map((source) => (
-                  <span key={source.kind}>
-                    {sourceLabel(source)}
-                    <button
-                      type="button"
-                      aria-label={`移除 ${source.label}`}
-                      onClick={() =>
-                        void attempt(updateSession({
-                          sources: active.sources.filter((item) => item.kind !== source.kind),
-                        }))
-                      }
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
             {!!attachments.length && (
               <div className="chat-pending-files">
                 {attachments.map((file) => (
@@ -811,9 +762,6 @@ export default function Chat({ compact = false }: { compact?: boolean }) {
                 <Tooltip title="添加图片或文件">
                   <Button loading={uploading} icon={<PaperClipOutlined />} onClick={() => fileRef.current?.click()} />
                 </Tooltip>
-                <Popover content={sourcePicker} trigger="click">
-                  <Button>数据来源</Button>
-                </Popover>
                 <Select
                   value={active?.agent}
                   className="chat-agent-select"
