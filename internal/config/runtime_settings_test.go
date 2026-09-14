@@ -389,6 +389,59 @@ capture:
 	}
 }
 
+// 未知键只在加载时丢弃的话，会永远留在文件里、每次启动重复告警。写回是唯一的
+// 自愈时机：合并完就剪掉，同时不能碰用户仍然有效的设置。
+func TestUpdateRuntimeOverridePrunesUnknownKeys(t *testing.T) {
+	configPath := writeRuntimeSettingsTestConfig(t)
+	overridePath := RuntimeOverridePath(configPath)
+	if err := os.WriteFile(overridePath, []byte(`extract:
+  principal_open_id: ou_owner
+  open_todo_limit: 20
+  recent_task_limit: 10
+card_approval:
+  enabled: true
+  principal_open_id: ou_owner
+  relay_secret: relay-secret
+`), 0o600); err != nil {
+		t.Fatalf("write runtime override: %v", err)
+	}
+	active, err := Load(configPath)
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	service, err := NewRuntimeSettingsService(configPath, active)
+	if err != nil {
+		t.Fatalf("NewRuntimeSettingsService() error = %v", err)
+	}
+	view, err := service.Get(context.Background())
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	input := view.Settings
+	input.ExtractConcurrency = 5
+	if _, err := service.Update(context.Background(), input); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	raw, err := os.ReadFile(overridePath)
+	if err != nil {
+		t.Fatalf("read runtime override: %v", err)
+	}
+	if strings.Contains(string(raw), "open_todo_limit") || strings.Contains(string(raw), "recent_task_limit") {
+		t.Fatalf("未知键在写回后仍然残留:\n%s", raw)
+	}
+	reloaded, dropped, err := LoadWithDroppedOverrideKeys(configPath)
+	if err != nil {
+		t.Fatalf("LoadWithDroppedOverrideKeys() error = %v", err)
+	}
+	if len(dropped) != 0 {
+		t.Fatalf("写回后仍然有被丢弃的键: %v", dropped)
+	}
+	if reloaded.Extract.Concurrency != 5 || reloaded.Extract.PrincipalOpenID != "ou_owner" ||
+		reloaded.CardApproval.RelaySecret != "relay-secret" {
+		t.Fatalf("剪枝连累了用户自己的设置: %#v", reloaded.Extract)
+	}
+}
+
 func TestLoadRejectsRetiredDecideSection(t *testing.T) {
 	configPath := writeRuntimeSettingsTestConfig(t)
 	raw, err := os.ReadFile(configPath)

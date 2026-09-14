@@ -281,33 +281,44 @@ type ScheduledTaskConfig struct {
 
 // Load 从指定路径读取并解析 YAML 配置。fail-fast：任何错误直接返回。
 func Load(path string) (*Config, error) {
+	cfg, _, err := LoadWithDroppedOverrideKeys(path)
+	return cfg, err
+}
+
+// LoadWithDroppedOverrideKeys 与 Load 相同，但额外交出运行覆盖文件里被丢弃的
+// 未知键路径。丢弃是升级残留的正常结果，不该静默：进程启动方拿到清单后写进
+// 运行日志，用户才知道自己存过的某个设置已经不再生效。只有 jarvis-server 需要
+// 这份清单，其余调用点继续用 Load。
+func LoadWithDroppedOverrideKeys(path string) (*Config, []string, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("read config %q: %w", path, err)
+		return nil, nil, fmt.Errorf("read config %q: %w", path, err)
 	}
 	var cfg Config
 	if err := decodeKnownYAML(raw, &cfg); err != nil {
-		return nil, fmt.Errorf("parse config %q: %w", path, err)
+		return nil, nil, fmt.Errorf("parse config %q: %w", path, err)
 	}
+	var dropped []string
 	overridePath := RuntimeOverridePath(path)
 	overrideRaw, err := os.ReadFile(overridePath)
 	if err == nil {
 		if err := rejectRuntimeOverrideBaseOnlySections(overrideRaw, overridePath, path); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		if err := decodeKnownYAML(overrideRaw, &cfg); err != nil {
-			return nil, fmt.Errorf("parse runtime config override %q: %w", overridePath, err)
+		dropped, err = decodeRuntimeOverrideYAML(overrideRaw, &cfg)
+		if err != nil {
+			return nil, nil, fmt.Errorf("parse runtime config override %q: %w", overridePath, err)
 		}
 	} else if !os.IsNotExist(err) {
-		return nil, fmt.Errorf("read runtime config override %q: %w", overridePath, err)
+		return nil, nil, fmt.Errorf("read runtime config override %q: %w", overridePath, err)
 	}
 	if err := cfg.validate(); err != nil {
-		return nil, fmt.Errorf("invalid config %q: %w", path, err)
+		return nil, nil, fmt.Errorf("invalid config %q: %w", path, err)
 	}
 	if err := cfg.resolvePaths(); err != nil {
-		return nil, fmt.Errorf("invalid config %q: %w", path, err)
+		return nil, nil, fmt.Errorf("invalid config %q: %w", path, err)
 	}
-	return &cfg, nil
+	return &cfg, dropped, nil
 }
 
 // resolvePaths 把配置里的相对路径按进程工作目录展开成绝对路径，让基线配置
@@ -356,15 +367,48 @@ func rejectRuntimeOverrideBaseOnlySections(raw []byte, overridePath, basePath st
 	return nil
 }
 
+// decodeKnownYAML 解析随安装包发布的基线配置。基线由代码决定，出现未知键说明
+// 包自身和代码对不上，必须硬失败。
 func decodeKnownYAML(raw []byte, target any) error {
 	decoder := yaml.NewDecoder(bytes.NewReader(raw))
 	decoder.KnownFields(true)
 	return decoder.Decode(target)
 }
 
+// decodeRuntimeOverrideYAML 解析本机的运行覆盖文件，返回被丢弃的未知键路径。
+//
+// 覆盖文件由安装器、设置页和 agent 写入并跨版本存活，它的键天然可能比当前代码
+// 旧：用基线那套严格校验去卡它，等于每删掉或改名一个配置字段就让所有升级用户
+// 启动失败（0.1.7 删 extract.open_todo_limit 就是这么炸的）。所以未知键只丢弃并
+// 上报，而 concurrency: "abc" 这类类型错误是真实配置错误，继续失败。
+func decodeRuntimeOverrideYAML(raw []byte, target *Config) ([]string, error) {
+	dropped, err := unknownRuntimeOverrideKeys(raw)
+	if err != nil {
+		return nil, err
+	}
+	decoder := yaml.NewDecoder(bytes.NewReader(raw))
+	decoder.KnownFields(false)
+	if err := decoder.Decode(target); err != nil {
+		return nil, err
+	}
+	return dropped, nil
+}
+
+func unknownRuntimeOverrideKeys(raw []byte) ([]string, error) {
+	var document yaml.Node
+	if err := yaml.Unmarshal(raw, &document); err != nil {
+		return nil, err
+	}
+	if len(document.Content) == 0 {
+		return nil, nil
+	}
+	return pruneUnknownRuntimeOverrideKeys(document.Content[0]), nil
+}
+
 // pruneUnknownRuntimeOverrideKeys 就地删除 Config 结构不认识的键，返回被删除的
-// 完整键路径（形如 extract.open_todo_limit）。运行覆盖文件是跨版本存活的本机
-// 文件，旧版本写下的键会一直躺在里面；写回时剪掉它们，文件才会随使用自愈。
+// 完整键路径（形如 extract.open_todo_limit）。加载时作用在临时解析出的文档上，
+// 只为拿到清单；写回覆盖文件时作用在真实文档上，让残留键随这次写入消失，而不是
+// 每次启动都重复告警。
 func pruneUnknownRuntimeOverrideKeys(root *yaml.Node) []string {
 	return pruneUnknownYAMLKeys(root, reflect.TypeOf(Config{}), "")
 }

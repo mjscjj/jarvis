@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -381,5 +382,58 @@ func TestLoadAcceptsRuntimeOverrideWithoutBaseOnlySections(t *testing.T) {
 	}
 	if cfg.SQLite.Path != "var/jarvis.db" {
 		t.Fatalf("sqlite.path = %q, want base config value", cfg.SQLite.Path)
+	}
+}
+
+// 0.1.7 把 extract.open_todo_limit / recent_task_limit 从代码里删掉，而所有跑过
+// 引导或存过设置的机器，覆盖文件里都还留着这两行：严格未知字段校验让 jarvis-server
+// 启动即 Fatal。覆盖文件是跨版本存活的本机文件，它的键比代码旧是正常现象。
+func TestLoadDropsUnknownRuntimeOverrideKeys(t *testing.T) {
+	configPath := writeRuntimeSettingsTestConfig(t)
+	if err := os.WriteFile(RuntimeOverridePath(configPath), []byte(
+		"identity:\n  display_name: Friday\nextract:\n  concurrency: 6\n  open_todo_limit: 20\n  recent_task_limit: 10\nretired_section:\n  enabled: true\n",
+	), 0o600); err != nil {
+		t.Fatalf("write runtime override: %v", err)
+	}
+	cfg, dropped, err := LoadWithDroppedOverrideKeys(configPath)
+	if err != nil {
+		t.Fatalf("LoadWithDroppedOverrideKeys() error = %v", err)
+	}
+	want := []string{"extract.open_todo_limit", "extract.recent_task_limit", "retired_section"}
+	if !reflect.DeepEqual(dropped, want) {
+		t.Fatalf("dropped keys = %v, want %v", dropped, want)
+	}
+	if cfg.Identity.DisplayName != "Friday" || cfg.Extract.Concurrency != 6 {
+		t.Fatalf("已知的 overlay 设置被未知键连累: identity=%q concurrency=%d", cfg.Identity.DisplayName, cfg.Extract.Concurrency)
+	}
+}
+
+// 丢弃只针对代码不再认识的键。类型写错是真实的配置错误，不是升级残留。
+func TestLoadRejectsTypeErrorsInRuntimeOverride(t *testing.T) {
+	configPath := writeRuntimeSettingsTestConfig(t)
+	if err := os.WriteFile(RuntimeOverridePath(configPath), []byte("extract:\n  concurrency: \"abc\"\n"), 0o600); err != nil {
+		t.Fatalf("write runtime override: %v", err)
+	}
+	if _, err := Load(configPath); err == nil {
+		t.Fatal("Load() 接受了类型错误的 runtime overlay")
+	} else if !strings.Contains(err.Error(), "cannot unmarshal") {
+		t.Fatalf("Load() error = %v, 应指出类型不匹配的那一行", err)
+	}
+}
+
+// 基线配置随安装包发布、由代码决定，多一个键说明包和代码对不上，必须硬失败。
+func TestLoadRejectsUnknownKeyInBaseConfig(t *testing.T) {
+	configPath := writeRuntimeSettingsTestConfig(t)
+	base := strings.Replace(runtimeSettingsTestYAML, "extract:\n  enabled: true\n", "extract:\n  enabled: true\n  open_todo_limit: 20\n", 1)
+	if base == runtimeSettingsTestYAML {
+		t.Fatal("基线配置 fixture 的 extract 段结构已变，测试锚点失效")
+	}
+	if err := os.WriteFile(configPath, []byte(base), 0o600); err != nil {
+		t.Fatalf("write base config: %v", err)
+	}
+	if _, err := Load(configPath); err == nil {
+		t.Fatal("Load() 接受了含未知键的基线配置")
+	} else if !strings.Contains(err.Error(), "open_todo_limit") {
+		t.Fatalf("Load() error = %v, 应指出未知键", err)
 	}
 }

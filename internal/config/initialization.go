@@ -86,7 +86,7 @@ func InspectInitialization(configPath string) (*InitializationStatus, error) {
 	runtimeAgentName := ""
 	if overrideRaw, readErr := os.ReadFile(overridePath); readErr == nil {
 		overrideExists = true
-		if err := decodeKnownYAML(overrideRaw, &cfg); err != nil {
+		if _, err := decodeRuntimeOverrideYAML(overrideRaw, &cfg); err != nil {
 			return nil, fmt.Errorf("parse runtime config override %q: %w", overridePath, err)
 		}
 		var identityOnly struct {
@@ -337,7 +337,7 @@ func validateMergedConfig(baseRaw, overrideRaw []byte) error {
 	if err := decodeKnownYAML(baseRaw, &cfg); err != nil {
 		return fmt.Errorf("parse base config before initialization: %w", err)
 	}
-	if err := decodeKnownYAML(overrideRaw, &cfg); err != nil {
+	if _, err := decodeRuntimeOverrideYAML(overrideRaw, &cfg); err != nil {
 		return fmt.Errorf("parse runtime config override after initialization: %w", err)
 	}
 	if err := cfg.validate(); err != nil {

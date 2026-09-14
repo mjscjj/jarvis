@@ -61,6 +61,17 @@ import (
 	"github.com/cloudwego/hertz/pkg/common/hlog"
 )
 
+// logDroppedRuntimeOverrideKeys 把本机运行覆盖文件里被丢弃的未知键写进运行日志。
+// 这些键多半是升级前存下来、现在代码已经不再认识的设置：启动不该因此失败，但
+// 用户存过的配置不再生效必须看得见，所以走 hlog 落到 jarvis-server 的 stderr 日志。
+func logDroppedRuntimeOverrideKeys(ctx context.Context, overridePath string, keys []string) {
+	if len(keys) == 0 {
+		return
+	}
+	hlog.CtxWarnf(ctx, "runtime config override %q dropped %d unknown key(s), those settings no longer apply: %s",
+		overridePath, len(keys), strings.Join(keys, ", "))
+}
+
 func main() {
 	configPath := flag.String("config", "conf/config.yaml", "配置文件路径")
 	listenAddress := flag.String("addr", "", "覆盖 server.addr；桌面壳使用 loopback 地址")
@@ -103,11 +114,12 @@ func main() {
 		fatalf("one-shot action flags are mutually exclusive")
 	}
 
-	cfg, err := config.Load(*configPath)
+	cfg, droppedOverrideKeys, err := config.LoadWithDroppedOverrideKeys(*configPath)
 	if err != nil {
 		// fail-fast：配置错误启动即暴露，不带缺陷跑起来
 		fatalf("load config failed: %v", err)
 	}
+	logDroppedRuntimeOverrideKeys(startupCtx, config.RuntimeOverridePath(*configPath), droppedOverrideKeys)
 	if address := strings.TrimSpace(*listenAddress); address != "" {
 		if _, _, err := net.SplitHostPort(address); err != nil {
 			fatalf("invalid listen address %q: %v", address, err)
