@@ -45,7 +45,8 @@ Jarvis 是运行在本地可信环境中的个人任务 Agent。它持续接收�
 | Agent 行为 | `conf/prompts/`, `conf/rules/`, `.agents/skills/` |
 | Agent 工具 | `internal/toolcatalog/`, `scripts/jarvis-tools` |
 | 页面入口 | `web/src/App.tsx` |
-| 安装动作 | `scripts/jarvis-install`, `.agents/skills/install-jarvis/` |
+| 源码安装 | `scripts/jarvis-install`, `.agents/skills/install-jarvis/` |
+| macOS 打包与发布 | `packaging/macos/`, `.agents/skills/release-jarvis-desktop/` |
 
 文档不复制完整 DDL、路由、CLI help 或本机有效配置。运行时值以基线配置和 `conf/config.runtime.yaml` 合并结果为准。
 
@@ -66,6 +67,10 @@ Jarvis 是运行在本地可信环境中的个人任务 Agent。它持续接收�
 ## 安装与运行
 
 macOS 14+ Apple Silicon 用户优先使用 [DMG 安装与更新](docs/reference/macos-install-and-update.md)。
+
+维护桌面版时，使用 [桌面发布 Skill](.agents/skills/release-jarvis-desktop/SKILL.md)
+从确定提交构建候选包、记录真实安装升级验收，并发布同一份产物。构建依赖、签名和上传参数见
+[macOS 打包与发布指引](packaging/macos/README.md)；这条链路不用于日常源码服务重建。
 
 源码安装从完整 checkout 开始，在仓库根目录让 Agent 执行：
 

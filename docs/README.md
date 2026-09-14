@@ -31,6 +31,7 @@
 - [运行与部署](reference/operations.md)
 - [HTTP API 分组](reference/http-api.md)
 - [macOS 安装与更新](reference/macos-install-and-update.md)
+- [macOS 打包与发布](../packaging/macos/README.md)：Agent 工作流见 [桌面发布 Skill](../.agents/skills/release-jarvis-desktop/SKILL.md)
 - [Lark CLI 与 ByteD CLI](reference/cli.md)
 
 ## 提案
@@ -65,7 +66,8 @@
 | 页面入口 | `web/src/App.tsx` |
 | Agent 行为 | `conf/prompts/`, `conf/rules/`, `.agents/skills/` |
 | Agent 工具 | `internal/toolcatalog/`, `scripts/jarvis-tools`, `scripts/lib/jarvis-tools/` |
-| 安装与发布动作 | `scripts/`, `packaging/`, `.agents/skills/install-jarvis/` |
+| 源码安装动作 | `scripts/jarvis-install`, `.agents/skills/install-jarvis/` |
+| macOS 打包与发布动作 | `packaging/macos/`, `.agents/skills/release-jarvis-desktop/` |
 
 ## 维护规则
 

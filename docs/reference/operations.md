@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: operational reference; scripts and service templates are source of truth
-> Last verified: 2026-09-11
+> Last verified: 2026-09-14
 
 ## 1. 两种运行形态
 
@@ -26,7 +26,7 @@ DMG 安装不注册源码服务。Tauri 启动 `jarvis-app-service`，由它在�
 - 配置变化后按 `restart.requested` 重启本地服务；
 - 退出应用时清理子进程组。
 
-用户状态位于 `~/Library/Application Support/Jarvis`，不放在 `.app` 内。安装与升级见 [macOS 安装与更新](macos-install-and-update.md)，打包发布见 [packaging/macos/README.md](../../packaging/macos/README.md)。
+用户状态位于 `~/Library/Application Support/Jarvis`，不放在 `.app` 内。安装与升级见 [macOS 安装与更新](macos-install-and-update.md)。Agent 打包、验收和发布使用 [桌面发布 Skill](../../.agents/skills/release-jarvis-desktop/SKILL.md)，底层构建及托管参数见 [macOS 打包指引](../../packaging/macos/README.md)。
 
 ## 2. 有效配置
 
@@ -39,7 +39,7 @@ conf/config.yaml
 
 - 基线默认值只改 `conf/config.yaml`。
 - 本机身份、密钥、端口、模型和调度通过后台设置或 `conf/config.runtime.yaml` 修改。
-- 两份配置都拒绝未知字段。
+- 随包发布的基线配置拒绝未知字段；跨版本保留的 runtime overlay 忽略并记录未知键，已知字段的类型错误仍会报错。overlay 不得覆盖基线专有的 `sqlite` 段。
 - runtime settings 保存后需要重启；prompts、rules 和大部分 Skills 按各自 reader 实时读取。
 - 文档中的示例值不代表当前进程值。实际监听地址和依赖状态读取有效配置与 `/readyz`。
 
@@ -112,7 +112,7 @@ macOS App 退出时由桌面 supervisor 停止它管理的本地子进程，同�
 - 大文件按流传输，不经过全量 gzip 缓冲；
 - symlink 产物拒绝提供。
 
-构建、签名、版本同步和上传顺序见 [macOS 打包与发布指引](../../packaging/macos/README.md)。外部网关配置由部署环境维护，不复制进本仓库文档。
+Agent 按 [桌面发布 Skill](../../.agents/skills/release-jarvis-desktop/SKILL.md) 组织固定提交、候选包验收及发布；构建、签名、版本同步和上传参数见 [macOS 打包与发布指引](../../packaging/macos/README.md)。`--candidate` 发布已封存的包，不在上传前重新构建；候选摘要核对不等于真实旧版升级通过。外部网关配置由部署环境维护，不复制进本仓库文档。
 
 ## 7. 故障恢复
 

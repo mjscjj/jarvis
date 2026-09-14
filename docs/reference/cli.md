@@ -2,7 +2,7 @@
 
 > Status: current
 > Authority: operational reference; each CLI `--help` is source of truth
-> Last verified: 2026-09-13
+> Last verified: 2026-09-14
 
 Jarvis 和执行 Agent 主要使用 `lark-cli`、`bytedcli`、Agent CLI、`git` 与 `scripts/jarvis-tools`。CLI 更新频繁，本文只定义能力归属，不维护完整命令手册或补丁版本。
 
@@ -25,7 +25,7 @@ Jarvis 和执行 Agent 主要使用 `lark-cli`、`bytedcli`、Agent CLI、`git` 
 - 无显式连接时复用 `jarvis-config show-connection`：源码执行现有 `go run` 入口，桌面执行资源目录中的二进制。有完整连接环境的 Agent 不再加载配置；选定地址失败即报错，不探测或切换端口。源码独立调用可能有 Go 启动开销。
 - 服务用临时 `-addr` 启动时，独立工具传 `--api-base` 或环境变量，CC 的 `bind/validate` 同步传 `--addr`。长期地址变更应更新配置并重新绑定、重启相关进程。
 - 世界实体列表由服务端搜索并分页；CLI 默认读取一页，通过 `--page` / `--limit` 继续读取，不再全量抓取后本地过滤。`get-agent-identity` 返回有效 Agent 名称及配置中的 Principal open ID，不暴露凭据。
-- 桌面包的 `scripts/`、JSON helper 与 `web/dist/` 随版本更新，即使本地修改过也会被替换；可编辑配置、Prompt、rules、Skills 仍保留本地修改。
+- 桌面包的基线 `conf/config.yaml`、`scripts/`、JSON helper 与 `web/dist/` 随版本更新，即使本地修改过也会被替换；本机设置只写 `config.runtime.yaml`。有完整资源记录时，Prompt、rules、Skills 的本地修改继续保留；manifest 丢失时，冲突文件先备份再恢复包内版本。
 - Skill 的 `enabled` / `stages` 只控制自动加入阶段目录，不构成读取权限；插件停用控制其 Skill 可用性。`inline` 仍保留短小且必要的阶段行为，领域长流程按需读取。
 - M3 的 `model_api` 仍受支持；只有该引擎构造 function-calling 工具箱，Codex 直接调用 CLI。不同 Agent runner 的生命周期统一不在本轮改动范围。
 
