@@ -82,8 +82,8 @@ func TestPollOKRFeishuDeviceLoginTreatsLostLoginAsExpired(t *testing.T) {
 }
 
 func TestOKRManagementAccessUsesEnterpriseIdentityAllowlist(t *testing.T) {
-	if len(okrManagementUsers) != 9 {
-		t.Fatalf("management user count = %d, want 9", len(okrManagementUsers))
+	if len(okrManagementUsers) != 10 {
+		t.Fatalf("management user count = %d, want 10", len(okrManagementUsers))
 	}
 	for _, manager := range okrManagementUsers {
 		if !canManageOKR(okrAuth.User{Name: manager.Name, UnionID: manager.UnionID}, true) {
@@ -121,6 +121,8 @@ func TestOKRCurrentUserReportsManagementAccess(t *testing.T) {
 		t.Fatal(err)
 	}
 	addOKRIdentitySession(t, db, "manager", okrManagementUsers[0].UnionID, "")
+	addOKRIdentitySession(t, db, "ruoyi-union", "on_833914b05fbbe2eb6623865af52d984f", "")
+	addOKRIdentitySession(t, db, "ruoyi-email", "on_other_provider", "ruoyizhang@bytedance.com")
 	addOKRIdentitySession(t, db, "outsider", "on_outsider", "outsider@bytedance.com")
 
 	h := server.Default()
@@ -132,6 +134,8 @@ func TestOKRCurrentUserReportsManagementAccess(t *testing.T) {
 		want        bool
 	}{
 		{name: "allowlisted manager", token: "manager", want: true},
+		{name: "Ruoyi with existing email-less login", token: "ruoyi-union", want: true},
+		{name: "Ruoyi by enterprise email", token: "ruoyi-email", want: true},
 		{name: "unlisted user", token: "outsider", want: false},
 	} {
 		response := ut.PerformRequest(h.Engine, "GET", "/me", nil, cookie(test.token)).Result()

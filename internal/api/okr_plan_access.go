@@ -31,6 +31,7 @@ var okrManagementUsers = []struct {
 	{Name: "耿馨妍", UnionID: "on_debe16cac24f379e572bc027243941c2", Email: "gengxinyan@bytedance.com"},
 	{Name: "刘洋", UnionID: "on_9b233082fd4d04708ef380d39c14efc2", Email: "liuyang.816@bytedance.com"},
 	{Name: "刘寅", UnionID: "on_5a9ba5363a8a65741f600baa439d3543", Email: "liuyin.01@bytedance.com"},
+	{Name: "张若怡", UnionID: "on_833914b05fbbe2eb6623865af52d984f", Email: "ruoyizhang@bytedance.com"},
 }
 
 func canManageOKR(user okrAuth.User, identityConfigured bool) bool {
