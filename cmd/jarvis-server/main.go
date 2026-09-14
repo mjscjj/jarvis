@@ -933,6 +933,7 @@ func main() {
 		server.WithHostPorts(cfg.Server.Addr),
 	)
 	h.Use(api.Compression())
+	h.Use(api.WebEntryNoStore())
 	h.Use(observability.Middleware())
 	authService, err := authn.NewService(db, "bytedcli", 365*24*time.Hour)
 	if err != nil {
