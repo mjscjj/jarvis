@@ -324,6 +324,8 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
   const [error, setError] = useState('')
   const [navigationNotice, setNavigationNotice] = useState('')
   const [reviewCommentId, setReviewCommentId] = useState('')
+  const [showHistory, setShowHistory] = useState(false)
+  const revealedFocusId = useRef('')
   const loadVersion = useRef(0)
   const inFlightLoadVersion = useRef<number | null>(null)
   const mergeStaleLoadVersion = useRef<number | null>(null)
@@ -334,9 +336,10 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
 
 
   const publishSummary = useCallback((next: PageComment[]) => {
-    onCountChange(commentMessageCount(next))
-    onCountsChange(commentCountsByTarget(next))
-    onCommentsChange(next)
+    const active = next.filter((comment) => !comment.resolved)
+    onCountChange(commentMessageCount(active))
+    onCountsChange(commentCountsByTarget(active))
+    onCommentsChange(active)
   }, [onCommentsChange, onCountChange, onCountsChange])
 
   const summaryRef = useRef(publishSummary)
@@ -384,10 +387,28 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
     setDraft({ content: '', mentions: [] })
     setDraftImages([])
   }, [target?.id, target?.selection?.end, target?.selection?.start, target?.selection?.text, target?.type])
+  useEffect(() => {
+    setShowHistory(false)
+    revealedFocusId.current = ''
+  }, [scopeKey])
 
   useEffect(() => {
     if (!loading) publishSummary(comments)
   }, [comments, loading, publishSummary])
+
+  useEffect(() => {
+    if (!open) {
+      setShowHistory(false)
+      revealedFocusId.current = ''
+      return
+    }
+    const requestedId = target?.commentId || focusCommentId
+    if (!requestedId || revealedFocusId.current === requestedId) return
+    const thread = comments.find((comment) => comment.id === requestedId || comment.replies.some((reply) => reply.id === requestedId))
+    if (!thread) return
+    revealedFocusId.current = requestedId
+    if (thread.resolved) setShowHistory(true)
+  }, [comments, focusCommentId, open, target?.commentId])
 
   useEffect(() => {
     if (!open || loading || !focusCommentId) return
@@ -397,7 +418,7 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
       element?.classList.add('ring-2', 'ring-inset', 'ring-indigo-300')
     })
     return () => window.cancelAnimationFrame(frame)
-  }, [focusCommentId, loading, open])
+  }, [focusCommentId, loading, open, showHistory])
 
   useEffect(() => {
     if (!open || !submittedId || loading) return
@@ -423,14 +444,19 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
   }, [comments, loading, open, planId, quarter, saving, week])
 
   const documentOrder = useMemo(() => buildCommentDocumentOrder(objectives, followUpOrder), [followUpOrder, objectives])
+  const scopedComments = useMemo(() => target ? comments.filter((comment) => commentMatchesTarget(comment, target)) : comments, [comments, target])
+  const resolvedCount = scopedComments.filter((comment) => comment.resolved).length
   const visibleComments = useMemo(() => sortCommentsByDocumentOrder(
-    target ? comments.filter((comment) => commentMatchesTarget(comment, target)) : comments,
+    showHistory ? scopedComments : scopedComments.filter((comment) => !comment.resolved),
     documentOrder,
-  ), [comments, documentOrder, target])
+  ), [documentOrder, scopedComments, showHistory])
   const visibleCount = commentMessageCount(visibleComments)
   const okrContextIndex = useMemo(() => buildCommentOKRContextIndex(objectives), [objectives])
   const visibleGroups = useMemo(() => groupCommentsByTarget(visibleComments), [visibleComments])
-  const reviewComments = useMemo(() => sortCommentsByDocumentOrder(comments, documentOrder), [comments, documentOrder])
+  const reviewComments = useMemo(() => sortCommentsByDocumentOrder(
+    showHistory ? comments : comments.filter((comment) => !comment.resolved),
+    documentOrder,
+  ), [comments, documentOrder, showHistory])
   const reviewIndex = reviewComments.findIndex((comment) => comment.id === reviewCommentId)
   const reviewComment = reviewIndex >= 0 ? reviewComments[reviewIndex] : undefined
   const targetContext = target ? okrContextIndex[commentTargetKey(target)] : undefined
@@ -584,9 +610,11 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
                 ? `${visibleComments.length} 个讨论串 · ${visibleCount} 条评论`
                 : `${scopeLabel || week} · ${visibleGroups.length} 个原文 · ${visibleCount} 条评论`}</p>
           </div>
-          {(reviewing || target) && <button type="button" onClick={onShowAll} className="ml-auto rounded-md px-2 py-1 text-[11px] text-indigo-600 hover:bg-indigo-50">查看全部</button>}
-          {!reviewing && !target && reviewEnabled && reviewComments.length > 0 && <button type="button" onClick={onStartReview} className="ml-auto rounded-md px-2 py-1 text-[11px] text-indigo-600 hover:bg-indigo-50">逐条浏览</button>}
-          {!reviewing && !target && <button type="button" onClick={() => void load()} className={`rounded-md px-2 py-1 text-[11px] text-slate-400 hover:bg-slate-100 hover:text-slate-600 ${!reviewEnabled || reviewComments.length === 0 ? 'ml-auto' : ''}`}>刷新</button>}
+          <span className="min-w-0 flex-1" />
+          {(reviewing || target) && <button type="button" onClick={onShowAll} className="shrink-0 rounded-md px-2 py-1 text-[11px] text-indigo-600 hover:bg-indigo-50">查看全部</button>}
+          {!reviewing && !target && reviewEnabled && reviewComments.length > 0 && <button type="button" onClick={onStartReview} className="shrink-0 rounded-md px-2 py-1 text-[11px] text-indigo-600 hover:bg-indigo-50">逐条浏览</button>}
+          {!reviewing && !target && <button type="button" onClick={() => void load()} className="shrink-0 rounded-md px-2 py-1 text-[11px] text-slate-400 hover:bg-slate-100 hover:text-slate-600">刷新</button>}
+          {(resolvedCount > 0 || showHistory) && <button type="button" aria-pressed={showHistory} onClick={() => setShowHistory((value) => !value)} className={`shrink-0 rounded-md px-2 py-1 text-[11px] ${showHistory ? 'bg-slate-100 text-slate-700' : 'text-indigo-600 hover:bg-indigo-50'}`}>{showHistory ? '隐藏历史评论' : `显示历史评论${resolvedCount > 0 ? ` ${resolvedCount}` : ''}`}</button>}
           <button type="button" onClick={onClose} aria-label="关闭评论" className="flex size-8 items-center justify-center rounded-lg text-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700">×</button>
         </header>
 
@@ -607,7 +635,7 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           {loading ? <div className="px-4 py-10 text-center text-xs text-slate-400">正在读取评论…</div> : (reviewing ? reviewComments : visibleComments).length === 0 ? (
-            <div className="px-8 py-16 text-center"><div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-full bg-slate-100 text-lg text-slate-400">💬</div><p className="text-[13px] font-medium text-slate-600">{target ? '这段内容还没有评论' : '还没有评论'}</p><p className="mt-1 text-[11px] text-slate-400">提出问题、补充背景或回复讨论</p></div>
+            <div className="px-8 py-16 text-center"><div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-full bg-slate-100 text-lg text-slate-400">💬</div><p className="text-[13px] font-medium text-slate-600">{resolvedCount > 0 && !showHistory ? '当前没有未解决评论' : target ? '这段内容还没有评论' : '还没有评论'}</p><p className="mt-1 text-[11px] text-slate-400">{resolvedCount > 0 && !showHistory ? '点击右上角「显示历史评论」查看已解决讨论' : '提出问题、补充背景或回复讨论'}</p></div>
           ) : reviewing ? reviewComment ? (
             renderThread(reviewComment, true)
           ) : <div className="px-4 py-10 text-center text-xs text-slate-400">正在定位第一条评论…</div>
