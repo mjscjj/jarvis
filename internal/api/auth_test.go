@@ -5,17 +5,21 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"jarvis/internal/authn"
+	"jarvis/internal/domain"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/common/test/mock"
 	"github.com/cloudwego/hertz/pkg/common/ut"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 type authRunner struct {
@@ -27,7 +31,7 @@ func (r authRunner) Run(_ context.Context, bin string, args ...string) ([]byte, 
 }
 
 func TestLoginWithByteDanceSetsJarvisSessionCookie(t *testing.T) {
-	service, err := authn.NewServiceWithRunner("bytedcli", time.Hour, authRunner{run: func(_ string, args []string) ([]byte, error) {
+	service, err := authn.NewServiceWithRunner(authTestDB(t), "bytedcli", time.Hour, authRunner{run: func(_ string, args []string) ([]byte, error) {
 		if strings.Join(args, " ") != "--json auth status" {
 			t.Fatalf("args = %v", args)
 		}
@@ -47,7 +51,7 @@ func TestLoginWithByteDanceSetsJarvisSessionCookie(t *testing.T) {
 }
 
 func TestRemoteLoginReusesCurrentByteDanceIdentity(t *testing.T) {
-	service, err := authn.NewServiceWithRunner("bytedcli", time.Hour, authRunner{run: func(_ string, args []string) ([]byte, error) {
+	service, err := authn.NewServiceWithRunner(authTestDB(t), "bytedcli", time.Hour, authRunner{run: func(_ string, args []string) ([]byte, error) {
 		if strings.Join(args, " ") != "--json auth status" {
 			t.Fatalf("args = %v", args)
 		}
@@ -69,7 +73,7 @@ func TestRemoteLoginReusesCurrentByteDanceIdentity(t *testing.T) {
 }
 
 func TestCompleteByteDanceLoginRequiresFlowID(t *testing.T) {
-	service, err := authn.NewServiceWithRunner("bytedcli", time.Hour, authRunner{run: func(_ string, _ []string) ([]byte, error) {
+	service, err := authn.NewServiceWithRunner(authTestDB(t), "bytedcli", time.Hour, authRunner{run: func(_ string, _ []string) ([]byte, error) {
 		return nil, nil
 	}})
 	if err != nil {
@@ -111,4 +115,16 @@ func authRequestContext(peer, forwarded string) *app.RequestContext {
 		request.Request.Header.Set("X-Forwarded-For", forwarded)
 	}
 	return request
+}
+
+func authTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "auth.db")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&domain.BrowserSession{}); err != nil {
+		t.Fatal(err)
+	}
+	return db
 }

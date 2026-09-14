@@ -5,7 +5,9 @@ package authn
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +15,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"jarvis/internal/domain"
+
+	"gorm.io/gorm"
 )
 
 const (
@@ -61,27 +67,25 @@ type flow struct {
 	expiresAt time.Time
 }
 
-type session struct {
-	user      User
-	expiresAt time.Time
-}
-
 type Service struct {
+	db         *gorm.DB
 	bin        string
 	runner     CommandRunner
 	sessionTTL time.Duration
 	now        func() time.Time
 
-	mu       sync.Mutex
-	flows    map[string]flow
-	sessions map[string]session
+	mu    sync.Mutex
+	flows map[string]flow
 }
 
-func NewService(bin string, sessionTTL time.Duration) (*Service, error) {
-	return NewServiceWithRunner(bin, sessionTTL, execRunner{})
+func NewService(db *gorm.DB, bin string, sessionTTL time.Duration) (*Service, error) {
+	return NewServiceWithRunner(db, bin, sessionTTL, execRunner{})
 }
 
-func NewServiceWithRunner(bin string, sessionTTL time.Duration, runner CommandRunner) (*Service, error) {
+func NewServiceWithRunner(db *gorm.DB, bin string, sessionTTL time.Duration, runner CommandRunner) (*Service, error) {
+	if db == nil {
+		return nil, fmt.Errorf("authn database is nil")
+	}
 	if strings.TrimSpace(bin) == "" {
 		return nil, fmt.Errorf("authn bytedcli binary is empty")
 	}
@@ -92,12 +96,12 @@ func NewServiceWithRunner(bin string, sessionTTL time.Duration, runner CommandRu
 		return nil, fmt.Errorf("authn command runner is nil")
 	}
 	return &Service{
+		db:         db,
 		bin:        strings.TrimSpace(bin),
 		runner:     runner,
 		sessionTTL: sessionTTL,
 		now:        time.Now,
 		flows:      make(map[string]flow),
-		sessions:   make(map[string]session),
 	}, nil
 }
 
@@ -192,23 +196,22 @@ func (s *Service) Authenticate(token string) (User, bool) {
 	if token == "" {
 		return User{}, false
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	current, ok := s.sessions[token]
-	if !ok {
+	var current domain.BrowserSession
+	if err := s.db.Where("token_hash = ? AND expires_at > ?", hashToken(token), s.now()).Take(&current).Error; err != nil {
 		return User{}, false
 	}
-	if !current.expiresAt.After(s.now()) {
-		delete(s.sessions, token)
-		return User{}, false
-	}
-	return current.user, true
+	return User{Username: current.Username, Email: current.Email, IsPrincipal: true}, true
 }
 
-func (s *Service) Logout(token string) {
-	s.mu.Lock()
-	delete(s.sessions, strings.TrimSpace(token))
-	s.mu.Unlock()
+func (s *Service) Logout(token string) error {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil
+	}
+	if err := s.db.Delete(&domain.BrowserSession{}, "token_hash = ?", hashToken(token)).Error; err != nil {
+		return fmt.Errorf("delete Jarvis session: %w", err)
+	}
+	return nil
 }
 
 func (s *Service) deleteFlow(flowID string) {
@@ -239,13 +242,24 @@ func (s *Service) startSession(user User) (LoginResult, error) {
 	if err != nil {
 		return LoginResult{}, fmt.Errorf("create login session: %w", err)
 	}
-	s.mu.Lock()
-	s.sessions[token] = session{user: user, expiresAt: s.now().Add(s.sessionTTL)}
-	s.mu.Unlock()
+	current := domain.BrowserSession{
+		TokenHash: hashToken(token),
+		Username:  user.Username,
+		Email:     user.Email,
+		ExpiresAt: s.now().Add(s.sessionTTL),
+	}
+	if err := s.db.Create(&current).Error; err != nil {
+		return LoginResult{}, fmt.Errorf("save Jarvis session: %w", err)
+	}
 	return LoginResult{
 		View:         View{Status: StatusAuthenticated, User: &user},
 		SessionToken: token,
 	}, nil
+}
+
+func hashToken(token string) string {
+	sum := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(sum[:])
 }
 
 func (s *Service) probe(ctx context.Context) (User, bool, error) {

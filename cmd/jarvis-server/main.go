@@ -922,7 +922,7 @@ func main() {
 	)
 	h.Use(api.Compression())
 	h.Use(observability.Middleware())
-	authService, err := authn.NewService("bytedcli", 12*time.Hour)
+	authService, err := authn.NewService(db, "bytedcli", 365*24*time.Hour)
 	if err != nil {
 		fatalf("initialize ByteDance SSO service failed: %v", err)
 	}

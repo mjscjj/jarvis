@@ -21,4 +21,15 @@ type AccessAuditEvent struct {
 
 func (AccessAuditEvent) TableName() string { return "access_audit_event" }
 
-func SecurityModels() []any { return []any{&AccessAuditEvent{}} }
+// BrowserSession is Jarvis's persistent browser login, independent of the
+// short-lived ByteCloud SSO tokens owned by bytedcli.
+type BrowserSession struct {
+	TokenHash string    `gorm:"column:token_hash;primaryKey;size:64"`
+	Username  string    `gorm:"column:username;not null"`
+	Email     string    `gorm:"column:email;not null"`
+	ExpiresAt time.Time `gorm:"column:expires_at;not null;index:idx_browser_session_expiry"`
+}
+
+func (BrowserSession) TableName() string { return "browser_session" }
+
+func SecurityModels() []any { return []any{&AccessAuditEvent{}, &BrowserSession{}} }

@@ -3,9 +3,14 @@ package authn
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
+	"jarvis/internal/domain"
 )
 
 type fakeRunner struct {
@@ -110,15 +115,89 @@ func TestLogoutInvalidatesOnlyJarvisSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service.Logout(result.SessionToken)
+	if err := service.Logout(result.SessionToken); err != nil {
+		t.Fatal(err)
+	}
 	if _, ok := service.Authenticate(result.SessionToken); ok {
 		t.Fatal("session remained authenticated after logout")
 	}
 }
 
+func TestSessionSurvivesDatabaseReopenAndExpires(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "auth.db")
+	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&domain.BrowserSession{}); err != nil {
+		t.Fatal(err)
+	}
+	runner := fakeRunner{run: func(_ string, _ []string) ([]byte, error) { return nil, nil }}
+	service, err := NewServiceWithRunner(db, "bytedcli", 365*24*time.Hour, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	issuedAt := time.Date(2026, 9, 14, 0, 0, 0, 0, time.UTC)
+	service.now = func() time.Time { return issuedAt }
+	result, err := service.startSession(User{Username: "alice", Email: "alice@bytedance.com", IsPrincipal: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var stored domain.BrowserSession
+	if err := db.Take(&stored).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.TokenHash == result.SessionToken || stored.TokenHash != hashToken(result.SessionToken) {
+		t.Fatal("database must store only the session token hash")
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		connection, err := reopened.DB()
+		if err == nil {
+			_ = connection.Close()
+		}
+	}()
+	restarted, err := NewServiceWithRunner(reopened, "bytedcli", 365*24*time.Hour, runner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restarted.now = func() time.Time { return issuedAt.Add(364 * 24 * time.Hour) }
+	if user, ok := restarted.Authenticate(result.SessionToken); !ok || user.Username != "alice" || !user.IsPrincipal {
+		t.Fatalf("reopened session = %#v, %t", user, ok)
+	}
+	restarted.now = func() time.Time { return issuedAt.Add(365 * 24 * time.Hour) }
+	if _, ok := restarted.Authenticate(result.SessionToken); ok {
+		t.Fatal("session remained authenticated at expiry")
+	}
+	if err := restarted.Logout(result.SessionToken); err != nil {
+		t.Fatal(err)
+	}
+	if err := reopened.Take(&stored).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("session remains after logout: %v", err)
+	}
+}
+
 func newTestService(t *testing.T, runner CommandRunner) *Service {
 	t.Helper()
-	service, err := NewServiceWithRunner("bytedcli", 12*time.Hour, runner)
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "auth.db")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&domain.BrowserSession{}); err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewServiceWithRunner(db, "bytedcli", 12*time.Hour, runner)
 	if err != nil {
 		t.Fatal(err)
 	}

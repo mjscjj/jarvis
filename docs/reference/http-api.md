@@ -23,6 +23,8 @@
 - `POST /api/auth/login/complete`：轮询并完成 SSO 登录。
 - `POST /api/auth/logout`：只清除 Jarvis 浏览器会话，不清除全机 BytedCLI 授权。
 
+Jarvis 浏览器会话保存在现有 SQLite 中，Cookie 和服务端记录均在登录 365 天后到期；普通服务重启不会使会话失效。SSO 授权仍由 BytedCLI 独立管理。
+
 前端由 AuthProvider 统一处理首次登录与会话失效恢复。并发 401 共用一次恢复，
 优先复用 BytedCLI 身份；失败的写请求不自动重放。主动退出后须点击登录才能恢复。
 
