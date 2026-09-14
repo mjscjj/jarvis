@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"jarvis/internal/agentidentity"
@@ -359,6 +360,51 @@ func decodeKnownYAML(raw []byte, target any) error {
 	decoder := yaml.NewDecoder(bytes.NewReader(raw))
 	decoder.KnownFields(true)
 	return decoder.Decode(target)
+}
+
+// pruneUnknownRuntimeOverrideKeys 就地删除 Config 结构不认识的键，返回被删除的
+// 完整键路径（形如 extract.open_todo_limit）。运行覆盖文件是跨版本存活的本机
+// 文件，旧版本写下的键会一直躺在里面；写回时剪掉它们，文件才会随使用自愈。
+func pruneUnknownRuntimeOverrideKeys(root *yaml.Node) []string {
+	return pruneUnknownYAMLKeys(root, reflect.TypeOf(Config{}), "")
+}
+
+func pruneUnknownYAMLKeys(mapping *yaml.Node, structType reflect.Type, prefix string) []string {
+	if mapping == nil || mapping.Kind != yaml.MappingNode || structType.Kind() != reflect.Struct {
+		return nil
+	}
+	var dropped []string
+	kept := make([]*yaml.Node, 0, len(mapping.Content))
+	for i := 0; i+1 < len(mapping.Content); i += 2 {
+		key, value := mapping.Content[i], mapping.Content[i+1]
+		path := key.Value
+		if prefix != "" {
+			path = prefix + "." + key.Value
+		}
+		field, known := yamlStructField(structType, key.Value)
+		if !known {
+			dropped = append(dropped, path)
+			continue
+		}
+		dropped = append(dropped, pruneUnknownYAMLKeys(value, field.Type, path)...)
+		kept = append(kept, key, value)
+	}
+	mapping.Content = kept
+	return dropped
+}
+
+func yamlStructField(structType reflect.Type, key string) (reflect.StructField, bool) {
+	for i := 0; i < structType.NumField(); i++ {
+		field := structType.Field(i)
+		name, _, _ := strings.Cut(field.Tag.Get("yaml"), ",")
+		if name == "" {
+			name = strings.ToLower(field.Name)
+		}
+		if name == key {
+			return field, true
+		}
+	}
+	return reflect.StructField{}, false
 }
 
 // validate 校验当前已启用模块的全部启动条件。model/codex 会在各自

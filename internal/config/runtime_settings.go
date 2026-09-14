@@ -577,6 +577,9 @@ func UpdateRuntimeOverride(configPath string, patch any) error {
 		return fmt.Errorf("encode runtime config update: %w", err)
 	}
 	mergeRuntimeMapping(document.Content[0], &updates)
+	// 这次写回是覆盖文件自愈的唯一时机：合并是在现有 YAML 文档上做的，不剪掉
+	// 升级残留的未知键，它们会被原样保留、每次启动都再告警一次。
+	pruneUnknownRuntimeOverrideKeys(document.Content[0])
 	data, err := yaml.Marshal(document)
 	if err != nil {
 		return fmt.Errorf("marshal runtime config override: %w", err)
