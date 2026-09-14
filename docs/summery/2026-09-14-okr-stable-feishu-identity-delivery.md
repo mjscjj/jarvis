@@ -27,4 +27,14 @@
 
 演练变化：342 条 KR Owner、314 条 Point Owner、3 条评论 mentions、17 条 Follow-up owners、6 份催填快照。评论正文、作者 ID、原始导入 source_payload、业务内容与结构保持原样；Owner 显示名归一到目录名称。评论提醒记录不回填、不补发。
 
-生产合并、备份、迁移与重启结果将在完成后追加。
+## 生产交付结果
+
+- 代码 `c1cc30c8`、共享开发兼容补充 `94b84522` 均已 fast-forward 合并到 `codex/jarvis-okr-mvp`，合并完成后才操作正式数据。
+- 2026-09-14 09:59 UTC 确认主服务无执行中 Task，并停掉主服务及共享数据库的开发进程；`fuser` 确认数据库没有活动使用者后执行迁移。
+- 一致性备份、完整迁移映射、原文档版本证据：`/data00/home/chujiejie.1/workspace-local/jarvis-okr-mvp/var/identity-migration/20260914T095928Z`；`okr-before.db` 是迁移前备份，`okr-after.db` 是交付快照。
+- 正式迁移计数与演练一致；新建区域需求/决定的三个人员列也被检查和加入旧 ID 写入拦截，目前无需转换。二次 dry-run 所有计数为 0，SQLite integrity_check 为 ok。
+- 主服务（18802）和开发容器（18812）分别使用 `./scripts/jarvis-deploy --skip-pull` 完成构建与重启，health 检查通过。主服务 readyz 正常，生产评论 API 已回读确认截图中的 @冯程 为 `fengcheng.charles@bytedance.com`。
+- 开发 worktree 的区域评审未提交改动予以保留；通过三方合并同步邮箱/通知兼容改动、修复区域 POC 与评论边界，Go 测试与前端 181 项测试通过。没有将这些未提交区域功能并入主分支；原始变更备份位于 `var/identity-migration/dev-before.patch` 和 `dev-merge/before/`。
+- 开发网关同步支持精确目录读取，保持个人消息等能力不可用；禁止通过通知 profile 静默切换到主目录 profile。
+- 独立验证服务已停止并取消开机启动；worktree 与验证副本保留，便于复查。
+- 新通知账本为 0 条，历史迁移未生成发送意图或补发任何消息。权限未开通与 1 条未绑定历史 Owner 仍按上文明确保留。
