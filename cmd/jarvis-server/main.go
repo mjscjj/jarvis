@@ -960,6 +960,7 @@ func main() {
 	}
 
 	scheduler, err := capture.StartScheduler(runtimeCtx, captureService, capture.ScheduleConfig{
+		Disabled: !cfg.Capture.IsEnabled(),
 		Discover: cfg.Capture.DiscoverSchedule,
 		Scan:     cfg.Capture.ScanSchedule,
 	}, log.New(os.Stderr, "capture-cron ", log.LstdFlags|log.Lmicroseconds))
@@ -1142,6 +1143,9 @@ func main() {
 	h.Use(api.Compression())
 	h.Use(observability.Middleware())
 	h.Use(api.StaticAssetCacheHeaders())
+	if cfg.Server.DevelopmentSocket != "" {
+		h.Use(api.DevelopmentProxy(cfg.Server.DevelopmentSocket, cfg.Server.DevelopmentPath))
+	}
 	authService, err := authn.NewService(db, "bytedcli", 365*24*time.Hour, cfg.Auth.IsEnabled(), cfg.Auth.AllowedPrincipals(), cfg.Auth.LoginAPIBaseURL)
 	if err != nil {
 		fatalf("initialize ByteDance SSO service failed: %v", err)

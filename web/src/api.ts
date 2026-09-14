@@ -1,3 +1,4 @@
+import { appPath } from './appPath.ts'
 import type {
   Delegation,
   DelegationCheck,
@@ -126,12 +127,12 @@ function canRetryAfterAuth(options?: RequestInit): boolean {
 }
 
 export async function apiFetch(path: string, options?: RequestInit): Promise<Response> {
-  const response = await fetch(path, options)
+  const response = await fetch(appPath(path), options)
   if (response.status === 401 && !isAuthPath(path)) {
     authEvents.dispatchEvent(new Event('expired'))
     if (authRecoveryHandler && canRetryAfterAuth(options)) {
       await authRecoveryHandler()
-      if (!options?.signal?.aborted) return fetch(path, options)
+      if (!options?.signal?.aborted) return fetch(appPath(path), options)
     }
   }
   return response
@@ -177,7 +178,7 @@ export function looksLikeServiceRestart(response: Response): boolean {
 // pingHealth 探一次后端健康检查，用于自动 / 手动重连时确认服务是否恢复。
 export async function pingHealth(signal?: AbortSignal): Promise<boolean> {
   try {
-    const response = await fetch('/healthz', { signal, headers: { Accept: 'application/json' } })
+    const response = await fetch(appPath('/healthz'), { signal, headers: { Accept: 'application/json' } })
     return response.ok
   } catch {
     return false

@@ -1,3 +1,4 @@
+import { appPath } from '../../../appPath.ts'
 /**
  * 表格里用的控件。展示态没有边框，hover / focus 才显形，
  * 这样整页看上去还是一张文档表格，而不是一堆表单。
@@ -469,7 +470,7 @@ function ResizableImage({
       title={readOnly ? image.name : '拖右下角改大小'}
       className={`group/img relative inline-block max-w-full min-w-12 overflow-hidden rounded border border-slate-200 align-top ${readOnly ? '' : 'resize-x'}`}
     >
-      <img src={image.url} alt={image.name} onClick={onZoom} className="block w-full cursor-zoom-in" />
+      <img src={appPath(image.url)} alt={image.name} onClick={onZoom} className="block w-full cursor-zoom-in" />
       <button
         type="button"
         onClick={onZoom}
@@ -586,7 +587,7 @@ export function Images({
           </div>
           <div className="flex min-h-full min-w-full items-center justify-center">
             <img
-              src={zoom.url}
+              src={appPath(zoom.url)}
               alt={zoom.name}
               onClick={(event) => event.stopPropagation()}
               onLoad={(event) => {

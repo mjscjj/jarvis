@@ -1,3 +1,4 @@
+import { appPath } from './appPath.ts'
 import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { DeleteOutlined, DownloadOutlined, EditOutlined, FileOutlined, HistoryOutlined, InboxOutlined, MenuOutlined, PaperClipOutlined, PlusOutlined, SearchOutlined, SendOutlined, StopOutlined } from '@ant-design/icons'
 import { Alert, Button, Drawer, Dropdown, Empty, Input, Modal, Select, Spin, Tooltip, Typography } from 'antd'
@@ -953,7 +954,7 @@ function ChatMessageCard({ message, agentName, shortName, typing = false }: { me
 }
 function FileCard({ file, removable, onRemove }: { file: ChatAttachment; removable?: boolean; onRemove?: () => void }) {
   const apiBase = useContext(ChatAPIContext)
-  const href = `${apiBase}/attachments/${file.id}/content`
+  const href = appPath(`${apiBase}/attachments/${file.id}/content`)
   return (
     <div className="chat-file-card">
       <a href={href} target="_blank" rel="noreferrer">

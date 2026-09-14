@@ -26,13 +26,14 @@ type Config struct {
 
 // ChatConfig belongs only to the isolated OKR conversation surface.
 type ChatConfig struct {
-	Enabled         bool     `yaml:"enabled"`
-	Image           string   `yaml:"image"`
-	Model           string   `yaml:"model"`
-	ReasoningEffort string   `yaml:"reasoning_effort"`
-	TimeoutSeconds  int      `yaml:"timeout_seconds"`
-	AuthFile        string   `yaml:"auth_file"`
-	ModelHosts      []string `yaml:"model_hosts"`
+	DevelopmentContainer string   `yaml:"development_container"`
+	Enabled              bool     `yaml:"enabled"`
+	Image                string   `yaml:"image"`
+	Model                string   `yaml:"model"`
+	ReasoningEffort      string   `yaml:"reasoning_effort"`
+	TimeoutSeconds       int      `yaml:"timeout_seconds"`
+	AuthFile             string   `yaml:"auth_file"`
+	ModelHosts           []string `yaml:"model_hosts"`
 }
 
 func (c ChatConfig) Validate() error {

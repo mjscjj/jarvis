@@ -54,3 +54,20 @@ func TestExportToolEnvironmentOverridesParentInstance(t *testing.T) {
 		t.Fatal("repository tools are not first in PATH")
 	}
 }
+
+func TestInstanceDerivesBrowserPrefixWithoutChangingLocalAPI(t *testing.T) {
+	for _, base := range []string{"/", "/dev/", "/sandbox/emily/"} {
+		file := filepath.Join(t.TempDir(), "config.yaml")
+		content := "server:\n  addr: 127.0.0.1:18812\n  public_base_url: https://example.com" + base + "\n"
+		if err := os.WriteFile(file, []byte(content), 0600); err != nil {
+			t.Fatal(err)
+		}
+		instance, err := InspectInstance(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if instance.WebBasePath != base || instance.APIBase != "http://127.0.0.1:18812" {
+			t.Fatalf("unexpected instance: %+v", instance)
+		}
+	}
+}

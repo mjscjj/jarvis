@@ -28,6 +28,8 @@ Jarvis 世界模型
 
 ## OKR 独立对话
 
+完整源码研发模式见 [Emily 开发环境](../summery/emily-development-environment.md)。配置 `chat.development_container` 后，OKR 对话在已有开发容器中执行，使用共享线上 OKR 数据和独立开发主库；公开路径按部署配置生成，不增加第二套业务路由。以下仅描述未设置该选项时的原始单轮容器模式及通用登录行为。
+
 Biz OKR 页面底部对话按用户身份选择：既有白名单用户保留普通 Chat，其余已完成 Biz OKR 飞书登录的访客使用受限 `/api/okr-chat/*`。该接口在服务端验证飞书会话，所有访客共用一份 Chat 服务和 `var/okr-chat/chat.db`，共享会话列表、历史、草稿与附件；不按用户分库或建立运行实例。普通 `/api/chat/*` 和 M2/M3/M5 保持原有可信运行方式。
 
 OKR 飞书登录会话已持久化在 Jarvis 私有运行主库的 `okr_workspace_auth_session` 表，浏览器通过 HttpOnly 的 `jarvis_okr_session` Cookie 恢复身份；服务重启不需要再次授权。`conf/okr-module.yaml` 的 `identity.session_ttl_hours` 设为 `8760`（365 天），同时决定新会话与 Cookie 的有效期。已签发的旧会话保留原到期时间，下一次正常登录使用一年有效期；主动退出立即删除对应会话。此设置只延长网页登录，不改变飞书 API access/refresh token 自身的期限。
