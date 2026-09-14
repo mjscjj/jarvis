@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -210,5 +211,80 @@ func TestServiceDisabledHasNoSessionOrLogin(t *testing.T) {
 	}
 	if _, err := service.BeginDeviceLogin(context.Background()); err == nil {
 		t.Fatal("BeginDeviceLogin() succeeded while disabled")
+	}
+}
+
+func TestYearLongSessionSurvivesDatabaseReopen(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "runtime.db")
+	now := time.Date(2026, 9, 14, 8, 0, 0, 0, time.UTC)
+	cfg := moduleconfig.IdentityConfig{Enabled: true, SessionTTLHours: 365 * 24}
+	provider := &fakeProvider{}
+	tokens := authTestTokenStore(t)
+	open := func() (*Service, func()) {
+		t.Helper()
+		db, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		sqlDB, err := db.DB()
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = sqlDB.Close() })
+		if err := db.AutoMigrate(&domain.AuthSession{}); err != nil {
+			t.Fatal(err)
+		}
+		s, err := NewService(db, cfg, provider, tokens)
+		if err != nil {
+			t.Fatal(err)
+		}
+		s.now = func() time.Time { return now }
+		return s, func() {
+			if err := sqlDB.Close(); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	s, closeDB := open()
+	if s.SessionMaxAge() != 365*24*60*60 {
+		t.Fatal("browser cookie does not last one year")
+	}
+	user := User{OpenID: "ou_alice", UnionID: "on_alice", Name: "Alice"}
+	original, token, err := s.createSession(t.Context(), user, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, otherToken, err := s.createSession(t.Context(), user, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeDB()
+	// Beyond both the old seven-day session and typical user-token expiry;
+	// restoring website identity does not request another Feishu authorization.
+	now = now.Add(180 * 24 * time.Hour)
+	s, closeDB = open()
+	current, err := s.Current(t.Context(), token)
+	if err != nil || current.User != user || !current.ExpiresAt.Equal(original.ExpiresAt) {
+		t.Fatalf("persisted session = %+v, %v", current, err)
+	}
+	if provider.pollCalls != 0 || provider.refreshCalls != 0 {
+		t.Fatal("restoring a website session invoked Feishu")
+	}
+	if err := s.Logout(t.Context(), token); err != nil {
+		t.Fatal(err)
+	}
+	closeDB()
+	s, closeDB = open()
+	if _, err := s.Current(t.Context(), token); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatal("logout was undone by restart")
+	}
+	if _, err := s.Current(t.Context(), otherToken); err != nil {
+		t.Fatal("logout affected another browser")
+	}
+	closeDB()
+	now = original.ExpiresAt
+	s, _ = open()
+	if _, err := s.Current(t.Context(), otherToken); !errors.Is(err, ErrUnauthenticated) {
+		t.Fatal("expired session accepted")
 	}
 }

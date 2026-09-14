@@ -39,7 +39,7 @@ identity:
   # 换应用后 open_id 会变（按应用隔离），union_id 不变，所以署名锚 union_id。
   app_id: "cli_a96a2422f03bdbd7"
   app_secret_env: "JARVIS_OKR_EMILY_APP_SECRET"
-  session_ttl_hours: 168
+  session_ttl_hours: 8760 # 365 天；网页登录状态存于私有运行数据库
   cookie_secure: false
   feishu_base_url: "https://open.feishu.cn"
   feishu_account_url: "https://accounts.feishu.cn"

@@ -115,7 +115,7 @@ Jarvis 同时承担三件性质不同的事，由两个飞书应用按受众和 
 | 只读 `GET /api/biz-okr/comments` | 200，不需要登录 |
 | device flow 发起与轮询 | 走通，`completed` |
 | 会话落库 | `open_id` 为通知应用命名空间，`union_id` 为跨应用稳定值 |
-| session cookie | `jarvis_okr_session`，HttpOnly，7 天 |
+| session cookie | `jarvis_okr_session`，HttpOnly，365 天（由 `identity.session_ttl_hours` 配置） |
 | 已登录发评论 | 署名 `储节节` + `author_union_id`，落库并可读回 |
 | token 落盘 | `<新 open_id>.json`，含 `union_id` 与 refresh token |
 | `GET /api/biz-okr/feishu-identity` | 返回通知应用的 `app_id` 与配对 token 路径 |

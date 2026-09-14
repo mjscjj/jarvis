@@ -30,6 +30,8 @@ Jarvis 世界模型
 
 Biz OKR 页面底部对话按用户身份选择：既有白名单用户保留普通 Chat，其余已完成 Biz OKR 飞书登录的访客使用受限 `/api/okr-chat/*`。该接口在服务端验证飞书会话，所有访客共用一份 Chat 服务和 `var/okr-chat/chat.db`，共享会话列表、历史、草稿与附件；不按用户分库或建立运行实例。普通 `/api/chat/*` 和 M2/M3/M5 保持原有可信运行方式。
 
+OKR 飞书登录会话已持久化在 Jarvis 私有运行主库的 `okr_workspace_auth_session` 表，浏览器通过 HttpOnly 的 `jarvis_okr_session` Cookie 恢复身份；服务重启不需要再次授权。`conf/okr-module.yaml` 的 `identity.session_ttl_hours` 设为 `8760`（365 天），同时决定新会话与 Cookie 的有效期。已签发的旧会话保留原到期时间，下一次正常登录使用一年有效期；主动退出立即删除对应会话。此设置只延长网页登录，不改变飞书 API access/refresh token 自身的期限。
+
 向普通 Biz OKR 访客开放域名时，部署本机的 `auth.enabled` 必须开启，并在 `auth.principals` 中只列允许进入普通 Jarvis 的用户；Biz OKR 和 `/api/okr-chat/*` 仍使用飞书登录。白名单用户若只有飞书会话，页面会提示再完成字节身份登录后使用普通 Chat。Docker 工具隔离限制的是对话 Agent 的数据出口，不能代替浏览器 API 的外层登录。
 
 普通 Jarvis 的网页登录确认浏览器访客自己的字节身份，不复用宿主机的 bytedcli 登录。进入普通页面会自动开始验证；网络中断自动重试并保留当前授权，服务重启丢失流程或链接过期时自动生成并展示新链接，无需手动刷新或重新生成。用户仍需在 SSO 授权页确认身份，明确取消授权或不在白名单时停止重试。OKR 访客页面不会自动发起这层登录。
