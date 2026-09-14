@@ -1,0 +1,4 @@
+interface:
+  display_name: "发布 Jarvis 桌面版"
+  short_description: "从固定提交构建候选包，记录安装升级验收并发布同一份产物"
+  default_prompt: "使用 $release-jarvis-desktop 完成本次 Jarvis 桌面打包或发布，复用已有候选记录，验证实际安装升级并汇报交付边界。"

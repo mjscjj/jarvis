@@ -2,11 +2,15 @@
 
 > Status: current
 > Authority: macOS 应用打包与自动更新发布操作入口
-> Last verified: 2026-09-11
+> Last verified: 2026-09-14
 
 本文说明如何从源码生成 Apple Silicon 版 `Jarvis.app`、DMG 和 Tauri 自动更新包，
 以及如何发布自动更新。用户安装、覆盖升级和客户端排障见
 [macOS 安装与自动更新](../../docs/reference/macos-install-and-update.md)。
+
+Agent 执行打包、验收、发布或续跑时，统一使用
+[release-jarvis-desktop Skill](../../.agents/skills/release-jarvis-desktop/SKILL.md)。
+Skill 负责流程和验收记录，本文负责脚本、依赖及部署参数；不维护第二套打包实现。
 
 当前产物支持 macOS 14 及以上、Apple Silicon（arm64）。应用使用 ad-hoc 签名，
 尚未接入 Apple Developer ID 和 notarization；自动更新包始终使用独立的 Tauri
@@ -204,7 +208,22 @@ shasum -a 256 "$dmg"
 
 ### 发布命令
 
-确认版本和代码后执行：
+推荐从确定提交的独立 detached checkout 构建，封存并验收后发布同一份产物：
+
+```bash
+# 在专用 checkout 完成 build-dmg.sh 后；候选父目录须已存在，候选目录须不存在。
+node packaging/macos/release-candidate.mjs seal /absolute/checkout /absolute/release/candidate
+node packaging/macos/release-candidate.mjs verify /absolute/release/candidate
+# 按 Skill 在候选目录维护 acceptance.md，完成实际安装升级验收后执行：
+./packaging/macos/publish-update.sh --candidate /absolute/release/candidate "本次更新说明"
+```
+
+`candidate.json` 记录版本、commit、DMG/更新归档大小和 SHA-256；`verify` 只检查身份，
+不证明人工验收完成。`--candidate` 从候选记录读取版本，核对原文件及上传副本摘要，
+单独签名并上传，不重新构建。保留原构建 checkout 的 Tauri signer 供发布使用。
+`acceptance.md` 保存验收环境、结果、证据、阻断和下一步，由发布 Agent 审核。
+
+原来的完整构建并发布命令仍可执行，但会重新构建，不能用于发布已经验收的候选：
 
 ```bash
 ./packaging/macos/publish-update.sh "本次更新说明"
@@ -227,7 +246,7 @@ SSH 目标：chujiejie.1@10.199.197.219
 
 发布脚本会：
 
-1. 检查远端版本文件尚不存在，再执行完整 DMG 构建门禁。
+1. 检查远端版本文件尚不存在；`--candidate` 校验已有候选，无此参数则执行完整 DMG 构建门禁。
 2. 独立签名最终 `.app.tar.gz`，生成版本化的安装包、DMG 和 `latest.json`。
 3. 上传到托管目录旁的临时目录。
 4. 先移动版本化安装包和 DMG，最后替换 `latest.json`。

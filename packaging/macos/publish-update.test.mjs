@@ -4,8 +4,10 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 
-test('publishing signs after the build and refuses an existing immutable version', () => {
+for (const candidateMode of [false, true]) {
+test(`publishing ${candidateMode ? 'the sealed candidate without building' : 'after building'} refuses an existing immutable version`, () => {
   const root = mkdtempSync(join(tmpdir(), 'jarvis-publish-test-'));
   const put = (path, content, mode = 0o644) => {
     const target = join(root, path);
@@ -13,7 +15,7 @@ test('publishing signs after the build and refuses an existing immutable version
     writeFileSync(target, content, { mode });
   };
   try {
-    for (const name of ['publish-update.sh', 'build-dmg.sh', 'runtime-manifest.sh']) {
+    for (const name of ['publish-update.sh', 'build-dmg.sh', 'runtime-manifest.sh', 'release-candidate.mjs']) {
       put(`packaging/macos/${name}`, readFileSync(new URL(name, import.meta.url)), 0o755);
     }
     put('packaging/macos/fixture.test.mjs', '// No nested packaging tests.\n');
@@ -58,14 +60,32 @@ for(const file of args)fs.copyFileSync(file,path.join(dest,path.basename(file)))
       JARVIS_UPDATE_BASE_URL: `file://${remoteRoot}` };
     delete env.NODE_TEST_CONTEXT;
     const run = () => spawnSync('zsh', [join(root, 'packaging/macos/publish-update.sh'), 'test release'], { env, encoding: 'utf8', timeout: 30000 });
-    const first = run();
+    let publish = run;
+    if (candidateMode) {
+      const artifacts = {};
+      for (const [name, content] of [['Jarvis_0.1.2_aarch64.app.tar.gz', 'artifact'], ['Jarvis_0.1.2_aarch64.dmg', 'dmg']]) {
+        put(`candidate/${name}`, content);
+        artifacts[name] = { size: Buffer.byteLength(content), sha256: createHash('sha256').update(content).digest('hex') };
+      }
+      put('candidate/candidate.json', JSON.stringify({ schema: 1, version: '0.1.2', commit: 'a'.repeat(40), artifacts }));
+      // The development checkout can advance; publishing must use candidate identity.
+      put('desktop/src-tauri/tauri.conf.json', '{"version":"9.9.9"}');
+      put('packaging/macos/build-dmg.sh', '#!/bin/sh\necho unexpected-build >&2\nexit 90\n', 0o755);
+      publish = () => spawnSync('zsh', [join(root, 'packaging/macos/publish-update.sh'), '--candidate', join(root, 'candidate'), 'test release'], { env, encoding: 'utf8', timeout: 30000 });
+      put('candidate/Jarvis_0.1.2_aarch64.app.tar.gz', 'modified');
+      const rejected = publish();
+      assert.notEqual(rejected.status, 0);
+      assert.match(rejected.stderr, /candidate artifact changed/);
+      put('candidate/Jarvis_0.1.2_aarch64.app.tar.gz', 'artifact');
+    }
+    const first = publish();
     assert.equal(first.status, 0, first.stdout + first.stderr);
     const manifest = JSON.parse(readFileSync(join(remoteRoot, 'latest.json'), 'utf8'));
     assert.equal(manifest.version, '0.1.2');
     assert.equal(manifest.platforms['darwin-aarch64'].signature, 'signature');
     const artifact = join(remoteRoot, 'Jarvis_0.1.2_aarch64.app.tar.gz');
     assert.equal(readFileSync(artifact, 'utf8'), 'artifact');
-    const second = run();
+    const second = publish();
     assert.notEqual(second.status, 0);
     assert.match(second.stderr, /already exists/);
     assert.equal(readFileSync(artifact, 'utf8'), 'artifact');
@@ -73,3 +93,4 @@ for(const file of args)fs.copyFileSync(file,path.join(dest,path.basename(file)))
     rmSync(root, { recursive: true, force: true });
   }
 });
+}

@@ -13,6 +13,12 @@ private_key=${TAURI_SIGNING_PRIVATE_KEY_PATH:-"$HOME/.tauri/jarvis-updater.key"}
 remote=${JARVIS_UPDATE_REMOTE:-"chujiejie.1@10.199.197.219"}
 remote_root=${JARVIS_UPDATE_REMOTE_ROOT:-"/data00/home/chujiejie.1/jarvis-updates"}
 base_url=${JARVIS_UPDATE_BASE_URL:-"https://jarvisx.bytedance.net/jarvis-updates"}
+candidate_dir=""
+if [[ "${1:-}" == "--candidate" ]]; then
+  [[ $# -ge 2 ]] || { printf 'publish-update: --candidate requires a directory\n' >&2; exit 1; }
+  candidate_dir=${2:A}
+  shift 2
+fi
 notes=${1:-"Jarvis desktop update"}
 
 fail() {
@@ -27,25 +33,34 @@ command -v jq >/dev/null 2>&1 || fail "jq is required"
 command -v scp >/dev/null 2>&1 || fail "scp is required"
 command -v ssh >/dev/null 2>&1 || fail "ssh is required"
 
-version=$(jq -er '.version' "$config_path") || fail "read Tauri version"
-[[ "$version" == <->.<->.<->(|-[0-9A-Za-z.-]##) ]] ||
-  fail "version is not SemVer: $version"
-package_version=$(jq -er '.version' "$package_path") || fail "read desktop package version"
-cargo_version=$(awk -F ' *= *' '/^version *=/ { gsub(/"/, "", $2); print $2; exit }' "$cargo_path")
-[[ "$package_version" == "$version" ]] ||
-  fail "desktop/package.json version $package_version does not match $version"
-[[ "$cargo_version" == "$version" ]] ||
-  fail "Cargo.toml version $cargo_version does not match $version"
+if [[ -n "$candidate_dir" ]]; then
+  node "$script_dir/release-candidate.mjs" verify "$candidate_dir" >/dev/null
+  version=$(jq -er '.version' "$candidate_dir/candidate.json")
+else
+  version=$(jq -er '.version' "$config_path") || fail "read Tauri version"
+  [[ "$version" == <->.<->.<->(|-[0-9A-Za-z.-]##) ]] ||
+    fail "version is not SemVer: $version"
+  package_version=$(jq -er '.version' "$package_path") || fail "read desktop package version"
+  cargo_version=$(awk -F ' *= *' '/^version *=/ { gsub(/"/, "", $2); print $2; exit }' "$cargo_path")
+  [[ "$package_version" == "$version" ]] ||
+    fail "desktop/package.json version $package_version does not match $version"
+  [[ "$cargo_version" == "$version" ]] ||
+    fail "Cargo.toml version $cargo_version does not match $version"
+fi
 
 release_name="Jarvis_${version}_aarch64.app.tar.gz"
 dmg_name="Jarvis_${version}_aarch64.dmg"
 ssh "$remote" "test ! -e '$remote_root/$release_name' && test ! -e '$remote_root/$dmg_name'" ||
   fail "version $version already exists or remote preflight failed; publish a new version"
-"$script_dir/build-dmg.sh"
-
-artifact="$bundle_root/macos/Jarvis.app.tar.gz"
+if [[ -n "$candidate_dir" ]]; then
+  artifact="$candidate_dir/$release_name"
+  dmg="$candidate_dir/$dmg_name"
+else
+  "$script_dir/build-dmg.sh"
+  artifact="$bundle_root/macos/Jarvis.app.tar.gz"
+  dmg="$bundle_root/dmg/Jarvis_${version}_aarch64.dmg"
+fi
 signature_path="$artifact.sig"
-dmg="$bundle_root/dmg/Jarvis_${version}_aarch64.dmg"
 # Only the signer reads the key; npm/cargo build processes do not inherit it.
 env -u TAURI_SIGNING_PRIVATE_KEY "$repo_root/desktop/node_modules/.bin/tauri" signer sign \
   --private-key-path "$private_key" --password "${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:-}" "$artifact"
@@ -57,6 +72,10 @@ staging=$(mktemp -d "${TMPDIR:-/tmp}/jarvis-update.XXXXXX")
 trap 'rm -rf "$staging"' EXIT
 cp "$artifact" "$staging/$release_name"
 cp "$dmg" "$staging/$(basename "$dmg")"
+if [[ -n "$candidate_dir" ]]; then
+  cp "$candidate_dir/candidate.json" "$staging/candidate.json"
+  node "$script_dir/release-candidate.mjs" verify "$staging" >/dev/null
+fi
 jq -n \
   --arg version "$version" \
   --arg notes "$notes" \
