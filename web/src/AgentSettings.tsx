@@ -20,9 +20,9 @@ type StageSection = 'prompt' | 'rules' | 'approval' | 'preview'
 
 const initiativeKey = 'initiative_level'
 const initiativeLevels: { value: InitiativeLevel, label: string, description: string }[] = [
-  { value: 'quiet', label: '安静', description: '优先处理明确交办和确定需要介入的事，减少主动建议。' },
-  { value: 'normal', label: '普通', description: '按当前方式发现、处理和通知。' },
-  { value: 'active', label: '活跃', description: '更主动发现相关机会、提前准备，并提供可行动的建议。' },
+  { value: 'quiet', label: '安静', description: '优先处理明确交办和确定需要介入的事；未获授权的对外沟通先请示。' },
+  { value: 'normal', label: '普通', description: '主动处理相关风险与未闭环事项；明确无风险的沟通可按审批策略直接执行。' },
+  { value: 'active', label: '活跃', description: '扩大有依据的主动处理与准备范围；明确低风险的沟通可按审批策略直接执行。' },
 ]
 
 function isOtherPrompt(item: TextFile): boolean {
@@ -327,7 +327,7 @@ export default function AgentSettings() {
           <div className="agent-config-card-heading">
             <div>
               <Text strong>主动程度</Text>
-              <Text type="secondary">作用于后台主动发现、执行扩展和通知。明确交办与订阅继续执行；正在处理的工作从下一轮采用新设置。</Text>
+              <Text type="secondary">控制主动处理范围与审批尺度。三档都必须交付处理结果：群消息回原会话或话题，真人单聊在共同助手群回复，并始终 CC 你。正在处理的工作从下一轮采用新设置。</Text>
             </div>
           </div>
           <Radio.Group

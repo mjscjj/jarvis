@@ -1,11 +1,11 @@
 ---
 name: feishu-send-message
-description: 使用 lark-cli 通过 {{AGENT_NAME}} Bot 给个人或群聊发送飞书消息。适用于通知、提醒、回复、总结、图片和文件。
+description: 使用 lark-cli 通过 {{AGENT_NAME}} Bot 在原群或共同助手群发送回复并 CC principal；支持图片和文件。仅给 principal 本人的文字通知使用 notice-principal。
 ---
 
 # 飞书发消息
 
-本 Skill 负责原会话业务回复、给其他人的消息，以及图片和文件发送。给 principal 本人的主动通知和动作回执使用 `jarvis-tools notice-principal`，参数见该命令 `--help`，不在这里另写一套通知发送命令。消息发送和回复始终使用 {{AGENT_NAME}} Bot；联系人查询、群搜索和助手群创建使用 principal 的 user 身份。禁止把发送失败 fallback 成 user 身份、另一个目标或另一种会话。
+本 Skill 执行 M5 工作规则选定的送达路径：群请求回原会话或原话题，真人单聊在共同助手群回复；对他人的消息都真实 `@` principal。仅给 principal 本人的文字通知使用 `jarvis-tools notice-principal`，参数见该命令 `--help`。消息发送和回复始终使用 {{AGENT_NAME}} Bot；联系人查询、群搜索、Bot 入群和助手群创建使用 principal 的 user 身份。禁止把发送失败 fallback 成 user 身份、Bot 私聊他人、另一个目标或另一种会话。
 
 ## 0. 先判断审批，未获授权不要写
 
@@ -62,25 +62,13 @@ lark-cli contact +search-user \
 
 ### 给我（principal）的通知与原消息回复
 
-主动告知和动作回执使用 `jarvis-tools notice-principal`；它固定给 principal 发 Bot 卡片并返回凭据，M5 将返回的 effect 原样写入运行结果。原会话业务回复按准确消息锚点使用 `+messages-reply`。发给我本人的图片或文件仍按我的 open_id 用 Bot 发送，不建群。发送失败原样报错，不换身份或会话。
+只有需单独告知 principal 的结果使用 `jarvis-tools notice-principal`；它固定给 principal 发 Bot 卡片，不依赖原消息 ID，返回的 effect 原样写入运行结果。原群请求按准确消息锚点使用 `+messages-reply` 并真实 `@` principal，不用私人通知卡代替。发给 principal 本人的图片或文件仍按其 open_id 用 Bot 发送，不建群。发送失败原样报错，不换身份或会话。
 
 ### 给个人发消息
 
-按 M5 的审批判断和会话选择执行，不强制所有个人消息走助手群。不能用 principal 身份代发个人私聊，也不能让 Bot 回复它不在场的真人私聊。
+除 principal 本人外，一律在含 principal、对方和当前 Bot 的助手群沟通，不用 Bot 私聊对方。原来是对方与 principal 的真人单聊，也按这条路径回复；单独通知 principal 不能替代共同群里的 CC。
 
-**Bot 单聊**：使用 Bot 自身身份直接发给已核验的对方：
-
-```bash
-lark-cli im +messages-send \
-  --user-id "<target open_id>" \
-  --markdown '<消息内容>' \
-  --idempotency-key "<稳定幂等键>" \
-  --as bot
-```
-
-按第 5 节读回确认后，按 M5 rules 用 `notice-principal` 完成 CC。原消息和 CC 分别使用稳定幂等键、记录凭据与 effects；CC 失败只补 CC。发送失败原样交回 M5，不自动换身份或建群。
-
-**助手群**：确需助手群时，先用 principal 和对方的 open_id 搜索已有私有助手群；`+chat-search` 需要按返回的 page token 查完所有页：
+先用 principal 和对方的 open_id 搜索已有私有助手群；`+chat-search` 需要按返回的 page token 查完所有页：
 
 ```bash
 lark-cli im +chat-search \
@@ -130,19 +118,19 @@ lark-cli im +messages-send \
   --as bot
 ```
 
-### 群聊前置：确认 {{AGENT_NAME}} Bot 在这个群里
+### 群聊前置：确认 principal 和 {{AGENT_NAME}} Bot 在这个群里
 
-下面两种群聊发送都要求 Bot 已是群成员。先用 principal 的 user 身份读回 bot 成员：
+下面两种群聊发送都要求 principal 和 Bot 已是群成员。先用 principal 的 user 身份读回成员：
 
 ```bash
 lark-cli im +chat-members-list \
   --chat-id "<chat_id>" \
-  --member-types bot \
+  --member-types user --member-types bot \
   --page-all --page-limit 0 \
   --as user
 ```
 
-`bots` 不含第 1 步核验过的 {{AGENT_NAME}} `appId` 时，用 principal 的 user 身份把 Bot 拉进这个群：
+确认 `users` 含 principal；成员列表被截断或身份无法确认时，不把核验写成成功。principal 不在目标群内时交回 M5 解决会话条件，不改成给他人的私聊加私人 CC。`bots` 不含第 1 步核验过的 {{AGENT_NAME}} `appId` 时，用 principal 的 user 身份把 Bot 拉进这个群：
 
 ```bash
 lark-cli im chat.members create \
@@ -155,7 +143,7 @@ lark-cli im chat.members create \
 
 ### 在群聊里给某个人发消息
 
-由 M5 根据语义选择准确的原消息锚点，不使用“最新一条消息”替代判断。在相关消息下面创建话题，真实 `@` 对方。principal 在群内时同时真实 `@` principal，如下例；不在群内时不放无效 mention，按 M5 rules 另行 CC：
+普通群与话题群都按准确原消息锚点回复，不使用“最新一条消息”替代判断，不把原话题结论发成群主会话公告。在相关消息或原话题下同时真实 `@` 对方和 principal：
 
 ```bash
 lark-cli im +messages-reply \
@@ -168,7 +156,7 @@ lark-cli im +messages-reply \
 
 ### 给整个群发消息
 
-存在明确原消息锚点时仍使用 `+messages-reply --reply-in-thread`，不额外 `@` 无关成员。principal 在群内时真实 `@` principal，如下例；不在群内时按 M5 rules 另行 CC。只有没有锚点的主动群公告才直接发到 `chat_id`：
+存在明确原消息锚点时仍使用 `+messages-reply --reply-in-thread`，真实 `@` principal，不额外 `@` 无关成员。只有没有锚点的主动群公告才直接发到 `chat_id`：
 
 ```bash
 lark-cli im +messages-send \
@@ -202,7 +190,7 @@ lark-cli im +messages-mget \
   --as bot
 ```
 
-4. 读回必须确认消息真实存在，目标会话和内容与本次动作一致。
+4. 读回必须确认消息真实存在，目标会话、原消息或话题位置、内容和要求的真实 mention 与本次动作一致。正文已送达但缺少 CC 时，保留发送凭据，在同一会话补真实 `@`，不要重复发送正文；补齐前不能把结果交付写成完成。
 
 命令非零、无 ID、多 ID 或读回失败都视为“未确认发送”，不得申报成功 effect，也不得在 summary 里写“已通知”。错误原样交回 M5，由 M5 结合任务目标决定下一步。
 
@@ -223,4 +211,4 @@ effects 是 M5 根据已核验工具结果作出的展示申报，不是 runtime
 
 ## 其他消息类型
 
-根据内容把 `--markdown` 换成 `--text`、`--image`、`--file`、`--video` 或 `--audio`，审批、身份、幂等、读回和 effect 规则不变。不清楚参数时先运行对应命令的 `--help`。
+根据内容把 `--markdown` 换成 `--text`、`--image`、`--file`、`--video` 或 `--audio`，审批、身份、幂等、读回和 effect 规则不变。附件本身无法带 mention 时，在同一会话配一条简短说明并真实 `@` principal 和相关对象，两条消息分别查重和记录凭据。不清楚参数时先运行对应命令的 `--help`。

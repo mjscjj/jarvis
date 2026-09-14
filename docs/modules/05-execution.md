@@ -44,9 +44,9 @@ Task 可来自：
 
 没有独立的 apply 阶段：回答直接回到提问的那个 Session，它带着当时的全部调查继续，而不是照着一份冻结的稿子重放。
 
-三种 phase 都重新读取 `conf/prompts/initiative-level.md`（quiet / normal / active），通过与后台预览相同的 `prompttemplate.Render` 注入。三档执行扩展与通知尺度归 `conf/rules/m5.md`；审批尺度仍归原审批策略。正在运行的一轮保持已组装的选择，等待和人工回答恢复时带上新选择，保留原 Session 的授权与动作证据。切档不取消已有 Task 或撤回问题卡。
+三种 phase 都重新读取 `conf/prompts/initiative-level.md`（quiet / normal / active），通过与后台预览相同的 `prompttemplate.Render` 注入。三档处理范围归 `conf/rules/m5.md`，审批尺度归 `conf/prompts/m5-approval-policy.md`；结果回复、送达位置和 CC 是 M5 工作规则中的共同要求，不随档位改变。正在运行的一轮保持已组装的选择，等待和人工回答恢复时带上新选择，保留原 Session 的授权与动作证据。切档不取消已有 Task 或撤回问题卡。
 
-安静档把一般发现留在 Task，普通档保留当前主动增益与送达尺度，活跃档增加有依据的准备与建议。明确交付和真实对外动作回执三档仍履行；需要人工决定的必要动作正常提问，消息工具和 runtime 不按档位拦截。
+安静档减少可选工作的接手，普通档主动处理相关风险与未闭环事项，活跃档扩大有依据的准备和改进范围。尚未接手的线索筛选不逐条播报；已接手处理的业务消息和明确交办，即使只是查询或核验，也按共同规则交付结果。免审批沟通的范围可以随档位变化，已明确授权的事项和对应结果回复继续有效。消息工具和 runtime 不按档位拦截。
 
 ## 3. Outcome 与 Task 状态
 
@@ -101,6 +101,8 @@ ScheduledTask 四者一致；缺失或陈旧时明确失败，不创建新 Sessi
 - 代码分支、commit、push、MR 等交付结果写进 effects，不再有专用 Git 列或 Go 编排。
 
 普通飞书业务消息同样是 M5 显式选择并执行的工具动作：M5 先确定目标、会话位置、mention 和完整文案，按审批策略判断这一次具体发送要不要先问 principal，再读取 `feishu-send-message` Skill 调用 `lark-cli`。发送成功以唯一真实 `message_id` 和读回结果为准，由 M5 在 effects 中申报；runtime 不根据来源会话、outcome 或 execution output 字段自动发送、回复或更新普通消息。
+
+按 M5 工作规则，群消息的结果回复留在原会话或原话题，Bot 不在时先由 principal 身份拉入；真人单聊回复复用或创建只含 principal、对方和当前 Bot 的助手群，所有对他人的沟通都真实 `@` principal。`notice-principal` 只用于单独告知 principal 的结果，例如没有飞书来源会话的 MR review，不能替代原群回复或共同群里的 CC。M5 完成自查包含送达位置和凭据，送达失败时保留已有业务动作，只继续补齐交付，不重复 review 或重复发送；这由提示词约束，不新增消息专用状态或 Go 分流。
 
 `internal/taskfeedback` 在 execute 和 resume 开始时尝试给来源飞书消息添加 `OnIt`
 reaction，并把 `message_id/reaction_id` 写入本轮 effects。本轮离开 `executing` 后
