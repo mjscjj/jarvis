@@ -240,14 +240,22 @@ func (d *Directory) SearchPage(ctx context.Context, query string) ([]DirectoryPe
 	return p, false, err
 }
 
-// Bulk page avatars never trigger a directory search per historical owner.
-// Only identities already verified by a recent search can fetch a missing photo.
+// Avatar lookup resolves an uncached enterprise email once, then reuses the
+// 100-hour identity and 24-hour avatar caches across every OKR surface.
 func (d *Directory) userAvatar(ctx context.Context, email string) (DirectoryPerson, error) {
 	d.mu.Lock()
 	p, ok := d.userCache.People[email]
 	d.mu.Unlock()
 	if !ok || p.Ambiguous || time.Since(p.At) > directoryIdentityTTL {
-		return DirectoryPerson{Email: email}, nil
+		if _, err := d.searchUserCached(ctx, email); err != nil {
+			return DirectoryPerson{Email: email}, err
+		}
+		d.mu.Lock()
+		p, ok = d.userCache.People[email]
+		d.mu.Unlock()
+		if !ok || p.Ambiguous {
+			return DirectoryPerson{Email: email}, nil
+		}
 	}
 	if time.Since(p.AvatarAt) < directoryAvatarTTL {
 		return p.Person, nil

@@ -8,6 +8,7 @@ import { BusinessCategoryTabs } from './BusinessCategoryTabs'
 import { FeishuPeoplePicker, FeishuPeoplePickerInput } from './FeishuPeoplePicker'
 import { HierarchyNav } from './HierarchyNav'
 import { OwnerFilterPicker } from './OwnerFilterPicker'
+import { PeopleInline } from './PeopleInline'
 import { PersonAvatar } from './PersonAvatar'
 import { KrDefinitionDetails } from './Table'
 import { TagEditor } from './TagEditor'
@@ -96,7 +97,7 @@ function KrEditorRow({ compactPresentation = false, objectiveId, kr, tagSuggesti
     }
   }
 
-  const ownerControl = (readOnly ? <span className="flex flex-wrap justify-end gap-1">{krOwners(kr).map((owner) => <span key={`${owner.email}:${owner.name}`} title={owner.name} aria-label={owner.name} className={`inline-flex min-h-5 max-w-full items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-slate-500 ${compactPresentation ? '!min-h-4 !gap-1 !border-0 !bg-transparent !px-0.5 !py-0 text-[8px] leading-3' : 'text-[10px] leading-3.5'}`}>{compactPresentation && <PersonAvatar name={owner.name} email={owner.email} size="size-3 text-[7px]" />}<span className="min-w-0 break-words">{owner.name}</span></span>)}</span> : <FeishuPeoplePicker kr={kr} compact={!cardHierarchy} small={compactPresentation} />)
+  const ownerControl = (readOnly ? <PeopleInline people={krOwners(kr)} compact={compactPresentation} chips={!compactPresentation} empty="" /> : <FeishuPeoplePicker kr={kr} compact={!cardHierarchy} small={compactPresentation} />)
 
   return (
     <article id={commentTargetElementId(commentTarget)} onClick={compactPresentation ? undefined : commentSurface.onClick} className={`group/kr group/commentable grid grid-cols-[minmax(0,1fr)_auto] gap-2 transition-[background-color,box-shadow] ${cardHierarchy ? `overflow-hidden rounded-xl border border-slate-200 bg-white px-3.5 ${compactPresentation ? 'py-1.5' : 'py-2.5'} shadow-[0_2px_8px_rgba(31,35,40,0.035)]` : 'px-3.5 py-2'} ${!compactPresentation && commentSurface.enabled ? 'cursor-pointer hover:bg-indigo-50/70' : cardHierarchy ? '' : 'hover:bg-slate-50/70'} ${!compactPresentation && (commentSurface.selected || commentSurface.focused) ? 'bg-indigo-50/80 ring-2 ring-inset ring-indigo-500' : ''}`}>

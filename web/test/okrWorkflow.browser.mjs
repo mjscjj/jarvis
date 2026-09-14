@@ -23,7 +23,7 @@ await context.route('**/api/**', async route => {
   const request = route.request(), url = new URL(request.url()), path = url.pathname, method = request.method()
   requests.push({ method, path })
   const ok = data => route.fulfill({ json: { code: 0, data } })
-  if (path === '/api/biz-okr/people/avatars') return ok({ people: [] })
+  if (path === '/api/biz-okr/people/avatars') return ok({ people: url.searchParams.get('emails').split(',').filter(Boolean).map(email => ({ email, name: 'Regression Owner', avatar_url: 'https://example.test/avatar.png' })) })
   if (/^\/api\/(okr|biz-okr)\//.test(path) || path === '/api/people/search') {
     const backendPath = path === '/api/biz-okr/people/search' ? '/api/people/search' : path
     const response = await fetch(backend + backendPath + url.search, { method, headers: { 'content-type': request.headers()['content-type'] || 'application/json' }, body: method === 'GET' ? undefined : request.postDataBuffer() })
@@ -94,6 +94,7 @@ const exerciseOwnerFilter = async ownerName => {
   await page.getByRole('button', { name: '筛选负责人', exact: true }).click()
   const picker = page.getByRole('dialog', { name: '筛选负责人', exact: true })
   await picker.getByPlaceholder('输入姓名或邮箱搜索').fill(ownerName)
+  await picker.locator(`img[alt="${ownerName}"]`).first().waitFor()
   await picker.getByRole('button').filter({ hasText: ownerName }).click()
   await page.getByLabel(`移除${ownerName}筛选`, { exact: true }).click()
 }

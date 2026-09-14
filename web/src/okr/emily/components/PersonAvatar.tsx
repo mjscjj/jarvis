@@ -7,6 +7,7 @@ const listeners = new Set<() => void>()
 let version = 0
 let pending: string[] = []
 let timer: number | undefined
+const AVATAR_BATCH_SIZE = 8
 function subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener) } }
 export function rememberPersonAvatars(people: Array<{email: string; avatarUrl: string}>) {
  for (const p of people) {if (p.avatarUrl) avatars.set(p.email,p.avatarUrl)}
@@ -14,10 +15,11 @@ export function rememberPersonAvatars(people: Array<{email: string; avatarUrl: s
 }
 async function flush() {
  timer = undefined
- const emails = pending; pending = []
+ const emails = pending.splice(0, AVATAR_BATCH_SIZE)
  try {
   rememberPersonAvatars(await getPeopleAvatars(emails))
  } catch (error) { console.warn('飞书头像读取失败', error); for (const email of emails) requested.delete(email) }
+ if (pending.length > 0 && timer === undefined) timer = window.setTimeout(() => void flush(), 0)
 }
 export function usePersonAvatar(_name: string, email?: string, ownUrl?: string) {
  useSyncExternalStore(subscribe, () => version)

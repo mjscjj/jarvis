@@ -5,6 +5,7 @@ import { listPages, listRelations, listWorldProgress } from '../api'
 import type { WorldProgress, WorldProgressSignal } from '../types'
 import { usePageContext } from '../pageContext'
 import { getGenericOKRBoard, getGenericOKRProgressBoard, listWeeklyReportWeeks } from './emily/api'
+import { PeopleInline } from './emily/components/PeopleInline'
 import type { BoardData } from './emily/api'
 import type { Entry, Kr, Objective, Point, Status } from './emily/types'
 import { relationsForOKRBoard, type OKRRelationRow } from './relationView'
@@ -153,7 +154,7 @@ function StructureView({ board }: { board: BoardData }) {
             {objective.krs.map((kr) => (
               <Card key={kr.id} size="small" title={<Flex gap={8} align="center"><Tag>KR</Tag><span>{kr.title}</span></Flex>}>
                 <Flex vertical gap={8}>
-                  <Text type="secondary">负责人：{kr.owners?.map((owner) => owner.name).join('、') || '未设置'}</Text>
+                  <Text type="secondary"><span className="inline-flex items-center gap-1"><span>负责人：</span><PeopleInline people={kr.owners ?? []} empty="未设置" /></span></Text>
                   {kr.metrics.length > 0 && <Text>指标：{kr.metrics.map((metric) => metric.text).filter(Boolean).join('；') || '未填写'}</Text>}
                   <Flex vertical gap={4}>
                     {kr.points.map((point) => <Text key={point.id}><Tag>子 KR</Tag>{point.title}</Text>)}

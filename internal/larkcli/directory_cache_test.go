@@ -59,6 +59,32 @@ esac`
 	}
 }
 
+func TestUserDirectoryAvatarWarmsColdIdentityOnce(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "calls")
+	script := `echo "$*" >> '` + log + `'
+case "$*" in
+ *"contact +search-user"*) printf '%s' '{"ok":true,"data":{"users":[{"open_id":"ou_cold","localized_name":"冷启动","enterprise_email":"cold@example.test"}]}}' ;;
+ *"/search/v1/user"*) printf '%s' '{"ok":true,"data":{"users":[{"open_id":"ou_cold","name":"冷启动","avatar":{"avatar_240":"https://example.test/cold"}}]}}' ;;
+ *) exit 9 ;;
+esac`
+	client, _ := New(testOptions(writeScript(t, script), fixtureCommandTimeout))
+	d := &Directory{client: client, profile: "fixed", appID: "cli_fixed", identity: "user", cacheFile: filepath.Join(t.TempDir(), "cache")}
+	d.initUserCache("ou_self")
+
+	first, err := d.Avatar(t.Context(), "cold@example.test")
+	if err != nil || first.AvatarURL == "" {
+		t.Fatalf("first=%+v err=%v", first, err)
+	}
+	second, err := d.Avatar(t.Context(), "cold@example.test")
+	if err != nil || second.AvatarURL != first.AvatarURL {
+		t.Fatalf("second=%+v err=%v", second, err)
+	}
+	raw, _ := os.ReadFile(log)
+	if strings.Count(string(raw), "contact +search-user") != 1 || strings.Count(string(raw), "/search/v1/user") != 1 {
+		t.Fatalf("cold avatar calls were not cached: %s", raw)
+	}
+}
+
 func TestUserDirectoryCacheTTLAndNormalizedKeys(t *testing.T) {
 	now := time.Now()
 	d := &Directory{userCache: directoryCache{

@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { APIError, confirmMeegoProgress, getMeegoBatchPreview } from '../api'
 import { useBoard } from '../board'
+import { krOwners } from '../people'
 import type { Kr, MeegoBatchPreview as MeegoBatchPreviewData, MeegoBatchPreviewItem, Status } from '../types'
+import { PersonAvatar } from './PersonAvatar'
 
 type PreviewState =
   | { kind: 'loading'; requestKey: string }
@@ -46,7 +48,8 @@ const STATUS_OPTIONS: Array<{ value: Status; label: string }> = [
 ]
 
 export function MeegoBatchPreview({ quarter, week, onClose, onOpenPoint, readOnly = false }: { quarter: string; week: string; onClose: () => void; onOpenPoint: (pointId: string) => void; readOnly?: boolean }) {
-  const { applySavedKr } = useBoard()
+  const { applySavedKr, objectives } = useBoard()
+  const ownersByKR = useMemo(() => new Map(objectives.flatMap((objective) => objective.krs.map((kr) => [kr.id, krOwners(kr)[0]] as const))), [objectives])
   const [reloadKey, setReloadKey] = useState(0)
   const requestKey = `${quarter}:${week}:${reloadKey}`
   const [state, setState] = useState<PreviewState>({ kind: 'loading', requestKey })
@@ -152,7 +155,10 @@ export function MeegoBatchPreview({ quarter, week, onClose, onOpenPoint, readOnl
                       <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${tone.className}`}>{tone.label}</span>
                       <div className="min-w-0 flex-1">
                         <div className="text-xs font-medium text-slate-700">{item.pointTitle}</div>
-                        <div className="mt-0.5 truncate text-[10px] text-slate-400">{item.ownerName || '未分配'} · {item.krTitle}</div>
+                        <div className="mt-0.5 flex min-w-0 items-center gap-1 text-[10px] text-slate-400">
+                          {item.ownerName && <PersonAvatar name={item.ownerName} email={ownersByKR.get(item.krId)?.email} size="size-3 text-[7px]" />}
+                          <span className="truncate">{item.ownerName || '未分配'} · {item.krTitle}</span>
+                        </div>
                         <div className={`mt-0.5 text-[10px] ${sync.className}`} title={item.sync?.lastError}>{sync.text}</div>
                       </div>
 							{!readOnly && item.preview?.needsReview && <button type="button" onClick={() => beginConfirm(item)} className="rounded-md border border-blue-200 bg-white px-2 py-1 text-[10px] text-blue-600 hover:bg-blue-50">确认进展</button>}

@@ -5,6 +5,7 @@ import { searchOKRPeople } from '../api'
 import { insertCommentMention, mentionQueryAtCaret, mentionsPresentInContent } from '../mentions'
 import { ownerOptions } from '../people'
 import type { CommentMention, Objective, PersonSearchItem } from '../types'
+import { PersonAvatar } from './PersonAvatar'
 import { PersonSearchResults } from './PersonSearchResults'
 
 export interface CommentDraft {
@@ -127,7 +128,7 @@ export function CommentMentionInput({ value, objectives, placeholder, rows, auto
       )}
       {value.mentions.length > 0 && (
         <div className="mt-1 flex flex-wrap gap-1">
-          {value.mentions.map((mention) => <span key={mention.email} className="rounded-full bg-indigo-50 px-1.5 py-0.5 text-[9px] font-medium text-indigo-600">@{mention.name}</span>)}
+          {value.mentions.map((mention) => <span key={mention.email} className="inline-flex items-center gap-1 rounded-full bg-indigo-50 py-0.5 pr-1.5 pl-1 text-[9px] font-medium text-indigo-600"><PersonAvatar name={mention.name} email={mention.email} size="size-3 text-[7px]" tone="bg-indigo-400" />@{mention.name}</span>)}
         </div>
       )}
       {selectionError && <div className="mt-1 text-[10px] text-red-600">{selectionError}</div>}
@@ -156,7 +157,8 @@ export function CommentContent({ content, mentions }: { content: string; mention
       break
     }
     if (nextIndex > cursor) parts.push(content.slice(cursor, nextIndex))
-    parts.push(<span key={`${nextIndex}:${nextToken}`} className="font-medium text-indigo-600">{nextToken}</span>)
+    const mention = mentions.find((item) => `@${item.name.trim()}` === nextToken)
+    parts.push(<span key={`${nextIndex}:${nextToken}`} className="inline-flex items-center gap-0.5 align-middle font-medium text-indigo-600"><PersonAvatar name={mention?.name ?? nextToken.slice(1)} email={mention?.email} size="size-3 text-[7px]" tone="bg-indigo-400" />{nextToken}</span>)
     cursor = nextIndex + nextToken.length
   }
   return parts

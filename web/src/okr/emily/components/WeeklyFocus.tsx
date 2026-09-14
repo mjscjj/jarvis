@@ -5,9 +5,11 @@ import { useBoard, uid } from '../board'
 import { commentTargetElementId, scrollToCommentSource, useCommentInteraction } from '../commenting'
 import { commentTargetKey } from '../comments'
 import { canEditFollowUpStatus, FOLLOW_UP_STATUS_CLASS, FOLLOW_UP_STATUS_OPTIONS, isClosedFollowUp, sortFollowUpsByAssignDate } from '../followUps'
-import { ownerOptions, splitOwnerNames } from '../people'
+import { krOwners, ownerOptions } from '../people'
 import type { CommentTarget, FollowUpItem, FollowUpStatus, KrOwner, PageComment, Point } from '../types'
 import { FeishuPeoplePickerInput } from './FeishuPeoplePicker'
+import { PeopleInline } from './PeopleInline'
+import { PersonAvatar } from './PersonAvatar'
 
 function krNeedsUpdate(points: Point[]) {
   return points.length === 0 || points.some((point) => !point.entries.some((entry) => entry.text.trim().length > 0))
@@ -52,16 +54,20 @@ export function WeeklyFocus({ comments, onOpenComment, onCommentOrderChange, rea
   }, [commentInteraction.focused, items])
 
   const incomplete = useMemo(() => {
-    const missing = new Map<string, number>()
+    const missing = new Map<string, { person: KrOwner; count: number }>()
     for (const objective of objectives) {
       for (const kr of objective.krs) {
         if (!krNeedsUpdate(kr.points)) continue
-        const owners = splitOwnerNames(kr.ownerName)
-        for (const owner of owners.length > 0 ? owners : ['未分配']) missing.set(owner, (missing.get(owner) ?? 0) + 1)
+        const owners = krOwners(kr)
+        for (const person of owners.length > 0 ? owners : [{ name: '未分配', email: '' }]) {
+          const key = ownerKey(person)
+          const current = missing.get(key)
+          missing.set(key, { person, count: (current?.count ?? 0) + 1 })
+        }
       }
     }
     return [...missing]
-      .map(([name, count]) => ({ name, count }))
+      .map(([, item]) => ({ ...item.person, count: item.count }))
       .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name, 'zh-Hans-CN'))
   }, [objectives])
   const legacyTodos = useMemo(() => comments.filter((comment) => comment.todo && !comment.resolved), [comments])
@@ -172,7 +178,7 @@ export function WeeklyFocus({ comments, onOpenComment, onCommentOrderChange, rea
       {focusOpen && <div id="weekly-focus-content" className="space-y-2.5">
         <div className="min-w-0 rounded-lg border border-slate-200 bg-white/85 p-2.5">
           <h3 className="mb-2 flex items-center justify-between text-[12px] font-semibold text-slate-700"><span>未完成 OKR</span><b className="text-[10px] font-medium text-slate-400">{incomplete.length} 人</b></h3>
-          {incomplete.length > 0 ? <div className="flex flex-wrap gap-1.5">{incomplete.map((item) => <span key={item.name} title={`${item.count} 条 KR 尚未完整填写本周进展`} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 py-0.5 pr-2 pl-1 text-[10px] text-slate-600"><span className="flex size-4 items-center justify-center rounded-full bg-slate-200 text-[8px] font-semibold">{item.name.slice(0, 1)}</span>{item.name}{item.count > 1 && <b className="text-blue-600">{item.count}</b>}</span>)}</div> : <div className="text-[11px] text-slate-400">本周具体 KR 均已填写</div>}
+          {incomplete.length > 0 ? <div className="flex flex-wrap gap-1.5">{incomplete.map((item) => <span key={item.email || item.name} title={`${item.count} 条 KR 尚未完整填写本周进展`} className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 py-0.5 pr-2 pl-1 text-[10px] text-slate-600">{item.email ? <PersonAvatar name={item.name} email={item.email} size="size-4 text-[8px]" /> : <span className="flex size-4 items-center justify-center rounded-full bg-slate-200 text-[8px] font-semibold">{item.name.slice(0, 1)}</span>}{item.name}{item.count > 1 && <b className="text-blue-600">{item.count}</b>}</span>)}</div> : <div className="text-[11px] text-slate-400">本周具体 KR 均已填写</div>}
         </div>
         <div className="min-w-0 rounded-lg border border-slate-200 bg-white/85 p-2.5">
           <h3 className={`flex items-center justify-between gap-2 text-[12px] font-semibold text-slate-700 ${followUpsOpen ? 'mb-2' : ''}`}>
@@ -206,7 +212,7 @@ export function WeeklyFocus({ comments, onOpenComment, onCommentOrderChange, rea
                   const commentFocused = commentInteraction.focused && commentTargetKey(commentInteraction.focused) === commentKey
                   return <tr id={commentTargetElementId(commentTarget)} key={item.id} className={`${isClosedFollowUp(item.status) ? 'bg-slate-50/70 text-slate-400' : 'bg-white text-slate-700'} ${commentFocused ? 'relative z-[1] ring-2 ring-inset ring-indigo-500' : ''} align-top`}>
                     <td className="border-r border-b border-slate-100 p-1.5">{readOnly ? <span className="whitespace-pre-wrap font-medium">{item.topic}</span> : <textarea aria-label={`Topic ${item.topic}`} value={item.topic} onChange={(event) => patchLocal(item.id, { topic: event.target.value })} onBlur={(event) => void save(item, { topic: event.target.value.trim() })} className="min-h-16 w-full resize-y rounded border border-transparent bg-transparent p-1 font-medium outline-none hover:border-slate-200 focus:border-blue-300"/>}</td>
-                    <td className="border-r border-b border-slate-100 p-2">{readOnly ? <span className="flex flex-wrap gap-1">{item.owners.map((owner) => <span key={ownerKey(owner)} className="rounded-full border border-slate-200 bg-white px-2 py-0.5">{owner.name}</span>)}</span> : <FeishuPeoplePickerInput owners={item.owners} options={peopleOptions} onChange={(owners) => void save(item, { owners })}/>}</td>
+                    <td className="border-r border-b border-slate-100 p-2">{readOnly ? <PeopleInline people={item.owners} chips empty="未填写" /> : <FeishuPeoplePickerInput owners={item.owners} options={peopleOptions} onChange={(owners) => void save(item, { owners })}/>}</td>
                     <td className="border-r border-b border-slate-100 p-1.5"><select aria-label={`Status ${item.topic}`} value={item.status} disabled={!canEditFollowUpStatus(readOnly, statusEditable) || saving} onChange={(event) => void save(item, { status: event.target.value as FollowUpStatus })} className={`h-8 w-full rounded-md border px-2 text-[10px] font-medium outline-none transition-colors disabled:opacity-70 ${FOLLOW_UP_STATUS_CLASS[item.status]}`}>{FOLLOW_UP_STATUS_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></td>
                     <td className="border-r border-b border-slate-100 p-1.5">{readOnly ? item.assignDate : <input aria-label={`Assign Date ${item.topic}`} type="date" value={item.assignDate} disabled={saving} onChange={(event) => void save(item, { assignDate: event.target.value })} className="h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-[10px] outline-none"/>}</td>
                     <td className="border-r border-b border-slate-100 p-1.5">{readOnly ? <MarkdownReport content={item.update || '—'} className="text-[11px]"/> : <textarea aria-label={`Update ${item.topic}`} value={item.update} onChange={(event) => patchLocal(item.id, { update: event.target.value })} onBlur={(event) => void save(item, { update: event.target.value.trim() })} className="min-h-16 w-full resize-y rounded border border-transparent bg-transparent p-1 outline-none hover:border-slate-200 focus:border-blue-300"/>}</td>

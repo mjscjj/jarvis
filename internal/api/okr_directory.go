@@ -7,6 +7,7 @@ import (
 	"github.com/cloudwego/hertz/pkg/common/hlog"
 	"jarvis/internal/larkcli"
 	"strings"
+	"sync"
 )
 
 func SearchOKRDirectory(directory *larkcli.Directory) app.HandlerFunc {
@@ -31,17 +32,35 @@ func GetOKRDirectoryAvatars(directory *larkcli.Directory) app.HandlerFunc {
 			writeAPIError(c, 503, 50371, fmt.Errorf("OKR 人员目录未配置"))
 			return
 		}
-		people := []larkcli.DirectoryPerson{}
+		emails := []string{}
+		seen := map[string]bool{}
 		for _, email := range strings.Split(c.Query("emails"), ",") {
-			if strings.TrimSpace(email) == "" {
+			email = strings.TrimSpace(email)
+			if email == "" || seen[email] {
 				continue
 			}
-			person, err := directory.Avatar(ctx, email)
-			if err != nil {
-				continue
-			}
-			people = append(people, person)
+			seen[email] = true
+			emails = append(emails, email)
 		}
-		c.JSON(200, map[string]any{"code": 0, "data": map[string]any{"people": people}})
+		people := make([]larkcli.DirectoryPerson, len(emails))
+		var wait sync.WaitGroup
+		for index, email := range emails {
+			wait.Add(1)
+			go func() {
+				defer wait.Done()
+				person, err := directory.Avatar(ctx, email)
+				if err == nil {
+					people[index] = person
+				}
+			}()
+		}
+		wait.Wait()
+		resolved := people[:0]
+		for _, person := range people {
+			if person.Email != "" {
+				resolved = append(resolved, person)
+			}
+		}
+		c.JSON(200, map[string]any{"code": 0, "data": map[string]any{"people": resolved}})
 	}
 }
