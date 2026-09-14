@@ -73,5 +73,5 @@ func OKRChatAllowed(method, resource string) bool {
 }
 
 func OKRChatBlock() string {
-	return "## OKR 工具入口\n使用 /opt/jarvis/scripts/okr-module-tools、biz-okr-tools、okr-agent-tools；JARVIS_API_BASE 已设置。可自由运行挂载的脚本和 JavaScript，但数据入口只开放以下 method/path（其余返回 403）。业务 Prompt 可通过 okr-agent-tools prompt 读取固定 OKR key。\n\n" + strings.Join(OKRChatRoutes(), "\n")
+	return "## 前端开发\n/opt/jarvis/web 是当前站点完整 web/ 目录的可写挂载，包含源码、node_modules 和线上 dist；所有 OKR 对话共同修改同一目录，不是副本。可新增页面、Tab 和组件。检查：npm --prefix /opt/jarvis/web run typecheck；构建：npm --prefix /opt/jarvis/web run build。构建直接更新线上静态文件，无需重启后端。沿用已有依赖；当前网络不开放 npm 下载。新增 OKR Tab 的入口是 src/okr/navigation.ts、src/okr/OKRModule.tsx，页面组件在 src/okr/。后端源码、配置和 Git 元数据未挂载，不能修改后端或执行 Git 提交。\n\n## OKR 工具入口\n使用 /opt/jarvis/scripts/okr-module-tools、biz-okr-tools、okr-agent-tools；JARVIS_API_BASE 已设置。可自由运行挂载的脚本和 JavaScript，但数据入口只开放以下 method/path（其余返回 403）。业务 Prompt 可通过 okr-agent-tools prompt 读取固定 OKR key。\n\n" + strings.Join(OKRChatRoutes(), "\n")
 }

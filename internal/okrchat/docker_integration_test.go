@@ -29,6 +29,12 @@ func TestDockerNetworkAndFilesystem(t *testing.T) {
 	}
 	repo, _ := filepath.Abs("../..")
 	root := t.TempDir()
+	probe, err := os.CreateTemp(filepath.Join(repo, "web"), ".okr-mount-test-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	probe.Close()
+	t.Cleanup(func() { _ = os.Remove(probe.Name()) })
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte("OKR_ONLY")) }))
 	defer upstream.Close()
 	handler, err := NewAccessHandler(upstream.URL, []string{"api.openai.com:443"})
@@ -63,7 +69,7 @@ func TestDockerNetworkAndFilesystem(t *testing.T) {
 			break
 		}
 	}
-	args = append(args[:i], "--entrypoint", "bash", r.config.Image, "-c", `
+	args = append(args[:i], "--env", "OKR_TEST_FRONTEND_FILE=/opt/jarvis/web/"+filepath.Base(probe.Name()), "--entrypoint", "bash", r.config.Image, "-c", `
 set -euo pipefail
 socat TCP-LISTEN:18080,bind=127.0.0.1,reuseaddr,fork UNIX-CONNECT:/run/okr-access.sock &
 for i in $(seq 1 30); do if curl -fsS http://127.0.0.1:18080/api/okr/board >/tmp/board 2>/dev/null; then break; fi; sleep .1; done
@@ -76,6 +82,11 @@ test ! -e /opt/jarvis/data
 test ! -e /native/config.toml
 test -r /opt/jarvis/scripts/jarvis-tools
 test -d /opt/jarvis/.agents/skills
+test -r /opt/jarvis/web/package.json
+test -d /opt/jarvis/web/src
+test -d /opt/jarvis/web/node_modules
+test -d /opt/jarvis/web/dist
+printf 'FRONTEND_SHARED' > "$OKR_TEST_FRONTEND_FILE"
 if touch /opt/jarvis/scripts/okr-isolation-test 2>/dev/null; then exit 32; fi
 node -e 'require("http").get("http://127.0.0.1:18080/api/messages",r=>process.exit(r.statusCode===403?0:33)).on("error",()=>process.exit(34))'
 printf 'DOCKER_BOUNDARY_OK\n'
@@ -88,6 +99,9 @@ printf 'DOCKER_BOUNDARY_OK\n'
 	}
 	if !strings.Contains(string(out), "DOCKER_BOUNDARY_OK") {
 		t.Fatalf("missing result: %s", out)
+	}
+	if content, err := os.ReadFile(probe.Name()); err != nil || string(content) != "FRONTEND_SHARED" {
+		t.Fatalf("frontend write did not reach host: %q %v", content, err)
 	}
 }
 

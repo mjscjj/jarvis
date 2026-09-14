@@ -36,7 +36,9 @@ Biz OKR 页面底部对话按用户身份选择：既有白名单用户保留普
 
 “正在验证字节身份”长时间不结束时，先按 [网页登录授权域名与超时排查](../summery/sso-web-login.md#当前-cli-授权域名与超时排查2026-09-14) 核对实际 API 地址。2026-09-14 已实测 CN 上游握手频繁超时、i18n BD 地址创建授权约 0.8 秒；具体数据、`auth.login_api_base_url` 部署配置与验证范围统一记录在该文档，不把延长等待当作域名问题的修复。
 
-`internal/okrchat/` 拥有容器执行、共享 OKR 聊天库装配和一份专用 Unix socket 出口；`internal/chat/` 复用会话、附件及流式协议。每轮 `docker run --network none`，只挂载共享 OKR 附件和当前会话的 native/work 状态、项目完整 scripts/Skills（只读）、现有模型登录文件（只读）。不挂主库、普通 Chat、完整用户目录、宿主 MCP 配置或 Docker socket。脚本可以自由执行，但不能直接联网。
+`internal/okrchat/` 拥有容器执行、共享 OKR 聊天库装配和一份专用 Unix socket 出口；`internal/chat/` 复用会话、附件及流式协议。每轮 `docker run --network none`，挂载共享 OKR 附件和当前会话的 native/work 状态、项目完整 scripts/Skills（只读）、现有模型登录文件（只读），以及当前完整 `web/` → `/opt/jarvis/web`（可写）。不挂主库、普通 Chat、完整用户目录、宿主 MCP 配置或 Docker socket。脚本可以自由执行，但不能直接联网。
+
+按用户明确要求，前端不是副本，也不隔离构建输出：所有 OKR 对话直接修改当前 `web/` 的源码、依赖及 `dist/`。容器复用部署脚本在当前 Linux 宿主安装的 `web/node_modules`，运行 `npm --prefix /opt/jarvis/web run typecheck` 和 `npm --prefix /opt/jarvis/web run build`；构建直接更新线上静态文件，无需重启后端，不另设预览服务或发布审批。未开放 npm 网络下载、后端源码或 Git 元数据；代码提交仍由宿主开发流程完成。此授权包括修改主站前端行为，原有隔离仅继续限制容器直接访问宿主数据及 API，不能把可修改的浏览器代码当作额外安全边界。
 
 `internal/toolcatalog/okr_chat.go` 是受限 method/path 和工具说明的共同真源，默认拒绝未列出的请求。出口只将这些 OKR CRUD 请求转给固定主服务地址；模型通过精确域名 `:443` CONNECT 隧道维持原登录和 TLS，拒绝私网/回环目标。宿主 Agent 评审、Task、Todo、消息、普通会话、发通知、身份令牌及通用 HTTP 转发不开放。已授权用户自己上传或写进 OKR 的消息摘录仍是可读材料，不做语义脱敏。
 

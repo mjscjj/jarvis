@@ -30,8 +30,8 @@ type Runtime struct {
 	access                           *http.Server
 }
 
-// Open keeps the conversation DB outside all mounts. Only this product's
-// attachments, per-session native state, scripts, and Skills enter Docker.
+// Open keeps the conversation DB outside all mounts. The live frontend is
+// writable; scripts and Skills are read-only, alongside OKR attachments/state.
 func Open(ctx context.Context, cfg moduleconfig.ChatConfig, root, repo, upstream, name string, prompts textstore.Reader) (*chat.Service, func(), error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, nil, err
@@ -176,6 +176,8 @@ func (r *Runtime) args(req chat.Request, name, native, workspace string) []strin
 	mount(r.auth, "/credentials/auth.json", true)
 	mount(filepath.Join(r.repo, "scripts"), "/opt/jarvis/scripts", true)
 	mount(filepath.Join(r.repo, ".agents", "skills"), "/opt/jarvis/.agents/skills", true)
+	// The user explicitly allows editing and building the live frontend.
+	mount(filepath.Join(r.repo, "web"), "/opt/jarvis/web", false)
 	mount(filepath.Join(r.root, "files"), "/attachments", true)
 	mount(native, "/native", false)
 	mount(workspace, "/workspace", false)

@@ -33,12 +33,12 @@ func TestDeleteSessionRemovesOnlyItsNativeState(t *testing.T) {
 func TestDockerBoundaryAndResume(t *testing.T) {
 	r := &Runtime{root: "/state", repo: "/repo", socket: "/socket/access.sock", auth: "/login/auth.json", config: moduleconfig.ChatConfig{Image: "okr:test", Model: "test-model", ReasoningEffort: "medium"}}
 	args := strings.Join(r.args(chat.Request{ThreadID: "native-thread", ImagePaths: []string{"/attachments/a.png"}}, "test-container", "/state/sessions/cs_a/native", "/state/sessions/cs_a/work"), " ")
-	for _, required := range []string{"--network none", "--read-only", "--cap-drop ALL", "no-new-privileges", "src=/repo/scripts,dst=/opt/jarvis/scripts,readonly", "src=/repo/.agents/skills,dst=/opt/jarvis/.agents/skills,readonly", "src=/socket/access.sock", "exec resume native-thread", "--image /attachments/a.png"} {
+	for _, required := range []string{"--network none", "--read-only", "--cap-drop ALL", "no-new-privileges", "src=/repo/scripts,dst=/opt/jarvis/scripts,readonly", "src=/repo/.agents/skills,dst=/opt/jarvis/.agents/skills,readonly", "src=/repo/web,dst=/opt/jarvis/web", "src=/socket/access.sock", "exec resume native-thread", "--image /attachments/a.png"} {
 		if !strings.Contains(args, required) {
 			t.Errorf("missing %s: %s", required, args)
 		}
 	}
-	for _, denied := range []string{"docker.sock", "--network host", "src=/repo,dst=", "src=/state,dst=", "chat.db", "--privileged", "--env-file"} {
+	for _, denied := range []string{"docker.sock", "--network host", "src=/repo,dst=", "src=/state,dst=", "src=/repo/web,dst=/opt/jarvis/web,readonly", "chat.db", "--privileged", "--env-file"} {
 		if strings.Contains(args, denied) {
 			t.Errorf("unsafe mount/flag %s", denied)
 		}
