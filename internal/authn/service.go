@@ -209,19 +209,41 @@ func (s *Service) Complete(ctx context.Context, flowID string) (LoginResult, err
 
 	raw, err := s.run(ctx, pendingFlow.profile, "auth", "login", "--complete", pendingFlow.token)
 	if err != nil {
-		if hasErrorCode(raw, "AUTHORIZATION_PENDING", "SLOW_DOWN") {
+		if errors.Is(err, context.DeadlineExceeded) || hasErrorCode(raw, "AUTHORIZATION_PENDING", "SLOW_DOWN", "BYTECLOUD_AUTH_LOGIN_PENDING", "BYTECLOUD_AUTH_LOGIN_TIMEOUT") {
 			return LoginResult{}, ErrPending
 		}
 		s.discardFlow(ctx, flowID, pendingFlow.profile)
 		return LoginResult{}, commandError("complete ByteDance SSO", raw, err)
 	}
-	user, authenticated, err := s.probe(ctx, pendingFlow.profile)
-	if err != nil {
-		s.discardFlow(ctx, flowID, pendingFlow.profile)
-		return LoginResult{}, err
+	// A successful CLI invocation can still carry data.status=pending. Only
+	// the completion result owns this flow's verified identity; auth status
+	// probes unrelated credential systems and can block while awaiting approval.
+	var result struct {
+		Data struct {
+			Status     string `json:"status"`
+			AuthStatus struct {
+				Authenticated bool `json:"authenticated"`
+				Identity      User `json:"identity"`
+			} `json:"authStatus"`
+		} `json:"data"`
 	}
-	if !authenticated {
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return LoginResult{}, fmt.Errorf("complete ByteDance SSO: decode response: %w", err)
+	}
+	switch result.Data.Status {
+	case "pending":
 		return LoginResult{}, ErrPending
+	case "success", "already_authenticated", "not_required":
+		// Identity is still required below, even if this profile is already authenticated.
+	default:
+		s.discardFlow(ctx, flowID, pendingFlow.profile)
+		return LoginResult{}, fmt.Errorf("complete ByteDance SSO: login status %q; please start a new login", result.Data.Status)
+	}
+	user := result.Data.AuthStatus.Identity
+	user.Username = strings.TrimSpace(user.Username)
+	user.Email = strings.TrimSpace(user.Email)
+	if !result.Data.AuthStatus.Authenticated || user.Username == "" || user.Email == "" {
+		return LoginResult{}, fmt.Errorf("complete ByteDance SSO: verified identity is incomplete")
 	}
 	// Jarvis only needs to learn who this is. Dropping the throwaway profile
 	// keeps the visitor's corporate credentials off this host.
@@ -307,38 +329,14 @@ func (s *Service) startSession(user User) (LoginResult, error) {
 	}, nil
 }
 
-func (s *Service) probe(ctx context.Context, profile string) (User, bool, error) {
-	raw, err := s.run(ctx, profile, "auth", "status")
-	if err != nil {
-		return User{}, false, commandError("read ByteDance SSO status", raw, err)
-	}
-	var status struct {
-		Data struct {
-			Authenticated bool `json:"authenticated"`
-			ByteCloudAuth struct {
-				Identity User `json:"identity"`
-			} `json:"bytecloud_auth"`
-		} `json:"data"`
-	}
-	if err := json.Unmarshal(raw, &status); err != nil {
-		return User{}, false, fmt.Errorf("read ByteDance SSO status: decode response: %w", err)
-	}
-	if !status.Data.Authenticated {
-		return User{}, false, nil
-	}
-	user := status.Data.ByteCloudAuth.Identity
-	user.Username = strings.TrimSpace(user.Username)
-	user.Email = strings.TrimSpace(user.Email)
-	if user.Username == "" || user.Email == "" {
-		return User{}, false, fmt.Errorf("read ByteDance SSO status: authenticated identity is incomplete")
-	}
-	return user, true, nil
-}
-
 func (s *Service) run(ctx context.Context, profile string, args ...string) ([]byte, error) {
 	runCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	return s.runner.Run(runCtx, s.bin, append([]string{"--json", "--profile", profile}, args...)...)
+	raw, err := s.runner.Run(runCtx, s.bin, append([]string{"--json", "--profile", profile}, args...)...)
+	if err != nil && runCtx.Err() != nil {
+		return raw, runCtx.Err()
+	}
+	return raw, err
 }
 
 func randomToken() (string, error) {

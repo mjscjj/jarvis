@@ -23,9 +23,7 @@ func TestLoginCompletesDeviceFlow(t *testing.T) {
 		case strings.HasSuffix(command, "auth login --begin"):
 			return []byte(`{"event":"qr_image_ready","data":{"complete_token":"resume-1","verification_uri_complete":"https://sso.example/login","user_code":"ABCD"}}`), nil
 		case strings.HasSuffix(command, "auth login --complete resume-1"):
-			return []byte(`{"status":"success","data":{"authenticated":true}}`), nil
-		case strings.HasSuffix(command, "auth status"):
-			return []byte(`{"status":"success","data":{"authenticated":true,"bytecloud_auth":{"identity":{"username":"alice","email":"alice@bytedance.com"}}}}`), nil
+			return []byte(`{"status":"success","data":{"status":"success","authStatus":{"authenticated":true,"identity":{"username":"alice","email":"alice@bytedance.com"}}}}`), nil
 		case strings.HasSuffix(command, "auth clear --yes"):
 			return []byte(`{"status":"success"}`), nil
 		default:
@@ -59,9 +57,7 @@ func TestCompleteRejectsIdentityOutsideAllowList(t *testing.T) {
 		case strings.HasSuffix(command, "auth login --begin"):
 			return []byte(`{"data":{"complete_token":"resume-1","verification_url":"https://sso.example/login"}}`), nil
 		case strings.HasSuffix(command, "auth login --complete resume-1"):
-			return []byte(`{"status":"success"}`), nil
-		case strings.HasSuffix(command, "auth status"):
-			return []byte(`{"data":{"authenticated":true,"bytecloud_auth":{"identity":{"username":"mallory","email":"mallory@bytedance.com"}}}}`), nil
+			return []byte(`{"status":"success","data":{"status":"success","authStatus":{"authenticated":true,"identity":{"username":"mallory","email":"mallory@bytedance.com"}}}}`), nil
 		case strings.HasSuffix(command, "auth clear --yes"):
 			return []byte(`{"status":"success"}`), nil
 		default:
@@ -138,4 +134,79 @@ func newTestService(t *testing.T, runner CommandRunner) *Service {
 		t.Fatal(err)
 	}
 	return service
+}
+
+func TestCompletionKeepsFlowUntilVerifiedIdentityArrives(t *testing.T) {
+	for _, first := range []struct {
+		name string
+		raw  string
+		err  error
+	}{
+		{"successful_pending_response", `{"status":"success","data":{"status":"pending","mode":"init"}}`, nil},
+		{"poll_timeout", "", context.DeadlineExceeded},
+	} {
+		t.Run(first.name, func(t *testing.T) {
+			polls, clears := 0, 0
+			service := newTestService(t, fakeRunner{run: func(_ string, args []string) ([]byte, error) {
+				command := strings.Join(args, " ")
+				switch {
+				case strings.HasSuffix(command, "auth login --begin"):
+					return []byte(`{"data":{"complete_token":"resume-1","verification_url":"https://sso.example/login"}}`), nil
+				case strings.HasSuffix(command, "auth login --complete resume-1"):
+					polls++
+					if polls == 1 {
+						return []byte(first.raw), first.err
+					}
+					return []byte(`{"status":"success","data":{"status":"success","authStatus":{"authenticated":true,"identity":{"username":"alice","email":"alice@bytedance.com"}}}}`), nil
+				case strings.HasSuffix(command, "auth clear --yes"):
+					clears++
+					return []byte(`{"status":"success"}`), nil
+				default:
+					t.Fatalf("login must not query unrelated auth status: %v", args)
+					return nil, nil
+				}
+			}})
+			begin, err := service.Login(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := service.Complete(t.Context(), *begin.FlowID); !errors.Is(err, ErrPending) {
+				t.Fatalf("first poll: %v", err)
+			}
+			if clears != 0 {
+				t.Fatal("pending profile was cleared")
+			}
+			result, err := service.Complete(t.Context(), *begin.FlowID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if user, ok := service.Authenticate(result.SessionToken); !ok || user.Username != "alice" || clears != 1 {
+				t.Fatalf("completed flow: user=%#v authenticated=%v clears=%d", user, ok, clears)
+			}
+		})
+	}
+}
+
+func TestCompletionNeverIssuesSessionWithoutVerifiedIdentity(t *testing.T) {
+	for _, result := range []string{
+		`{"status":"success","data":{"status":"pending","authStatus":{"authenticated":true,"identity":{"username":"alice","email":"alice@bytedance.com"}}}}`,
+		`{"status":"success","data":{"status":"success","authStatus":{"authenticated":false,"identity":{"username":"alice","email":"alice@bytedance.com"}}}}`,
+		`{"status":"success","data":{"status":"success"}}`,
+		`{"status":"success","data":{"status":"denied"}}`,
+	} {
+		service := newTestService(t, fakeRunner{run: func(_ string, args []string) ([]byte, error) {
+			if strings.HasSuffix(strings.Join(args, " "), "auth login --begin") {
+				return []byte(`{"data":{"complete_token":"resume-1","verification_url":"https://sso.example/login"}}`), nil
+			}
+			return []byte(result), nil
+		}})
+		begin, err := service.Login(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		login, err := service.Complete(t.Context(), *begin.FlowID)
+		if err == nil || login.SessionToken != "" {
+			t.Fatalf("unverified completion accepted: %s", result)
+		}
+	}
 }

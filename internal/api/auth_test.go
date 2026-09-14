@@ -141,3 +141,55 @@ func authRequestContext(peer, forwarded string) *app.RequestContext {
 	}
 	return request
 }
+
+func TestByteDancePendingApprovalCanCompleteAndSetSessionCookie(t *testing.T) {
+	approved := false
+	service, err := authn.NewServiceWithRunner("bytedcli", time.Hour, true, []string{"alice"}, authRunner{run: func(_ string, args []string) ([]byte, error) {
+		switch {
+		case strings.HasSuffix(strings.Join(args, " "), "auth login --begin"):
+			return []byte(`{"data":{"complete_token":"resume-1","verification_url":"https://sso.example/login"}}`), nil
+		case strings.Contains(strings.Join(args, " "), "auth login --complete"):
+			if !approved {
+				return []byte(`{"status":"success","data":{"status":"pending"}}`), nil
+			}
+			return []byte(`{"status":"success","data":{"status":"success","authStatus":{"authenticated":true,"identity":{"username":"alice","email":"alice@bytedance.com"}}}}`), nil
+		case strings.HasSuffix(strings.Join(args, " "), "auth clear --yes"):
+			return []byte(`{"status":"success"}`), nil
+		default:
+			t.Fatalf("unexpected identity probe: %v", args)
+			return nil, nil
+		}
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	begin, err := service.Login(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := server.Default()
+	h.POST("/api/auth/login/complete", CompleteByteDanceLogin(service))
+	body, err := json.Marshal(map[string]string{"flow_id": *begin.FlowID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ready := range []bool{false, true} {
+		approved = ready
+		response := ut.PerformRequest(h.Engine, "POST", "/api/auth/login/complete", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
+		if response.StatusCode() != consts.StatusOK {
+			t.Fatalf("status=%d body=%s", response.StatusCode(), response.Body())
+		}
+		cookie := string(response.Header.Peek("Set-Cookie"))
+		if ready {
+			if !strings.HasPrefix(cookie, authn.CookieName+"=") {
+				t.Fatal("verified login did not issue cookie")
+			}
+			token := strings.SplitN(strings.TrimPrefix(cookie, authn.CookieName+"="), ";", 2)[0]
+			if user, ok := service.Authenticate(token); !ok || user.Username != "alice" {
+				t.Fatalf("cookie does not authenticate: %#v %v", user, ok)
+			}
+		} else if cookie != "" || !bytes.Contains(response.Body(), []byte(`"status":"pending"`)) {
+			t.Fatalf("pending response=%s cookie issued=%v", response.Body(), cookie != "")
+		}
+	}
+}
