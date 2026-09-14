@@ -16,7 +16,7 @@
 ## 方案与历史材料
 
 - [OKR 与 Jarvis 世界模型整合方案](okr-jarvis-world-model-integration.md)：历史方案，当前边界见 [OKR 模块](../modules/06-okr.md)。
-- [网页 SSO 登录接入](sso-web-login.md)：方案与官方接入证据，尚未完成实现和真实验收。
+- [网页 SSO 登录接入](sso-web-login.md)：当前 CLI 授权域名与超时对比、配置方法，以及尚未实施的个人 JWT SDK 方案。
 
 ## 保留规则
 

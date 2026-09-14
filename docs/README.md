@@ -48,7 +48,7 @@
 - [Agent 可安装功能源码包](proposals/plugin-extension.md)
 - [世界模型 3D 视图](proposals/world-model-3d.md)
 - [通用 OKR 与 Biz OKR 拆分](design-okr-plugin-and-biz-okr.md)：第一阶段已实施，后续阶段仍为方案；当前维护边界见 OKR 模块文档
-- [网页 SSO 登录接入](summery/sso-web-login.md)：官方方法已查证，域名、代码接入和真实登录验收未完成
+- [网页 SSO 登录接入](summery/sso-web-login.md)：当前 CLI 授权域名、CN / i18n 超时实测与配置方法；个人 JWT SDK 方案未实施
 - [实体 Summary：持续演化的当前认知页](proposals/entity-summary-pages.md)
 
 实现提案时，把稳定结论合并进对应 current 模块；原提案随即删除，必要的关键取舍提炼进 `decisions/`，不能继续作为平行真源。

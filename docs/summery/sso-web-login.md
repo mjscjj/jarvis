@@ -1,15 +1,58 @@
 # Jarvis 网页 SSO 登录接入
 
-> 状态：方案已查证，代码接入与真实登录验收尚未完成。
-> 核验日期：2026-09-11。本文统一维护网页登录方法；实际路由与配置仍以代码和运行时配置为准。
+> 状态：当前部署仍使用 CLI 网页授权；已完成 CN / i18n 授权 API 对比，个人 JWT SDK 方案未实施，真实账号完整登录仍待验收。
+> 更新日期：2026-09-14。本文统一维护网页登录方法、授权域名和排障证据；实际路由与配置仍以代码和运行时配置为准。
 
 ## 目标与当前状态
 
 网站入口为 **https://emily.bytedance.net**。浏览器通过公司 SSO 确认当前访客身份，Jarvis 后端核验身份后匹配白名单，再建立自己的浏览器会话。
 
-截至核验日期，线上 `/api/auth/status` 返回 `enabled:false`，网页可以打开不代表已验证访客身份或白名单。现有 `internal/authn` 仍使用 CLI 授权实现，不能视为本文方案已经落地。
+2026-09-11 记录的线上状态为 `enabled:false`；截至 2026-09-14，当前实例已启用外层登录与白名单。`internal/authn` 使用独立 bytedcli profile 为网页访客发起授权，OKR 访客仍使用飞书登录。后文个人 JWT SDK 是此前提出、尚未实施的方案，不能当作当前实现。
 
-## 采用的登录方法
+## 当前 CLI 授权域名与超时排查（2026-09-14）
+
+**本次登录慢的直接证据是：当前服务器请求 CN 授权 API 时频繁发生 TLS 握手超时；改用 `https://cloud.byteintl.net` 后，创建授权约需 0.8 秒。应先修正授权 API 地址，不能把十几秒的超时当作正常登录耗时，再单靠延长等待或增加重试处理。**
+
+### 实际创建授权的对比
+
+测试使用同一台部署服务器、bytedcli `0.144.0` 和其内置授权 runtime `0.0.36`，每次使用新的独立 profile。两组命令均使用 `--site cn`，只改变 `BYTECLOUD_CLI_API_BASE_URL`，每个域名测试六次，实际调用：
+
+```text
+POST /api/v1/ai_auth/ai/auth/service_account_app/cli_registration
+```
+
+| 授权 API 域名 | 创建授权成功 | TLS 握手超时 | 耗时 |
+| --- | --- | --- | --- |
+| `cloud.bytedance.net`（CN） | 1 / 6 | 5 / 6 | 失败约 10.7–10.8 秒；唯一成功约 0.879 秒 |
+| `cloud.byteintl.net`（i18n BD） | 6 / 6 | 0 / 6 | 成功 0.797–0.847 秒，中位数 0.821 秒 |
+
+另用 `cloud.byteintl.net` 创建一个新授权后，连续两次完成接口轮询均正常返回 `pending`，耗时分别为 0.77 秒和 0.80 秒，无 TLS 超时。这里的 `pending` 表示等待用户确认，不是网络失败。
+
+直接请求同一路径的连接对比另测六轮，连接超时统一为 10 秒：CN 握手成功 4 / 6，`cloud.byteintl.net` 成功 6 / 6，`cloud-i18n.bytedance.net` 成功 2 / 6。收到 HTTP 401 只计为握手成功，不计为授权成功。**`cloud-i18n.bytedance.net` 与 `cloud.byteintl.net` 不是同一个地址，本次前者也有明显超时，不应混用。**
+
+### 正确设置实际请求地址
+
+实测当前版本只设置 `--site i18n`、`--site i18n-bd` 或 `--site i18n-tt`，创建授权仍访问 `cloud.bytedance.net`。站点参数不能代替授权 API 地址配置。以下环境变量才实际改变请求目标，已用本地诊断端点确认其生效路径：
+
+```bash
+BYTECLOUD_CLI_API_BASE_URL=https://cloud.byteintl.net \
+  bytedcli --json --profile YOUR_LOGIN_PROFILE auth login --begin
+
+BYTECLOUD_CLI_API_BASE_URL=https://cloud.byteintl.net \
+  bytedcli --json --profile YOUR_LOGIN_PROFILE auth login --complete YOUR_COMPLETE_TOKEN
+```
+
+开始授权和后续轮询应使用同一 profile，并保持相同的 API 地址配置。`YOUR_COMPLETE_TOKEN` 使用开始授权返回的值，文档和日志不保存真实令牌。网页登录接入此配置时应限定在对应 CLI 子进程，避免无意改变后台工具的站点配置。
+
+API 请求目标、浏览器授权页 URL、SDK Partition 是不同配置。本次 API 切到 `cloud.byteintl.net` 后，返回的浏览器授权页仍属于 `cloud.bytedance.net`；应使用服务端原样返回的 URL，不手动替换域名。此次结果也不等于后文个人 JWT SDK 的 Partition 已完成验证。
+
+### 当前故障与验证范围
+
+页面停在“正在验证字节身份”的复现链路是：`/api/auth/status` 正常返回未登录 → 创建授权的 CN 上游连接超时 → `/api/auth/login` 返回 502 → 前端把自动重试继续显示成验证中的转圈，隐藏了具体错误。当前代码已修正错误显示并保留自动重试；**错误显示修复不等于上游域名配置已经修正。**
+
+截至本次记录，只完成了独立命令的域名对比，线上网页登录尚未切换该 API 地址。已验证的是连接、创建授权与等待确认的轮询；真人授权完成、身份归属和浏览器进入仍需完整验收。样本支持当前部署优先使用 `cloud.byteintl.net`，不把这次测量推广成所有网络环境的永久结论。
+
+## 2026-09-11 个人 JWT SDK 方案（未实施）
 
 使用字节云官方前端个人 JWT SDK `@bytecloud/common-lib`，选择 CN Partition。个人 JWT 由当前浏览器的公司登录态取得，后端负责验证和放行。
 
@@ -32,7 +75,7 @@ const jwt = await service.getJwt()
 
 JWT 的公钥获取、声明字段和验证规则必须按官方协议实现，不能只解码 payload 就信任其中的邮箱，也不能由前端决定是否在白名单内。网站已登录后使用 Jarvis 自身的会话机制。
 
-## 域名接入条件
+## 个人 JWT SDK 方案的域名接入条件
 
 官方要求非字节云网站完成 JWT CORS 域名登记。当前需要确认登记状态的精确 Origin 为：
 
@@ -50,7 +93,7 @@ https://emily.bytedance.net
 
 独立 worktree 的临时主机端口不是本次指定的网站 Origin。测试环境若使用其他 Origin，需要单独确认其登记状态和 Cookie 条件，不能通过伪造 Origin 或代理服务器身份代替访客登录。
 
-## 身份边界
+## 个人 JWT SDK 方案的身份边界
 
 | 场景 | 身份来源与职责 |
 | --- | --- |
@@ -60,7 +103,9 @@ https://emily.bytedance.net
 
 本方案用于网页访客认证，不增加 Agent、stage 或 Task 之间的内部权限系统。
 
-## 不再采用的网页登录方式
+## 历史方案中的排除项
+
+以下是 2026-09-11 对个人 JWT SDK 方案的选型记录；其中 CLI 授权尚未从当前部署移除。上面的域名测试修正了对当前超时的诊断，不代表以下方案切换已经完成。
 
 - 直接把本机 bytedcli 身份发给浏览器：只能说明服务器已授权，无法确认打开页面的人是谁。
 - 用 `bytedcli auth login --begin` 为访客登录：本次实测进入 ByteCloud 服务账号创建、绑定流程，不符合网页个人登录需求。
@@ -68,7 +113,7 @@ https://emily.bytedance.net
 
 这些结论只否定其作为本网站访客登录入口的用途，不影响 CLI 自己的正常授权流程。
 
-## 实施与验收
+## 个人 JWT SDK 方案的实施与验收
 
 先确认域名接入条件，在独立 worktree 接入前端 SDK 与后端 JWT 验证，复用现有白名单和 Jarvis 会话。域名路由、代码和配置经过验证后再切换线上；仅修改文档不启用门禁。
 

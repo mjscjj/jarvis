@@ -23,7 +23,9 @@
 - `POST /api/auth/login/complete`：轮询现有 CLI 授权流程。
 - `POST /api/auth/logout`：只清除 Jarvis 浏览器会话，不清除全机 BytedCLI 授权。
 
-上述 CLI 授权入口不是已验收的网页个人 SSO。新的 [网页 SSO 登录接入](../summery/sso-web-login.md) 采用个人 JWT SDK，尚未完成代码接入，不能按现有接口说明推断它已经可用。
+上述 CLI 授权入口不是已验收的完整网页个人 SSO。[网页登录文档](../summery/sso-web-login.md) 同时记录当前 CLI 实现与此前的个人 JWT SDK 方案；后者尚未完成代码接入，不能按现有接口说明推断它已经可用。
+
+当前 CLI 授权发生 502 或创建授权长时间等待时，先检查服务端实际请求的授权 API 域名；CN / i18n 的实测差异、`BYTECLOUD_CLI_API_BASE_URL` 配置方法及验证范围统一见上述登录文档。站点参数与授权 API 地址不是同一项配置。
 
 前端由 AuthProvider 统一处理首次登录与会话失效恢复。并发 401 共用一次恢复；失败的写请求不自动重放。主动退出后须点击登录才能恢复。
 

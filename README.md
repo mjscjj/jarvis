@@ -54,7 +54,7 @@ Jarvis 是运行在本地可信环境中的个人任务 Agent。它持续接收�
 
 有效配置是 `conf/config.yaml` 与同目录 `conf/config.runtime.yaml` 的合并结果：runtime 按叶子 key 覆盖基线，未出现的 key 保留基线值，两个文件都拒绝未知字段。**本机参数、身份和密钥写 runtime 文件，不改仓库基线。** runtime 文件不进 Git，权限保持 `600`。后台保存后需要重启；prompts、rules 和 Skills 按各自 reader 实时读取。
 
-Jarvis 本体使用 lark-cli 当前默认身份，只服务 principal；OKR 页面登录使用独立低敏应用。网页登录与白名单接入见 [网页 SSO 登录接入](docs/summery/sso-web-login.md)：个人 JWT SDK 方案已查证，域名接入、代码实现与真实登录验收尚未完成。
+Jarvis 本体使用 lark-cli 当前默认身份，只服务 principal；OKR 页面登录使用独立低敏应用。网页登录、白名单与授权 API 域名排查见 [网页 SSO 登录接入](docs/summery/sso-web-login.md)：当前使用 CLI 授权，已记录 CN / i18n 超时对比与实际地址配置方法；个人 JWT SDK 方案尚未实施，真实账号完整登录仍待验收。
 
 `server.addr` 是实例后端监听地址的配置真源。主进程向 Agent 子进程导出 `JARVIS_API_BASE`、`JARVIS_CONFIG` 和仓库工具 PATH；切换工作目录不会切换实例。通用、世界模型、OKR/周报工具统一用 `scripts/jarvis-api-base`，优先采用继承地址，否则读取选定配置；配置错误直接失败，不扫描端口。模块工具的显式 `--base-url` 可指定其它实例。
 
