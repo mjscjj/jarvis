@@ -187,6 +187,41 @@ func TestPrincipalActivityOpensTopicGroup(t *testing.T) {
 	}
 }
 
+func TestPrincipalActivityDoesNotReopenExcludedGroup(t *testing.T) {
+	location := mustShanghai(t)
+	now := time.Date(2026, 7, 27, 16, 20, 0, 0, location)
+	discoveredAt := now.Add(-24 * time.Hour)
+	db := newCaptureTestDB(t)
+	createDiscoveredGroup(t, db, "oc_excluded_activity", "group", false, discoveredAt)
+	if err := db.Model(&activityTestGroup{}).Where("chat_id = ?", "oc_excluded_activity").
+		Update("capture_excluded", true).Error; err != nil {
+		t.Fatalf("exclude principal activity group: %v", err)
+	}
+
+	runner := &principalActivityFixture{
+		principalOpenID: "ou_principal",
+		searchMessages: []SearchedMessage{{
+			ChatID: "oc_excluded_activity", ChatType: "group",
+			CreateTime: now.Add(-time.Minute).Format(cliTimeLayout), MessageID: "om_excluded_activity",
+			Sender: CLISender{ID: "ou_principal", Name: "principal", SenderType: "user"},
+		}},
+	}
+	service := newPrincipalActivityService(t, db, runner, location)
+	service.now = func() time.Time { return now }
+
+	if err := service.SyncPrincipalActivityGroups(context.Background()); err != nil {
+		t.Fatalf("SyncPrincipalActivityGroups() error = %v", err)
+	}
+	assertActivityRelated(t, db, "oc_excluded_activity", false)
+	var checkpoint domain.Checkpoint
+	if err := db.First(&checkpoint, "chat_id = ?", "oc_excluded_activity").Error; err != nil {
+		t.Fatalf("load excluded checkpoint: %v", err)
+	}
+	if checkpoint.HighWaterCreateTime != discoveredAt.UnixMilli() {
+		t.Fatalf("excluded checkpoint moved to %d, want %d", checkpoint.HighWaterCreateTime, discoveredAt.UnixMilli())
+	}
+}
+
 func TestPrincipalActivityFailureDoesNotStopExistingRelatedScan(t *testing.T) {
 	location := mustShanghai(t)
 	now := time.Date(2026, 7, 27, 16, 20, 0, 0, location)
