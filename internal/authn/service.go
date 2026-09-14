@@ -420,7 +420,19 @@ func hasErrorCode(raw []byte, codes ...string) bool {
 }
 
 func commandError(action string, raw []byte, err error) error {
-	if message := findString(decodeJSONValues(raw), "message", "detail", "hint"); message != "" {
+	values := decodeJSONValues(raw)
+	// CLI progress events can precede the result. Their generic "retry with
+	// --debug" hint must not hide the actual failure in the result envelope.
+	for _, value := range values {
+		if envelope, ok := value.(map[string]any); ok {
+			if failure, ok := envelope["error"].(map[string]any); ok {
+				if message, ok := failure["message"].(string); ok && strings.TrimSpace(message) != "" {
+					return fmt.Errorf("%s: %s", action, message)
+				}
+			}
+		}
+	}
+	if message := findString(values, "message", "detail", "hint"); message != "" {
 		return fmt.Errorf("%s: %s", action, message)
 	}
 	return fmt.Errorf("%s: %w", action, err)

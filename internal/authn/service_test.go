@@ -290,3 +290,14 @@ func TestCompletionRetriesTransportFailureWithoutReplacingFlow(t *testing.T) {
 		t.Fatalf("original authorization was lost: %#v", result)
 	}
 }
+
+func TestLoginReportsFailureInsteadOfProgressHint(t *testing.T) {
+	service := newTestService(t, fakeRunner{run: func(_ string, _ []string) ([]byte, error) {
+		return []byte("{\"event\":\"action_required\",\"data\":{\"message\":\"Retry with --debug\"}}\n" +
+			`{"status":"error","error":{"code":"BYTECLOUD_AUTH_RUNTIME_ERROR","message":"net/http: TLS handshake timeout"}}`), errors.New("exit 1")
+	}})
+	_, err := service.Login(t.Context())
+	if err == nil || !strings.Contains(err.Error(), "TLS handshake timeout") || strings.Contains(err.Error(), "--debug") {
+		t.Fatalf("expected underlying login failure, got %v", err)
+	}
+}

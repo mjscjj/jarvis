@@ -84,3 +84,10 @@ test('status timeout aborts its pending request and exposes an actionable error'
   t.mock.timers.tick(60000)
   await pending
 })
+
+test('login preserves the JSON error from a failed SSO connection', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => Response.json({
+    code: 502, msg: 'start ByteDance SSO: TLS handshake timeout',
+  }, { status: 502 }))
+  await assert.rejects(getAuthStatus(), /TLS handshake timeout/)
+})

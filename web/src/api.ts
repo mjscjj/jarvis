@@ -199,8 +199,9 @@ async function request<T>(path: string, options: RequestOptions = {}): Promise<T
       headers: { Accept: 'application/json', ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }) },
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
     })
-    // 服务重启时网关会返回 HTML 错误页；先识别，避免把 HTML 丢给 JSON.parse。
-    if (looksLikeServiceRestart(response)) {
+    // 网关 HTML 错误页不能交给 JSON.parse；服务端 JSON 错误应保留具体原因，
+    // 例如 SSO 上游连接失败的 502，不能一律解释成 Jarvis 正在重启。
+    if (looksLikeServiceRestart(response) && !response.headers.get('content-type')?.includes('application/json')) {
       throw new ServiceUnavailableError('与服务的连接中断，可能正在重启', response.status)
     }
     const payload = (await response.json()) as APIResponse<T>

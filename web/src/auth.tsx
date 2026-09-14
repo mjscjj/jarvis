@@ -57,6 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const next = view.status === 'pending' ? view : null
     pendingRef.current = next
     setPending(next)
+    setError('')
   }, [])
 
   const recover = useCallback((forceLogin = false): Promise<void> => {
@@ -68,7 +69,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // 它：AuthGate 会卸载整棵树，正在流式输出的对话和填写中的表单会一起丢掉。
     // 验证真的失败时下面清 user，届时才回到登录页。
     if (!userRef.current) setLoading(true)
-    setError('')
     const operation = (async () => {
       try {
         const status = await getAuthStatus()
@@ -85,14 +85,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (mounted.current && !signedOut.current) {
           userRef.current = null
           setUser(null)
-          setError(cause instanceof Error ? cause.message : String(cause))
+          const message = cause instanceof Error ? cause.message : String(cause)
+          setError(canRetryLogin(cause) ? `登录服务暂时不可用，正在自动重试。${message}` : message)
           if (canRetryLogin(cause)) {
             retryTimer.current = setTimeout(() => { void recover(forceLogin) }, 2000)
           }
         }
       } finally {
         inFlight.current = null
-        if (mounted.current) setLoading(retryTimer.current !== undefined && !currentRouteIsModule())
+        if (mounted.current) setLoading(false)
       }
     })()
     inFlight.current = operation
@@ -202,8 +203,8 @@ export function AuthGate({ agentName, children }: { agentName: string; children:
     return () => window.removeEventListener('hashchange', sync)
   }, [])
   if (onModuleRoute) return children
-  if (loading) {
-    return <div className="auth-loading"><Spin size="small" /><span>正在验证字节身份...</span></div>
+  if (loading && !error) {
+    return <div className="auth-loading"><Spin size="small" /><span>正在连接字节登录…</span></div>
   }
   if (!enabled || user) return children
 
@@ -222,11 +223,11 @@ export function AuthGate({ agentName, children }: { agentName: string; children:
             <Typography.Text type="secondary">授权完成后此页面会自动进入</Typography.Text>
           </>
         ) : (
-          <Button type="primary" icon={<LoginOutlined />} onClick={() => void login()}>
+          <Button type="primary" icon={<LoginOutlined />} loading={loading} onClick={() => void login()}>
             使用字节身份登录
           </Button>
         )}
-        {error && <Result status={pending ? 'info' : 'error'} subTitle={error} />}
+        {error && <Result status="error" title="暂时无法完成登录" subTitle={error} />}
       </section>
     </main>
   )

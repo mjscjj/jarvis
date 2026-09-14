@@ -55,7 +55,7 @@ try {
     const {AuthProvider,AuthGate}=await import('/src/auth.tsx');
     const user={name:'Test',email:'test@example.test'};
     const response=data=>new Response(JSON.stringify({code:0,data:{enabled:true,...data}}),{headers:{'Content-Type':'application/json'}});
-    window.loginCalls=0; window.authPolls=[]; let checks=0;
+    window.loginCalls=0; window.authPolls=[]; let checks=0; window.loginUnavailable=location.hash==='#outage';
     window.fetch=async (path,options)=>{
       if(path==='/api/auth/status') {
         if (++checks===1) return new Response('',{status:503});
@@ -63,6 +63,7 @@ try {
       }
       if(path==='/api/auth/login') {
         window.loginCalls++;
+        if(window.loginUnavailable) return new Response(JSON.stringify({code:502,msg:'SSO connection: TLS handshake timeout'}),{status:502,headers:{'Content-Type':'application/json'}});
         return response({status:'pending',flow_id:'flow-1',verification_url:'https://example.test/flow-1'});
       }
       if(path==='/api/auth/login/complete') {
@@ -87,6 +88,18 @@ try {
   assert.deepEqual(errors, [])
   console.log('PASS: initial outage, polling outage and expired flow recover automatically without clicks')
 
+  await page.goto('about:blank')
+  await page.goto(`${base}/__auth-automatic#outage`)
+  await page.getByText(/TLS handshake timeout/).waitFor()
+  await page.waitForFunction(() => window.loginCalls >= 3)
+  assert.equal(await page.locator('.auth-loading').count(), 0, 'Repeated failures must not leave a verification spinner hiding the error')
+  assert.match(await page.locator('body').innerText(), /正在自动重试/)
+  assert.match(await page.locator('body').innerText(), /TLS handshake timeout/)
+  await page.evaluate(() => { window.loginUnavailable = false; window.newAuthorized = true })
+  await page.getByText('已进入工作区', { exact: true }).waitFor({ timeout: 15000 })
+  console.log('PASS: repeated SSO creation failures remain visible and recover without a reload or manual retry')
+
+  await page.goto('about:blank')
   await page.goto(`${base}/__auth-automatic`)
   await page.locator('a[href="https://example.test/flow-2"]').waitFor({ timeout: 15000 })
   await page.evaluate(() => { window.deny = true })
