@@ -27,6 +27,7 @@ __pycache__/
 /data/chat/
 !/data/okr/
 /data/okr/*
+!/data/okr/legacy-owner-identities.json
 !/data/okr/okr.db
 !/data/okr/assets/
 !/data/okr/assets/**

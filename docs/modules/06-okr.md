@@ -70,6 +70,12 @@ OKR 飞书登录会话已持久化在 Jarvis 私有运行主库的 `okr_workspac
 
 ## 当前读写边界
 
+### 旧页面负责人兼容
+
+`internal/api/okr_legacy_owners.go` 在 OKR API 入口、严格 JSON 校验前转换 `owners[].open_id`，覆盖 O/KR/Point 嵌套负责人。已核验映射来自 `data/okr/legacy-owner-identities.json`（94 个历史 ID，保留来源应用及文档行证据）；命中后写入邮箱与规范姓名，未命中直接移除该负责人，不因未知 OpenID 拒绝正文保存。已有 email 优先；没有 open_id 的现代请求和仅姓名负责人保持原有语义。其它字段、版本冲突等仍按原接口校验。
+
+兼容只发生在输入边界，数据库及响应继续使用 email，不重新持久化旧 ID，不修改评论 mention 或任意嵌入正文。映射文件启动时加载，缺失或无效即启动失败；更新映射后需重新部署。原始请求在转换前由通用 Hertz 请求日志保存，转换/移除计数另记服务日志。
+
 ### 通用 OKR
 
 - API 前缀：`/api/okr/*`。实际注册见 `internal/api/okr_module_routes.go`。

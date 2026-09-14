@@ -97,6 +97,10 @@ curl --fail "$(./scripts/jarvis-api-base)/readyz" | jq
 - macOS 用 `launchctl print`，Linux 用 `systemctl --user status <label>.service` 和 `journalctl --user`。
 - 源码日志位于配置的 `server.log_files`，通常在 `var/log/`；macOS App 日志在 `~/Library/Application Support/Jarvis/logs`。
 
+所有进入 Hertz 中间件的 `/api/` 请求（含配置的开发代理前缀）额外追加到运行根目录 `var/log/api-requests.jsonl`，文件创建权限 `0600`。`request` 行在代理、认证、负责人兼容和参数校验前记录 UTC 时间、logid、方法、URI、Content-Type、User-Agent、远端地址和完整原始 body；`result` 行用同一 logid 记录 HTTP 状态与耗时。正文不截断、不采样，非 UTF-8 字节用 Base64 可逆保存，multipart 不预解析以保留原始字节；Cookie、Authorization 等请求头不记录。查询参数和请求正文会完整保留，因此日志应按业务数据管理，不对外分享。
+
+日志直接追加写文件，不建立数据库或恢复平台，不自动轮转/清理；写入失败记服务错误日志，不阻塞业务。超过 HTTP body 大小限制或在 HTTP 解析阶段就被拒绝的请求尚未进入中间件，不在这份日志中；历史未记录请求和未提交的浏览器草稿无法补录。定位失败保存时先找 `result.status >= 400`，再按 logid 读取原始 `request.body`；重放前核对当前版本与业务内容，不能直接批量重放。
+
 服务 label、模板和日志路径以 `deploy/`、安装脚本和当前服务定义为准。
 
 ## 5. 完整退出
