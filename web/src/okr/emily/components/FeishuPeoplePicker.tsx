@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useFeishuPeopleSearch } from '../../../useFeishuPeopleSearch'
-import { searchOKRPeople } from '../api'
+import { searchOKRPeople, getPeopleAvatars } from '../api'
 import { useBoard } from '../board'
 import { addOrResolveOwner, joinOwnerNames, ownerIdentityKey, ownerOptions, splitOwnerNames } from '../people'
 import type { Kr, KrOwner, PersonSearchItem, Point } from '../types'
-import { PersonAvatar } from './PersonAvatar'
+import { PersonAvatar, rememberPersonAvatars } from './PersonAvatar'
 
 export function FeishuPeoplePickerInput({ owners, options, onChange, compact = false, small = false }: { owners: KrOwner[]; options: KrOwner[]; onChange: (owners: KrOwner[]) => void; compact?: boolean; small?: boolean }) {
   const root = useRef<HTMLSpanElement>(null)
@@ -81,6 +81,15 @@ export function FeishuPeoplePickerInput({ owners, options, onChange, compact = f
 
   useEffect(() => {
     setResultAvatars(Object.fromEntries(peopleSearch.candidates.filter(p => p.avatar_url).map(p => [p.email, p.avatar_url!])))
+    const emails = peopleSearch.candidates.filter(p => !p.avatar_url).map(p => p.email)
+    if (!emails.length) return
+    const controller = new AbortController()
+    void getPeopleAvatars(emails, controller.signal).then(people => {
+      if (controller.signal.aborted) return
+      rememberPersonAvatars(people)
+      setResultAvatars(current => ({...current,...Object.fromEntries(people.map(p => [p.email,p.avatarUrl]))}))
+    }).catch(() => {})
+    return () => controller.abort()
   }, [peopleSearch.candidates])
 
   const add = (person: PersonSearchItem) => {

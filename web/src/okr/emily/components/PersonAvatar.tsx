@@ -8,12 +8,15 @@ let version = 0
 let pending: string[] = []
 let timer: number | undefined
 function subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener) } }
+export function rememberPersonAvatars(people: Array<{email: string; avatarUrl: string}>) {
+ for (const p of people) {if (p.avatarUrl) avatars.set(p.email,p.avatarUrl)}
+ version++; for (const listener of listeners) listener()
+}
 async function flush() {
  timer = undefined
  const emails = pending; pending = []
  try {
-  for (const person of await getPeopleAvatars(emails)) avatars.set(person.email, person.avatarUrl)
-  version++; for (const listener of listeners) listener()
+  rememberPersonAvatars(await getPeopleAvatars(emails))
  } catch (error) { console.warn('飞书头像读取失败', error); for (const email of emails) requested.delete(email) }
 }
 export function usePersonAvatar(_name: string, email?: string, ownUrl?: string) {

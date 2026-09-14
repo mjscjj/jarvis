@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { searchFeishuPeople } from './api'
 import type { ResolveCandidate } from './types'
 
+const EMPTY_CANDIDATES: never[] = []
+
 interface SearchResult<C> { candidates: C[]; has_more: boolean }
 
 interface FeishuPeopleSearchOptions<C> {
@@ -104,7 +106,7 @@ export function useFeishuPeopleSearch<C = ResolveCandidate>(options: FeishuPeopl
     setQuery,
     search,
     reset,
-    candidates: result?.candidates ?? [],
+    candidates: result?.candidates ?? EMPTY_CANDIDATES,
     hasMore: result?.has_more ?? false,
     hasSearched: result !== null,
     searchedQuery,

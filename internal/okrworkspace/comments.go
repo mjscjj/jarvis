@@ -317,7 +317,7 @@ func (service *Service) CreateComment(ctx context.Context, input CreateCommentIn
 	if err != nil {
 		return CommentView{}, err
 	}
-	view.Notifications, err = service.deliverComment(ctx, row.ID, "")
+	view.Notifications, err = service.commentDeliveries(ctx, row.ID)
 	if err != nil {
 		hlog.CtxErrorf(ctx, "comment saved but notification ledger failed comment=%s: %v", row.ID, err)
 		view.NotificationErrors = []string{"评论已保存，通知状态暂时无法读取，请刷新查看"}

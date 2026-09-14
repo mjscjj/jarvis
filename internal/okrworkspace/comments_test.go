@@ -30,7 +30,7 @@ func TestCommentRecordsAuthorUnionIDThroughReadBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	created, err := service.CreateComment(t.Context(), CreateCommentInput{
+	created, err := createAndDeliverCommentForTest(service, t.Context(), CreateCommentInput{
 		Quarter: "2026-Q3", Week: "2026-W35", TargetType: "kr", TargetID: "kr1",
 		AuthorOpenID: "ou_alice", AuthorUnionID: "on_alice", AuthorName: "Alice",
 		Content: "这个 KR 的口径要对一下",
@@ -63,13 +63,13 @@ func TestCommentTodoAndResolutionAreIndependentRootActions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	root, err := service.CreateComment(t.Context(), CreateCommentInput{
+	root, err := createAndDeliverCommentForTest(service, t.Context(), CreateCommentInput{
 		Quarter: "2026-Q3", Week: "2026-W35", TargetType: "kr", TargetID: "kr1", Content: "下周确认区域名单",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	reply, err := service.CreateComment(t.Context(), CreateCommentInput{
+	reply, err := createAndDeliverCommentForTest(service, t.Context(), CreateCommentInput{
 		Quarter: "2026-Q3", Week: "2026-W35", ParentID: root.ID, Content: "收到",
 	})
 	if err != nil {
@@ -118,7 +118,7 @@ func TestCommentContentPatchStillValidatesText(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	comment, err := service.CreateComment(t.Context(), CreateCommentInput{
+	comment, err := createAndDeliverCommentForTest(service, t.Context(), CreateCommentInput{
 		Quarter: "2026-Q3", Week: "2026-W35", Content: "原评论",
 	})
 	if err != nil {
@@ -147,7 +147,7 @@ func TestCommentEditRejectsAStaleVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	created, err := service.CreateComment(t.Context(), CreateCommentInput{Quarter: "2026-Q3", Week: "2026-W35", Content: "原评论"})
+	created, err := createAndDeliverCommentForTest(service, t.Context(), CreateCommentInput{Quarter: "2026-Q3", Week: "2026-W35", Content: "原评论"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,11 +174,11 @@ func TestCommentDeleteRejectsAStaleThreadSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	root, err := service.CreateComment(t.Context(), CreateCommentInput{Quarter: "2026-Q3", Week: "2026-W35", Content: "根评论"})
+	root, err := createAndDeliverCommentForTest(service, t.Context(), CreateCommentInput{Quarter: "2026-Q3", Week: "2026-W35", Content: "根评论"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.CreateComment(t.Context(), CreateCommentInput{Quarter: "2026-Q3", Week: "2026-W35", ParentID: root.ID, Content: "另一位填写者刚添加的回复"}); err != nil {
+	if _, err := createAndDeliverCommentForTest(service, t.Context(), CreateCommentInput{Quarter: "2026-Q3", Week: "2026-W35", ParentID: root.ID, Content: "另一位填写者刚添加的回复"}); err != nil {
 		t.Fatal(err)
 	}
 	if err := service.DeleteComment(t.Context(), root.ID, DeleteCommentInput{ExpectedVersion: root.Version, DeleteToken: root.DeleteToken}); !errors.Is(err, ErrConflict) {
@@ -207,7 +207,7 @@ func TestCommentSupportsUploadedImagesAndImageOnlyReplies(t *testing.T) {
 		t.Fatal(err)
 	}
 	image := CommentImage{ID: "img-123", Name: "截图.png", URL: "/okr-assets/123.png", Width: 320}
-	root, err := service.CreateComment(t.Context(), CreateCommentInput{
+	root, err := createAndDeliverCommentForTest(service, t.Context(), CreateCommentInput{
 		Quarter: "2026-Q3", Week: "2026-W35", TargetType: "kr", TargetID: "kr1", Images: []CommentImage{image},
 	})
 	if err != nil {
@@ -216,7 +216,7 @@ func TestCommentSupportsUploadedImagesAndImageOnlyReplies(t *testing.T) {
 	if root.Content != "" || len(root.Images) != 1 || root.Images[0].ID != image.ID {
 		t.Fatalf("image-only root = %#v", root)
 	}
-	reply, err := service.CreateComment(t.Context(), CreateCommentInput{
+	reply, err := createAndDeliverCommentForTest(service, t.Context(), CreateCommentInput{
 		Quarter: "2026-Q3", Week: "2026-W35", ParentID: root.ID, Images: []CommentImage{image},
 	})
 	if err != nil {
@@ -257,7 +257,7 @@ func TestFollowUpCommentRequiresAnExistingTargetInTheSameScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	comment, err := service.CreateComment(t.Context(), CreateCommentInput{
+	comment, err := createAndDeliverCommentForTest(service, t.Context(), CreateCommentInput{
 		Quarter: "2026-Q3", Week: "2026-W36", TargetType: "follow_up", TargetID: followUp.ID,
 		TargetTitle: followUp.Topic, AuthorOpenID: "ou_alice", AuthorName: "Alice", Content: "请补充具体日期",
 	})
@@ -267,12 +267,12 @@ func TestFollowUpCommentRequiresAnExistingTargetInTheSameScope(t *testing.T) {
 	if comment.TargetType != "follow_up" || comment.TargetID != followUp.ID || comment.TargetTitle != followUp.Topic {
 		t.Fatalf("created comment lost its follow-up target: %#v", comment)
 	}
-	if _, err := service.CreateComment(t.Context(), CreateCommentInput{
+	if _, err := createAndDeliverCommentForTest(service, t.Context(), CreateCommentInput{
 		Quarter: "2026-Q3", Week: "2026-W35", TargetType: "follow_up", TargetID: followUp.ID, Content: "跨周评论",
 	}); err == nil {
 		t.Fatal("cross-week follow-up comment unexpectedly created")
 	}
-	if _, err := service.CreateComment(t.Context(), CreateCommentInput{
+	if _, err := createAndDeliverCommentForTest(service, t.Context(), CreateCommentInput{
 		Quarter: "2026-Q3", Week: "2026-W36", TargetType: "follow_up", TargetID: "missing", Content: "不存在",
 	}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing target error = %v, want ErrNotFound", err)
@@ -295,14 +295,14 @@ func TestFollowUpCommentRepliesInheritTargetAndRemainAsHistoryAfterItemDeletion(
 	if err != nil {
 		t.Fatal(err)
 	}
-	root, err := service.CreateComment(t.Context(), CreateCommentInput{
+	root, err := createAndDeliverCommentForTest(service, t.Context(), CreateCommentInput{
 		Quarter: "2026-Q3", Week: "2026-W36", TargetType: "follow_up", TargetID: followUp.ID,
 		TargetTitle: followUp.Topic, Content: "根评论",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	reply, err := service.CreateComment(t.Context(), CreateCommentInput{
+	reply, err := createAndDeliverCommentForTest(service, t.Context(), CreateCommentInput{
 		Quarter: "2026-Q3", Week: "2026-W36", ParentID: root.ID,
 		TargetType: "kr", TargetID: "wrong-target", Content: "回复",
 	})
@@ -432,7 +432,7 @@ func TestCommentMentionNotifiesWithWeekObjectiveKRAndExactContent(t *testing.T) 
 		t.Fatal(err)
 	}
 	content := "@张若怡 请核对这条进展\n不要遗漏原文。"
-	created, err := service.CreateComment(t.Context(), CreateCommentInput{
+	created, err := createAndDeliverCommentForTest(service, t.Context(), CreateCommentInput{
 		Quarter: week.Quarter, Week: week.Week, TargetType: "point", TargetID: point.ID,
 		AuthorOpenID: "ou_alice", AuthorName: "Alice", Content: content,
 		Mentions: []CommentMention{{Email: "zhangruoyi@example.test", Name: "张若怡"}},
@@ -462,7 +462,7 @@ func TestCommentMentionFailureKeepsCommentAndReportsDeliveryError(t *testing.T) 
 	if err := service.SetCommentMentionNotifier(stub); err != nil {
 		t.Fatal(err)
 	}
-	created, err := service.CreateComment(t.Context(), CreateCommentInput{
+	created, err := createAndDeliverCommentForTest(service, t.Context(), CreateCommentInput{
 		Quarter: "2026-Q3", Week: "2026-W35", Content: "@Bob 请确认",
 		Mentions: []CommentMention{{Email: "bob@example.test", Name: "Bob"}},
 	})
@@ -491,13 +491,13 @@ func TestCommentMentionRequiresSelectedTokenAndEditsDoNotNotify(t *testing.T) {
 	if err := service.SetCommentMentionNotifier(stub); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.CreateComment(t.Context(), CreateCommentInput{
+	if _, err := createAndDeliverCommentForTest(service, t.Context(), CreateCommentInput{
 		Quarter: "2026-Q3", Week: "2026-W35", Content: "没有 token",
 		Mentions: []CommentMention{{Email: "bob@example.test", Name: "Bob"}},
 	}); err == nil || !strings.Contains(err.Error(), "not present") {
 		t.Fatalf("missing mention token error = %v", err)
 	}
-	created, err := service.CreateComment(t.Context(), CreateCommentInput{
+	created, err := createAndDeliverCommentForTest(service, t.Context(), CreateCommentInput{
 		Quarter: "2026-Q3", Week: "2026-W35", AuthorName: "Alice", Content: "@Bob 初次提醒",
 		Mentions: []CommentMention{{Email: "bob@example.test", Name: "Bob"}},
 	})
@@ -543,7 +543,7 @@ func TestReviewMeetingPointCommentOnlyNotifiesExplicitMention(t *testing.T) {
 	if err := service.SetCommentMentionNotifier(stub); err != nil {
 		t.Fatal(err)
 	}
-	created, err := service.CreateComment(t.Context(), CreateCommentInput{
+	created, err := createAndDeliverCommentForTest(service, t.Context(), CreateCommentInput{
 		Quarter: week.Quarter, Week: week.Week, SourceTab: commentSourceTabReviewMeeting,
 		TargetType: "point", TargetID: point.ID, TargetTitle: point.Title,
 		SelectedText: "AM 助手", SelectionStart: 3, SelectionEnd: 8,
@@ -582,7 +582,7 @@ func TestReviewMeetingCommentResolvesWeekSeededMetricToItsKR(t *testing.T) {
 	if err := service.SetCommentMentionNotifier(stub); err != nil {
 		t.Fatal(err)
 	}
-	created, err := service.CreateComment(t.Context(), CreateCommentInput{
+	created, err := createAndDeliverCommentForTest(service, t.Context(), CreateCommentInput{
 		Quarter: week.Quarter, Week: week.Week, SourceTab: commentSourceTabReviewMeeting,
 		TargetType: "metric", TargetID: "week-only-metric", TargetTitle: "客户端快照",
 		AuthorOpenID: "ou_author", AuthorName: "张若怡", Content: "@周度负责人 请核对覆盖率",
@@ -660,6 +660,9 @@ func TestPlanCommentNotifiesExplicitMentionWithCanonicalTargetText(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := service.processPendingCommentDeliveries(t.Context()); err != nil {
+		t.Fatal(err)
+	}
 	if len(created.NotificationErrors) != 0 || len(stub.items) != 1 {
 		t.Fatalf("created = %#v, notifications = %#v", created, stub.items)
 	}
@@ -683,13 +686,13 @@ func TestCommentWithoutMentionNeverNotifies(t *testing.T) {
 	if err := service.SetCommentMentionNotifier(stub); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := service.CreateComment(t.Context(), CreateCommentInput{
+	if _, err := createAndDeliverCommentForTest(service, t.Context(), CreateCommentInput{
 		Quarter: week.Quarter, Week: week.Week, SourceTab: commentSourceTabReviewFill,
 		TargetType: "page", TargetID: "page", Content: "填写页评论",
 	}); err != nil {
 		t.Fatal(err)
 	}
-	created, err := service.CreateComment(t.Context(), CreateCommentInput{
+	created, err := createAndDeliverCommentForTest(service, t.Context(), CreateCommentInput{
 		Quarter: week.Quarter, Week: week.Week, SourceTab: commentSourceTabReviewMeeting,
 		TargetType: "page", TargetID: "page", Content: "会议页评论",
 	})
@@ -711,7 +714,7 @@ func TestCommentRejectsUnknownSourceTabBeforePersisting(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = service.CreateComment(t.Context(), CreateCommentInput{
+	_, err = createAndDeliverCommentForTest(service, t.Context(), CreateCommentInput{
 		Quarter: week.Quarter, Week: week.Week, SourceTab: "invented-tab", Content: "不会保存",
 	})
 	if err == nil || !strings.Contains(err.Error(), "source_tab") {
@@ -726,4 +729,14 @@ func TestCommentRejectsUnknownSourceTabBeforePersisting(t *testing.T) {
 func (stub *commentMentionNotifierStub) AppID() string { return "test-app" }
 func (stub *commentMentionNotifierStub) VerifyCommentMention(context.Context, string) error {
 	return stub.err
+}
+
+func createAndDeliverCommentForTest(service *Service, ctx context.Context, input CreateCommentInput) (CommentView, error) {
+	view, err := service.CreateComment(ctx, input)
+	if err != nil {
+		return view, err
+	}
+	view.Notifications, err = service.deliverComment(ctx, view.ID, "")
+	view.NotificationErrors = deliveryWarnings(view.Notifications)
+	return view, err
 }

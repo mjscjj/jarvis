@@ -325,12 +325,20 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
   const [navigationNotice, setNavigationNotice] = useState('')
   const [reviewCommentId, setReviewCommentId] = useState('')
   const loadVersion = useRef(0)
+  const [submittedId, setSubmittedId] = useState('')
+  const scopeKey = `${planId ?? ''}:${quarter}:${week}`
+  const scopeRef = useRef(scopeKey)
+  scopeRef.current = scopeKey
+
 
   const publishSummary = useCallback((next: PageComment[]) => {
     onCountChange(commentMessageCount(next))
     onCountsChange(commentCountsByTarget(next))
     onCommentsChange(next)
   }, [onCommentsChange, onCountChange, onCountsChange])
+
+  const summaryRef = useRef(publishSummary)
+  summaryRef.current = publishSummary
 
   const load = useCallback(async () => {
     const version = ++loadVersion.current
@@ -340,20 +348,22 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
       const value = planId ? await getPlanComments(planId) : await getComments(quarter, week)
       if (version !== loadVersion.current) return
       setComments(value.comments)
-      publishSummary(value.comments)
+      summaryRef.current(value.comments)
     } catch (reason) {
       if (version !== loadVersion.current) return
       setError(reason instanceof Error ? reason.message : '评论加载失败')
     } finally {
       if (version === loadVersion.current) setLoading(false)
     }
-  }, [planId, publishSummary, quarter, week])
+  }, [planId, quarter, week])
 
   useEffect(() => {
     setComments([])
-    publishSummary([])
+    summaryRef.current([])
+    setSubmittedId('')
     void load()
-  }, [load, publishSummary])
+    return () => { loadVersion.current++ }
+  }, [load])
   useEffect(() => {
     setDraft({ content: '', mentions: [] })
     setDraftImages([])
@@ -372,6 +382,29 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
     })
     return () => window.cancelAnimationFrame(frame)
   }, [focusCommentId, loading, open])
+
+  useEffect(() => {
+    if (!open || !submittedId || loading) return
+    const frame = requestAnimationFrame(() => document.getElementById(`comment-${submittedId}`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }))
+    return () => cancelAnimationFrame(frame)
+  }, [submittedId, loading, open])
+
+  useEffect(() => {
+    const pending = comments.some(c => [c, ...c.replies].some(x => x.notifications?.some(n => n.status === 'pending' || n.status === 'sending')))
+    if (!open || loading || saving || !pending) return
+    const version = loadVersion.current
+    const timer = window.setTimeout(async () => {
+      try {
+        const next = planId ? await getPlanComments(planId) : await getComments(quarter, week)
+        if (loadVersion.current !== version) return
+        setComments(current => current.map(c => {
+          const fresh = next.comments.find(x => x.id === c.id)
+          return fresh ? { ...c, notifications: fresh.notifications, replies: c.replies.map(r => ({ ...r, notifications: fresh.replies.find(x => x.id === r.id)?.notifications ?? r.notifications })) } : c
+        }))
+      } catch { /* A failed status refresh must not erase a saved comment. */ }
+    }, 2000)
+    return () => window.clearTimeout(timer)
+  }, [comments, loading, open, planId, quarter, saving, week])
 
   const documentOrder = useMemo(() => buildCommentDocumentOrder(objectives, followUpOrder), [followUpOrder, objectives])
   const visibleComments = useMemo(() => sortCommentsByDocumentOrder(
@@ -404,6 +437,7 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
     if ((!content && draftImages.length === 0) || saving || draftImageUploading) return
     setSaving(true)
     setError('')
+    const submittedScope = scopeKey
     const activeTarget = target ?? (planId
       ? { type: 'page' as const, id: planId, title: scopeLabel || 'Biz OKR Plan' }
       : { type: 'page' as const, id: `${quarter}:${week}`, title: `${week} OKR 页面` })
@@ -422,7 +456,12 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
         selectionSuffix: activeTarget.selection?.suffix,
       }
       const created = planId ? await createPlanComment(planId, input) : await createComment({ quarter, week, sourceTab, ...input })
-      setComments((current) => [...current, created])
+      if (scopeRef.current !== submittedScope) return
+      loadVersion.current++
+      setLoading(false)
+      setComments((current) => [...current.filter(item => item.id !== created.id), created])
+      setSubmittedId(created.id)
+      if (reviewing) setReviewCommentId(created.id)
       setDraft({ content: '', mentions: [] })
       setDraftImages([])
       if (notificationErrorText(created)) setError(`评论已保存，但${notificationErrorText(created)}`)
@@ -438,6 +477,9 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
   ), [planId, quarter, sourceTab, week])
 
   const addReply = (rootId: string, reply: PageComment) => {
+    loadVersion.current++
+    setLoading(false)
+    setSubmittedId(reply.id)
     setComments((current) => current.map((comment) => comment.id === rootId ? { ...comment, replies: [...comment.replies, reply] } : comment))
   }
 
@@ -543,6 +585,7 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
           {error && <div className="mt-2 text-[11px] text-red-600">{error}</div>}
         </div>}
 
+        {submittedId && <div role="status" className="shrink-0 border-b border-emerald-100 bg-emerald-50 px-4 py-2 text-xs text-emerald-700">评论已发布</div>}
         {navigationNotice && <div role="status" className="shrink-0 border-b border-amber-100 bg-amber-50 px-4 py-2 text-[11px] text-amber-700">{navigationNotice}</div>}
 
         <div className="min-h-0 flex-1 overflow-y-auto">

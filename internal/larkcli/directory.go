@@ -24,6 +24,9 @@ type DirectoryPerson struct {
 }
 
 type Directory struct {
+	avatarGate                          chan struct{}
+	userCache                           directoryCache
+	flights                             map[string]*directoryFlight
 	client                              *Client
 	profile, appID, identity, cacheFile string
 	mu                                  sync.Mutex
@@ -58,6 +61,9 @@ func NewDirectory(ctx context.Context, client *Client, appID, profile, identity,
 		return nil, fmt.Errorf("configured directory Bot is not verified")
 	}
 	d := &Directory{client: client, profile: profile, appID: appID, identity: identity, cacheFile: cacheFile}
+	if identity == "user" {
+		d.initUserCache(status.Identities.User.OpenID)
+	}
 	if identity == "bot" && cacheFile != "" {
 		raw, err := os.ReadFile(cacheFile)
 		if err == nil {
@@ -102,41 +108,10 @@ func (d *Directory) search(ctx context.Context, query string, avatars bool) ([]D
 		return nil, fmt.Errorf("请输入姓名或邮箱")
 	}
 	if d.identity == "user" {
-		var response searchUserResponse
-		if err := d.client.Run(ctx, &response, "--profile", d.profile, "contact", "+search-user", "--query", query, "--as", "user"); err != nil {
-			return nil, err
-		}
-		avatarByID := map[string]string{}
-		if avatars && len(response.Data.Users) > 0 {
-			params, _ := json.Marshal(map[string]any{"query": query, "page_size": 20})
-			var photos searchUserAvatarResponse
-			if err := d.client.Run(ctx, &photos, "--profile", d.profile, "api", "GET", "/open-apis/search/v1/user", "--params", string(params), "--as", "user"); err == nil {
-				for _, p := range photos.Data.Users {
-					avatarByID[p.OpenID] = p.Avatar.Medium
-				}
-			}
-		}
-		result := []DirectoryPerson{}
-		for _, u := range response.Data.Users {
-			if u.IsActivated != nil && !*u.IsActivated {
-				continue
-			}
-			email := u.EnterpriseEmail
-			if email == "" {
-				email = u.Email
-			}
-			email = directoryEmail(email)
-			if email != "" && !u.IsCrossTenant {
-				result = append(result, DirectoryPerson{Email: email, Name: u.LocalizedName, Department: u.Department, AvatarURL: avatarByID[u.OpenID]})
-			}
-		}
-		// A complete exact email query can still be resolved; incomplete keyword
-		// results ask the caller to refine rather than silently hiding candidates.
-		if response.Data.HasMore {
-			return nil, fmt.Errorf("匹配人员较多，请输入更完整的姓名或邮箱")
-		}
-		return result, nil
+		page, err := d.searchUserCached(ctx, query)
+		return page.People, err
 	}
+
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.refreshed.IsZero() || time.Since(d.refreshed) > 15*time.Minute {
@@ -166,6 +141,14 @@ func (d *Directory) Resolve(ctx context.Context, email string) (DirectoryPerson,
 	email = directoryEmail(email)
 	if email == "" {
 		return DirectoryPerson{}, fmt.Errorf("需要完整企业邮箱")
+	}
+	if d.identity == "user" {
+		d.mu.Lock()
+		p, ok := d.userCache.People[email]
+		d.mu.Unlock()
+		if ok && !p.Ambiguous && time.Since(p.At) < directoryTTL {
+			return p.Person, nil
+		}
 	}
 	people, err := d.search(ctx, email, false)
 	if err != nil {
@@ -398,6 +381,9 @@ func (d *Directory) Avatar(ctx context.Context, email string) (DirectoryPerson, 
 	email = directoryEmail(email)
 	if email == "" {
 		return DirectoryPerson{}, fmt.Errorf("需要完整企业邮箱")
+	}
+	if d.identity == "user" {
+		return d.userAvatar(ctx, email)
 	}
 	people, err := d.search(ctx, email, true)
 	if err != nil {

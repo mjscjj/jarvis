@@ -18,6 +18,13 @@ func TestCommentDeliveryRetryVerifiesReceiptWithoutResending(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if len(stub.items) != 0 || len(view.Notifications) != 1 || view.Notifications[0].Status != "pending" {
+		t.Fatalf("HTTP save waited for notification: %+v", view)
+	}
+	if err := svc.processPendingCommentDeliveries(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	view.Notifications, err = svc.commentDeliveries(t.Context(), view.ID)
 	if len(view.Notifications) != 1 || view.Notifications[0].Status != "unknown" || view.Notifications[0].MessageID == "" {
 		t.Fatalf("receipt=%+v", view.Notifications)
 	}

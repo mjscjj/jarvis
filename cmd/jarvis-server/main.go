@@ -900,6 +900,9 @@ func main() {
 	}
 	runtimeCtx, cancelRuntime := context.WithCancel(context.Background())
 	defer cancelRuntime()
+	if bizOKRModuleEnabled {
+		go okrWorkspaceService.RunCommentDeliveries(runtimeCtx)
+	}
 
 	stopPipelineScheduler := func() {}
 	waitPipeline := func() {}

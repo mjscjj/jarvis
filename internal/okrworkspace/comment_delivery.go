@@ -5,11 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
+
 	"github.com/cloudwego/hertz/pkg/common/hlog"
 	"gorm.io/gorm"
 	"jarvis/internal/larkcli"
 	"jarvis/internal/okrworkspace/domain"
-	"time"
 )
 
 type CommentDeliveryView struct {
@@ -69,7 +70,7 @@ func (s *Service) commentDeliveries(ctx context.Context, id string) ([]CommentDe
 func deliveryWarnings(items []CommentDeliveryView) []string {
 	var result []string
 	for _, r := range items {
-		if r.Status != "delivered" {
+		if r.Status != "delivered" && r.Status != "pending" && r.Status != "sending" {
 			result = append(result, fmt.Sprintf("提醒 %s 未完成：%s", r.Name, r.Error))
 		}
 	}
@@ -150,4 +151,39 @@ func (s *Service) deliverComment(ctx context.Context, id, email string) ([]Comme
 		}
 	}
 	return s.commentDeliveries(ctx, id)
+}
+
+// RunCommentDeliveries drains durable pending intents outside the HTTP request.
+// Existing claims arbitrate between the main and shared development processes.
+func (s *Service) RunCommentDeliveries(ctx context.Context) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		if err := s.processPendingCommentDeliveries(ctx); err != nil && ctx.Err() == nil {
+			hlog.CtxErrorf(ctx, "process pending comment notifications: %v", err)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+func (s *Service) processPendingCommentDeliveries(ctx context.Context) error {
+	var rows []domain.CommentDelivery
+	if err := s.db.WithContext(ctx).Where("status = ?", "pending").Order("updated_at").Limit(20).Find(&rows).Error; err != nil {
+		return err
+	}
+	for _, r := range rows {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		callCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
+		_, err := s.deliverComment(callCtx, r.CommentID, r.Email)
+		cancel()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
