@@ -10,6 +10,8 @@ Jarvis 是运行在本地可信环境中的个人任务 Agent。它持续接收�
 4. [文档导航](docs/README.md)：当前文档、提案、研究与交付物
 5. [OKR 模块当前实现](docs/modules/06-okr.md)：通用 OKR、Biz OKR 与世界模型的维护边界
 6. [Emily 完整研发环境](docs/summery/emily-development-environment.md)：开发 worktree、共享 OKR 数据、实例配置与提交规则
+7. [OKR 真实路径测试规范](docs/summery/okr-real-path-testing-standard.md)：本人现有授权、评论与导出验收、部署后回归和证据要求
+8. [OKR 测试覆盖盘点](docs/summery/okr-test-coverage-audit.md)：现有自动测试、真实验收缺口与优先补齐项
 
 ## 核心链路
 
@@ -40,6 +42,7 @@ Jarvis 是运行在本地可信环境中的个人任务 Agent。它持续接收�
 | 项目目标 | `goal.md` |
 | Agent 关键原则 | `AGENTS.md` |
 | Agent 详细开发规范 | `README.md` 的“AI Agent 详细开发规范” |
+| OKR 测试与真实验收 | [OKR 真实路径测试规范](docs/summery/okr-real-path-testing-standard.md) |
 | 当前跨模块架构 | `docs/00-overview.md` |
 | 数据模型与迁移 | `internal/domain/`, `internal/store/sqlite.go` |
 | OKR 产品模块 | `internal/okrworkspace/`, `internal/okrreview/`, `conf/okr-module.yaml`, `data/okr/`；本机应用绑定在 `conf/okr-module.runtime.yaml` |
@@ -116,6 +119,10 @@ curl --fail "$(./scripts/jarvis-api-base)/readyz" | jq
 服务名、地址、日志从配置派生，不手写固定值。Linux unit 会被部署脚本重新生成，实例额外环境变量（如 OKR 登录应用密钥）放同名 `.d/` 目录的 drop-in。完整服务管理、前端开发、退出和恢复见 [运行与部署](docs/reference/operations.md)。
 
 ## 开发验证
+
+OKR 业务修改须遵循 [OKR 真实路径测试规范](docs/summery/okr-real-path-testing-standard.md)。使用已授权的 `chujiejie.1 / 储节节` 完成受影响的真实页面、后端和飞书路径；设备登录流程单独验收。模拟测试和健康检查不能代替真实业务结果。未运行、被跳过或只模拟通过的项目必须分别报告，不能计为真实验收通过。
+
+`scripts/okr-real-acceptance` 是 OKR 真实浏览器测试入口：它核对本人既有飞书授权、签发短时测试会话、运行 `web/test/okrRealPath.browser.mjs`，再由 `scripts/okr-real-readback` 核对文档归属、正文及通知卡片。需配置可用的 Playwright 模块和 Chromium 路径；结果保存在不入库的 `var/okr-real-run.*`。短时会话只用于登录后的业务验收，不能证明设备登录本身通过。
 
 ```bash
 go test ./cmd/... ./internal/...

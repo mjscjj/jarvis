@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+"""Verify OKR live-browser artifacts with Feishu, without printing credentials."""
+import json
+from pathlib import Path
+import re
+import subprocess
+import sys
+import urllib.request
+
+
+ROOT = Path(__file__).resolve().parent.parent
+OPEN_ID = "ou_0f7d5f75fe23c57c1cf98c5123404f63"
+TOKEN_PATH = ROOT / "data/okr/feishu-tokens" / f"{OPEN_ID}.json"
+API = "https://open.feishu.cn/open-apis"
+
+
+def feishu(token, path, body=None):
+    data = json.dumps(body).encode() if body is not None else None
+    request = urllib.request.Request(
+        API + path, data=data,
+        headers={"Authorization": "Bearer " + token, **({"Content-Type": "application/json"} if data else {})},
+    )
+    with urllib.request.urlopen(request, timeout=20) as response:
+        result = json.load(response)
+    if result.get("code") != 0:
+        raise RuntimeError(f"Feishu readback failed: code={result.get('code')}")
+    return result.get("data") or {}
+
+
+def cli(*args):
+    proc = subprocess.run(
+        ["lark-cli", "--profile", "jarvis-notify-audit", "im", *args, "--as", "bot", "--format", "json"],
+        capture_output=True, text=True, timeout=25,
+    )
+    if proc.returncode:
+        raise RuntimeError(f"notification bot readback failed: exit={proc.returncode}")
+    result = json.loads(proc.stdout)
+    if not result.get("ok"):
+        raise RuntimeError("notification bot readback returned an error")
+    return result.get("data") or {}
+
+
+def main():
+    if len(sys.argv) != 2:
+        raise RuntimeError("usage: scripts/okr-real-readback <browser-evidence.json>")
+    evidence = json.loads(Path(sys.argv[1]).read_text())
+    grant = json.loads(TOKEN_PATH.read_text())
+    assert grant.get("open_id") == OPEN_ID == evidence.get("identity", {}).get("open_id")
+    user = feishu(grant["access_token"], "/authen/v1/user_info")
+    assert user.get("open_id") == OPEN_ID and user.get("union_id") == grant.get("union_id")
+    result = {"run_id": evidence["run_id"], "tester": {"name": user.get("name"), "open_id": OPEN_ID}, "documents": [], "notifications": []}
+    docs = [item for item in evidence.get("artifacts", []) if item.get("kind") == "document"]
+    if docs:
+        metas = feishu(grant["access_token"], "/drive/v1/metas/batch_query", {
+            "request_docs": [{"doc_token": item["id"], "doc_type": "docx"} for item in docs], "with_url": True,
+        })
+        indexed = {item["doc_token"]: item for item in metas.get("metas", [])}
+        for item in docs:
+            meta = indexed.get(item["id"])
+            if not meta:
+                raise RuntimeError(f"Document metadata missing for {item['id']}")
+            content = feishu(grant["access_token"], f"/docx/v1/documents/{item['id']}/raw_content").get("content") or ""
+            expected_title = "OKR Review" if "Review" in meta.get("title", "") else "OKR 周报"
+            verified = meta.get("owner_id") == OPEN_ID and expected_title in content and len(content) > 100
+            result["documents"].append({"id": item["id"], "url": item["url"], "title": meta.get("title"), "owner_matches_tester": meta.get("owner_id") == OPEN_ID, "content_length": len(content), "verified": verified})
+            if not verified:
+                raise RuntimeError(f"Document readback mismatch for {item['id']}")
+    for item in evidence.get("results", []):
+        if item.get("case") != "self-mention" or not item.get("message_id"):
+            continue
+        data = cli("+messages-mget", "--message-ids", item["message_id"], "--no-reactions")
+        message = next((m for m in data.get("messages", []) if m.get("message_id") == item["message_id"]), None)
+        if not message:
+            raise RuntimeError("Self-mention message not found in notification bot chat")
+        members = cli("chat.members", "get", "--chat-id", message["chat_id"], "--member-id-type", "open_id")
+        recipient = any(member.get("member_id") == OPEN_ID for member in members.get("items", []))
+        sender = message.get("sender", {}).get("id") == "cli_a96a2422f03bdbd7"
+        content = str(message.get("content") or "")
+        links = re.findall(r"https://[^)\s]+", content)
+        target = next((link for link in links if "comment_id=" in link), "")
+        correct_origin = target.startswith(evidence["origin"].rstrip("/") + "/#/")
+        verified = recipient and sender and evidence["run_id"] in content and correct_origin
+        result["notifications"].append({"message_id": item["message_id"], "recipient_matches_tester": recipient, "sender_is_notification_bot": sender, "contains_test_comment": evidence["run_id"] in content, "link": target, "link_targets_tested_instance": correct_origin, "verified": verified})
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    if any(not item["verified"] for item in result["notifications"]):
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception as error:
+        print(f"Live readback failed: {error}", file=sys.stderr)
+        sys.exit(1)

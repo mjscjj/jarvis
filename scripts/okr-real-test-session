@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+"""Issue one short OKR browser session from an existing, live-verified Feishu grant.
+
+This bridges a saved user grant into an isolated test browser. It does not test
+the product's device-login flow and never prints access tokens or cookies.
+"""
+import base64
+import datetime as dt
+import hashlib
+import json
+import os
+from pathlib import Path
+import secrets
+import sqlite3
+import sys
+import tempfile
+import urllib.request
+
+
+ROOT = Path(__file__).resolve().parent.parent
+OPEN_ID = "ou_0f7d5f75fe23c57c1cf98c5123404f63"
+NAME = "储节节"
+TOKEN_PATH = ROOT / "data/okr/feishu-tokens" / f"{OPEN_ID}.json"
+DB_PATH = Path(os.environ.get("OKR_REAL_IDENTITY_DB", str(ROOT / "var/jarvis-lixiaolin.db")))
+
+
+def main():
+    grant = json.loads(TOKEN_PATH.read_text())
+    if grant.get("open_id") != OPEN_ID or grant.get("name") != NAME:
+        raise RuntimeError("Saved grant is not the expected tester")
+    expiry = dt.datetime.fromisoformat(grant["expires_at"].replace("Z", "+00:00"))
+    if expiry <= dt.datetime.now(dt.timezone.utc) + dt.timedelta(minutes=3):
+        raise RuntimeError("Existing Feishu access token has expired; refresh via the product before testing")
+    request = urllib.request.Request(
+        "https://open.feishu.cn/open-apis/authen/v1/user_info",
+        headers={"Authorization": "Bearer " + grant["access_token"]},
+    )
+    with urllib.request.urlopen(request, timeout=15) as response:
+        user_response = json.load(response)
+    user = user_response.get("data") or {}
+    if user_response.get("code") != 0 or user.get("open_id") != OPEN_ID or user.get("union_id") != grant.get("union_id") or user.get("name") != NAME:
+        raise RuntimeError("Live Feishu identity does not match the saved tester grant")
+
+    now = dt.datetime.now(dt.timezone.utc)
+    expires = now + dt.timedelta(minutes=45)
+    cookie = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=").decode()
+    token_hash = hashlib.sha256(cookie.encode()).hexdigest()
+    conn = sqlite3.connect(DB_PATH, timeout=15)
+    try:
+        conn.execute(
+            """INSERT INTO okr_workspace_auth_session
+            (token_hash,open_id,union_id,name,avatar_url,email,expires_at,created_at,last_seen_at)
+            VALUES (?,?,?,?,?,?,?,?,?)""",
+            (token_hash, OPEN_ID, user["union_id"], NAME, user.get("avatar_url") or "", user.get("email") or "", expires.isoformat(), now.isoformat(), now.isoformat()),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    fd, output = tempfile.mkstemp(prefix="okr-real-session-", suffix=".json")
+    try:
+        os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w") as handle:
+            json.dump({"cookie": cookie, "token_hash": token_hash, "open_id": OPEN_ID, "expires_at": expires.isoformat()}, handle)
+        base_url = os.environ.get("OKR_REAL_BASE_URL", "").rstrip("/")
+        if base_url:
+            request = urllib.request.Request(
+                base_url + "/api/biz-okr/me",
+                headers={"Cookie": "jarvis_okr_session=" + cookie},
+            )
+            with urllib.request.urlopen(request, timeout=10) as response:
+                current = json.load(response)
+            if current.get("data", {}).get("user", {}).get("open_id") != OPEN_ID or not current.get("data", {}).get("authenticated"):
+                raise RuntimeError("Target OKR service did not recognize the verified short session")
+    except Exception:
+        Path(output).unlink(missing_ok=True)
+        with sqlite3.connect(DB_PATH, timeout=15) as cleanup:
+            cleanup.execute("DELETE FROM okr_workspace_auth_session WHERE token_hash = ?", (token_hash,))
+        raise
+    print(output)
+
+
+def revoke(path):
+    session_path = Path(path)
+    if not session_path.exists():
+        return
+    session = json.loads(session_path.read_text())
+    if session.get("open_id") != OPEN_ID or not session.get("token_hash"):
+        raise RuntimeError("Refusing to revoke a session file for another identity")
+    with sqlite3.connect(DB_PATH, timeout=15) as conn:
+        conn.execute("DELETE FROM okr_workspace_auth_session WHERE token_hash = ?", (session["token_hash"],))
+    session_path.unlink()
+
+
+if __name__ == "__main__":
+    try:
+        if len(sys.argv) == 3 and sys.argv[1] == "--revoke":
+            revoke(sys.argv[2])
+        elif len(sys.argv) == 1:
+            main()
+        else:
+            raise RuntimeError("usage: okr-real-test-session [--revoke <session-file>]")
+    except Exception as error:
+        print(f"Cannot issue verified tester session: {error}", file=sys.stderr)
+        sys.exit(1)
