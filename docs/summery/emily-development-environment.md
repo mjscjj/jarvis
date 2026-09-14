@@ -65,6 +65,8 @@ Cookie 的名称空间和 Path、相对重定向也随代理前缀变化。
 生产实例的 `conf/okr-module.runtime.yaml` 设置 `chat.development_container: emily-development`，将 OKR 对话的执行环境切到该容器；
 对话列表仍保存在现有共享的 `var/okr-chat/chat.db`。新会话使用完整研发工具说明；旧会话不会被自动改写。
 
+开发页面的 Biz OKR 对话框直接调用同域主站的 `/api/okr-chat/*`，复用这份会话库和主站已有的 OKR 飞书登录状态；执行仍进入同一个研发容器。开发实例自己的 OKR Chat 服务保持关闭，避免在容器里递归启动 Docker。普通开发页面 API 继续走配置前缀，只有这一个已存在的 OKR 对话接口使用根路径。
+
 容器内重新构建使用 `./scripts/jarvis-deploy --skip-pull`。没有 systemd 或宿主部署能力，
 它只管理开发实例 PID。Git worktree 的正式提交与合并由宿主开发流程完成。
 

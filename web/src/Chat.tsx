@@ -72,8 +72,8 @@ function isMissingChatSession(cause: unknown): boolean {
 
 const ChatAPIContext = createContext('/api/chat')
 
-export default function Chat({ compact = false, hidden = false, isolated = false }: { compact?: boolean; hidden?: boolean; isolated?: boolean }) {
-  return <ChatAPIContext.Provider value={isolated ? '/api/okr-chat' : '/api/chat'}>
+export default function Chat({ compact = false, hidden = false, isolated = false, apiBase }: { compact?: boolean; hidden?: boolean; isolated?: boolean; apiBase?: string }) {
+  return <ChatAPIContext.Provider value={apiBase || (isolated ? '/api/okr-chat' : '/api/chat')}>
     <ChatInner compact={compact} hidden={hidden} isolated={isolated} />
   </ChatAPIContext.Provider>
 }
