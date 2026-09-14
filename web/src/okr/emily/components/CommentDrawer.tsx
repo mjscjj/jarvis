@@ -325,6 +325,8 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
   const [navigationNotice, setNavigationNotice] = useState('')
   const [reviewCommentId, setReviewCommentId] = useState('')
   const loadVersion = useRef(0)
+  const inFlightLoadVersion = useRef<number | null>(null)
+  const mergeStaleLoadVersion = useRef<number | null>(null)
   const [submittedId, setSubmittedId] = useState('')
   const scopeKey = `${planId ?? ''}:${quarter}:${week}`
   const scopeRef = useRef(scopeKey)
@@ -342,20 +344,34 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
 
   const load = useCallback(async () => {
     const version = ++loadVersion.current
+    inFlightLoadVersion.current = version
+    mergeStaleLoadVersion.current = null
     setLoading(true)
     setError('')
     try {
       const value = planId ? await getPlanComments(planId) : await getComments(quarter, week)
-      if (version !== loadVersion.current) return
+      if (version !== loadVersion.current) {
+        // A comment can be saved while the first list is loading. Keep the
+        // freshly saved comment, then add the older threads from that list.
+        if (mergeStaleLoadVersion.current === version && scopeRef.current === scopeKey) {
+          mergeStaleLoadVersion.current = null
+          setComments(current => {
+            const saved = new Set(current.map(comment => comment.id))
+            return [...value.comments.filter(comment => !saved.has(comment.id)), ...current]
+          })
+        }
+        return
+      }
       setComments(value.comments)
       summaryRef.current(value.comments)
     } catch (reason) {
       if (version !== loadVersion.current) return
       setError(reason instanceof Error ? reason.message : '评论加载失败')
     } finally {
+      if (inFlightLoadVersion.current === version) inFlightLoadVersion.current = null
       if (version === loadVersion.current) setLoading(false)
     }
-  }, [planId, quarter, week])
+  }, [planId, quarter, scopeKey, week])
 
   useEffect(() => {
     setComments([])
@@ -457,6 +473,7 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewing = false, 
       }
       const created = planId ? await createPlanComment(planId, input) : await createComment({ quarter, week, sourceTab, ...input })
       if (scopeRef.current !== submittedScope) return
+      if (inFlightLoadVersion.current === loadVersion.current) mergeStaleLoadVersion.current = loadVersion.current
       loadVersion.current++
       setLoading(false)
       setComments((current) => [...current.filter(item => item.id !== created.id), created])

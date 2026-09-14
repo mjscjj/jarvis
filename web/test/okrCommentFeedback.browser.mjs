@@ -39,24 +39,32 @@ try {
   return node
  }
  await submit('隔离验证：提交后立即可见 '+Date.now())
- // Freeze an old initial list response until a newer comment has been saved.
+ // Hold every list response while publishing. The drawer must recover the
+ // existing threads as well as keep the new one when those responses arrive.
  let release
  const gate=new Promise(resolve=>{release=resolve})
- let intercepted=false
+ let intercepted
+ const interceptedPromise=new Promise(resolve=>{intercepted=resolve})
+ let oldCount=0
  await page.route('**/api/biz-okr/comments?**',async route=>{
-  if(route.request().method()!=='GET'||intercepted)return route.continue()
-  intercepted=true
+  if(route.request().method()!=='GET')return route.continue()
   const old=await route.fetch()
+  oldCount=(await old.json()).data.comments.length
+  intercepted()
   await gate
   await route.fulfill({response:old})
  })
  await page.reload()
  await page.locator('button').filter({hasText:/^评论\s*\d*$/}).click()
+ await interceptedPromise
+ await drawer.getByText('正在读取评论…',{exact:true}).waitFor()
+ assert(oldCount>0,'fixture needs existing comments')
  const node=await submit('隔离验证：旧列表不可覆盖新评论 '+Date.now())
+ assert.equal(await drawer.locator('article[id^="comment-"]').count(),1)
  release()
- await page.waitForTimeout(600)
+ await page.waitForFunction(count=>document.querySelectorAll('aside[aria-hidden="false"] article[id^="comment-"]').length>=count,oldCount+1)
  await node.waitFor()
  assert.equal(errors.length,0,errors.join('\n'))
  await page.screenshot({path:process.env.OKR_BROWSER_SCREENSHOT || '/tmp/okr-comment-feedback.png'})
- console.log('PASS: new comment remains visible after a delayed stale GET; no browser errors')
+ console.log('PASS: new comment and',oldCount,'older threads remain visible after delayed GET; no browser errors')
 } finally {await browser.close()}
