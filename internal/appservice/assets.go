@@ -57,6 +57,7 @@ func validateBundle(layout Layout) error {
 		layout.ServerBinary,
 		layout.QdrantBinary,
 		layout.CCConnectBinary,
+		filepath.Join(layout.ResourceRoot, "bin", "lark-cli"),
 		filepath.Join(layout.ResourceRoot, "conf", "config.yaml"),
 		filepath.Join(layout.ResourceRoot, "conf", "qdrant.yaml"),
 		filepath.Join(layout.ResourceRoot, "web", "dist", "index.html"),
@@ -78,7 +79,7 @@ func validateBundle(layout Layout) error {
 		if err != nil {
 			return fmt.Errorf("required bundled resource %q: %w", path, err)
 		}
-		if path == layout.ServerBinary || path == layout.QdrantBinary {
+		if path == layout.ServerBinary || path == layout.QdrantBinary || path == filepath.Join(layout.ResourceRoot, "bin", "lark-cli") {
 			if !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
 				return fmt.Errorf("bundled executable is not executable: %s", path)
 			}

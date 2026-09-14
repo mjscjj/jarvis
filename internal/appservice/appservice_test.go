@@ -136,6 +136,32 @@ func TestPrepareRejectsIncompleteToolModules(t *testing.T) {
 	}
 }
 
+func TestPrepareRequiresBundledLarkCLI(t *testing.T) {
+	for _, missing := range []bool{true, false} {
+		t.Run(fmt.Sprintf("missing=%t", missing), func(t *testing.T) {
+			resources := t.TempDir()
+			writeBundleFixture(t, resources)
+			binary := filepath.Join(resources, "bin", "lark-cli")
+			if missing {
+				if err := os.Remove(binary); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.Chmod(binary, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			hostBin := t.TempDir()
+			if err := os.WriteFile(filepath.Join(hostBin, "lark-cli"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("PATH", hostBin)
+			err := Prepare(NewLayout(Options{ResourceRoot: resources, StateRoot: t.TempDir()}))
+			if err == nil || !strings.Contains(err.Error(), binary) {
+				t.Fatalf("Prepare() error = %v, want bundled Lark CLI failure", err)
+			}
+		})
+	}
+}
+
 func TestPrepareCreatesBootstrapOverrideOnce(t *testing.T) {
 	resourceRoot := t.TempDir()
 	stateRoot := t.TempDir()
@@ -507,6 +533,7 @@ func writeBundleFixture(t *testing.T, root string) {
 		"bin/jarvis-server":         "#!/bin/sh\n",
 		"bin/qdrant":                "#!/bin/sh\n",
 		"bin/cc-connect-jarvis":     "#!/bin/sh\n",
+		"bin/lark-cli":              "#!/bin/sh\n",
 		"conf/config.yaml":          "version: 1\n",
 		"conf/qdrant.yaml":          "service: {}\n",
 		"conf/prompts/m3.md":        "prompt-v1\n",

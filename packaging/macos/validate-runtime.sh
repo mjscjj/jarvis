@@ -69,7 +69,11 @@ run_version cc-connect-jarvis --version
 [[ "$REPLY" == *"cc-connect ${CC_CONNECT_VERSION}"* && "$REPLY" == *"${CC_CONNECT_PATCH_COMMIT}"* ]] ||
   fail "cc-connect version does not match repository manifest"
 run_version lark-cli --version
-[[ "$REPLY" == *"lark-cli version "* ]] || fail "lark-cli version output is invalid"
+[[ "$REPLY" == "lark-cli version $JARVIS_LARK_CLI_VERSION" ]] ||
+  fail "lark-cli version is ${REPLY:q}, want $JARVIS_LARK_CLI_VERSION"
+[[ -s "$runtime_root/licenses/lark-cli-LICENSE" ]] || fail "missing Lark CLI license"
+env -i HOME="$temporary_home" PATH="$minimal_path" JARVIS_JQ_BIN="$runtime_root/bin/jq" \
+  bash "$script_dir/check-lark-skills.sh" "$runtime_root/bin/lark-cli" || fail "bundled Lark Skills validation failed"
 run_version traex --version
 [[ "$REPLY" == *"traecli "* ]] || fail "traex version output is invalid"
 run_version node --version
