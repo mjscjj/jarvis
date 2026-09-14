@@ -240,6 +240,17 @@ func (s *Service) CancelSession(sessionID string) bool {
 	return ok
 }
 
+// CancelAccessibleSession keeps the unscoped Chat API behavior while requiring
+// ownership before an OKR visitor can stop another person's active turn.
+func (s *Service) CancelAccessibleSession(ctx context.Context, sessionID string) (bool, error) {
+	if s.ownerRequired {
+		if err := s.requireSessionAccess(ctx, sessionID); err != nil {
+			return false, err
+		}
+	}
+	return s.CancelSession(sessionID), nil
+}
+
 func (s *Service) sessionRunning(sessionID string) bool {
 	s.activeMu.Lock()
 	defer s.activeMu.Unlock()

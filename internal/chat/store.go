@@ -135,6 +135,10 @@ func (s *Service) CreateSession(ctx context.Context, input CreateSessionInput) (
 	if err := s.requireDB(); err != nil {
 		return nil, err
 	}
+	ownerID, err := s.owner(ctx)
+	if err != nil {
+		return nil, err
+	}
 	agent, err := normalizeAgent(input.Agent)
 	if err != nil {
 		return nil, err
@@ -176,7 +180,7 @@ func (s *Service) CreateSession(ctx context.Context, input CreateSessionInput) (
 	if len(draft) == 0 {
 		draft = datatypes.JSON(`{}`)
 	}
-	row := domain.ChatSession{ID: id, Title: strings.TrimSpace(input.Title), Agent: agent, Model: model, ReasoningEffort: effort, Sources: sources, Draft: draft}
+	row := domain.ChatSession{ID: id, OwnerID: ownerID, Title: strings.TrimSpace(input.Title), Agent: agent, Model: model, ReasoningEffort: effort, Sources: sources, Draft: draft}
 	if row.Title == "" {
 		row.Title = "新对话"
 	}
@@ -247,11 +251,12 @@ func (s *Service) copyAttachment(ctx context.Context, sessionID, messageID strin
 }
 
 func (s *Service) ListSessions(ctx context.Context, query string, archived bool) ([]SessionView, error) {
-	if err := s.requireDB(); err != nil {
+	db, err := s.scopedSessions(ctx)
+	if err != nil {
 		return nil, err
 	}
 	var rows []domain.ChatSession
-	db := s.db.WithContext(ctx).Order("updated_at DESC")
+	db = db.Order("updated_at DESC")
 	if archived {
 		db = db.Where("archived_at IS NOT NULL")
 	} else {
@@ -279,11 +284,12 @@ func sessionView(row domain.ChatSession) *SessionView {
 }
 
 func (s *Service) GetSession(ctx context.Context, id string) (*SessionView, error) {
-	if err := s.requireDB(); err != nil {
+	db, err := s.scopedSessions(ctx)
+	if err != nil {
 		return nil, err
 	}
 	var row domain.ChatSession
-	if err := s.db.WithContext(ctx).First(&row, "id = ?", strings.TrimSpace(id)).Error; err != nil {
+	if err := db.First(&row, "id = ?", strings.TrimSpace(id)).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound
 		}
@@ -341,12 +347,12 @@ func (s *Service) UpdateSession(ctx context.Context, id string, input UpdateSess
 	if s.runtime != nil && ((input.Agent != nil && *input.Agent != s.runner.agent) || (input.Model != nil && *input.Model != s.runner.model) || (input.ReasoningEffort != nil && *input.ReasoningEffort != s.runner.reasoningEffort)) {
 		return nil, fmt.Errorf("%w: this chat runtime uses a fixed agent, model and effort", ErrInvalidInput)
 	}
-	if (input.Agent != nil || input.Model != nil || input.ReasoningEffort != nil) && s.sessionRunning(id) {
-		return nil, fmt.Errorf("%w: stop the active reply before changing its agent or model", ErrConflict)
-	}
 	view, err := s.GetSession(ctx, id)
 	if err != nil {
 		return nil, err
+	}
+	if (input.Agent != nil || input.Model != nil || input.ReasoningEffort != nil) && s.sessionRunning(id) {
+		return nil, fmt.Errorf("%w: stop the active reply before changing its agent or model", ErrConflict)
 	}
 	updates := map[string]any{}
 	if input.Title != nil {
@@ -405,11 +411,11 @@ func (s *Service) UpdateSession(ctx context.Context, id string, input UpdateSess
 }
 
 func (s *Service) DeleteSession(ctx context.Context, id string) error {
-	if s.sessionRunning(id) {
-		return fmt.Errorf("%w: stop the active reply before deleting its session", ErrConflict)
-	}
 	if _, err := s.GetSession(ctx, id); err != nil {
 		return err
+	}
+	if s.sessionRunning(id) {
+		return fmt.Errorf("%w: stop the active reply before deleting its session", ErrConflict)
 	}
 	if err := s.db.WithContext(ctx).Delete(&domain.ChatSession{}, "id = ?", id).Error; err != nil {
 		return fmt.Errorf("delete chat session: %w", err)
@@ -428,7 +434,7 @@ func (s *Service) DeleteSession(ctx context.Context, id string) error {
 const MaxAttachmentBytes = 12 << 20
 
 func (s *Service) SaveUpload(ctx context.Context, sessionID, name, mime string, size int64, copyFile func(string) error) (*AttachmentView, error) {
-	if _, err := s.GetSession(ctx, sessionID); err != nil {
+	if err := s.requireSessionAccess(ctx, sessionID); err != nil {
 		return nil, err
 	}
 	if size <= 0 {
@@ -467,7 +473,7 @@ func (s *Service) SaveUpload(ctx context.Context, sessionID, name, mime string, 
 }
 
 func (s *Service) DeletePendingAttachment(ctx context.Context, sessionID, id string) error {
-	if err := s.requireDB(); err != nil {
+	if err := s.requireSessionAccess(ctx, sessionID); err != nil {
 		return err
 	}
 	var row domain.ChatAttachment
@@ -496,6 +502,9 @@ func (s *Service) GetAttachment(ctx context.Context, id string) (*AttachmentReco
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound
 		}
+		return nil, err
+	}
+	if err := s.requireSessionAccess(ctx, row.SessionID); err != nil {
 		return nil, err
 	}
 	return &AttachmentRecord{View: attachmentView(row), LocalPath: row.LocalPath}, nil

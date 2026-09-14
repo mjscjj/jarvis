@@ -153,8 +153,13 @@ func StreamChatSession(service *chat.Service) app.HandlerFunc {
 }
 
 func CancelChatSession(service *chat.Service) app.HandlerFunc {
-	return func(_ context.Context, c *app.RequestContext) {
-		c.JSON(200, map[string]any{"code": 0, "data": map[string]any{"canceled": service.CancelSession(c.Param("session_id"))}})
+	return func(ctx context.Context, c *app.RequestContext) {
+		canceled, err := service.CancelAccessibleSession(ctx, c.Param("session_id"))
+		if err != nil {
+			writeChatError(c, err)
+			return
+		}
+		c.JSON(200, map[string]any{"code": 0, "data": map[string]any{"canceled": canceled}})
 	}
 }
 

@@ -92,11 +92,12 @@ func TestDevelopmentServiceRecoversUnavailableNativeThread(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer closeDB()
-	session, err := svc.CreateSession(t.Context(), chat.CreateSessionInput{Agent: "codex", Model: cfg.Model, ReasoningEffort: cfg.ReasoningEffort})
+	ownerCtx := chat.WithOwner(t.Context(), "integration-user")
+	session, err := svc.CreateSession(ownerCtx, chat.CreateSessionInput{Agent: "codex", Model: cfg.Model, ReasoningEffort: cfg.ReasoningEffort})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer func() { _ = svc.DeleteSession(context.Background(), session.ID) }()
+	defer func() { _ = svc.DeleteSession(chat.WithOwner(context.Background(), "integration-user"), session.ID) }()
 	db, err := store.OpenSQLite(t.Context(), config.SQLiteConfig{Path: root + "/chat.db"})
 	if err != nil {
 		t.Fatal(err)
@@ -108,10 +109,10 @@ func TestDevelopmentServiceRecoversUnavailableNativeThread(t *testing.T) {
 	if err := db.Create(&domain.ChatMessage{ID: "old-" + session.ID, SessionID: session.ID, Role: "user", Text: "之前讨论过这个问题"}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.StreamSession(t.Context(), session.ID, chat.SendInput{Message: "只回答 RECOVERED，不调用工具。"}, func(chat.Event) error { return nil }); err != nil {
+	if err := svc.StreamSession(ownerCtx, session.ID, chat.SendInput{Message: "只回答 RECOVERED，不调用工具。"}, func(chat.Event) error { return nil }); err != nil {
 		t.Fatal(err)
 	}
-	view, err := svc.GetSession(t.Context(), session.ID)
+	view, err := svc.GetSession(ownerCtx, session.ID)
 	if err != nil || len(view.Messages) != 3 || !strings.Contains(view.Messages[2].Text, "RECOVERED") {
 		t.Fatalf("recovered reply = %+v, error = %v", view, err)
 	}

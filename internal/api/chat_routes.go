@@ -1,11 +1,37 @@
 package api
 
 import (
+	"context"
+	"fmt"
+	"strings"
+
 	"jarvis/internal/chat"
+	okrAuth "jarvis/internal/okrworkspace/auth"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
+	"github.com/cloudwego/hertz/pkg/protocol/consts"
 )
+
+func scopeOKRChat(ctx context.Context, c *app.RequestContext) {
+	value, exists := c.Get(okrIdentityContextKey)
+	user, ok := value.(okrAuth.User)
+	if !exists || !ok {
+		writeAPIError(c, consts.StatusInternalServerError, 50089, fmt.Errorf("OKR chat identity is missing"))
+		c.Abort()
+		return
+	}
+	ownerID := strings.TrimSpace(user.UnionID)
+	if ownerID == "" && user.OpenID == "jarvis" {
+		ownerID = "jarvis" // Local instances with OKR login disabled.
+	}
+	if ownerID == "" {
+		writeAPIError(c, consts.StatusInternalServerError, 50089, fmt.Errorf("OKR chat identity has no stable ID"))
+		c.Abort()
+		return
+	}
+	c.Next(chat.WithOwner(ctx, ownerID))
+}
 
 func registerChatRoutes(h *server.Hertz, prefix string, service *chat.Service, guards ...app.HandlerFunc) {
 	bind := func(factory func(*chat.Service) app.HandlerFunc) []app.HandlerFunc {

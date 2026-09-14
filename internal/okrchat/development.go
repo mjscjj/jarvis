@@ -54,7 +54,7 @@ func openDevelopment(ctx context.Context, cfg moduleconfig.ChatConfig, root, nam
 		return nil, nil, err
 	}
 	runtime := &DevelopmentRuntime{container: cfg.DevelopmentContainer, docker: docker, root: root, cfg: cfg}
-	service, err := chat.NewService(chat.Options{AgentName: name, Bin: "codex", Model: cfg.Model, Sandbox: "danger-full-access", ReasoningEffort: cfg.ReasoningEffort, Timeout: time.Duration(cfg.TimeoutSeconds) * time.Second, DB: db, FilesRoot: filepath.Join(root, "files"), Prompts: prompts, Runtime: runtime, PromptKey: textstore.SystemPromptOKRChatKey, ToolBlock: toolcatalog.EmilyDevelopmentBlock()})
+	service, err := chat.NewService(chat.Options{AgentName: name, Bin: "codex", Model: cfg.Model, Sandbox: "danger-full-access", ReasoningEffort: cfg.ReasoningEffort, Timeout: time.Duration(cfg.TimeoutSeconds) * time.Second, DB: db, FilesRoot: filepath.Join(root, "files"), Prompts: prompts, Runtime: runtime, OwnerRequired: true, PromptKey: textstore.SystemPromptOKRChatKey, ToolBlock: toolcatalog.EmilyDevelopmentBlock()})
 	if err != nil {
 		closeDB()
 		return nil, nil, err

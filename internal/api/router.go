@@ -459,7 +459,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.PUT("/api/resources/:resource_id", UpdateResource(deps.Resources))
 	h.POST("/api/resources/:resource_id/touch", TouchResource(deps.Resources))
 	h.DELETE("/api/resources/:resource_id", DeleteResource(deps.Resources))
-	// OKR visitors share one Chat service/store, separate from principal Chat.
+	// OKR visitors share one Chat store, scoped to their verified Feishu identity.
 	if deps.Chat != nil {
 		registerChatRoutes(h, "/api/chat", deps.Chat)
 	}
@@ -481,7 +481,7 @@ func Register(h *server.Hertz, deps Dependencies) error {
 			}
 			c.Next(ctx)
 		}
-		registerChatRoutes(h, "/api/okr-chat", deps.OKRChat, requireEnabled, RequireOKRIdentity(deps.BizOKRModule.Identity))
+		registerChatRoutes(h, "/api/okr-chat", deps.OKRChat, requireEnabled, RequireOKRIdentity(deps.BizOKRModule.Identity), scopeOKRChat)
 	}
 	h.GET("/api/web-config", GetWebConfig(deps.PublicBaseURL))
 	// 精确 API 路由优先于这个兜底。必须在进程注册根 StaticFS 之前拦住

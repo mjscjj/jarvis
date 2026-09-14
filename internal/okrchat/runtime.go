@@ -96,7 +96,7 @@ func Open(ctx context.Context, cfg moduleconfig.ChatConfig, root, repo, upstream
 		closeAll()
 		return nil, nil, err
 	}
-	s, err := chat.NewService(chat.Options{AgentName: name, Bin: "codex", Model: cfg.Model, Sandbox: "danger-full-access", ReasoningEffort: cfg.ReasoningEffort, Timeout: time.Duration(cfg.TimeoutSeconds) * time.Second, DB: db, FilesRoot: filepath.Join(root, "files"), Prompts: prompts, Runtime: r, PromptKey: textstore.SystemPromptOKRChatKey, ToolBlock: toolcatalog.OKRChatBlock()})
+	s, err := chat.NewService(chat.Options{AgentName: name, Bin: "codex", Model: cfg.Model, Sandbox: "danger-full-access", ReasoningEffort: cfg.ReasoningEffort, Timeout: time.Duration(cfg.TimeoutSeconds) * time.Second, DB: db, FilesRoot: filepath.Join(root, "files"), Prompts: prompts, Runtime: r, OwnerRequired: true, PromptKey: textstore.SystemPromptOKRChatKey, ToolBlock: toolcatalog.OKRChatBlock()})
 	if err != nil {
 		closeAll()
 		return nil, nil, err

@@ -121,13 +121,14 @@ func TestDockerModelAndResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer closeService()
-	session, err := s.CreateSession(t.Context(), chat.CreateSessionInput{Agent: "codex", Model: cfg.Model, ReasoningEffort: cfg.ReasoningEffort})
+	ownerCtx := chat.WithOwner(t.Context(), "integration-user")
+	session, err := s.CreateSession(ownerCtx, chat.CreateSessionInput{Agent: "codex", Model: cfg.Model, ReasoningEffort: cfg.ReasoningEffort})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, prompt := range []string{"Remember the marker ORANGE-OKR-742. Use curl once to read $JARVIS_API_BASE/api/okr/board and answer with both markers only.", "Without using tools, repeat the two markers from the preceding turn."} {
 		var reply strings.Builder
-		err := s.StreamSession(t.Context(), session.ID, chat.SendInput{Message: prompt}, func(e chat.Event) error {
+		err := s.StreamSession(ownerCtx, session.ID, chat.SendInput{Message: prompt}, func(e chat.Event) error {
 			if e.Kind == chat.EventDelta {
 				reply.WriteString(e.Text)
 			}
@@ -142,13 +143,13 @@ func TestDockerModelAndResume(t *testing.T) {
 			}
 		}
 	}
-	view, err := s.GetSession(t.Context(), session.ID)
+	view, err := s.GetSession(ownerCtx, session.ID)
 	if err != nil || len(view.Messages) != 4 {
 		t.Fatalf("history persistence: %+v %v", view, err)
 	}
 	finished := make(chan error, 1)
 	go func() {
-		finished <- s.StreamSession(context.Background(), session.ID, chat.SendInput{Message: "Use a shell to sleep 120 seconds before replying."}, func(chat.Event) error { return nil })
+		finished <- s.StreamSession(chat.WithOwner(context.Background(), "integration-user"), session.ID, chat.SendInput{Message: "Use a shell to sleep 120 seconds before replying."}, func(chat.Event) error { return nil })
 	}()
 	filter := "label=jarvis.okr-chat.session=" + session.ID
 	deadline := time.Now().Add(15 * time.Second)

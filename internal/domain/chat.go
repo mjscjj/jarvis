@@ -10,6 +10,7 @@ import (
 // thread IDs are adapter details and never become the product session ID.
 type ChatSession struct {
 	ID              string         `gorm:"column:id;primaryKey"`
+	OwnerID         string         `gorm:"column:owner_id;index:idx_chat_session_owner"`
 	Title           string         `gorm:"column:title;not null;index:idx_chat_session_title"`
 	Agent           string         `gorm:"column:agent;not null"`
 	Model           string         `gorm:"column:model;not null"`

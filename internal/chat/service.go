@@ -42,6 +42,7 @@ type Source struct {
 // Options 构造 Service 所需的全部依赖。
 type Options struct {
 	Runtime         Runtime
+	OwnerRequired   bool
 	PromptKey       string
 	ToolBlock       string
 	AgentName       string
@@ -57,17 +58,18 @@ type Options struct {
 
 // Service owns prompt assembly, persistent sessions, and Agent adapters.
 type Service struct {
-	runtime   Runtime
-	promptKey string
-	toolBlock string
-	runner    *runner
-	db        *gorm.DB
-	filesRoot string
-	prompts   textstore.Reader
-	sandbox   string
-	timeout   time.Duration
-	activeMu  sync.Mutex
-	active    map[string]context.CancelFunc
+	runtime       Runtime
+	ownerRequired bool
+	promptKey     string
+	toolBlock     string
+	runner        *runner
+	db            *gorm.DB
+	filesRoot     string
+	prompts       textstore.Reader
+	sandbox       string
+	timeout       time.Duration
+	activeMu      sync.Mutex
+	active        map[string]context.CancelFunc
 }
 
 // Runtime replaces only execution, never session persistence. Prepare maps
@@ -99,8 +101,9 @@ func NewService(opts Options) (*Service, error) {
 	}
 	return &Service{
 		runtime: opts.Runtime, promptKey: opts.PromptKey, toolBlock: opts.ToolBlock,
-		runner: r,
-		db:     opts.DB, filesRoot: filesRoot, prompts: opts.Prompts,
+		ownerRequired: opts.OwnerRequired,
+		runner:        r,
+		db:            opts.DB, filesRoot: filesRoot, prompts: opts.Prompts,
 		sandbox: opts.Sandbox, timeout: opts.Timeout, active: make(map[string]context.CancelFunc),
 	}, nil
 }

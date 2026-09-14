@@ -28,6 +28,46 @@ func newPersistentTestService(t *testing.T) *Service {
 	return svc
 }
 
+func TestOwnerScopedChatMigratesLegacySessionsWithoutDeletingThem(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "chat.db")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`CREATE TABLE chat_session (id TEXT PRIMARY KEY, title TEXT, agent TEXT, model TEXT, reasoning_effort TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO chat_session (id, title, agent, model, reasoning_effort) VALUES ('cs_legacy', 'Legacy', 'codex', 'gpt-5.5', 'high')`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(domain.ChatModels()...); err != nil {
+		t.Fatal(err)
+	}
+	svc := newTestService(t)
+	svc.db = db
+	svc.ownerRequired = true
+	if _, err := svc.CreateSession(t.Context(), CreateSessionInput{Agent: "codex", Model: "gpt-5.5", ReasoningEffort: "high"}); !errors.Is(err, errOwnerRequired) {
+		t.Fatalf("unowned create error = %v", err)
+	}
+	alice := WithOwner(t.Context(), "on_alice")
+	if sessions, err := svc.ListSessions(alice, "", false); err != nil || len(sessions) != 0 {
+		t.Fatalf("legacy session leaked in list: %#v, %v", sessions, err)
+	}
+	if _, err := svc.GetSession(alice, "cs_legacy"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("legacy session access error = %v", err)
+	}
+	var count int64
+	if err := db.Model(&domain.ChatSession{}).Where("id = ?", "cs_legacy").Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("legacy row deleted: count=%d error=%v", count, err)
+	}
+	created, err := svc.CreateSession(alice, CreateSessionInput{Agent: "codex", Model: "gpt-5.5", ReasoningEffort: "high"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.GetSession(WithOwner(t.Context(), "on_bob"), created.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("bob read alice session: %v", err)
+	}
+}
+
 func TestSaveUploadSizeBoundary(t *testing.T) {
 	svc := newPersistentTestService(t)
 	session, err := svc.CreateSession(t.Context(), CreateSessionInput{Agent: "codex", Model: "gpt-5.5", ReasoningEffort: "high"})
