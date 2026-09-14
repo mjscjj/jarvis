@@ -2,7 +2,7 @@
 
 > Status: deliverable index
 > Authority: non-normative
-> Last reviewed: 2026-09-11
+> Last reviewed: 2026-09-14
 
 本目录保存正式表达、交付和明确要求保留的原始材料，不是架构事实真源。涉及当前行为时，以 [`goal.md`](../../goal.md)、[`docs/00-overview.md`](../00-overview.md) 和代码为准。
 
@@ -15,6 +15,8 @@
 
 ## 方案与历史材料
 
+- [Emily 完整研发环境](emily-development-environment.md)：当前研发实例的共享数据、配置、部署和分支维护说明；技术行为仍以代码为准。
+- [原始 OKR 单轮容器设计](okr-chat-isolation-mvp-design.md)：历史模式，当前完整研发模式以上一文档为准。
 - [OKR 与 Jarvis 世界模型整合方案](okr-jarvis-world-model-integration.md)：历史方案，当前边界见 [OKR 模块](../modules/06-okr.md)。
 - [网页 SSO 登录接入](sso-web-login.md)：当前 CLI 授权域名与超时对比、配置方法，以及尚未实施的个人 JWT SDK 方案。
 
