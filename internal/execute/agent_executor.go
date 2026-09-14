@@ -212,10 +212,18 @@ func (e *AgentExecutor) runInBackground(taskID uint64, runCtx context.Context, a
 			hlog.CtxErrorf(runCtx, "background execution failed task_id=%d error=%+v", taskID, err)
 			return
 		}
-		if err := e.notifyQuestion(context.WithoutCancel(runCtx), result); err != nil {
-			hlog.CtxErrorf(runCtx, "approval notification failed task_id=%d error=%+v", taskID, err)
+		if err := e.publishRunResult(context.WithoutCancel(runCtx), result); err != nil {
+			hlog.CtxErrorf(runCtx, "publish execution result failed task_id=%d error=%+v", taskID, err)
 		}
 	}()
+}
+
+// Publish only after releasing the old execution, including feedback cleanup.
+func (e *AgentExecutor) publishRunResult(ctx context.Context, result *ExecuteResult) error {
+	if result != nil && result.Status == "waiting" {
+		return e.store.ActivateContinuation(ctx, result.TaskID, result.RunID)
+	}
+	return e.notifyQuestion(ctx, result)
 }
 
 // Interrupt stops the live Codex process for one executing Task and waits until
@@ -622,7 +630,7 @@ func (e *AgentExecutor) Execute(ctx context.Context, input ExecuteInput) (*Execu
 	if err != nil {
 		return result, err
 	}
-	if err := e.notifyQuestion(context.WithoutCancel(ctx), result); err != nil {
+	if err := e.publishRunResult(context.WithoutCancel(ctx), result); err != nil {
 		return nil, err
 	}
 	return result, nil

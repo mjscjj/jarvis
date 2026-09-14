@@ -385,6 +385,15 @@ func (s *Service) Trigger(ctx context.Context, id uint64) (*View, error) {
 // did not finish materializing its Task and must become claimable again.
 func (s *Service) RecoverRunning(ctx context.Context) (int64, error) {
 	now := s.now().UTC()
+	ready := s.db.WithContext(ctx).Model(&domain.ScheduledTask{}).
+		Where("status = ? AND dispatch_kind = ? AND subject_type = ?", "binding", "resume_task", "task").
+		Where("EXISTS (SELECT 1 FROM task WHERE task.id = scheduled_task.subject_id AND task.status = ?)", "waiting").
+		Where("EXISTS (SELECT 1 FROM execution_run WHERE execution_run.id = scheduled_task.source_run_id AND execution_run.task_id = scheduled_task.subject_id AND execution_run.status = ? AND TRIM(execution_run.codex_session_id) <> '')", "waiting").
+		Where("NOT EXISTS (SELECT 1 FROM execution_run WHERE execution_run.task_id = scheduled_task.subject_id AND execution_run.id > scheduled_task.source_run_id)").
+		Update("status", "active")
+	if ready.Error != nil {
+		return 0, fmt.Errorf("recover ready continuations: %w", ready.Error)
+	}
 	binding := s.db.WithContext(ctx).Model(&domain.ScheduledTask{}).
 		Where("status = ?", "binding").Updates(map[string]any{
 		"status": "completed", "last_run_status": "failed", "last_finished_at": now,
@@ -409,7 +418,7 @@ func (s *Service) RecoverRunning(ctx context.Context) (int64, error) {
 	if oneTime.Error != nil {
 		return 0, fmt.Errorf("recover running one-time scheduled tasks: %w", oneTime.Error)
 	}
-	return binding.RowsAffected + recurring.RowsAffected + oneTime.RowsAffected, nil
+	return ready.RowsAffected + binding.RowsAffected + recurring.RowsAffected + oneTime.RowsAffected, nil
 }
 
 // RunDue claims one bounded batch and materializes each occurrence as a Task.

@@ -89,7 +89,7 @@ func (s *Store) MarkWaiting(ctx context.Context, taskID uint64, expectedVersion 
 	bind := s.db.WithContext(ctx).Model(&domain.ScheduledTask{}).
 		Where("id = ? AND dispatch_kind = ? AND subject_type = ? AND subject_id = ? AND source_run_id IS NULL AND status = ?",
 			scheduledTaskID, "resume_task", "task", taskID, "binding").
-		Updates(map[string]any{"source_run_id": runID, "status": "active"})
+		Update("source_run_id", runID)
 	if bind.Error != nil {
 		return 0, fmt.Errorf("bind scheduled task id=%d to run id=%d: %w", scheduledTaskID, runID, bind.Error)
 	}
@@ -120,6 +120,19 @@ func (s *Store) MarkWaiting(ctx context.Context, taskID uint64, expectedVersion 
 		return 0, err
 	}
 	return newVersion, nil
+}
+
+func (s *Store) ActivateContinuation(ctx context.Context, taskID, runID uint64) error {
+	result := s.db.WithContext(ctx).Model(&domain.ScheduledTask{}).
+		Where("dispatch_kind = ? AND subject_type = ? AND subject_id = ? AND source_run_id = ? AND status = ?",
+			"resume_task", "task", taskID, runID, "binding").
+		Where("EXISTS (SELECT 1 FROM task WHERE task.id = scheduled_task.subject_id AND task.status = ?)", "waiting").
+		Where("NOT EXISTS (SELECT 1 FROM execution_run WHERE task_id = ? AND id > ?)", taskID, runID).
+		Update("status", "active")
+	if result.Error != nil {
+		return fmt.Errorf("activate continuation task_id=%d run_id=%d: %w", taskID, runID, result.Error)
+	}
+	return nil
 }
 
 // MarkNeedsHuman parks an executing Task without turning it into a failure.
