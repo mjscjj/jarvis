@@ -3,7 +3,7 @@ import { PlayCircleOutlined } from '@ant-design/icons'
 import { Alert, Badge, Button, Card, Form, Input, message, Modal, Select, Space, Spin, Table, Tabs, Tag, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
 import type { Key } from 'react'
-import { createTask, executeTask, finishTask, getTask, interruptTask, listProjects, listTaskEvents, listTaskRuns, listTasks, recallEffectMessage, rerunTask, resumeTask, supplementTask } from './api'
+import { closeTask, createTask, executeTask, finishTask, getTask, interruptTask, listProjects, listTaskEvents, listTaskRuns, listTasks, recallEffectMessage, rerunTask, resumeTask, supplementTask } from './api'
 import type { ExecutionRun, Project, Task, TaskEvent, TaskStatus } from './types'
 import MergedPageHeader from './components/MergedPageHeader'
 import StatusBadge from './components/StatusBadge'
@@ -105,6 +105,10 @@ export default function Tasks({ onDetailOpen, delegationsEnabled = false }: { on
   const [executingId, setExecutingId] = useState<number>()
   const [bulkExecuting, setBulkExecuting] = useState(false)
   const [selectedTaskIDs, setSelectedTaskIDs] = useState<Key[]>([])
+  const [selectedCloseTaskIDs, setSelectedCloseTaskIDs] = useState<Key[]>([])
+  const [bulkCloseOpen, setBulkCloseOpen] = useState(false)
+  const [bulkCloseReason, setBulkCloseReason] = useState('')
+  const [bulkClosing, setBulkClosing] = useState(false)
   const [interruptingId, setInterruptingId] = useState<number>()
   const [rerunTarget, setRerunTarget] = useState<Task>()
   const [rerunNote, setRerunNote] = useState('')
@@ -190,7 +194,13 @@ export default function Tasks({ onDetailOpen, delegationsEnabled = false }: { on
       const pendingIDs = new Set(items.filter((task) => task.status === 'pending').map((task) => task.id))
       return prev.filter((id) => typeof id === 'number' && pendingIDs.has(id))
     })
+    setSelectedCloseTaskIDs((prev) => {
+      const openIDs = new Set(items.filter((task) => task.status === 'needs_human').map((task) => task.id))
+      return prev.filter((id) => typeof id === 'number' && openIDs.has(id))
+    })
   }, [items])
+
+  useEffect(() => { setSelectedCloseTaskIDs([]) }, [activeTab, page])
 
   // 有任务在执行中时静默轮询列表，点完「执行」后状态会从执行中变为完成/失败，无需手动刷新。
   const hasExecuting = items.some((task) => task.status === 'executing')
@@ -368,6 +378,36 @@ export default function Tasks({ onDetailOpen, delegationsEnabled = false }: { on
     }
   }
 
+  const runBulkClose = async () => {
+    const reason = bulkCloseReason.trim()
+    if (!reason) return
+    const tasksByID = new Map(items.map((task) => [task.id, task]))
+    const tasksToClose = selectedCloseTaskIDs
+      .map((id) => typeof id === 'number' ? tasksByID.get(id) : undefined)
+      .filter((task): task is Task => task?.status === 'needs_human')
+    if (tasksToClose.length === 0) return
+    setBulkClosing(true)
+    setError(undefined)
+    const failures: string[] = []
+    const failedIDs: number[] = []
+    for (const task of tasksToClose) {
+      try {
+        await closeTask(task.id, task.version, reason)
+      } catch (cause: unknown) {
+        failedIDs.push(task.id)
+        failures.push(`#${task.id} ${task.title}: ${errorText(cause)}`)
+      }
+    }
+    setSelectedCloseTaskIDs(failedIDs)
+    setBulkClosing(false)
+    setBulkCloseOpen(false)
+    setBulkCloseReason('')
+    setRefreshKey((value) => value + 1)
+    const closedCount = tasksToClose.length - failures.length
+    if (closedCount > 0) message.success(`已关闭 ${closedCount} 个任务`)
+    if (failures.length > 0) setError(`${failures.length} 个任务关闭失败，请刷新后重试：\n${failures.join('\n')}`)
+  }
+
   const runInterrupt = async (task: Task) => {
     const ok = window.confirm(`确认打断「${task.title}」？\n\n这会立即停止当前执行进程并把任务记为“已打断”。已经完成的外部操作不会自动回滚。`)
     if (!ok) return
@@ -539,6 +579,16 @@ export default function Tasks({ onDetailOpen, delegationsEnabled = false }: { on
             : tabLabels[key],
         }))}
       />
+      {activeTab === 'needs_me' && (
+        <div className="workbench-task-bulkbar">
+          <Space size={8} wrap>
+            <Button danger disabled={selectedCloseTaskIDs.length === 0} onClick={() => { setBulkCloseReason(''); setBulkCloseOpen(true) }}>
+              批量关闭
+            </Button>
+            <Text type="secondary">已选 {selectedCloseTaskIDs.length} 个需要你处理的任务</Text>
+          </Space>
+        </div>
+      )}
       {activeTab === 'running' && (
         <div className="workbench-task-bulkbar">
           <Space size={8} wrap>
@@ -561,7 +611,14 @@ export default function Tasks({ onDetailOpen, delegationsEnabled = false }: { on
         columns={columns}
         dataSource={items}
         loading={loading}
-        rowSelection={activeTab === 'running' ? {
+        rowSelection={activeTab === 'needs_me' ? {
+          selectedRowKeys: selectedCloseTaskIDs,
+          onChange: setSelectedCloseTaskIDs,
+          getCheckboxProps: (task) => ({
+            disabled: task.status !== 'needs_human' || bulkClosing,
+            onClick: (event) => event.stopPropagation(),
+          }),
+        } : activeTab === 'running' ? {
           selectedRowKeys: selectedTaskIDs,
           onChange: (keys) => {
             if (keys.length > maxBulkExecuteTasks) {
@@ -603,6 +660,30 @@ export default function Tasks({ onDetailOpen, delegationsEnabled = false }: { on
         })}
       />
     </Card>
+    <Modal
+      zIndex={taskActionModalZIndex}
+      title={`批量关闭 ${selectedCloseTaskIDs.length} 个任务`}
+      open={bulkCloseOpen}
+      confirmLoading={bulkClosing}
+      okButtonProps={{ danger: true, disabled: !bulkCloseReason.trim() || selectedCloseTaskIDs.length === 0 }}
+      onOk={() => { void runBulkClose() }}
+      onCancel={() => { if (!bulkClosing) setBulkCloseOpen(false) }}
+      okText="确认关闭"
+      cancelButtonProps={{ disabled: bulkClosing }}
+      maskClosable={!bulkClosing}
+    >
+      <Space orientation="vertical" size={12} style={{ width: '100%' }}>
+        <Text type="secondary">所选任务会记录为由你关闭，并移至“已完成”。原问题不会回复，执行结果与历史记录会保留。</Text>
+        <Input.TextArea
+          rows={4}
+          value={bulkCloseReason}
+          onChange={(event) => setBulkCloseReason(event.target.value)}
+          placeholder="填写这批任务无需继续处理的原因（将写入每个任务）"
+          maxLength={1000}
+          showCount
+        />
+      </Space>
+    </Modal>
     <Modal
       zIndex={taskActionModalZIndex}
       title="新建任务"

@@ -281,6 +281,12 @@ export function finishTask(id: number, expectedVersion: number, status: 'done' |
   })
 }
 
+export function closeTask(id: number, expectedVersion: number, summary: string): Promise<Task> {
+  return request<Task>(`/api/tasks/${id}/close`, {
+    method: 'POST', body: { expected_version: expectedVersion, actor_type: 'user', result: { summary } },
+  })
+}
+
 export interface ExecuteResult {
   task_id: number
   run_id: number

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { getTask, getTaskRun, listTaskRuns, listTasks } from '../src/api.ts'
+import { closeTask, getTask, getTaskRun, listTaskRuns, listTasks } from '../src/api.ts'
 
 test('task detail and paged run index use separate reads from run bodies', async (t) => {
   const calls: string[] = []
@@ -39,4 +39,22 @@ test('task list forwards open action type filters', async (t) => {
 
   assert.equal(calls[0], '/api/tasks?status=waiting&page=1&page_size=20&action_type=delegated_followup')
   assert.equal(calls[1], '/api/tasks?status=pending&page=2&page_size=20&exclude_action_type=delegated_followup')
+})
+
+test('closing a selected task records the user and the supplied reason', async (t) => {
+  let request: { path: string; init: RequestInit } | undefined
+  t.mock.method(globalThis, 'fetch', async (path: string, init: RequestInit) => {
+    request = { path, init }
+    return new Response(JSON.stringify({ code: 0, data: { id: 8, status: 'done' } }), { status: 200 })
+  })
+
+  await closeTask(8, 4, '这批事项已由我确认无需继续处理')
+
+  assert.equal(request?.path, '/api/tasks/8/close')
+  assert.equal(request?.init.method, 'POST')
+  assert.deepEqual(JSON.parse(String(request?.init.body)), {
+    expected_version: 4,
+    actor_type: 'user',
+    result: { summary: '这批事项已由我确认无需继续处理' },
+  })
 })
