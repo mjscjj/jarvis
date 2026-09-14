@@ -369,6 +369,14 @@
   align-self: center;
   padding: 0 30px 18px;
 }
+.chat-isolated-modal .chat-message-list > .ant-alert,
+.chat-isolated-modal .chat-welcome,
+.chat-isolated-modal .chat-message-card {
+  max-width: 900px;
+}
+.chat-isolated-modal .chat-composer-area {
+  max-width: 970px;
+}
 .chat-composer-card {
   padding: 10px 13px 9px;
   border: 1px solid #d6dfcf;
