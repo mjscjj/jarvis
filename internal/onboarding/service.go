@@ -835,8 +835,13 @@ func enableDesktopRuntime(ctx context.Context, configPath string) error {
 	settings.ProactiveEnabled = true
 	settings.ScheduledTaskEnabled = true
 	settings.DailyDigestEnabled = true
-	_, err = service.Update(ctx, settings)
-	return err
+	if _, err = service.Update(ctx, settings); err != nil {
+		return err
+	}
+	return config.UpdateRuntimeOverride(configPath, map[string]any{
+		"meeting_sweep": map[string]any{"enabled": true},
+		"morning_brief": map[string]any{"enabled": true},
+	})
 }
 
 func writeCCConfig(path, runtimeRoot, agentBin, appID, appSecret, principalOpenID, relaySecret string) error {
