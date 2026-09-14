@@ -7,6 +7,7 @@ lookups, and notification-bot operations only; no personal message/file access.
 import argparse
 import http.server
 import ipaddress
+import re
 import json
 import os
 import select
@@ -39,17 +40,23 @@ def command(args):
     if args[-2:] == ['--format', 'json']:
         args = args[:-2]
     flags = {}
-    if args[:2] == ['contact', '+search-user']:
+    if profile == MAIN and args[:2] == ['contact', '+search-user']:
         rest = args[2:]
         allowed = {'--query', '--user-ids', '--as'}
         prefix = ['--profile', MAIN, 'contact', '+search-user']
+    elif profile == MAIN and args[:3] == ['api', 'GET', '/open-apis/search/v1/user']:
+        rest, allowed = args[3:], {'--params', '--as'}
+        prefix = ['--profile', MAIN, *args[:3]]
     elif profile == BOT and args[:1] == ['api'] and len(args) >= 3:
         method, path = args[1:3]
         if (method, path) not in {
             ('GET', '/open-apis/application/v6/scopes'),
+            ('GET', '/open-apis/contact/v3/scopes'),
+            ('GET', '/open-apis/contact/v3/users/find_by_department'),
+            ('GET', '/open-apis/contact/v3/users/batch'),
             ('GET', '/open-apis/application/v2/app/visibility'),
             ('POST', '/open-apis/im/v1/messages'),
-        }:
+        } and not (method == 'GET' and re.fullmatch(r'/open-apis/contact/v3/departments/[A-Za-z0-9_-]+/children', path)):
             raise ValueError('notification API denied')
         rest, allowed = args[3:], {'--params', '--data', '--as'}
         prefix = ['--profile', BOT, 'api', method, path]
@@ -66,7 +73,7 @@ def command(args):
         if flag in {'--data', '--params'}:
             json.loads(value)
         flags[flag] = value
-    expected = 'user' if prefix[2] == 'contact' else 'bot'
+    expected = 'user' if profile == MAIN else 'bot'
     if flags.get('--as') != expected:
         raise ValueError('wrong identity')
     return prefix + [v for pair in flags.items() for v in pair] + ['--format', 'json']

@@ -24,3 +24,10 @@ class GatewayBoundaryTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+class DirectoryIdentityTest(unittest.TestCase):
+    def test_exact_directory_read_routes(self):
+        self.assertEqual(command(['--profile', MAIN, 'api', 'GET', '/open-apis/search/v1/user', '--params', '{"query":"person@example.test"}', '--as', 'user'])[:2], ['--profile', MAIN])
+        self.assertEqual(command(['--profile', BOT, 'api', 'GET', '/open-apis/contact/v3/scopes', '--as', 'bot'])[:2], ['--profile', BOT])
+        with self.assertRaises(ValueError):
+            command(['--profile', BOT, 'contact', '+search-user', '--query', 'person', '--as', 'user'])
