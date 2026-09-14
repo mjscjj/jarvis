@@ -1,7 +1,7 @@
 {
   "name": "jarvis-desktop",
   "private": true,
-  "version": "0.1.79",
+  "version": "0.1.80",
   "scripts": {
     "build": "tauri build --bundles app",
     "dmg": "npm run build && node ../packaging/macos/bundle-dmg.mjs"
