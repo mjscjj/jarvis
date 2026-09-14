@@ -42,6 +42,8 @@ OKR 飞书登录会话已持久化在 Jarvis 私有运行主库的 `okr_workspac
 
 `internal/okrchat/` 拥有容器执行和共享 OKR 聊天库装配；`internal/chat/` 复用会话、附件及流式协议。配置了 `chat.development_container` 时，对话进入常驻开发容器，完整源码可写，线上 `data/okr/` 可读写，开发实例拥有自己的 API 和空主库。没有配置该字段时，使用原始单轮容器：挂载 OKR 附件、会话状态和可写前端目录，通过受限工具出口调用 OKR 接口。两种模式均不挂载生产主库、普通 Chat、私人资料或 Docker socket，也没有直接网络。
 
+网页会话 ID 和历史以共享 Chat 库为准，Codex thread ID 只是可替换的底层状态。升级或更换授权后若 Codex 明确返回旧 thread 不存在，服务记录实际 stderr、清除旧 ID，并在同一轮用已保存的可见历史自动新建底层 thread；成功后写回新 ID，不要求用户新开网页会话。只重试一次；授权、网络等其他错误保留原始原因，待环境恢复后下一轮仍可继续。
+
 完整研发模式修改的是开发 worktree；容器内用 `./scripts/jarvis-deploy --skip-pull` 构建、重启开发实例，生产前后端仍走宿主正常部署。开发目录不是线上源码副本的自动发布机制；OKR 产品数据是例外，它直接共享并立即影响线上。源码合并、产品数据快照及配置归属见[研发环境文档](../summery/emily-development-environment.md)。
 
 原始单轮容器的 `internal/toolcatalog/okr_chat.go` 以 method/path 清单限制工具请求。完整研发模式在开发容器内使用自己的完整 API，通过文件和进程边界隔离生产 Task、Todo、消息与普通会话；通知机器人和查人能力通过限定出口复用。已授权用户自己上传或写进 OKR 的消息摘录仍是可读材料，不做语义脱敏。

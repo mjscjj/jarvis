@@ -65,6 +65,8 @@ Cookie 的名称空间和 Path、相对重定向也随代理前缀变化。
 生产实例的 `conf/okr-module.runtime.yaml` 设置 `chat.development_container: emily-development`，将 OKR 对话的执行环境切到该容器；
 对话列表仍保存在现有共享的 `var/okr-chat/chat.db`。新会话使用完整研发工具说明；旧会话不会被自动改写。
 
+Codex 原生 thread 丢失时，主站自动以同一网页会话中已保存的历史重建底层 thread，并记录原始 CLI 错误；不会删除共享历史或要求手动新开会话。授权及网络错误不会被当作 thread 丢失，恢复后可再次发送消息。真实容器回归可运行 `EMILY_DEVELOPMENT_CHAT_ROOT=$PWD/var/okr-chat go test ./internal/okrchat -run TestDevelopmentServiceRecoversUnavailableNativeThread -v`，测试会使用临时会话并清理。
+
 开发页面的 Biz OKR 对话框直接调用同域主站的 `/api/okr-chat/*`，复用这份会话库和主站已有的 OKR 飞书登录状态；执行仍进入同一个研发容器。开发实例自己的 OKR Chat 服务保持关闭，避免在容器里递归启动 Docker。普通开发页面 API 继续走配置前缀，只有这一个已存在的 OKR 对话接口使用根路径。
 
 容器内重新构建使用 `./scripts/jarvis-deploy --skip-pull`。没有 systemd 或宿主部署能力，

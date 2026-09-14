@@ -108,6 +108,29 @@ func TestParseCodexStreamMissingThread(t *testing.T) {
 	}
 }
 
+func TestStreamCommandExposesMissingNativeThread(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "codex-test")
+	script := "#!/bin/sh\necho 'Error: thread/resume failed: no rollout found for thread id old-thread (code -32600)' >&2\nexit 1\n"
+	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	err := StreamCommand(t.Context(), bin, nil, "hello", 5*time.Second, func(Event) error { return nil })
+	if !errors.Is(err, ErrNativeThreadUnavailable) || !strings.Contains(err.Error(), "old-thread") {
+		t.Fatalf("missing native thread error = %v", err)
+	}
+}
+
+func TestStreamCommandPreservesUnrelatedStartupError(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "codex-test")
+	if err := os.WriteFile(bin, []byte("#!/bin/sh\necho 'authentication expired' >&2\nexit 1\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	err := StreamCommand(t.Context(), bin, nil, "hello", 5*time.Second, func(Event) error { return nil })
+	if errors.Is(err, ErrNativeThreadUnavailable) || !strings.Contains(err.Error(), "authentication expired") {
+		t.Fatalf("unrelated startup error = %v", err)
+	}
+}
+
 // fail-fast：thread.started 缺 thread_id 是错误。
 func TestParseCodexStreamBlankThreadID(t *testing.T) {
 	t.Parallel()

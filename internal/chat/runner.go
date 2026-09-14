@@ -28,6 +28,10 @@ import (
 // 上限。只在异常路径生效，正常一轮对话读完即退出。
 const processWaitDelay = 5 * time.Second
 
+// ErrNativeThreadUnavailable means the provider can no longer resume its
+// native thread. The durable Chat session can start a new native thread.
+var ErrNativeThreadUnavailable = errors.New("codex native thread unavailable")
+
 // EventKind 是 runner 向上游吐出的流式事件类型。它与 SSE 契约一一对应，
 // 但刻意与 HTTP/SSE 解耦——runner 只关心 codex，不认识 Hertz。
 type EventKind string
@@ -246,12 +250,27 @@ func (r *runner) Stream(ctx context.Context, prompt, threadID string, imagePaths
 		return fmt.Errorf("codex chat timed out after %s: %s", r.timeout, stderr.text())
 	}
 	if parseErr != nil {
+		// A failed resume often writes only stderr. Keep the concrete CLI error
+		// instead of replacing it with the parser's missing-event symptom.
+		if strings.Contains(parseErr.Error(), "missing thread.started event") && waitErr != nil {
+			if detail := stderr.text(); nativeThreadMissing(detail) {
+				return fmt.Errorf("%w: %s", ErrNativeThreadUnavailable, detail)
+			} else if detail != "(no stderr)" {
+				return fmt.Errorf("codex chat exited before thread.started: %w: %s", waitErr, detail)
+			}
+		}
 		return parseErr
 	}
 	if waitErr != nil {
 		return fmt.Errorf("codex chat exited abnormally: %w: %s", waitErr, stderr.text())
 	}
 	return nil
+}
+
+func nativeThreadMissing(detail string) bool {
+	detail = strings.ToLower(detail)
+	return strings.Contains(detail, "no rollout found for thread id") ||
+		strings.Contains(detail, "thread/resume") && (strings.Contains(detail, "thread not found") || strings.Contains(detail, "thread does not exist"))
 }
 
 // parseCursorStream accepts Cursor Agent's stream-json protocol. Cursor has
