@@ -3,7 +3,7 @@ package api
 import (
 	"bytes"
 	"errors"
-	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -11,35 +11,26 @@ import (
 )
 
 type recordingExtWriter struct {
-	mu        sync.Mutex
 	buf       bytes.Buffer
 	flushes   int
 	finalized bool
 }
 
 func (w *recordingExtWriter) Write(data []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
 	return w.buf.Write(data)
 }
 
 func (w *recordingExtWriter) Flush() error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
 	w.flushes++
 	return nil
 }
 
 func (w *recordingExtWriter) Finalize() error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
 	w.finalized = true
 	return nil
 }
 
 func (w *recordingExtWriter) snapshot() (string, int, bool) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
 	return w.buf.String(), w.flushes, w.finalized
 }
 
@@ -66,60 +57,50 @@ func TestSSEWriterWritesAndFlushesComment(t *testing.T) {
 	}
 }
 
-type heartbeatRecorder struct {
-	mu       sync.Mutex
-	writes   int
-	wrote    chan struct{}
-	failNext bool
-}
-
-func (w *heartbeatRecorder) WriteComment(comment string) error {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	if comment != "keepalive" {
-		return errors.New("unexpected heartbeat comment")
-	}
-	if w.failNext {
-		return errors.New("connection closed")
-	}
-	w.writes++
-	select {
-	case w.wrote <- struct{}{}:
-	default:
-	}
-	return nil
-}
-
-func (w *heartbeatRecorder) count() int {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	return w.writes
-}
-
 func TestSSEHeartbeatStopsBeforeTerminalWrite(t *testing.T) {
-	recording := &heartbeatRecorder{wrote: make(chan struct{}, 1)}
-	heartbeat := startSSEHeartbeat(recording, time.Millisecond)
+	wrote := make(chan struct{}, 1)
+	var writes atomic.Int32
+	stop := startSSEHeartbeat(func() error {
+		writes.Add(1)
+		select {
+		case wrote <- struct{}{}:
+		default:
+		}
+		return nil
+	}, time.Millisecond)
 	select {
-	case <-recording.wrote:
+	case <-wrote:
 	case <-time.After(time.Second):
 		t.Fatal("heartbeat was not written")
 	}
-	heartbeat.Stop()
-	heartbeat.Stop()
-	writes := recording.count()
+	stop()
+	stop()
+	stoppedAt := writes.Load()
 	time.Sleep(5 * time.Millisecond)
-	if got := recording.count(); got != writes {
-		t.Fatalf("heartbeat continued after stop: before=%d after=%d", writes, got)
+	if got := writes.Load(); got != stoppedAt {
+		t.Fatalf("heartbeat continued after stop: before=%d after=%d", stoppedAt, got)
 	}
 }
 
 func TestSSEHeartbeatExitsWhenConnectionCloses(t *testing.T) {
-	recording := &heartbeatRecorder{wrote: make(chan struct{}, 1), failNext: true}
-	heartbeat := startSSEHeartbeat(recording, time.Millisecond)
+	attempted := make(chan struct{}, 1)
+	var attempts atomic.Int32
+	stop := startSSEHeartbeat(func() error {
+		attempts.Add(1)
+		select {
+		case attempted <- struct{}{}:
+		default:
+		}
+		return errors.New("connection closed")
+	}, time.Millisecond)
+	defer stop()
 	select {
-	case <-heartbeat.done:
+	case <-attempted:
 	case <-time.After(time.Second):
-		t.Fatal("heartbeat did not stop after write failure")
+		t.Fatal("heartbeat write was not attempted")
 	}
-	heartbeat.Stop()
+	time.Sleep(5 * time.Millisecond)
+	if got := attempts.Load(); got != 1 {
+		t.Fatalf("heartbeat retried after write failure: attempts=%d", got)
+	}
 }

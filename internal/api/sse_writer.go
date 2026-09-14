@@ -19,17 +19,6 @@ type sseWriter struct {
 	mu     sync.Mutex
 }
 
-type sseCommentWriter interface {
-	WriteComment(string) error
-}
-
-type sseHeartbeat struct {
-	ticker *time.Ticker
-	stop   chan struct{}
-	done   chan struct{}
-	once   sync.Once
-}
-
 func newSSEWriter(c *app.RequestContext) *sseWriter {
 	c.Response.Header.Set("Cache-Control", "no-cache")
 	c.Response.Header.SetContentType("text/event-stream; charset=utf-8")
@@ -81,29 +70,27 @@ func (w *sseWriter) WriteComment(comment string) error {
 	return w.writer.Flush()
 }
 
-func startSSEHeartbeat(writer sseCommentWriter, interval time.Duration) *sseHeartbeat {
-	h := &sseHeartbeat{ticker: time.NewTicker(interval), stop: make(chan struct{}), done: make(chan struct{})}
+func startSSEHeartbeat(write func() error, interval time.Duration) func() {
+	stop := make(chan struct{})
+	done := make(chan struct{})
 	go func() {
-		defer close(h.done)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		defer close(done)
 		for {
 			select {
-			case <-h.ticker.C:
-				if err := writer.WriteComment("keepalive"); err != nil {
+			case <-ticker.C:
+				if err := write(); err != nil {
 					return
 				}
-			case <-h.stop:
+			case <-stop:
 				return
 			}
 		}
 	}()
-	return h
-}
-
-func (h *sseHeartbeat) Stop() {
-	h.once.Do(func() {
-		h.ticker.Stop()
-		close(h.stop)
-		<-h.done
+	return sync.OnceFunc(func() {
+		close(stop)
+		<-done
 	})
 }
 

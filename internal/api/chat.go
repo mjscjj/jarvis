@@ -119,8 +119,8 @@ func StreamChatSession(service *chat.Service) app.HandlerFunc {
 				hlog.CtxErrorf(ctx, "close chat session stream failed error=%+v", err)
 			}
 		}()
-		heartbeat := startSSEHeartbeat(w, chatSSEHeartbeatInterval)
-		defer heartbeat.Stop()
+		stopHeartbeat := startSSEHeartbeat(func() error { return w.WriteComment("keepalive") }, chatSSEHeartbeatInterval)
+		defer stopHeartbeat()
 		emit := func(ev chat.Event) error {
 			if ev.Kind == chat.EventAccepted {
 				return w.WriteEvent("accepted", []byte(`{}`))
@@ -138,7 +138,7 @@ func StreamChatSession(service *chat.Service) app.HandlerFunc {
 		err := service.StreamSession(ctx, c.Param("session_id"), input, emit)
 		// Join the heartbeat writer before the terminal frame and response close so
 		// no comment can race with done/stopped/error or leak past this request.
-		heartbeat.Stop()
+		stopHeartbeat()
 		if err != nil {
 			event := "error"
 			if errors.Is(err, context.Canceled) {
