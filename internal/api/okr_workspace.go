@@ -10,6 +10,7 @@ import (
 	"jarvis/internal/larkcli"
 	"jarvis/internal/observability"
 	"jarvis/internal/okrworkspace"
+	okrAuth "jarvis/internal/okrworkspace/auth"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/common/hlog"
@@ -17,7 +18,11 @@ import (
 )
 
 type MarkdownDocumentCreator interface {
-	CreateMarkdownDocument(ctx context.Context, title, content string) (larkcli.MarkdownDocument, error)
+	CreateMarkdownDocument(ctx context.Context, credentials larkcli.UserCredentials, title, content string) (larkcli.MarkdownDocument, error)
+}
+
+type OKRDocumentTokens interface {
+	Ensure(context.Context, string) (okrAuth.StoredToken, error)
 }
 
 type createOKRDocumentRequest struct {
@@ -25,10 +30,15 @@ type createOKRDocumentRequest struct {
 	Content string `json:"content"`
 }
 
-func CreateOKRDocument(creator MarkdownDocumentCreator) app.HandlerFunc {
+func CreateOKRDocument(creator MarkdownDocumentCreator, tokens OKRDocumentTokens, appID string) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
-		if creator == nil {
-			writeAPIError(c, consts.StatusServiceUnavailable, 50357, fmt.Errorf("lark document export is unavailable"))
+		if creator == nil || tokens == nil || strings.TrimSpace(appID) == "" {
+			writeAPIError(c, consts.StatusServiceUnavailable, 50357, fmt.Errorf("文档导出需要配置网页登录授权，请联系管理员"))
+			return
+		}
+		user := currentOKRIdentity(c)
+		if user.OpenID == jarvisOKRUser.OpenID {
+			writeAPIError(c, consts.StatusUnauthorized, 40180, fmt.Errorf("请先使用飞书登录后再导出"))
 			return
 		}
 		var request createOKRDocumentRequest
@@ -36,16 +46,48 @@ func CreateOKRDocument(creator MarkdownDocumentCreator) app.HandlerFunc {
 			writeAPIError(c, consts.StatusBadRequest, 40057, err)
 			return
 		}
-		result, err := creator.CreateMarkdownDocument(ctx, request.Title, request.Content)
+		if strings.TrimSpace(request.Title) == "" || strings.TrimSpace(request.Content) == "" {
+			writeAPIError(c, consts.StatusBadRequest, 40057, fmt.Errorf("文档标题和内容不能为空"))
+			return
+		}
+		grant, err := tokens.Ensure(ctx, user.OpenID)
 		if err != nil {
-			writeAPIError(c, consts.StatusBadGateway, 50257, err)
+			if errors.Is(err, okrAuth.ErrNoUserToken) || errors.Is(err, okrAuth.ErrUserTokenUnusable) {
+				writeAPIError(c, consts.StatusUnauthorized, 40181, fmt.Errorf("飞书授权已失效，请退出并重新登录后再导出"))
+			} else {
+				writeAPIError(c, consts.StatusBadGateway, 50257, fmt.Errorf("暂时无法获取飞书授权，请稍后重试"))
+			}
+			return
+		}
+		if grant.OpenID != user.OpenID || strings.TrimSpace(grant.AccessToken) == "" {
+			writeAPIError(c, consts.StatusUnauthorized, 40181, fmt.Errorf("飞书授权不可用，请退出并重新登录后再导出"))
+			return
+		}
+		result, err := creator.CreateMarkdownDocument(ctx, larkcli.UserCredentials{AppID: appID, AccessToken: grant.AccessToken}, request.Title, request.Content)
+		if err != nil {
+			var apiErr *larkcli.APIError
+			if errors.As(err, &apiErr) {
+				switch apiErr.Subtype {
+				case "app_scope_not_applied":
+					writeAPIError(c, consts.StatusForbidden, 40357, fmt.Errorf("登录应用尚未开通文档创建权限，请联系管理员开通后重新登录"))
+					return
+				case "missing_scope", "token_scope_insufficient", "user_unauthorized":
+					writeAPIError(c, consts.StatusForbidden, 40357, fmt.Errorf("缺少飞书文档授权，请退出并重新登录，授权后再导出"))
+					return
+				}
+				if apiErr.Type == "authentication" {
+					writeAPIError(c, consts.StatusUnauthorized, 40181, fmt.Errorf("飞书授权已失效，请退出并重新登录后再导出"))
+					return
+				}
+			}
+			hlog.CtxErrorf(ctx, "OKR document export failed: %v", err)
+			writeAPIError(c, consts.StatusBadGateway, 50257, fmt.Errorf("飞书文档导出失败，请稍后重试"))
 			return
 		}
 		c.JSON(consts.StatusCreated, map[string]any{"code": 0, "data": map[string]any{
-			"document_id":       result.DocumentID,
-			"url":               result.URL,
-			"warnings":          result.Warnings,
-			"link_share_entity": result.LinkShareEntity,
+			"document_id": result.DocumentID,
+			"url":         result.URL,
+			"warnings":    result.Warnings,
 		}})
 	}
 }

@@ -86,9 +86,6 @@ lark_cli:
   burst: 10
   concurrent: 6                           # 须 >= capture.scan_workers，否则扫描并发被这里卡住
   timeout_sec: 60
-  # 导出文档时打的密级标签名，来自 `lark-cli drive +secure-label-list`。
-  # 新建文档继承的默认密级不允许组织内链接分享，导出会被飞书以 91012 拒绝。
-  export_secure_label: "L2-Internal"
 
 # M2 消息采集：群聊首次发现从当前时刻起步；P2P 按下方窗口短暂回看。
 # related 群不再按 tier 分档调度，统一 scan_schedule 采集；hot/warm_age_hours 仅用于展示 tier 标签。

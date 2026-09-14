@@ -25,7 +25,7 @@ import (
 
 type weeklyPreviewDocumentStub struct{}
 
-func (weeklyPreviewDocumentStub) CreateMarkdownDocument(context.Context, string, string) (larkcli.MarkdownDocument, error) {
+func (weeklyPreviewDocumentStub) CreateMarkdownDocument(context.Context, larkcli.UserCredentials, string, string) (larkcli.MarkdownDocument, error) {
 	return larkcli.MarkdownDocument{}, nil
 }
 

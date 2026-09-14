@@ -29,8 +29,8 @@ import (
 
 type browserDocumentStub struct{}
 
-func (browserDocumentStub) CreateMarkdownDocument(_ context.Context, title, content string) (larkcli.MarkdownDocument, error) {
-	return larkcli.MarkdownDocument{DocumentID: "regression-document", URL: "https://example.test/docx/regression", LinkShareEntity: "tenant_editable"}, nil
+func (browserDocumentStub) CreateMarkdownDocument(_ context.Context, _ larkcli.UserCredentials, title, content string) (larkcli.MarkdownDocument, error) {
+	return larkcli.MarkdownDocument{DocumentID: "regression-document", URL: "https://example.test/docx/regression"}, nil
 }
 
 func TestOKRBrowserWorkflow(t *testing.T) {
@@ -79,10 +79,15 @@ func TestOKRBrowserWorkflow(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	identity, err := okrAuth.NewService(db, moduleconfig.IdentityConfig{}, nil, nil)
+	if err := db.AutoMigrate(&domain.AuthSession{}); err != nil {
+		t.Fatal(err)
+	}
+	tokenStore := okrAuthTestTokenStore(t)
+	identity, err := okrAuth.NewService(db, moduleconfig.IdentityConfig{Enabled: true, SessionTTLHours: 24}, okrIdentityProviderStub{}, tokenStore)
 	if err != nil {
 		t.Fatal(err)
 	}
+	addOKRIdentitySession(t, db, "Jarvis", okrPlanEditorUnionID, "")
 	images, err := okrworkspace.NewImageStore(t.TempDir(), 1024*1024)
 	if err != nil {
 		t.Fatal(err)
@@ -105,7 +110,7 @@ func TestOKRBrowserWorkflow(t *testing.T) {
 	if err := RegisterOKRModuleRoutes(h, OKRModuleDependencies{Workspace: workspace, Images: images, Activity: activity, Enabled: enabled}); err != nil {
 		t.Fatal(err)
 	}
-	if err := RegisterBizOKRModuleRoutes(h, BizOKRModuleDependencies{Workspace: workspace, Identity: identity, Activity: activity, Documents: browserDocumentStub{}, People: people, PreviewReview: review, Enabled: enabled}); err != nil {
+	if err := RegisterBizOKRModuleRoutes(h, BizOKRModuleDependencies{Workspace: workspace, Identity: identity, Activity: activity, Documents: browserDocumentStub{}, DocumentTokens: exportTokenStub{token: okrAuth.StoredToken{OpenID: "ou_Jarvis", AccessToken: "browser-test-token"}}, DocumentAppID: "cli_browser", People: people, PreviewReview: review, Enabled: enabled}); err != nil {
 		t.Fatal(err)
 	}
 	h.GET("/api/people/search", SearchFeishuPeople(people))
@@ -120,7 +125,7 @@ func TestOKRBrowserWorkflow(t *testing.T) {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		headers := make([]ut.Header, 0, len(r.Header))
+		headers := []ut.Header{{Key: "Cookie", Value: okrAuth.CookieName + "=Jarvis"}}
 		for key, values := range r.Header {
 			for _, value := range values {
 				headers = append(headers, ut.Header{Key: key, Value: value})

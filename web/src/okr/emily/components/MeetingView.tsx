@@ -374,7 +374,7 @@ export function MeetingView() {
     try {
 	  const output = buildFullMeetingMarkdown(objectives, quarter, week, templateKey)
       const result = await createFeishuDocument(output.title, output.content)
-      setExportResult({ url: result.url, message: result.warnings.length > 0 ? `已生成并设置为组织内获得链接的人可编辑，另有 ${result.warnings.length} 条转换提示。` : '飞书文档已生成，组织内获得链接的人可编辑。' })
+      setExportResult({ url: result.url, message: result.warnings.length > 0 ? `飞书文档已生成，另有 ${result.warnings.length} 条转换提示。` : '飞书文档已生成。' })
     } catch (error) {
       setExportResult({ message: error instanceof Error ? error.message : '飞书文档生成失败。' })
     } finally {
@@ -397,7 +397,7 @@ export function MeetingView() {
         <span className="h-4 w-px bg-slate-200" />
 		<button type="button" disabled={exporting || objectives.length === 0} onClick={() => void exportToFeishu()} className="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">{exporting ? '导出中…' : reviewMode ? '导出 OKR Review' : '导出全部 OKR'}</button>
         {exportResult.url && <a href={exportResult.url} target="_blank" rel="noreferrer" className="text-[11px] font-medium text-blue-600 hover:text-blue-700 hover:underline">打开文档</a>}
-        {exportResult.message && <span className={`max-w-56 truncate text-[10px] ${exportResult.url ? 'text-emerald-600' : 'text-red-500'}`} title={exportResult.message}>{exportResult.message}</span>}
+        {exportResult.message && <span className={`max-w-sm whitespace-normal text-[10px] ${exportResult.url ? 'text-emerald-600' : 'text-red-500'}`} title={exportResult.message}>{exportResult.message}</span>}
       </div>
 
       <HierarchyNav

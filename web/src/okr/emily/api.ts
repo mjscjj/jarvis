@@ -1152,11 +1152,11 @@ export async function generateReminderBatch(quarter: string, week: string): Prom
 }
 
 export async function createFeishuDocument(title: string, content: string): Promise<FeishuDocumentResult> {
-	const value = await request<{ document_id: string; url: string; warnings?: string[]; link_share_entity: 'tenant_editable' }>('/api/biz-okr/feishu-documents', {
+	const value = await request<{ document_id: string; url: string; warnings?: string[] }>('/api/biz-okr/feishu-documents', {
 		method: 'POST',
 		body: JSON.stringify({ title, content }),
 	})
-	return { documentId: value.document_id, url: value.url, warnings: value.warnings ?? [], linkShareEntity: value.link_share_entity }
+	return { documentId: value.document_id, url: value.url, warnings: value.warnings ?? [] }
 }
 
 export async function getMeegoPreview(pointId: string, week: string): Promise<MeegoPreview> {

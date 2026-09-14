@@ -28,13 +28,15 @@ type OKRModuleDependencies struct {
 // behind its own module gate. It composes the reusable OKR workspace without
 // becoming a second source of truth for objectives, KRs, or formal progress.
 type BizOKRModuleDependencies struct {
-	Workspace *okrworkspace.Service
-	Activity  *okrworkspace.ActivityStore
-	Identity  *okrAuth.Service
-	Documents MarkdownDocumentCreator
-	People    *background.ResolveService
-	Directory *larkcli.Directory
-	Enabled   func(context.Context) (bool, error)
+	Workspace      *okrworkspace.Service
+	Activity       *okrworkspace.ActivityStore
+	Identity       *okrAuth.Service
+	Documents      MarkdownDocumentCreator
+	DocumentTokens OKRDocumentTokens
+	DocumentAppID  string
+	People         *background.ResolveService
+	Directory      *larkcli.Directory
+	Enabled        func(context.Context) (bool, error)
 	// PreviewReview runs the advisory OKR Plan and progress review agent.
 	PreviewReview *okrreview.Service
 }
@@ -157,7 +159,7 @@ func RegisterBizOKRModuleRoutes(h *server.Hertz, deps BizOKRModuleDependencies) 
 	h.GET("/api/biz-okr/reminder-preview", requireEnabled, GetReminderPreview(deps.Workspace))
 	h.GET("/api/biz-okr/reminder-batches", requireEnabled, GetReminderBatches(deps.Workspace))
 	h.POST("/api/biz-okr/reminder-batches/generate", requireEnabled, GenerateReminderBatch(deps.Workspace))
-	h.POST("/api/biz-okr/feishu-documents", requireEnabled, CreateOKRDocument(deps.Documents))
+	h.POST("/api/biz-okr/feishu-documents", requireEnabled, requireIdentity, CreateOKRDocument(deps.Documents, deps.DocumentTokens, deps.DocumentAppID))
 	h.GET("/api/biz-okr/points/:point_id/meego-preview", requireEnabled, GetMeegoPreview(deps.Workspace))
 	h.GET("/api/biz-okr/meego-preview", requireEnabled, GetMeegoBatchPreview(deps.Workspace))
 	h.POST("/api/biz-okr/meego-observations", requireEnabled, StoreMeegoObservation(deps.Workspace))

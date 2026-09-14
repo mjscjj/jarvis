@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -305,151 +306,80 @@ esac`)
 	}
 }
 
-func TestCreateMarkdownDocumentUsesApplicationIdentityAndStdin(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shell fixture is Unix-only")
+func TestCreateMarkdownDocumentIsolatesConcurrentUsers(t *testing.T) {
+	for _, key := range []string{"LARKSUITE_CLI_APP_ID", "LARKSUITE_CLI_APP_SECRET", "LARKSUITE_CLI_USER_ACCESS_TOKEN", "LARKSUITE_CLI_TENANT_ACCESS_TOKEN", "LARKSUITE_CLI_PROFILE", "LARKSUITE_CLI_AUTH_PROXY", "LARKSUITE_CLI_PROXY_KEY"} {
+		t.Setenv(key, "wrong-inherited-identity")
 	}
 	bin := writeScript(t, `
-if [ "$*" = 'docs +create --title Weekly --doc-format markdown --content - --as bot --format json' ]; then
-  input=$(cat)
-  if [ "$input" != "# Progress" ]; then
-    printf '%s' "unexpected stdin: $input" >&2
-    exit 8
-  fi
-  printf '%s' '{"ok":true,"data":{"document":{"document_id":"docx_1","url":"https://example.test/docx_1"},"warnings":["one warning"]}}'
-  exit 0
-fi
-if [ "$*" = 'drive +secure-label-list --as user --format json' ]; then
-  printf '%s' '{"ok":true,"data":{"items":[{"id":"7439268224199852036","name":"L1-Public"},{"id":"7439288234140483587","name":"L2-Internal"}]}}'
-  exit 0
-fi
-if [ "$*" = 'drive +secure-label-update --token docx_1 --type docx --label-id 7439288234140483587 --as user --format json' ]; then
-  printf '%s' '{"ok":true,"data":{}}'
-  exit 0
-fi
-if [ "$*" = 'drive permission.members auth --params {"token":"docx_1","type":"docx","action":"manage_public"} --as bot --format json' ]; then
-  printf '%s' '{"ok":true,"data":{"auth_result":true}}'
-  exit 0
-fi
-if [ "$*" = 'drive permission.public patch --params {"token":"docx_1","type":"docx"} --data {"link_share_entity":"tenant_editable"} --as bot --yes --format json' ]; then
-  printf '%s' '{"ok":true,"data":{"permission_public":{"link_share_entity":"tenant_editable"}}}'
-  exit 0
-fi
-if [ "$*" = 'drive permission.public get --params {"token":"docx_1","type":"docx"} --as bot --format json' ]; then
-  printf '%s' '{"ok":true,"data":{"permission_public":{"link_share_entity":"tenant_editable"}}}'
-  exit 0
-fi
-printf '%s' "unexpected args: $*" >&2
-exit 9`)
-	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout, ExportSecureLabel: "L2-Internal", Timezone: "Asia/Shanghai"})
+[ "$*" = 'docs +create --title Weekly --doc-format markdown --content - --as user --format json' ] || exit 9
+[ "$(cat)" = '# Progress' ] || exit 8
+[ -z "$LARKSUITE_CLI_APP_SECRET$LARKSUITE_CLI_TENANT_ACCESS_TOKEN$LARKSUITE_CLI_PROFILE$LARKSUITE_CLI_AUTH_PROXY$LARKSUITE_CLI_PROXY_KEY" ] || exit 7
+case "$LARKSUITE_CLI_APP_ID:$LARKSUITE_CLI_USER_ACCESS_TOKEN" in
+  cli_login:user-a) doc=a ;;
+  cli_login:user-b) doc=b ;;
+  *) exit 6 ;;
+esac
+printf '{"ok":true,"data":{"document":{"document_id":"doc-%s","url":"https://example.test/docx/created"},"warnings":["conversion warning"]}}' "$doc"
+`)
+	opts := testOptions(bin, fixtureCommandTimeout)
+	opts.Concurrency = 2
+	client, err := New(opts)
 	if err != nil {
-		t.Fatalf("New() error = %v", err)
+		t.Fatal(err)
 	}
-	document, err := client.CreateMarkdownDocument(context.Background(), " Weekly ", " # Progress ")
-	if err != nil {
-		t.Fatalf("CreateMarkdownDocument() error = %v", err)
+	var wg sync.WaitGroup
+	for _, token := range []string{"user-a", "user-b"} {
+		wg.Add(1)
+		go func(token string) {
+			defer wg.Done()
+			doc, err := client.CreateMarkdownDocument(context.Background(), UserCredentials{AppID: "cli_login", AccessToken: token}, " Weekly ", " # Progress ")
+			if err != nil {
+				t.Errorf("export failed: %v", err)
+				return
+			}
+			// Each concurrent caller must receive its own document.
+			if doc.DocumentID != "doc-"+strings.TrimPrefix(token, "user-") || len(doc.Warnings) != 1 {
+				t.Errorf("unexpected document: %+v", doc)
+			}
+		}(token)
 	}
-	if document.DocumentID != "docx_1" || document.URL != "https://example.test/docx_1" || len(document.Warnings) != 1 || document.LinkShareEntity != "tenant_editable" {
-		t.Fatalf("CreateMarkdownDocument() = %+v", document)
+	wg.Wait()
+	if os.Getenv("LARKSUITE_CLI_USER_ACCESS_TOKEN") != "wrong-inherited-identity" {
+		t.Fatal("server environment was modified")
 	}
 }
 
-func TestCreateMarkdownDocumentFailsWhenManagePublicIsUnauthorized(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shell fixture is Unix-only")
-	}
-	bin := writeScript(t, `
-if [ "$*" = 'docs +create --title Weekly --doc-format markdown --content - --as bot --format json' ]; then
-  printf '%s' '{"ok":true,"data":{"document":{"document_id":"docx_1","url":"https://example.test/docx_1"}}}'
-  exit 0
-fi
-if [ "$*" = 'drive +secure-label-list --as user --format json' ]; then
-  printf '%s' '{"ok":true,"data":{"items":[{"id":"7439268224199852036","name":"L1-Public"},{"id":"7439288234140483587","name":"L2-Internal"}]}}'
-  exit 0
-fi
-if [ "$*" = 'drive +secure-label-update --token docx_1 --type docx --label-id 7439288234140483587 --as user --format json' ]; then
-  printf '%s' '{"ok":true,"data":{}}'
-  exit 0
-fi
-if [ "$*" = 'drive permission.members auth --params {"token":"docx_1","type":"docx","action":"manage_public"} --as bot --format json' ]; then
-  printf '%s' '{"ok":true,"data":{"auth_result":false}}'
-  exit 0
-fi
-printf '%s' "unexpected args: $*" >&2
-exit 9`)
-	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout, ExportSecureLabel: "L2-Internal", Timezone: "Asia/Shanghai"})
+func TestCreateMarkdownDocumentRejectsMissingCredentials(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "called")
+	t.Setenv("EXPORT_CALL_MARKER", marker)
+	client, err := New(testOptions(writeScript(t, `touch "$EXPORT_CALL_MARKER"; exit 1`), fixtureCommandTimeout))
 	if err != nil {
-		t.Fatalf("New() error = %v", err)
+		t.Fatal(err)
 	}
-	_, err = client.CreateMarkdownDocument(context.Background(), "Weekly", "# Progress")
-	if err == nil || !strings.Contains(err.Error(), "not authorized") || !strings.Contains(err.Error(), "https://example.test/docx_1") {
-		t.Fatalf("CreateMarkdownDocument() error = %v", err)
+	for _, credentials := range []UserCredentials{{}, {AppID: "cli_login"}, {AccessToken: "user-a"}} {
+		if _, err := client.CreateMarkdownDocument(context.Background(), credentials, "Weekly", "# Progress"); err == nil {
+			t.Fatal("missing credentials accepted")
+		}
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatal("CLI called without explicit credentials")
 	}
 }
 
-func TestCreateMarkdownDocumentFailsWhenPermissionReadBackDoesNotMatch(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shell fixture is Unix-only")
-	}
-	bin := writeScript(t, `
-if [ "$*" = 'docs +create --title Weekly --doc-format markdown --content - --as bot --format json' ]; then
-  printf '%s' '{"ok":true,"data":{"document":{"document_id":"docx_1","url":"https://example.test/docx_1"}}}'
-  exit 0
-fi
-if [ "$*" = 'drive +secure-label-list --as user --format json' ]; then
-  printf '%s' '{"ok":true,"data":{"items":[{"id":"7439268224199852036","name":"L1-Public"},{"id":"7439288234140483587","name":"L2-Internal"}]}}'
-  exit 0
-fi
-if [ "$*" = 'drive +secure-label-update --token docx_1 --type docx --label-id 7439288234140483587 --as user --format json' ]; then
-  printf '%s' '{"ok":true,"data":{}}'
-  exit 0
-fi
-if [ "$*" = 'drive permission.members auth --params {"token":"docx_1","type":"docx","action":"manage_public"} --as bot --format json' ]; then
-  printf '%s' '{"ok":true,"data":{"auth_result":true}}'
-  exit 0
-fi
-if [ "$*" = 'drive permission.public patch --params {"token":"docx_1","type":"docx"} --data {"link_share_entity":"tenant_editable"} --as bot --yes --format json' ]; then
-  printf '%s' '{"ok":true,"data":{"permission_public":{"link_share_entity":"tenant_editable"}}}'
-  exit 0
-fi
-if [ "$*" = 'drive permission.public get --params {"token":"docx_1","type":"docx"} --as bot --format json' ]; then
-  printf '%s' '{"ok":true,"data":{"permission_public":{"link_share_entity":"tenant_readable"}}}'
-  exit 0
-fi
-printf '%s' "unexpected args: $*" >&2
-exit 9`)
-	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout, ExportSecureLabel: "L2-Internal", Timezone: "Asia/Shanghai"})
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-	_, err = client.CreateMarkdownDocument(context.Background(), "Weekly", "# Progress")
-	if err == nil || !strings.Contains(err.Error(), `got link_share_entity="tenant_readable"`) || !strings.Contains(err.Error(), "https://example.test/docx_1") {
-		t.Fatalf("CreateMarkdownDocument() error = %v", err)
-	}
-}
-
-func TestCreateMarkdownDocumentFailsWhenSecureLabelIsMissing(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shell fixture is Unix-only")
-	}
-	bin := writeScript(t, `
-if [ "$*" = 'docs +create --title Weekly --doc-format markdown --content - --as bot --format json' ]; then
-  printf '%s' '{"ok":true,"data":{"document":{"document_id":"docx_1","url":"https://example.test/docx_1"}}}'
-  exit 0
-fi
-if [ "$*" = 'drive +secure-label-list --as user --format json' ]; then
-  printf '%s' '{"ok":true,"data":{"items":[{"id":"7439268224199852036","name":"L1-Public"}]}}'
-  exit 0
-fi
-printf '%s' "unexpected args: $*" >&2
-exit 9`)
-	client, err := New(Options{Bin: bin, RateLimit: 100, Burst: 1, Concurrency: 1, Timeout: fixtureCommandTimeout, ExportSecureLabel: "L2-Internal", Timezone: "Asia/Shanghai"})
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-	_, err = client.CreateMarkdownDocument(context.Background(), "Weekly", "# Progress")
-	if err == nil || !strings.Contains(err.Error(), `secure label "L2-Internal" is not available`) || !strings.Contains(err.Error(), "L1-Public") {
-		t.Fatalf("CreateMarkdownDocument() error = %v", err)
+func TestCreateMarkdownDocumentRedactsCredentialsInErrors(t *testing.T) {
+	for _, status := range []string{"0", "3"} {
+		t.Run(status, func(t *testing.T) {
+			client, err := New(testOptions(writeScript(t, `printf '{"ok":false,"error":{"type":"authorization","subtype":"missing_scope","message":"echo %s"}}' "$LARKSUITE_CLI_USER_ACCESS_TOKEN" | tee /dev/stderr
+exit `+status), fixtureCommandTimeout))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = client.CreateMarkdownDocument(context.Background(), UserCredentials{AppID: "cli_login", AccessToken: "super-secret-user-token"}, "Weekly", "# Progress")
+			var apiErr *APIError
+			if err == nil || strings.Contains(err.Error(), "super-secret-user-token") || !errors.As(err, &apiErr) || apiErr.Subtype != "missing_scope" {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
 	}
 }
 

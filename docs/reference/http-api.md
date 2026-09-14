@@ -102,7 +102,7 @@ CLI 与已有 CC Connect 配置，随后请求服务重启；不改变 App ID，
 - Biz OKR 管理入口：硬编码名单的唯一实现位于 `internal/api/okr_plan_access.go`，按跨应用稳定的 `union_id` 判断，企业邮箱只作兼容键。名单内用户显示“管理与打标”；名单外用户直接进入 Plan，仍可通过分享页编辑 Plan、Review 与周报。
 - Biz OKR people：`GET /api/biz-okr/people/avatars?names=...` 服务 Biz 人员头像展示；新页面的人员搜索复用全局 `/api/people/search?q=`。旧搜索接口及下线条件见上面的“人员搜索兼容接口”。
 - OKR images：`POST /api/okr/images` 上传 PNG/JPEG/GIF/WebP，返回可持久化的 `/okr-assets/<sha256>.<ext>`；图片落在 `conf/okr-module.yaml` 的 `upload_dir`。
-- 文档导出：`POST /api/biz-okr/feishu-documents`，由用户按钮触发，通过当前 Jarvis `lark-cli --as user` 创建 Markdown 飞书文档。新建文档继承的租户默认密级不允许组织内链接分享，飞书会以 91012 拒绝，所以创建后先按 `lark_cli.export_secure_label` 的标签名（在 `drive +secure-label-list` 里查 id）打一次密级，再设 `link_share_entity=tenant_editable` 并读回校验。标签没配、租户里查不到这个名字或密级写入失败都直接报错，不退回一篇不可分享的文档。
+- 文档导出：`POST /api/biz-okr/feishu-documents`，请求为 `{title, content}`。必须携带当前网页登录 session；后端按 session 的 open_id 读取并按需刷新该用户的 token，将登录 App ID 与用户 token 成对传给单个 `lark-cli docs +create --as user` 子进程，文档归属点击导出的用户。不会使用服务器默认 CLI 用户或机器人创建，也不修改密级和分享权限。成功返回 `{document_id, url, warnings}`，用户可在飞书里自行分享；未登录或授权失效返回 401，缺少文档授权返回 403。旧 `lark_cli.export_secure_label` 配置仅兼容解析，不再生效。
 
 - Effective preview：`GET /api/agent-config/stages/:agent_stage/preview`
 

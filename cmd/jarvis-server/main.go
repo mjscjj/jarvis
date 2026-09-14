@@ -283,13 +283,12 @@ func main() {
 		fatalf("load capture timezone failed: %v", err)
 	}
 	larkClient, err := larkcli.New(larkcli.Options{
-		Bin:               cfg.LarkCLI.Bin,
-		RateLimit:         cfg.LarkCLI.RateLimit,
-		Burst:             cfg.LarkCLI.Burst,
-		Concurrency:       cfg.LarkCLI.Concurrent,
-		Timeout:           time.Duration(cfg.LarkCLI.TimeoutSec) * time.Second,
-		ExportSecureLabel: cfg.LarkCLI.ExportSecureLabel,
-		Timezone:          location.String(),
+		Bin:         cfg.LarkCLI.Bin,
+		RateLimit:   cfg.LarkCLI.RateLimit,
+		Burst:       cfg.LarkCLI.Burst,
+		Concurrency: cfg.LarkCLI.Concurrent,
+		Timeout:     time.Duration(cfg.LarkCLI.TimeoutSec) * time.Second,
+		Timezone:    location.String(),
 	})
 	if err != nil {
 		fatalf("initialize lark-cli failed: %v", err)
@@ -520,6 +519,7 @@ func main() {
 	var okrActivityStore *okrworkspace.ActivityStore
 	var okrIdentityService *okrAuth.Service
 	var okrTokenStore *okrAuth.TokenStore
+	var okrDocumentTokens api.OKRDocumentTokens
 	var okrDirectory *larkcli.Directory
 	if okrModuleEnabled {
 		if err := okrworkspace.ValidatePersonIdentityMigration(okrDB); err != nil {
@@ -572,6 +572,10 @@ func main() {
 			okrTokenStore, err = okrAuth.NewTokenStore(okrModuleConfig.Identity.TokenDir)
 			if err != nil {
 				fatalf("initialize OKR Feishu token store failed: %v", err)
+			}
+			okrDocumentTokens, err = okrAuth.NewUserTokens(okrTokenStore, okrIdentityProvider)
+			if err != nil {
+				fatalf("initialize OKR user token refresh failed: %v", err)
 			}
 		}
 		okrIdentityService, err = okrAuth.NewService(db, okrModuleConfig.Identity, okrIdentityProvider, okrTokenStore)
@@ -1232,7 +1236,9 @@ func main() {
 			fatalf("initialize OKR preview review service failed: %v", err)
 		}
 		bizOKRModuleDeps = &api.BizOKRModuleDependencies{
-			Workspace: okrWorkspaceService, Activity: okrActivityStore, Identity: okrIdentityService, Documents: larkClient, People: resolveService, Directory: okrDirectory,
+			Workspace: okrWorkspaceService, Activity: okrActivityStore, Identity: okrIdentityService, Documents: larkClient,
+			DocumentTokens: okrDocumentTokens,
+			DocumentAppID:  okrModuleConfig.Identity.AppID, People: resolveService, Directory: okrDirectory,
 			Enabled:       func(ctx context.Context) (bool, error) { return appModuleService.Enabled(ctx, "biz-okr") },
 			PreviewReview: previewReviewService,
 		}

@@ -92,6 +92,21 @@ const pass = text => { checks.push(text); console.log('PASS:', text) }
 const board = (week = '2026-W36') => api(`/api/biz-okr/board?quarter=2026-Q3&week=${week}`)
 let planID, objectiveID
 try {
+  if (process.env.OKR_BROWSER_EXPORT_ONLY === '1') {
+    for (const [tab, week, button] of [['review-meeting', '2026-W36', '导出 OKR Review'], ['weekly-meeting', '2026-W35', '导出全部 OKR']]) {
+      await go(`/biz-okr?tab=${tab}&quarter=2026-Q3&week=${week}`)
+      const result = await write('/api/biz-okr/feishu-documents', () => page.getByRole('button', { name: button, exact: true }).click(), 201)
+      assert.equal(result.document_id, 'regression-document')
+      assert.equal(await page.getByRole('link', { name: '打开文档', exact: true }).getAttribute('href'), result.url)
+      await page.getByText('飞书文档已生成。', { exact: true }).waitFor()
+    }
+    await context.route('**/api/biz-okr/feishu-documents', route => route.fulfill({ status: 401, json: { code: 40181, msg: '飞书授权已失效，请退出并重新登录后再导出' } }))
+    await write('/api/biz-okr/feishu-documents', () => page.getByRole('button', { name: '导出全部 OKR', exact: true }).click(), 401)
+    await page.getByText('飞书授权已失效，请退出并重新登录后再导出', { exact: true }).waitFor()
+    assert.equal(await page.getByRole('link', { name: '打开文档', exact: true }).count(), 0)
+    assert.equal(await page.getByRole('button', { name: '导出全部 OKR', exact: true }).isEnabled(), true)
+    pass('Review and weekly export return document links; expired grant has readable feedback and allows retry')
+  } else {
   const officialBefore = await api('/api/okr/board?quarter=2026-Q3')
   await go('/biz-okr?tab=okr-plan&quarter=2026-Q4')
   await page.getByRole('button', { name: '新建 Plan', exact: true }).click()
@@ -380,6 +395,7 @@ try {
   assert.deepEqual(await api('/api/okr/board?quarter=2026-Q3'), beforeManagement)
   assert.equal((await board()).objectives[0].krs[0].points.find(item => item.id === 'official-p').entries[0].text, '我的冲突草稿')
   pass('Official OKR management creates/edits/deletes definitions without changing existing progress')
+  }
   assert.deepEqual(errors, [])
   console.log(JSON.stringify({ result: 'passed', checks, realAPIRequests: requests.filter(request => /^\/api\/(biz-okr|okr)\//.test(request.path)).length, isolatedAgentTasks: tasks.size }))
 } catch (error) {
