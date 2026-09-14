@@ -6,6 +6,29 @@
   background: #fdfefb;
   color: var(--color-text);
 }
+.chat-isolated-modal.ant-modal {
+  top: 24px;
+  max-width: calc(100vw - 32px);
+  padding-bottom: 0;
+}
+.chat-isolated-modal .ant-modal-container {
+  display: flex;
+  flex-direction: column;
+  height: calc(100dvh - 48px);
+  overflow: hidden;
+}
+.chat-isolated-modal .ant-modal-header {
+  flex: none;
+}
+.chat-isolated-modal .ant-modal-body {
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+}
+.chat-isolated-modal .chat-workspace {
+  height: 100%;
+  min-height: 0;
+}
 .chat-workspace-loading {
   height: 70vh;
   display: flex;
@@ -432,6 +455,13 @@
   }
 }
 @media (max-width: 767px) {
+  .chat-isolated-modal.ant-modal {
+    top: 8px;
+    max-width: calc(100vw - 16px);
+  }
+  .chat-isolated-modal .ant-modal-container {
+    height: calc(100dvh - 16px);
+  }
   .chat-workspace {
     display: block;
     height: calc(100vh - 120px);

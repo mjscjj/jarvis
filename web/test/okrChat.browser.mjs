@@ -6,6 +6,7 @@ const source = await (await fetch(`${base}/src/Chat.tsx`)).text()
 const modulePath = name => source.match(new RegExp(`from ["']([^"']*${name}[^"']*)["']`))[1]
 const browser = await chromium.launch({ executablePath: process.env.CHROME_EXECUTABLE, headless: true, args: ['--no-sandbox'] })
 const page = await browser.newPage()
+await page.setViewportSize({width: 1440, height: 900})
 const calls = [], errors = []
 page.on('pageerror', e => errors.push(e.message))
 const session = {id:'cs_okr', title:'OKR 专用记录', agent:'codex', model:'test', reasoning_effort:'medium', sources:[], draft:{}, archived:false, created_at:new Date().toISOString(), updated_at:new Date().toISOString(), messages:[{id:'cm_a',role:'assistant',text:'这是 OKR 结果',created_at:new Date().toISOString(),attachments:[{id:'ca_okr',name:'okr.txt',mime_type:'text/plain',size_bytes:1}]}], pending_attachments:[]}
@@ -40,6 +41,11 @@ try {
   await page.getByRole('button',{name:'查看最新回复全文'}).click()
   await page.getByRole('button',{name:'在对话页继续'}).click()
   await page.getByRole('dialog').waitFor()
+  const composer = await page.locator('.ant-modal .chat-composer-area').boundingBox()
+  assert.ok(composer && composer.y + composer.height <= 900, `modal composer is outside viewport: ${JSON.stringify(composer)}`)
+  await page.setViewportSize({width: 390, height: 844})
+  const mobileComposer = await page.locator('.ant-modal .chat-composer-area').boundingBox()
+  assert.ok(mobileComposer && mobileComposer.y + mobileComposer.height <= 844, `mobile modal composer is outside viewport: ${JSON.stringify(mobileComposer)}`)
   assert.equal(await page.getByPlaceholder('问一个问题，或告诉我你想推进什么…').inputValue(),'OKR 草稿不会跳到普通会话')
   assert.ok(new URL(page.url()).hash.includes('biz-okr'))
   assert.equal(await page.locator('a[href="/api/okr-chat/attachments/ca_okr/content"]').count(),1)

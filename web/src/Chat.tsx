@@ -913,7 +913,7 @@ function ChatInner({ compact, hidden, isolated }: { compact: boolean; hidden: bo
       </Drawer>
     </section>
   )
-  return isolated && compact ? <Modal open width="95vw" footer={null} title="OKR 独立会话" onCancel={() => setExpanded(false)}>{workspace}</Modal> : workspace
+  return isolated && compact ? <Modal className="chat-isolated-modal" open width="95vw" footer={null} title="OKR 独立会话" onCancel={() => setExpanded(false)}>{workspace}</Modal> : workspace
 }
 
 function ChatMessageCard({ message, agentName, shortName, typing = false }: { message: ChatHistoryMessage; agentName: string; shortName: string; typing?: boolean }) {
