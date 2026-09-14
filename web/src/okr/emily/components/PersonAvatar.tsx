@@ -3,11 +3,13 @@ import { getPeopleAvatars } from '../api'
 
 const avatars = new Map<string, string>()
 const requested = new Set<string>()
+const retries = new Map<string, number>()
 const listeners = new Set<() => void>()
 let version = 0
 let pending: string[] = []
 let timer: number | undefined
 const AVATAR_BATCH_SIZE = 8
+const AVATAR_RETRY_LIMIT = 2
 function subscribe(listener: () => void) { listeners.add(listener); return () => { listeners.delete(listener) } }
 export function rememberPersonAvatars(people: Array<{email: string; avatarUrl: string}>) {
  for (const p of people) {if (p.avatarUrl) avatars.set(p.email,p.avatarUrl)}
@@ -17,9 +19,24 @@ async function flush() {
  timer = undefined
  const emails = pending.splice(0, AVATAR_BATCH_SIZE)
  try {
-  rememberPersonAvatars(await getPeopleAvatars(emails))
- } catch (error) { console.warn('飞书头像读取失败', error); for (const email of emails) requested.delete(email) }
+  const result = await getPeopleAvatars(emails)
+  rememberPersonAvatars(result.people)
+  for (const person of result.people) retries.delete(person.email)
+  retry(result.failedEmails)
+ } catch (error) {
+  console.warn('飞书头像读取失败', error)
+  retry(emails)
+ }
  if (pending.length > 0 && timer === undefined) timer = window.setTimeout(() => void flush(), 0)
+}
+function retry(emails: string[]) {
+ for (const email of emails) {
+  const count = retries.get(email) ?? 0
+  if (count >= AVATAR_RETRY_LIMIT) continue
+  retries.set(email, count + 1)
+  pending.push(email)
+ }
+ if (pending.length > 0 && timer === undefined) timer = window.setTimeout(() => void flush(), 1000)
 }
 export function usePersonAvatar(_name: string, email?: string, ownUrl?: string) {
  useSyncExternalStore(subscribe, () => version)

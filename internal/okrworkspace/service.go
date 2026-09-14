@@ -313,7 +313,7 @@ type MeegoBatchPreviewItem struct {
 	KRID            string          `json:"kr_id"`
 	KRTitle         string          `json:"kr_title"`
 	ProgressVersion int32           `json:"progress_version"`
-	OwnerName       string          `json:"owner_name"`
+	Owners          []OwnerView     `json:"owners"`
 	PointID         string          `json:"point_id"`
 	PointTitle      string          `json:"point_title"`
 	Risk            bool            `json:"risk"`
@@ -1772,18 +1772,18 @@ func (s *Service) MeegoBatchPreview(ctx context.Context, quarter, week string) (
 			return MeegoBatchPreview{}, fmt.Errorf("list Meego preview krs: %w", err)
 		}
 		for _, record := range records {
+			owners, err := s.krOwnerViews(ctx, record.ID)
+			if err != nil {
+				return MeegoBatchPreview{}, err
+			}
 			var points []domain.KRPoint
 			if err := s.db.WithContext(ctx).Where("kr_id = ? AND meego_work_item_id <> ''", record.ID).Order("sort_order, id").Find(&points).Error; err != nil {
 				return MeegoBatchPreview{}, fmt.Errorf("list linked Meego points: %w", err)
 			}
 			for _, point := range points {
-				ownerName, err := s.krOwnerName(ctx, record.ID)
-				if err != nil {
-					return MeegoBatchPreview{}, err
-				}
 				item := MeegoBatchPreviewItem{
 					ObjectiveID: objective.ID, ObjectiveTitle: objective.Title,
-					KRID: record.ID, KRTitle: record.Title, OwnerName: ownerName,
+					KRID: record.ID, KRTitle: record.Title, Owners: owners,
 					PointID: point.ID, PointTitle: point.Title,
 				}
 				var confirmed domain.KRProgress
@@ -2018,16 +2018,16 @@ func normalizeOwners(input []OwnerView) []OwnerView {
 	return result
 }
 
-func (s *Service) krOwnerName(ctx context.Context, krID string) (string, error) {
+func (s *Service) krOwnerViews(ctx context.Context, krID string) ([]OwnerView, error) {
 	var owners []domain.KROwner
 	if err := s.db.WithContext(ctx).Where("kr_id = ?", krID).Order("sort_order, owner_key, person_id").Find(&owners).Error; err != nil {
-		return "", fmt.Errorf("list KR owners: %w", err)
+		return nil, fmt.Errorf("list KR owners: %w", err)
 	}
-	names := make([]string, 0, len(owners))
+	result := make([]OwnerView, 0, len(owners))
 	for _, owner := range owners {
-		names = append(names, owner.Name)
+		result = append(result, storedOwnerView(owner.Email, owner.Name, owner.UnionID))
 	}
-	return strings.Join(names, "、"), nil
+	return result, nil
 }
 
 func ownerKey(owner OwnerView) string {

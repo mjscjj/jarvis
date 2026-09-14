@@ -371,7 +371,7 @@ interface APIMeegoBatchPreview {
     kr_id: string
     kr_title: string
 	progress_version: number
-    owner_name: string
+    owners: Array<{ email: string; name: string; union_id?: string }>
     point_id: string
     point_title: string
     risk: boolean
@@ -1352,7 +1352,7 @@ function fromAPIMeegoBatchPreview(value: APIMeegoBatchPreview): MeegoBatchPrevie
       krId: item.kr_id,
       krTitle: item.kr_title,
 		progressVersion: item.progress_version,
-      ownerName: item.owner_name,
+      owners: item.owners.map((owner) => ({ email: owner.email, name: owner.name, unionId: owner.union_id })),
       pointId: item.point_id,
       pointTitle: item.point_title,
       risk: item.risk,
@@ -1531,9 +1531,12 @@ export async function replaceKR(kr: Kr): Promise<Kr> {
   }
 }
 
-export async function getPeopleAvatars(emails: string[], signal?: AbortSignal): Promise<PersonAvatarItem[]> {
-  const value = await request<{ people: Array<{ email: string; name: string; avatar_url: string }> }>(`/api/biz-okr/people/avatars?emails=${encodeURIComponent(emails.join(','))}`, { signal })
-  return value.people.map((item) => ({ email: item.email, name: item.name, avatarUrl: item.avatar_url }))
+export async function getPeopleAvatars(emails: string[], signal?: AbortSignal): Promise<{ people: PersonAvatarItem[]; failedEmails: string[] }> {
+  const value = await request<{ people: Array<{ email: string; name: string; avatar_url: string }>; failed_emails: string[] }>(`/api/biz-okr/people/avatars?emails=${encodeURIComponent(emails.join(','))}`, { signal })
+  return {
+    people: value.people.map((item) => ({ email: item.email, name: item.name, avatarUrl: item.avatar_url })),
+    failedEmails: value.failed_emails ?? [],
+  }
 }
 
 export async function createObjective(input: { quarter: string; title: string }): Promise<Objective> {

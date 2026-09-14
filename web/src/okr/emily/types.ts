@@ -108,7 +108,7 @@ export interface MeegoBatchPreviewItem {
   krId: string
   krTitle: string
 	progressVersion: number
-  ownerName: string
+  owners: KrOwner[]
   pointId: string
   pointTitle: string
   risk: boolean

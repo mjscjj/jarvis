@@ -10,7 +10,7 @@ const page = await context.newPage()
 page.setDefaultTimeout(12000)
 const errors = [], requests = [], checks = []
 const tasks = new Map(), schedules = new Map()
-let nextID = 1, expectedError = false
+let nextID = 1, expectedError = false, avatarRequests = 0
 const promptKeys = ['weekly_reminder', 'progress_sync', 'report_c', 'report_b', 'plan_review', 'progress_review']
 const prompts = promptKeys.map(key => ({ key: `okr_agent_${key}`, stage: 'okr_agent', kind: 'system_prompt', name: key, content: `Test prompt ${key}`, description: `Regression ${key}` }))
 page.on('pageerror', error => errors.push(error.message))
@@ -23,7 +23,11 @@ await context.route('**/api/**', async route => {
   const request = route.request(), url = new URL(request.url()), path = url.pathname, method = request.method()
   requests.push({ method, path })
   const ok = data => route.fulfill({ json: { code: 0, data } })
-  if (path === '/api/biz-okr/people/avatars') return ok({ people: url.searchParams.get('emails').split(',').filter(Boolean).map(email => ({ email, name: 'Regression Owner', avatar_url: 'https://example.test/avatar.png' })) })
+  if (path === '/api/biz-okr/people/avatars') {
+    avatarRequests++
+    if (avatarRequests === 1) return route.fulfill({ status: 502, json: { code: 50272, message: 'transient avatar failure' } })
+    return ok({ people: url.searchParams.get('emails').split(',').filter(Boolean).map(email => ({ email, name: 'Regression Owner', avatar_url: 'https://example.test/avatar.png' })), failed_emails: [] })
+  }
   if (/^\/api\/(okr|biz-okr)\//.test(path) || path === '/api/people/search') {
     const backendPath = path === '/api/biz-okr/people/search' ? '/api/people/search' : path
     const response = await fetch(backend + backendPath + url.search, { method, headers: { 'content-type': request.headers()['content-type'] || 'application/json' }, body: method === 'GET' ? undefined : request.postDataBuffer() })
@@ -409,6 +413,7 @@ try {
   assert.equal((await board()).objectives[0].krs[0].points.find(item => item.id === 'official-p').entries[0].text, '我的冲突草稿')
   pass('Official OKR management creates/edits/deletes definitions without changing existing progress')
   }
+  assert(avatarRequests >= 2, `avatar request was not retried: ${avatarRequests}`)
   assert.deepEqual(errors, [])
   console.log(JSON.stringify({ result: 'passed', checks, realAPIRequests: requests.filter(request => /^\/api\/(biz-okr|okr)\//.test(request.path)).length, isolatedAgentTasks: tasks.size }))
 } catch (error) {
