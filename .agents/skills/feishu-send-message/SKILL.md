@@ -68,19 +68,18 @@ lark-cli contact +search-user \
 
 除 principal 本人外，一律在含 principal、对方和当前 Bot 的助手群沟通，不用 Bot 私聊对方。原来是对方与 principal 的真人单聊，也按这条路径回复；单独通知 principal 不能替代共同群里的 CC。
 
-先用 principal 和对方的 open_id 搜索已有私有助手群；`+chat-search` 需要按返回的 page token 查完所有页：
+先按助手群名称搜索已有会话，**不要在这一步附加 `--member-ids` 或 `--is-manager`**。飞书群搜索的成员筛选可能漏掉实际存在的私有群；一次筛选为空不能证明群不存在。`+chat-search` 需要按返回的 page token 查完所有页：
 
 ```bash
 lark-cli im +chat-search \
-  --member-ids "<principal open_id>,<target open_id>" \
+  --query "{{AGENT_NAME}} - <对方姓名>" \
   --search-types private \
   --chat-modes group \
-  --is-manager \
   --page-size 100 \
   --as user
 ```
 
-若响应的 `page_token` 非空，就把它作为下一次相同查询的 `--page-token`，直到返回空 token；不得只检查第一页。
+若响应的 `page_token` 非空，就把它作为下一次相同查询的 `--page-token`，直到返回空 token；不得只检查第一页。精确名称搜索没有候选时，再用其它准确名称线索查找可能改过名的助手群；宽泛姓名搜索可能触发飞书分页上限，不能当作可靠的否定证据。搜索报错、分页不完整或结果相互矛盾时停止，不建群。不能把带成员筛选的搜索空结果当作建群依据。
 
 对每个候选读取完整成员集合：
 
@@ -92,7 +91,7 @@ lark-cli im +chat-members-list \
   --as user
 ```
 
-只有 `users` 恰好是 principal 与对方、`bots` 恰好是当前 {{AGENT_NAME}} App、没有 `truncations`，且群用途确实是该助手群时才算合格。唯一合格候选才复用；多个候选、成员不完整或用途不确定时停止，不能猜。
+只有 `users` 恰好是 principal 与对方、`bots` 恰好是当前 {{AGENT_NAME}} App、没有 `truncations`，且群用途确实是该助手群时才算合格。唯一合格候选直接复用。若有多个合格候选，读取各群近期消息，复用**已经承载当前事项对话**的群；同一事项出现在多个群时，优先沿用已有对方回复的原会话，不再建群或重复发送。仍无法确定哪一个承载当前事项时停止并交回 M5，不能猜，也不能以候选不唯一为由再建群。发送前还要核对原群里是否已有等价回复。
 
 没有合格候选时，由 principal 的 user 身份创建私有助手群。principal 作为创建者已在群中，`--users` 加入对方，`--bots` 加入刚核验的 {{AGENT_NAME}} `appId`：
 
