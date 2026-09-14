@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Select } from 'antd'
 import type { MouseEvent, ReactNode } from 'react'
 import { createFeishuDocument } from '../api'
 import { useBoard } from '../board'
@@ -391,9 +392,17 @@ export function MeetingView() {
           <button type="button" onClick={collapseAll} className="border-l border-slate-200 px-2 py-1 text-slate-500 hover:bg-slate-50 hover:text-slate-700">折叠到 KR</button>
         </div>
         <span className="ml-auto text-[11px] text-slate-400">负责人</span>
-        <select value={ownerFilter} onChange={(event) => { setOwnerFilter(event.target.value); setActiveBusinessValue(undefined); setActivePriorityValue(undefined); setActiveObjectiveId('') }} className="rounded-md border border-slate-200 bg-white px-2 py-1 text-[11px] text-slate-600 outline-none focus:border-blue-400">
-          <option value="">全部负责人</option>{owners.map((owner) => <option key={owner} value={owner}>{owner}</option>)}
-        </select>
+        <Select
+          aria-label="筛选负责人"
+          size="small"
+          className="w-40"
+          value={ownerFilter}
+          allowClear={Boolean(ownerFilter)}
+          showSearch={{ filterOption: (input, option) => (option?.label ?? '').toLocaleLowerCase().includes(input.trim().toLocaleLowerCase()) }}
+          options={[{ value: '', label: '全部负责人' }, ...owners.map((owner) => ({ value: owner, label: owner }))]}
+          notFoundContent="未找到匹配的负责人"
+          onChange={(value) => { setOwnerFilter(value ?? ''); setActiveBusinessValue(undefined); setActivePriorityValue(undefined); setActiveObjectiveId('') }}
+        />
         <span className="h-4 w-px bg-slate-200" />
 		<button type="button" disabled={exporting || objectives.length === 0} onClick={() => void exportToFeishu()} className="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">{exporting ? '导出中…' : reviewMode ? '导出 OKR Review' : '导出全部 OKR'}</button>
         {exportResult.url && <a href={exportResult.url} target="_blank" rel="noreferrer" className="text-[11px] font-medium text-blue-600 hover:text-blue-700 hover:underline">打开文档</a>}
