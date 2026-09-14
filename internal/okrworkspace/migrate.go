@@ -135,7 +135,54 @@ func MigrateBizOKR(db *gorm.DB) error {
 	if err := db.AutoMigrate(domain.BizModels()...); err != nil {
 		return fmt.Errorf("migrate Biz OKR module schema: %w", err)
 	}
+	if err := migrateRegionalRecapOverlayPrimaryKey(db); err != nil {
+		return err
+	}
 	return backfillBizWriteVersions(db)
+}
+
+// The first regional-alignment draft keyed overlays only by bucket, which
+// allowed one O per filtered Recap view. Rebuild that newly introduced table
+// once so every Objective has an independent order/hidden overlay.
+func migrateRegionalRecapOverlayPrimaryKey(db *gorm.DB) error {
+	if !db.Migrator().HasTable(&domain.RegionalRecapOverlay{}) {
+		return nil
+	}
+	type columnInfo struct {
+		Name string `gorm:"column:name"`
+		PK   int    `gorm:"column:pk"`
+	}
+	var columns []columnInfo
+	if err := db.Raw("PRAGMA table_info(okr_workspace_regional_recap_overlay)").Scan(&columns).Error; err != nil {
+		return fmt.Errorf("inspect regional recap overlay primary key: %w", err)
+	}
+	for _, column := range columns {
+		if column.Name == "objective_id" && column.PK > 0 {
+			return nil
+		}
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		const legacy = "okr_workspace_regional_recap_overlay_legacy"
+		if err := tx.Exec("DROP TABLE IF EXISTS " + legacy).Error; err != nil {
+			return fmt.Errorf("drop stale regional recap overlay migration table: %w", err)
+		}
+		if err := tx.Exec("ALTER TABLE okr_workspace_regional_recap_overlay RENAME TO " + legacy).Error; err != nil {
+			return fmt.Errorf("rename regional recap overlay table: %w", err)
+		}
+		if err := tx.Migrator().CreateTable(&domain.RegionalRecapOverlay{}); err != nil {
+			return fmt.Errorf("create regional recap overlay table: %w", err)
+		}
+		if err := tx.Exec(`INSERT INTO okr_workspace_regional_recap_overlay
+			(alignment_id, region_code, bucket_key, objective_id, version, sort_order, hidden, updated_by, created_at, updated_at)
+			SELECT alignment_id, region_code, bucket_key, objective_id, version, sort_order, hidden, updated_by, created_at, updated_at
+			FROM ` + legacy).Error; err != nil {
+			return fmt.Errorf("copy regional recap overlays: %w", err)
+		}
+		if err := tx.Exec("DROP TABLE " + legacy).Error; err != nil {
+			return fmt.Errorf("drop legacy regional recap overlay table: %w", err)
+		}
+		return nil
+	})
 }
 
 // Version zero is the create precondition in the HTTP protocol. Persisted

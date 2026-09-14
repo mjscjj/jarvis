@@ -19,7 +19,7 @@ Jarvis 世界模型
 ```
 
 - `okr` 拥有 Objective、KR、Metric、Point、结构化负责人、周次、Weekly KR Core 和正式 Progress。
-- `biz-okr` 拥有标签、Biz OKR Plan、Plan/进度评审、周报业务展示、评论、评分、Follow-up、催填、Meego、飞书页面身份和业务 Agent 编排。
+- `biz-okr` 拥有标签、Biz OKR Plan、区域 OKR 对齐、Plan/进度评审、周报业务展示、评论、评分、Follow-up、催填、Meego、飞书页面身份和业务 Agent 编排。
 - 当前完整业务页面显示为 `Biz OKR`，内部模块 key 仍为 `biz-okr`。启用通用 `okr` 后，左侧“插件”下出现独立 `OKR 插件` 页面，展示通用结构、正式进展与 Jarvis 世界进展对照、跨世界关系；关系列表同时读取以 O/KR/Point 为 source 和 target 的边，并只展示当前季度节点。它不承载 Biz 标签、Plan、Review、评论或评分。
 - 两个模块继续复用 `internal/okrworkspace/`、`data/okr/okr.db` 和既有 `okr_workspace_*` 表。本次拆分没有搬库、改表名或复制历史数据。
 - `internal/plugin` 仍只负责 Codebase、Meego、Oncall 等外部线索采集插件；OKR 不进入这套采集器运行时。
@@ -30,7 +30,7 @@ Jarvis 世界模型
 
 当前 Emily 实例启用了[完整源码研发模式](../summery/emily-development-environment.md)：`chat.development_container` 指向常驻开发容器，容器可修改整个系统代码，直接读写同一份线上 `data/okr/`，Task、Message 等使用独立开发主库。入口路径由实例配置生成，不增加第二套业务路由。开发页面的对话框调用主站已有的 `/api/okr-chat/*`，复用同一会话库与飞书登录状态；模型执行仍进入研发容器。
 
-Biz OKR 页面底部对话按用户身份选择：既有白名单用户保留普通 Chat，其余已完成 Biz OKR 飞书登录的访客使用 `/api/okr-chat/*`。所有访客仍共用一份 Chat 服务和 `var/okr-chat/chat.db`，但新会话绑定已验证的飞书 `union_id`；列表、历史、草稿、附件、续聊、取消和删除都按归属校验。旧共享会话没有可验证的创建人，保留在库中但不自动分给任一用户，也不出现在个人列表。OKR 产品数据库 `data/okr/` 仍共享；普通 `/api/chat/*` 和 M2/M3/M5 保持原有行为。
+Biz OKR 页面底部对话按用户身份选择：既有白名单用户保留普通 Chat，其余已完成 Biz OKR 飞书登录的访客使用受限 `/api/okr-chat/*`。该接口在服务端验证飞书会话，所有访客共用一份 Chat 服务和 `var/okr-chat/chat.db`，共享会话列表、历史、草稿与附件；不按用户分库或建立运行实例。普通 `/api/chat/*` 和 M2/M3/M5 保持原有可信运行方式。
 
 OKR 飞书登录会话已持久化在 Jarvis 私有运行主库的 `okr_workspace_auth_session` 表，浏览器通过 HttpOnly 的 `jarvis_okr_session` Cookie 恢复身份；服务重启不需要再次授权。`conf/okr-module.yaml` 的 `identity.session_ttl_hours` 设为 `8760`（365 天），同时决定新会话与 Cookie 的有效期。已签发的旧会话保留原到期时间，下一次正常登录使用一年有效期；主动退出立即删除对应会话。此设置只延长网页登录，不改变飞书 API access/refresh token 自身的期限。
 
@@ -60,7 +60,7 @@ OKR 飞书登录会话已持久化在 Jarvis 私有运行主库的 `okr_workspac
 |---|---|---|
 | O、KR、Metric、Point、Owner | `okr` | 既有 OKR 领域表 |
 | 周次、周期指标、人工正式进展 | `okr` | `okr_workspace_week`、`okr_workspace_weekly_kr_core`、`okr_workspace_progress` |
-| 标签、Plan、评论、评分、Follow-up | `biz-okr` | 既有 Biz 业务表 |
+| 标签、Plan、区域对齐、评论、评分、Follow-up | `biz-okr` | 既有 Biz 业务表及 `okr_workspace_regional_*` |
 | Meego 快照、催填批次 | `biz-okr` | 既有 Meego / reminder 表 |
 | Biz 页面登录和用户授权 | `biz-okr` | Jarvis 运行库 session + 本地 token 文件 |
 | OKR 与项目、关键事项等跨模块强关系 | Jarvis 世界模型 | `EntityRelation` |
@@ -85,6 +85,8 @@ OKR 飞书登录会话已持久化在 Jarvis 私有运行主库的 `okr_workspac
 - 原子工具：`scripts/biz-okr-tools`。
 - 页面入口：`web/src/modules/registry.tsx` 注册的 `Biz OKR`（内部 key 为 `biz-okr`），复用当前 `web/src/okr/` 页面实现。
 - Biz 组合视图读取通用 OKR 和正式 Progress，再叠加标签、评分、评论与 Meego 信息；它不是第二份 OKR 真源。评论复用同一张讨论表，但生命周期明确分为 `(quarter, week)` 周页面和 `plan_id` Plan 页面两种作用域；Plan 评论不会借用或污染任一周次。评论中的 `@` 同时保存可见原文和经固定人员目录核验的完整企业邮箱。只有创建评论时的显式 `@` 会触发通知；页面和 Owner 不再隐式扩大收件人，编辑只更新评论与 mention 数据。通知边界直接使用已核验完整企业邮箱，通过 `feishu.app_id / cli_profile` 固定的通知机器人发送并回读 Card 2.0。通知意图与评论同事务保存，回执单独持久化；失败不回滚评论，已成功的不重发，有消息 ID 的未知结果只回读核验。原始 CLI 错误保留服务日志，页面显示简洁状态。
+
+- “区域 OKR 对齐”按季度绑定一份 Biz OKR Plan，并只读投影上一季度 Review；五个区域分别保存需求、Platform KR 上车决定、分类顺序和 Recap 展示覆盖，不复制 O/KR/Point。分享链接仍进入同一 Biz 页面，登录用户可共同编辑和评论；`regional_auto_match_access` 只控制张若怡的“自动匹配”按钮可见性，不作为数据接口权限。
 - Review 的结构化待跟进事项支持 `not_started`、`in_progress`、`done`、`abandoned` 四种状态；Review 会议页只开放状态编辑，其余字段保持只读。
 - 正式 Progress 的写入仍调用 `/api/okr/*`，写完再回读 Biz 组合视图，防止页面本地状态丢失 Biz 字段。
 - 多人填写使用细粒度乐观并发：已有实体按 `version` 做 CAS，首次周核心数据与首次评分从版本 1 开始；页面以服务端最新结果为基线重放保存期间的新草稿，评分和 Meego 确认只合并自己负责的字段。Objective/KR 排序使用范围顺序快照，评论编辑使用版本；级联删除以及从 KR 中移除 Metric/Point 都在同一写入临界区校验覆盖子项/回复的删除快照。冲突返回 409 并保留可继续处理的本地输入，不允许旧页面静默覆盖或删除协作者刚保存的数据。

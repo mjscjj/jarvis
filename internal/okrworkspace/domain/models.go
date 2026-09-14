@@ -392,6 +392,8 @@ type PageComment struct {
 	Quarter         string           `gorm:"not null;index:idx_page_comment_scope,priority:1"`
 	Week            string           `gorm:"not null;index:idx_page_comment_scope,priority:2"`
 	PlanID          string           `gorm:"not null;default:'';index:idx_page_comment_plan"`
+	AlignmentID     string           `gorm:"not null;default:'';index:idx_page_comment_alignment"`
+	RegionCode      string           `gorm:"not null;default:'';size:24;index:idx_page_comment_alignment"`
 	ParentID        string           `gorm:"not null;default:'';index"`
 	TargetType      string           `gorm:"not null;size:24;default:'page'"`
 	TargetID        string           `gorm:"not null;size:96;default:''"`
@@ -416,6 +418,92 @@ type PageComment struct {
 }
 
 func (PageComment) TableName() string { return "okr_workspace_comment" }
+
+// RegionalAlignment is the quarterly collaboration document. It points at one
+// Biz OKR Plan and one recap quarter; both OKR trees remain owned by their
+// original tables and are projected read-only into the alignment page.
+type RegionalAlignment struct {
+	ID           string    `gorm:"primaryKey;size:64"`
+	Quarter      string    `gorm:"not null;uniqueIndex;size:16"`
+	PlanID       string    `gorm:"not null;index;size:64"`
+	RecapQuarter string    `gorm:"not null;size:16"`
+	Version      int32     `gorm:"not null;default:1"`
+	CreatedBy    string    `gorm:"not null;default:''"`
+	UpdatedBy    string    `gorm:"not null;default:''"`
+	CreatedAt    time.Time `gorm:"not null"`
+	UpdatedAt    time.Time `gorm:"not null"`
+}
+
+func (RegionalAlignment) TableName() string { return "okr_workspace_regional_alignment" }
+
+type RegionalAlignmentRegion struct {
+	AlignmentID   string    `gorm:"primaryKey;size:64"`
+	RegionCode    string    `gorm:"primaryKey;size:24"`
+	Version       int32     `gorm:"not null;default:1"`
+	CategoryOrder []string  `gorm:"serializer:json;type:text"`
+	UpdatedBy     string    `gorm:"not null;default:''"`
+	CreatedAt     time.Time `gorm:"not null"`
+	UpdatedAt     time.Time `gorm:"not null"`
+}
+
+func (RegionalAlignmentRegion) TableName() string { return "okr_workspace_regional_alignment_region" }
+
+type RegionalDemand struct {
+	ID           string          `gorm:"primaryKey;size:64"`
+	AlignmentID  string          `gorm:"not null;index:idx_regional_demand_scope,priority:1;size:64"`
+	RegionCode   string          `gorm:"not null;index:idx_regional_demand_scope,priority:2;size:24"`
+	Version      int32           `gorm:"not null;default:1"`
+	RegionalOKR  string          `gorm:"not null;type:text;default:''"`
+	Item         string          `gorm:"not null;type:text;default:''"`
+	Requirement  string          `gorm:"not null;type:text;default:''"`
+	Docs         []DocLink       `gorm:"serializer:json;type:text"`
+	Images       []ImageRef      `gorm:"serializer:json;type:text"`
+	Priority     string          `gorm:"not null;default:'';size:8"`
+	RegionalPOCs []FollowUpOwner `gorm:"serializer:json;type:text"`
+	PlatformPOCs []FollowUpOwner `gorm:"serializer:json;type:text"`
+	Acceptance   string          `gorm:"not null;default:'tbd';size:8"`
+	PlanKRIDs    []string        `gorm:"serializer:json;type:text"`
+	Deliverable  string          `gorm:"not null;type:text;default:''"`
+	SortOrder    int             `gorm:"not null;default:0"`
+	CreatedBy    string          `gorm:"not null;default:''"`
+	UpdatedBy    string          `gorm:"not null;default:''"`
+	CreatedAt    time.Time       `gorm:"not null"`
+	UpdatedAt    time.Time       `gorm:"not null"`
+}
+
+func (RegionalDemand) TableName() string { return "okr_workspace_regional_demand" }
+
+type RegionalPlanDecision struct {
+	AlignmentID   string          `gorm:"primaryKey;size:64"`
+	RegionCode    string          `gorm:"primaryKey;size:24"`
+	PlanKRID      string          `gorm:"primaryKey;size:64"`
+	Version       int32           `gorm:"not null;default:1"`
+	Onboard       string          `gorm:"not null;default:'';size:8"`
+	LaunchRegions []string        `gorm:"serializer:json;type:text"`
+	RegionalPOCs  []FollowUpOwner `gorm:"serializer:json;type:text"`
+	RegionalOKR   string          `gorm:"not null;type:text;default:''"`
+	Hidden        bool            `gorm:"not null;default:false"`
+	UpdatedBy     string          `gorm:"not null;default:''"`
+	CreatedAt     time.Time       `gorm:"not null"`
+	UpdatedAt     time.Time       `gorm:"not null"`
+}
+
+func (RegionalPlanDecision) TableName() string { return "okr_workspace_regional_plan_decision" }
+
+type RegionalRecapOverlay struct {
+	AlignmentID string    `gorm:"primaryKey;size:64"`
+	RegionCode  string    `gorm:"primaryKey;size:24"`
+	BucketKey   string    `gorm:"primaryKey;size:160"`
+	ObjectiveID string    `gorm:"primaryKey;size:64"`
+	Version     int32     `gorm:"not null;default:1"`
+	SortOrder   int       `gorm:"not null;default:0"`
+	Hidden      bool      `gorm:"not null;default:false"`
+	UpdatedBy   string    `gorm:"not null;default:''"`
+	CreatedAt   time.Time `gorm:"not null"`
+	UpdatedAt   time.Time `gorm:"not null"`
+}
+
+func (RegionalRecapOverlay) TableName() string { return "okr_workspace_regional_recap_overlay" }
 
 // AuthSession stores an opaque browser session. It carries identity only; the
 // Feishu tokens of that same login live in the auth package's on-disk token
@@ -477,5 +565,5 @@ func IdentityModels() []any {
 // domain. Existing table names are intentionally preserved so enabling the
 // split never rewrites or loses historical data.
 func BizModels() []any {
-	return []any{&OKRPlan{}, &KRTag{}, &PointTag{}, &FollowUpItem{}, &WeeklyScore{}, &PageComment{}, &CommentDelivery{}, &MeegoSyncSnapshot{}, &ReminderBatch{}}
+	return []any{&OKRPlan{}, &KRTag{}, &PointTag{}, &FollowUpItem{}, &WeeklyScore{}, &PageComment{}, &CommentDelivery{}, &RegionalAlignment{}, &RegionalAlignmentRegion{}, &RegionalDemand{}, &RegionalPlanDecision{}, &RegionalRecapOverlay{}, &MeegoSyncSnapshot{}, &ReminderBatch{}}
 }

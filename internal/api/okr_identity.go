@@ -20,18 +20,19 @@ const okrIdentityContextKey = "okr_identity"
 var jarvisOKRUser = okrAuth.User{OpenID: "jarvis", Name: "Jarvis"}
 
 type okrCurrentUserResponse struct {
-	Authenticated    bool          `json:"authenticated"`
-	Configured       bool          `json:"configured"`
-	ManagementAccess bool          `json:"management_access"`
-	ExpiresAt        *time.Time    `json:"expires_at,omitempty"`
-	User             *okrAuth.User `json:"user,omitempty"`
+	Authenticated           bool          `json:"authenticated"`
+	Configured              bool          `json:"configured"`
+	ManagementAccess        bool          `json:"management_access"`
+	RegionalAutoMatchAccess bool          `json:"regional_auto_match_access"`
+	ExpiresAt               *time.Time    `json:"expires_at,omitempty"`
+	User                    *okrAuth.User `json:"user,omitempty"`
 }
 
 func GetOKRCurrentUser(service *okrAuth.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		if !service.Enabled() {
 			user := jarvisOKRUser
-			c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": okrCurrentUserResponse{Authenticated: true, Configured: false, ManagementAccess: true, User: &user}})
+			c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": okrCurrentUserResponse{Authenticated: true, Configured: false, ManagementAccess: true, RegionalAutoMatchAccess: true, User: &user}})
 			return
 		}
 		session, err := service.Current(ctx, string(c.Cookie(okrAuth.CookieName)))
@@ -43,7 +44,7 @@ func GetOKRCurrentUser(service *okrAuth.Service) app.HandlerFunc {
 			writeAPIError(c, consts.StatusInternalServerError, 50080, err)
 			return
 		}
-		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": okrCurrentUserResponse{Authenticated: true, Configured: true, ManagementAccess: canManageOKR(session.User, true), ExpiresAt: &session.ExpiresAt, User: &session.User}})
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": okrCurrentUserResponse{Authenticated: true, Configured: true, ManagementAccess: canManageOKR(session.User, true), RegionalAutoMatchAccess: canAutoMatchRegionalAlignment(session.User, true), ExpiresAt: &session.ExpiresAt, User: &session.User}})
 	}
 }
 

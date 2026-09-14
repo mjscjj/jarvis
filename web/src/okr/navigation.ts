@@ -3,6 +3,7 @@ export const DEFAULT_OKR_TAB = 'manage'
 export const OKR_TAB_DEFINITIONS = [
   { key: 'manage', label: '管理与打标', group: 'okr' },
   { key: 'okr-plan', label: 'Biz OKR Plan', group: 'okr' },
+  { key: 'regional-alignment', label: '区域 OKR 对齐', group: 'okr', requiresModule: 'biz-okr' },
   { key: 'agent-flows', label: 'OKR Agent', group: 'okr' },
   { key: 'review-fill', label: 'Review 填写', group: 'review', requiresModule: 'biz-okr' },
   { key: 'review-meeting', label: 'Review 会议', group: 'review', requiresModule: 'biz-okr' },

@@ -15,7 +15,7 @@ function krNeedsUpdate(points: Point[]) {
 
 function targetLabel(comment: PageComment) {
   if (comment.targetTitle?.trim()) return comment.targetTitle
-  return ({ page: '整页评论', objective: 'O 评论', kr: 'KR 评论', metric: '核心数据评论', point: '具体 KR 评论', entry: '进展评论', follow_up: '待跟进事项评论' } as const)[comment.targetType]
+  return ({ page: '整页评论', objective: 'O 评论', kr: 'KR 评论', metric: '核心数据评论', point: '具体 KR 评论', entry: '进展评论', follow_up: '待跟进事项评论', alignment_item: '对齐事项评论' } as const)[comment.targetType]
 }
 
 function ownerKey(owner: KrOwner) {

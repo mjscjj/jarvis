@@ -53,20 +53,26 @@ type CommentView struct {
 	CreatedAt          time.Time             `json:"created_at"`
 	UpdatedAt          time.Time             `json:"updated_at"`
 	Replies            []CommentView         `json:"replies"`
+	AlignmentID        string                `json:"alignment_id,omitempty"`
+	RegionCode         string                `json:"region_code,omitempty"`
 }
 
 type CommentList struct {
-	Quarter  string        `json:"quarter"`
-	Week     string        `json:"week,omitempty"`
-	PlanID   string        `json:"plan_id,omitempty"`
-	Count    int           `json:"count"`
-	Comments []CommentView `json:"comments"`
+	Quarter     string        `json:"quarter"`
+	Week        string        `json:"week,omitempty"`
+	PlanID      string        `json:"plan_id,omitempty"`
+	AlignmentID string        `json:"alignment_id,omitempty"`
+	RegionCode  string        `json:"region_code,omitempty"`
+	Count       int           `json:"count"`
+	Comments    []CommentView `json:"comments"`
 }
 
 type CreateCommentInput struct {
-	Quarter string `json:"quarter"`
-	Week    string `json:"week"`
-	PlanID  string `json:"plan_id"`
+	Quarter     string `json:"quarter"`
+	Week        string `json:"week"`
+	PlanID      string `json:"plan_id"`
+	AlignmentID string `json:"alignment_id"`
+	RegionCode  string `json:"region_code"`
 	// SourceTab is the page that created this comment. It is an execution
 	// parameter for the immediate notification deep link, not comment state.
 	SourceTab       string           `json:"source_tab"`
@@ -152,10 +158,40 @@ func (service *Service) CreatePlanComment(ctx context.Context, planID string, in
 	return service.CreateComment(ctx, input)
 }
 
+func (service *Service) AlignmentComments(ctx context.Context, quarter, region string) (CommentList, error) {
+	alignment, _, err := service.ensureRegionalAlignment(ctx, quarter, region, "")
+	if err != nil {
+		return CommentList{}, err
+	}
+	region = strings.ToLower(strings.TrimSpace(region))
+	var rows []domain.PageComment
+	if err := service.db.WithContext(ctx).Where("alignment_id = ? AND region_code = ?", alignment.ID, region).Order("created_at ASC").Find(&rows).Error; err != nil {
+		return CommentList{}, fmt.Errorf("list regional alignment comments: %w", err)
+	}
+	result, err := service.buildCommentList(ctx, alignment.Quarter, "", rows)
+	if err != nil {
+		return CommentList{}, err
+	}
+	result.AlignmentID, result.RegionCode = alignment.ID, region
+	return result, nil
+}
+
+func (service *Service) CreateAlignmentComment(ctx context.Context, quarter, region string, input CreateCommentInput) (CommentView, error) {
+	alignment, _, err := service.ensureRegionalAlignment(ctx, quarter, region, input.AuthorOpenID)
+	if err != nil {
+		return CommentView{}, err
+	}
+	input.AlignmentID, input.RegionCode, input.Quarter, input.Week, input.PlanID = alignment.ID, strings.ToLower(strings.TrimSpace(region)), alignment.Quarter, "", ""
+	input.SourceTab = commentSourceTabRegionalAlignment
+	return service.CreateComment(ctx, input)
+}
+
 func (service *Service) CreateComment(ctx context.Context, input CreateCommentInput) (CommentView, error) {
 	input.Quarter = strings.TrimSpace(input.Quarter)
 	input.Week = strings.TrimSpace(input.Week)
 	input.PlanID = strings.TrimSpace(input.PlanID)
+	input.AlignmentID = strings.TrimSpace(input.AlignmentID)
+	input.RegionCode = strings.ToLower(strings.TrimSpace(input.RegionCode))
 	input.SourceTab = strings.TrimSpace(input.SourceTab)
 	input.ParentID = strings.TrimSpace(input.ParentID)
 	input.TargetType = strings.TrimSpace(input.TargetType)
@@ -176,7 +212,19 @@ func (service *Service) CreateComment(ctx context.Context, input CreateCommentIn
 	if input.SourceTab != "" && !validCommentSourceTab(input.SourceTab) {
 		return CommentView{}, fmt.Errorf("unsupported comment source_tab %q", input.SourceTab)
 	}
-	if input.PlanID != "" {
+	if input.AlignmentID != "" {
+		var alignment domain.RegionalAlignment
+		if err := service.db.WithContext(ctx).First(&alignment, "id = ?", input.AlignmentID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return CommentView{}, ErrNotFound
+			}
+			return CommentView{}, err
+		}
+		if _, ok := regionalAlignmentRegions[input.RegionCode]; !ok {
+			return CommentView{}, fmt.Errorf("unsupported region %q", input.RegionCode)
+		}
+		input.Quarter, input.Week, input.PlanID = alignment.Quarter, "", ""
+	} else if input.PlanID != "" {
 		plan, err := service.commentPlan(ctx, input.PlanID)
 		if err != nil {
 			return CommentView{}, err
@@ -210,8 +258,8 @@ func (service *Service) CreateComment(ctx context.Context, input CreateCommentIn
 	if input.TargetType == "" {
 		input.TargetType = "page"
 	}
-	if input.TargetType != "page" && input.TargetType != "objective" && input.TargetType != "kr" && input.TargetType != "metric" && input.TargetType != "point" && input.TargetType != "entry" && input.TargetType != "follow_up" {
-		return CommentView{}, fmt.Errorf("target_type must be page, objective, kr, metric, point, entry or follow_up")
+	if input.TargetType != "page" && input.TargetType != "objective" && input.TargetType != "kr" && input.TargetType != "metric" && input.TargetType != "point" && input.TargetType != "entry" && input.TargetType != "follow_up" && input.TargetType != "alignment_item" {
+		return CommentView{}, fmt.Errorf("unsupported target_type")
 	}
 	if input.TargetType != "page" && input.TargetID == "" {
 		return CommentView{}, fmt.Errorf("target_id is required for content comments")
@@ -264,6 +312,8 @@ func (service *Service) CreateComment(ctx context.Context, input CreateCommentIn
 		Quarter:         input.Quarter,
 		Week:            input.Week,
 		PlanID:          input.PlanID,
+		AlignmentID:     input.AlignmentID,
+		RegionCode:      input.RegionCode,
 		ParentID:        input.ParentID,
 		TargetType:      input.TargetType,
 		TargetID:        input.TargetID,
@@ -291,7 +341,7 @@ func (service *Service) CreateComment(ctx context.Context, input CreateCommentIn
 				}
 				return err
 			}
-			if parent.Quarter != input.Quarter || parent.Week != input.Week || parent.PlanID != input.PlanID {
+			if parent.Quarter != input.Quarter || parent.Week != input.Week || parent.PlanID != input.PlanID || parent.AlignmentID != input.AlignmentID || parent.RegionCode != input.RegionCode {
 				return fmt.Errorf("reply scope does not match parent comment")
 			}
 			if parent.ParentID != "" {
@@ -538,7 +588,7 @@ func (service *Service) buildCommentList(ctx context.Context, quarter, week stri
 
 func commentView(row domain.PageComment) CommentView {
 	return CommentView{
-		ID: row.ID, Version: row.Version, PlanID: row.PlanID, ParentID: row.ParentID, TargetType: row.TargetType,
+		ID: row.ID, Version: row.Version, PlanID: row.PlanID, AlignmentID: row.AlignmentID, RegionCode: row.RegionCode, ParentID: row.ParentID, TargetType: row.TargetType,
 		TargetID: row.TargetID, TargetTitle: row.TargetTitle,
 		SelectedText: row.SelectedText, SelectionStart: row.SelectionStart, SelectionEnd: row.SelectionEnd,
 		SelectionPrefix: row.SelectionPrefix, SelectionSuffix: row.SelectionSuffix,

@@ -7,7 +7,7 @@ import { addOrResolveOwner, joinOwnerNames, ownerIdentityKey, ownerOptions, spli
 import type { Kr, KrOwner, PersonSearchItem, Point } from '../types'
 import { PersonAvatar, rememberPersonAvatars } from './PersonAvatar'
 
-export function FeishuPeoplePickerInput({ owners, options, onChange, compact = false, small = false }: { owners: KrOwner[]; options: KrOwner[]; onChange: (owners: KrOwner[]) => void; compact?: boolean; small?: boolean }) {
+export function FeishuPeoplePickerInput({ owners, options, onChange, compact = false, small = false, preferredDepartmentKeywords = [] }: { owners: KrOwner[]; options: KrOwner[]; onChange: (owners: KrOwner[]) => void; compact?: boolean; small?: boolean; preferredDepartmentKeywords?: string[] }) {
   const root = useRef<HTMLSpanElement>(null)
   const panel = useRef<HTMLSpanElement>(null)
   const input = useRef<HTMLInputElement>(null)
@@ -23,7 +23,14 @@ export function FeishuPeoplePickerInput({ owners, options, onChange, compact = f
         unionId: person.union_id,
 		isExternal: person.is_external,
 		hasChatted: person.has_chatted,
-	})), [peopleSearch.candidates])
+	})).sort((left, right) => {
+		const rank = (person: PersonSearchItem) => {
+			const department = person.department.toLowerCase()
+			const index = preferredDepartmentKeywords.findIndex((keyword) => department.includes(keyword.toLowerCase()))
+			return index < 0 ? preferredDepartmentKeywords.length : index
+		}
+		return rank(left) - rank(right)
+	}), [peopleSearch.candidates, preferredDepartmentKeywords])
 
   const localResults = useMemo(() => options
 		.filter((item) => item.email && !selectedOpenIds.has(item.email) && (!peopleSearch.query.trim() || item.name.toLowerCase().includes(peopleSearch.query.trim().toLowerCase())))

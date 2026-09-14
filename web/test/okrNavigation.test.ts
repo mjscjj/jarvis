@@ -14,6 +14,7 @@ test('defines the OKR directory children in their visible order', () => {
   assert.deepEqual(OKR_TAB_DEFINITIONS.map((item) => item.key), [
     'manage',
     'okr-plan',
+    'regional-alignment',
     'agent-flows',
     'review-fill',
     'review-meeting',
@@ -21,18 +22,20 @@ test('defines the OKR directory children in their visible order', () => {
     'weekly-meeting',
   ])
   assert.equal(OKR_TAB_DEFINITIONS.find((item) => item.key === 'okr-plan')?.label, 'Biz OKR Plan')
+  assert.equal(OKR_TAB_DEFINITIONS.find((item) => item.key === 'regional-alignment')?.label, '区域 OKR 对齐')
   assert.equal(OKR_TAB_DEFINITIONS.find((item) => item.key === 'agent-flows')?.label, 'OKR Agent')
   assert.equal(DEFAULT_OKR_TAB, 'manage')
 })
 
 test('separates Review and weekly report into their own sidebar groups', () => {
   const groups = OKR_TAB_DEFINITIONS.map((item) => item.group)
-  assert.deepEqual(groups, ['okr', 'okr', 'okr', 'review', 'review', 'weekly', 'weekly'])
+  assert.deepEqual(groups, ['okr', 'okr', 'okr', 'okr', 'review', 'review', 'weekly', 'weekly'])
 })
 
 test('resolves removed, invalid and disabled child routes to OKR management', () => {
   assert.equal(isOKRTab('manage'), true)
   assert.equal(isOKRTab('okr-plan'), true)
+  assert.equal(isOKRTab('regional-alignment'), true)
   assert.equal(isOKRTab('structure'), false)
   assert.equal(isOKRTab('unknown'), false)
   // The single-page Review tab was replaced by the fill/meeting pair.
@@ -41,6 +44,8 @@ test('resolves removed, invalid and disabled child routes to OKR management', ()
   assert.equal(resolveOKRTab('weekly-fill', { 'biz-okr': true }), 'weekly-fill')
   assert.equal(resolveOKRTab('review-fill', { 'biz-okr': true }), 'review-fill')
   assert.equal(resolveOKRTab('review-meeting', { 'biz-okr': true }), 'review-meeting')
+  assert.equal(resolveOKRTab('regional-alignment', { 'biz-okr': true }), 'regional-alignment')
+  assert.equal(resolveOKRTab('regional-alignment', { 'biz-okr': false }), 'manage')
   assert.equal(resolveOKRTab('weekly-meeting', { 'biz-okr': false }), 'manage')
   assert.equal(resolveOKRTab('review-fill', { 'biz-okr': false }), 'manage')
   assert.equal(resolveOKRTab('okr-review', { 'biz-okr': true }), 'manage')
