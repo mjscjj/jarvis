@@ -34,6 +34,14 @@ var okrManagementUsers = []struct {
 	{Name: "张若怡", UnionID: "on_833914b05fbbe2eb6623865af52d984f", Email: "ruoyizhang@bytedance.com"},
 }
 
+func canAutoMatchRegionalAlignment(user okrAuth.User, identityConfigured bool) bool {
+	if !identityConfigured {
+		return true
+	}
+	return strings.TrimSpace(user.UnionID) == "on_833914b05fbbe2eb6623865af52d984f" ||
+		strings.EqualFold(strings.TrimSpace(user.Email), "ruoyizhang@bytedance.com")
+}
+
 func canManageOKR(user okrAuth.User, identityConfigured bool) bool {
 	if !identityConfigured {
 		return true

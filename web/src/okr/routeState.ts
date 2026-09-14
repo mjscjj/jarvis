@@ -33,5 +33,5 @@ export function activeQuarterForViewState(
 ): string {
   const routeQuarter = quarterFromViewState(viewState)
   if (routeQuarter) return routeQuarter
-  return viewState.tab === 'okr-plan' ? okrPlanDefaultQuarter(date) : fallbackQuarter
+  return viewState.tab === 'okr-plan' || viewState.tab === 'regional-alignment' ? okrPlanDefaultQuarter(date) : fallbackQuarter
 }

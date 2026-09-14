@@ -4,6 +4,7 @@ import { usePageContext } from '../pageContext'
 import AgentFlowsWorkspace from './emily/AgentFlowsApp'
 import CoreWorkspace from './emily/CoreApp'
 import PlanWorkspace from './emily/PlanApp'
+import RegionalAlignmentWorkspace from './emily/RegionalAlignmentApp'
 import WeeklyReportWorkspace from './emily/App'
 import { useBoard } from './emily/board'
 import { BoardProvider } from './emily/store'
@@ -30,9 +31,9 @@ function PageContextSync({ surface }: { surface: 'okr' | 'weekly-report' }) {
   return null
 }
 
-function Workspace({ moduleEnablement, managementAccess }: {
+function Workspace({ moduleEnablement, auth }: {
   moduleEnablement: Readonly<Record<string, boolean>>
-	managementAccess: AuthStatus['managementAccess']
+	auth: AuthStatus
 }) {
   const { context, setViewState } = usePageContext()
   const requestedTab = context.view_state.tab
@@ -42,9 +43,9 @@ function Workspace({ moduleEnablement, managementAccess }: {
     return weeklyShare && requestedTab === 'okr-plan' ? previousQuarter(routeQuarter) : routeQuarter
   })
   const resolvedTab = weeklyShare ? weeklyShareTab(requestedTab) : resolveOKRTab(requestedTab, moduleEnablement)
-	const visibleTab = !weeklyShare && resolvedTab === 'manage' && !managementAccess ? 'okr-plan' : resolvedTab
+	const visibleTab = !weeklyShare && resolvedTab === 'manage' && !auth.managementAccess ? 'okr-plan' : resolvedTab
   const weeklyEnabled = moduleEnablement['biz-okr'] === true
-  const planVisible = visibleTab === 'okr-plan'
+  const planVisible = visibleTab === 'okr-plan' || visibleTab === 'regional-alignment'
   const activeQuarter = planVisible
     ? activeQuarterForViewState(context.view_state, selectedQuarter)
     : selectedQuarter || activeQuarterForViewState(context.view_state, selectedQuarter)
@@ -100,6 +101,23 @@ function Workspace({ moduleEnablement, managementAccess }: {
 		)
 	}
 
+	if (visibleTab === 'regional-alignment') {
+		return (
+			<div id="okr-workspace-root" className="okr-workspace-root">
+				<RegionalAlignmentWorkspace
+					initialQuarter={activeQuarter}
+					initialRegion={typeof context.view_state.region === 'string' ? context.view_state.region : ''}
+					initialCommentId={typeof context.view_state.comment_id === 'string' ? context.view_state.comment_id : ''}
+					autoMatchAccess={auth.regionalAutoMatchAccess}
+					onScopeChange={(quarter, region) => {
+						const next = withOKRScope({ ...context.view_state, tab: 'regional-alignment', region }, 'okr', quarter, '')
+						if (JSON.stringify(next) !== JSON.stringify(context.view_state)) setViewState(next, true)
+					}}
+				/>
+			</div>
+		)
+	}
+
 	return (
 		<div id="okr-workspace-root" className="okr-workspace-root">
 			<BoardProvider key={boardKey} surface={surface} weekTemplateKey={weekTemplateKey} initialQuarter={activeQuarter} initialWeek={context.view_state.week} onQuarterChange={setSelectedQuarter}>
@@ -131,7 +149,7 @@ function Workspace({ moduleEnablement, managementAccess }: {
 export default function BizOKRModule({ moduleEnablement }: AppModulePageProps) {
 	return (
 		<IdentityBoundary>
-			{(auth) => <Workspace moduleEnablement={moduleEnablement} managementAccess={auth.managementAccess} />}
+			{(auth) => <Workspace moduleEnablement={moduleEnablement} auth={auth} />}
 		</IdentityBoundary>
 	)
 }

@@ -130,13 +130,14 @@ func TestOKRCurrentUserReportsManagementAccess(t *testing.T) {
 	cookie := func(token string) ut.Header { return ut.Header{Key: "Cookie", Value: okrAuth.CookieName + "=" + token} }
 
 	for _, test := range []struct {
-		name, token string
-		want        bool
+		name, token    string
+		wantManagement bool
+		wantAutoMatch  bool
 	}{
-		{name: "allowlisted manager", token: "manager", want: true},
-		{name: "Ruoyi with existing email-less login", token: "ruoyi-union", want: true},
-		{name: "Ruoyi by enterprise email", token: "ruoyi-email", want: true},
-		{name: "unlisted user", token: "outsider", want: false},
+		{name: "allowlisted manager", token: "manager", wantManagement: true},
+		{name: "Ruoyi with existing email-less login", token: "ruoyi-union", wantManagement: true, wantAutoMatch: true},
+		{name: "Ruoyi by enterprise email", token: "ruoyi-email", wantManagement: true, wantAutoMatch: true},
+		{name: "unlisted user", token: "outsider"},
 	} {
 		response := ut.PerformRequest(h.Engine, "GET", "/me", nil, cookie(test.token)).Result()
 		if response.StatusCode() != consts.StatusOK {
@@ -148,8 +149,11 @@ func TestOKRCurrentUserReportsManagementAccess(t *testing.T) {
 		if err := json.Unmarshal(response.Body(), &payload); err != nil {
 			t.Fatal(err)
 		}
-		if payload.Data.ManagementAccess != test.want {
-			t.Fatalf("%s management_access = %t, want %t", test.name, payload.Data.ManagementAccess, test.want)
+		if payload.Data.ManagementAccess != test.wantManagement {
+			t.Fatalf("%s management_access = %t, want %t", test.name, payload.Data.ManagementAccess, test.wantManagement)
+		}
+		if payload.Data.RegionalAutoMatchAccess != test.wantAutoMatch {
+			t.Fatalf("%s regional_auto_match_access = %t, want %t", test.name, payload.Data.RegionalAutoMatchAccess, test.wantAutoMatch)
 		}
 	}
 }

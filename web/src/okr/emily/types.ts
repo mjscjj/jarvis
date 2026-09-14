@@ -178,6 +178,7 @@ export interface AuthStatus {
   authenticated: boolean
   configured: boolean
 	managementAccess: boolean
+	regionalAutoMatchAccess: boolean
   expiresAt?: string
   user?: AuthUser
 }
@@ -272,8 +273,10 @@ export interface PageComment {
   version: number
   deleteToken: string
   planId?: string
+  alignmentId?: string
+  regionCode?: string
   parentId?: string
-  targetType: 'page' | 'objective' | 'kr' | 'metric' | 'point' | 'entry' | 'follow_up'
+  targetType: 'page' | 'objective' | 'kr' | 'metric' | 'point' | 'entry' | 'follow_up' | 'alignment_item'
   targetId?: string
   targetTitle?: string
   selectedText?: string
@@ -292,6 +295,55 @@ export interface PageComment {
   createdAt: string
   updatedAt: string
   replies: PageComment[]
+}
+
+export type RegionalCode = 'eu' | 'menat' | 'sea-cca' | 'nea' | 'ams-anz'
+export type RegionalDecision = '' | 'yes' | 'no'
+export type RegionalAcceptance = 'yes' | 'no' | 'tbd'
+
+export interface RegionalDemand {
+  id: string
+  version: number
+  regionalOkr: string
+  item: string
+  requirement: string
+  docs: DocLink[]
+  images: ImageRef[]
+  priority: '' | KrPriority
+  regionalPocs: KrOwner[]
+  platformPocs: KrOwner[]
+  acceptance: RegionalAcceptance
+  planKrIds: string[]
+  deliverable: string
+  sortOrder: number
+}
+
+export interface RegionalPlanDecisionItem {
+  planKrId: string
+  version: number
+  onboard: RegionalDecision
+  launchRegions: string[]
+  regionalPocs: KrOwner[]
+  regionalOkr: string
+  hidden: boolean
+}
+
+export interface RegionalRecapOverlay {
+  bucketKey: string
+  objectiveId: string
+  version: number
+  sortOrder: number
+  hidden: boolean
+}
+
+export interface RegionalAlignmentBoard {
+  alignment: { id: string; quarter: string; planId: string; recapQuarter: string; version: number }
+  region: { regionCode: RegionalCode; version: number; categoryOrder: string[] }
+  plan: OKRPlan
+  recap: { quarter: string; objectives: Objective[] }
+  demands: RegionalDemand[]
+  decisions: RegionalPlanDecisionItem[]
+  recapOverlays: RegionalRecapOverlay[]
 }
 
 export interface PageCommentList {
