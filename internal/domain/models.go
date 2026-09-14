@@ -69,18 +69,21 @@ type Group struct {
 	// Summary is this entity's long-term truth: what it is and where it stands.
 	// It is read and written whole. Line one is the index line. Detail history
 	// lives in Fact rows; drill down with list-facts.
-	Summary         *string `gorm:"column:summary"`
-	OwnerOpenID     *string `gorm:"column:owner_open_id"`
-	External        bool    `gorm:"column:external;not null;default:0"`
-	TenantKey       *string `gorm:"column:tenant_key"`
-	P2PTargetType   *string `gorm:"column:p2p_target_type"` // 私聊对端类型：user=真人，bot=服务号；群/话题为空
-	ProjectID       *uint64 `gorm:"column:project_id;index:idx_group_project"`
-	RelatedGroup    bool    `gorm:"column:related_group;not null;default:0;index:idx_group_related_tier,priority:1"`
-	Tier            string  `gorm:"column:tier;not null;default:cold;index:idx_group_tier_active,priority:1;index:idx_group_related_tier,priority:2"`
-	Pinned          bool    `gorm:"column:pinned;not null;default:0"`
-	IncludeInMemory bool    `gorm:"column:include_in_memory;not null;default:1"`
-	IsKeyGroup      bool    `gorm:"column:is_key_group;not null;default:0"`
-	LastActiveAt    *int64  `gorm:"column:last_active_at;index:idx_group_tier_active,priority:2;index:idx_group_related_tier,priority:3"`
+	Summary       *string `gorm:"column:summary"`
+	OwnerOpenID   *string `gorm:"column:owner_open_id"`
+	External      bool    `gorm:"column:external;not null;default:0"`
+	TenantKey     *string `gorm:"column:tenant_key"`
+	P2PTargetType *string `gorm:"column:p2p_target_type"` // 私聊对端类型：user=真人，bot=服务号；群/话题为空
+	ProjectID     *uint64 `gorm:"column:project_id;index:idx_group_project"`
+	RelatedGroup  bool    `gorm:"column:related_group;not null;default:0;index:idx_group_related_tier,priority:1"`
+	// CaptureExcluded is the principal's durable privacy choice. Automatic
+	// discovery and manual scan entrypoints must never override it.
+	CaptureExcluded bool   `gorm:"column:capture_excluded;not null;default:0;index"`
+	Tier            string `gorm:"column:tier;not null;default:cold;index:idx_group_tier_active,priority:1;index:idx_group_related_tier,priority:2"`
+	Pinned          bool   `gorm:"column:pinned;not null;default:0"`
+	IncludeInMemory bool   `gorm:"column:include_in_memory;not null;default:1"`
+	IsKeyGroup      bool   `gorm:"column:is_key_group;not null;default:0"`
+	LastActiveAt    *int64 `gorm:"column:last_active_at;index:idx_group_tier_active,priority:2;index:idx_group_related_tier,priority:3"`
 	// LastProgressAt moves only when Summary actually changes.
 	LastProgressAt *time.Time `gorm:"column:last_progress_at;index:idx_group_last_progress"`
 	CreatedAt      time.Time  `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`

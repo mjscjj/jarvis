@@ -302,6 +302,9 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.PUT("/api/persons/:person_id", UpdatePerson(deps.Persons))
 	h.DELETE("/api/persons/:person_id", DeletePerson(deps.Persons))
 	h.GET("/api/groups", ListGroups(deps.Groups))
+	if deps.Capture != nil {
+		h.PUT("/api/groups/capture-exclusion", UpdateCaptureExclusion(deps.Capture))
+	}
 	h.PUT("/api/groups/:group_id", UpdateGroupBackground(deps.Groups))
 	h.GET("/api/pages", ListPages(deps.Pages))
 	h.GET("/api/pages/:type/:id", GetPage(deps.Pages))

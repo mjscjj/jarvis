@@ -335,11 +335,12 @@ func ListGroups(svc *background.GroupBackgroundService) app.HandlerFunc {
 			return
 		}
 		filter := background.GroupFilter{
-			ListFilter: base,
-			Keyword:    strings.TrimSpace(c.Query("keyword")),
-			ChatID:     c.Query("chat_id"),
-			ChatMode:   strings.TrimSpace(c.Query("chat_mode")),
-			Tier:       strings.TrimSpace(c.Query("tier")),
+			ListFilter:   base,
+			Keyword:      strings.TrimSpace(c.Query("keyword")),
+			ChatID:       c.Query("chat_id"),
+			ChatMode:     strings.TrimSpace(c.Query("chat_mode")),
+			Tier:         strings.TrimSpace(c.Query("tier")),
+			CaptureState: strings.TrimSpace(c.Query("capture_state")),
 		}
 		if raw := strings.TrimSpace(c.Query("related_only")); raw != "" {
 			value, err := strconv.ParseBool(raw)

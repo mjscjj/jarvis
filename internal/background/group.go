@@ -45,12 +45,13 @@ type GroupList struct {
 // rest without loading all thousands of discovered chats at once.
 type GroupFilter struct {
 	ListFilter
-	RelatedOnly bool
-	KeyOnly     bool
-	Keyword     string
-	ChatID      string
-	ChatMode    string
-	Tier        string
+	RelatedOnly  bool
+	KeyOnly      bool
+	Keyword      string
+	ChatID       string
+	ChatMode     string
+	Tier         string
+	CaptureState string
 }
 
 // GroupBackgroundService patches the human-curated subset of the feishu_group
@@ -89,6 +90,9 @@ func (f GroupFilter) validate() error {
 			return fmt.Errorf("group chat_mode %q is invalid", f.ChatMode)
 		}
 	}
+	if f.CaptureState != "" && f.CaptureState != "excluded" {
+		return fmt.Errorf("group capture_state %q is invalid", f.CaptureState)
+	}
 	return nil
 }
 
@@ -108,6 +112,9 @@ func (f GroupFilter) broadened() bool {
 func (f GroupFilter) applyFilters(query *gorm.DB) *gorm.DB {
 	if f.RelatedOnly && !f.broadened() {
 		query = query.Where("feishu_group.related_group = ?", true)
+	}
+	if f.CaptureState == "excluded" {
+		query = query.Where("feishu_group.capture_excluded = ?", true)
 	}
 	if f.KeyOnly {
 		query = query.Where("feishu_group.is_key_group = ?", true)
@@ -240,12 +247,15 @@ func (s *GroupBackgroundService) UpdateBackground(ctx context.Context, id uint64
 	}
 
 	var previous domain.Group
-	err := s.db.WithContext(ctx).Select("id", "chat_id", "chat_mode", "related_group").Where("id = ?", id).Take(&previous).Error
+	err := s.db.WithContext(ctx).Select("id", "chat_id", "chat_mode", "related_group", "capture_excluded").Where("id = ?", id).Take(&previous).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("load group id=%d: %w", id, err)
+	}
+	if previous.CaptureExcluded && in.RelatedGroup {
+		return nil, invalid(fmt.Errorf("group id=%d is excluded from background capture", id))
 	}
 	if s.trigger != nil && previous.ChatMode == "p2p" && !previous.RelatedGroup && in.RelatedGroup {
 		if err := s.trigger.ValidateScanChat(ctx, previous.ChatID); err != nil {

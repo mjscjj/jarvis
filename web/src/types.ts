@@ -486,6 +486,7 @@ export interface Group {
   tenant_key: string | null
   project_id: number | null
   related_group: boolean
+  capture_excluded: boolean
   tier: string
   pinned: boolean
   include_in_memory: boolean
@@ -507,6 +508,7 @@ export interface GroupQuery {
   keyword?: string
   chatMode?: string
   tier?: string
+  captureState?: 'excluded'
 }
 
 export interface Paged<T> {
@@ -1178,6 +1180,7 @@ export interface RuntimeSettingsView {
 
 export interface SecuritySettings {
   p2p_scan_enabled: boolean
+  auto_related_p2p_top_n: number
 }
 
 export interface SecurityCapability {

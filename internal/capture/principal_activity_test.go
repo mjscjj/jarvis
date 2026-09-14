@@ -341,16 +341,17 @@ func createDiscoveredGroup(
 }
 
 type activityTestGroup struct {
-	ID           uint64    `gorm:"column:id;primaryKey;autoIncrement"`
-	ChatID       string    `gorm:"column:chat_id;uniqueIndex"`
-	ChatMode     string    `gorm:"column:chat_mode"`
-	External     bool      `gorm:"column:external"`
-	RelatedGroup bool      `gorm:"column:related_group"`
-	Tier         string    `gorm:"column:tier"`
-	Pinned       bool      `gorm:"column:pinned"`
-	LastActiveAt *int64    `gorm:"column:last_active_at"`
-	CreatedAt    time.Time `gorm:"column:created_at"`
-	UpdatedAt    time.Time `gorm:"column:updated_at"`
+	ID              uint64    `gorm:"column:id;primaryKey;autoIncrement"`
+	ChatID          string    `gorm:"column:chat_id;uniqueIndex"`
+	ChatMode        string    `gorm:"column:chat_mode"`
+	External        bool      `gorm:"column:external"`
+	RelatedGroup    bool      `gorm:"column:related_group"`
+	CaptureExcluded bool      `gorm:"column:capture_excluded"`
+	Tier            string    `gorm:"column:tier"`
+	Pinned          bool      `gorm:"column:pinned"`
+	LastActiveAt    *int64    `gorm:"column:last_active_at"`
+	CreatedAt       time.Time `gorm:"column:created_at"`
+	UpdatedAt       time.Time `gorm:"column:updated_at"`
 }
 
 func (activityTestGroup) TableName() string { return "feishu_group" }
@@ -388,6 +389,7 @@ type activityTestCheckpoint struct {
 	LastMessageID       *string    `gorm:"column:last_message_id"`
 	BackfillDone        bool       `gorm:"column:backfill_done"`
 	BackfillSince       int64      `gorm:"column:backfill_since"`
+	CaptureFloor        int64      `gorm:"column:capture_floor"`
 	LastScanAt          *time.Time `gorm:"column:last_scan_at"`
 	LastScanStatus      *string    `gorm:"column:last_scan_status"`
 	LastError           *string    `gorm:"column:last_error"`

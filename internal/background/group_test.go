@@ -2,6 +2,7 @@ package background
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"jarvis/internal/domain"
@@ -82,6 +83,65 @@ func TestGroupManualMonitoringPinsTheConversation(t *testing.T) {
 		if updated.RelatedGroup || updated.Pinned {
 			t.Fatalf("disabled %s flags = related:%t pinned:%t, want false/false", group.ChatMode, updated.RelatedGroup, updated.Pinned)
 		}
+	}
+}
+
+func TestGroupListFiltersCaptureExclusions(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:group-capture-exclusions?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&domain.Project{}, &domain.Group{}, &domain.Message{}, &domain.Checkpoint{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	service, err := NewGroupBackgroundService(db, nil)
+	if err != nil {
+		t.Fatalf("NewGroupBackgroundService() error = %v", err)
+	}
+	groups := []domain.Group{
+		{ChatID: "oc_monitored", ChatMode: "group", RelatedGroup: true, Tier: "hot"},
+		{ChatID: "oc_excluded", ChatMode: "p2p", CaptureExcluded: true, Tier: "cold"},
+	}
+	if err := db.Create(&groups).Error; err != nil {
+		t.Fatalf("create groups: %v", err)
+	}
+	result, err := service.List(context.Background(), GroupFilter{
+		ListFilter: ListFilter{Page: 1, PageSize: 20}, CaptureState: "excluded",
+	})
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if result.Total != 1 || len(result.Items) != 1 || result.Items[0].ChatID != "oc_excluded" || !result.Items[0].CaptureExcluded {
+		t.Fatalf("excluded List() = total=%d items=%+v", result.Total, result.Items)
+	}
+}
+
+func TestGroupBackgroundUpdateCannotEnableExcludedConversation(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:group-excluded-update?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&domain.Project{}, &domain.Group{}, &domain.Message{}, &domain.Checkpoint{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	service, err := NewGroupBackgroundService(db, nil)
+	if err != nil {
+		t.Fatalf("NewGroupBackgroundService() error = %v", err)
+	}
+	group := domain.Group{ChatID: "oc_excluded_update", ChatMode: "group", CaptureExcluded: true, Tier: "cold"}
+	if err := db.Create(&group).Error; err != nil {
+		t.Fatalf("create group: %v", err)
+	}
+	if _, err := service.UpdateBackground(context.Background(), group.ID, GroupBackgroundInput{
+		RelatedGroup: true, IncludeInMemory: true,
+	}); !errors.Is(err, ErrInvalidInput) {
+		t.Fatalf("UpdateBackground() error = %v, want ErrInvalidInput", err)
+	}
+	if err := db.Where("id = ?", group.ID).Take(&group).Error; err != nil {
+		t.Fatalf("reload group: %v", err)
+	}
+	if !group.CaptureExcluded || group.RelatedGroup {
+		t.Fatalf("excluded group changed = %+v", group)
 	}
 }
 

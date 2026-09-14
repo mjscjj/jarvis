@@ -107,7 +107,8 @@ type RuntimeSettingsView struct {
 }
 
 type SecuritySettings struct {
-	P2PScanEnabled bool `json:"p2p_scan_enabled"`
+	P2PScanEnabled     bool `json:"p2p_scan_enabled"`
+	AutoRelatedP2PTopN int  `json:"auto_related_p2p_top_n"`
 }
 
 type SecurityCapability struct {
@@ -126,10 +127,11 @@ type SecuritySettingsView struct {
 // The active snapshot is frozen at process start, so the API can truthfully
 // report whether saved settings differ from the running process.
 type RuntimeSettingsService struct {
-	mu                   sync.Mutex
-	configPath           string
-	active               RuntimeSettings
-	activeP2PScanEnabled bool
+	mu                       sync.Mutex
+	configPath               string
+	active                   RuntimeSettings
+	activeP2PScanEnabled     bool
+	activeAutoRelatedP2PTopN int
 }
 
 func NewRuntimeSettingsService(configPath string, active *Config) (*RuntimeSettingsService, error) {
@@ -140,9 +142,10 @@ func NewRuntimeSettingsService(configPath string, active *Config) (*RuntimeSetti
 		return nil, fmt.Errorf("runtime settings active config is nil")
 	}
 	return &RuntimeSettingsService{
-		configPath:           configPath,
-		active:               runtimeSettingsFromConfig(active),
-		activeP2PScanEnabled: active.Capture.P2PScanEnabled,
+		configPath:               configPath,
+		active:                   runtimeSettingsFromConfig(active),
+		activeP2PScanEnabled:     active.Capture.P2PScanEnabled,
+		activeAutoRelatedP2PTopN: active.Capture.AutoRelatedP2PTopN,
 	}, nil
 }
 
@@ -179,6 +182,7 @@ func (s *RuntimeSettingsService) Update(ctx context.Context, input RuntimeSettin
 	override.Server.PublicURL = cfg.Server.PublicURL
 	override.Chat.Enabled = cfg.Chat.Enabled
 	override.Capture.P2PScanEnabled = cfg.Capture.P2PScanEnabled
+	override.Capture.AutoRelatedP2PTopN = cfg.Capture.AutoRelatedP2PTopN
 	override.Extract.PrincipalOpenID = cfg.Extract.PrincipalOpenID
 	override.LarkCLI.Bin = cfg.LarkCLI.Bin
 	override.DailyDigest.GitAuthor = cfg.DailyDigest.GitAuthor
@@ -214,6 +218,7 @@ func (s *RuntimeSettingsService) UpdateSecurity(ctx context.Context, input Secur
 		return nil, err
 	}
 	cfg.Capture.P2PScanEnabled = input.P2PScanEnabled
+	cfg.Capture.AutoRelatedP2PTopN = input.AutoRelatedP2PTopN
 	if err := cfg.validate(); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidRuntimeSettings, err)
 	}
@@ -223,6 +228,7 @@ func (s *RuntimeSettingsService) UpdateSecurity(ctx context.Context, input Secur
 	override.Server.PublicURL = cfg.Server.PublicURL
 	override.Chat.Enabled = cfg.Chat.Enabled
 	override.Capture.P2PScanEnabled = cfg.Capture.P2PScanEnabled
+	override.Capture.AutoRelatedP2PTopN = cfg.Capture.AutoRelatedP2PTopN
 	override.Extract.PrincipalOpenID = cfg.Extract.PrincipalOpenID
 	override.LarkCLI.Bin = cfg.LarkCLI.Bin
 	override.DailyDigest.GitAuthor = cfg.DailyDigest.GitAuthor
@@ -239,8 +245,11 @@ func (s *RuntimeSettingsService) UpdateSecurity(ctx context.Context, input Secur
 
 func (s *RuntimeSettingsService) securityView(cfg *Config) *SecuritySettingsView {
 	return &SecuritySettingsView{
-		Settings:        SecuritySettings{P2PScanEnabled: cfg.Capture.P2PScanEnabled},
-		RestartRequired: cfg.Capture.P2PScanEnabled != s.activeP2PScanEnabled,
+		Settings: SecuritySettings{
+			P2PScanEnabled: cfg.Capture.P2PScanEnabled, AutoRelatedP2PTopN: cfg.Capture.AutoRelatedP2PTopN,
+		},
+		RestartRequired: cfg.Capture.P2PScanEnabled != s.activeP2PScanEnabled ||
+			cfg.Capture.AutoRelatedP2PTopN != s.activeAutoRelatedP2PTopN,
 		L4DocumentRead: SecurityCapability{
 			Enforceable: false,
 			Enabled:     false,
@@ -377,7 +386,6 @@ func applyRuntimeSettings(cfg *Config, input RuntimeSettings) {
 	cfg.Capture.DiscoverSchedule = strings.TrimSpace(input.CaptureDiscoverSchedule)
 	cfg.Capture.ScanSchedule = strings.TrimSpace(input.CaptureScanSchedule)
 	cfg.Capture.P2PWindowMinutes = input.CaptureP2PWindowMinutes
-	cfg.Capture.AutoRelatedP2PTopN = input.CaptureAutoRelatedP2PTopN
 	cfg.FactEngine.Enabled = input.FactEngineEnabled
 	cfg.FactEngine.Schedule = strings.TrimSpace(input.FactEngineSchedule)
 	cfg.FactEngine.Model = strings.TrimSpace(input.FactEngineModel)

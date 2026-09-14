@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Alert, Button, Card, Descriptions, Drawer, Flex, Form, Input, Popconfirm, Segmented, Select, Space, Switch, Table, Tag, Tooltip, Typography } from 'antd'
 import type { TableColumnsType } from 'antd'
-import { listGroups, listProjects, updateGroupBackground } from '../api'
+import { listGroups, listProjects, updateGroupBackground, updateGroupCaptureExclusion } from '../api'
+import { usePageContext } from '../pageContext'
 import FactTimeline from '../world/FactTimeline'
 import SummaryPageEditor from '../world/SummaryPageEditor'
 import type { Group, GroupBackgroundInput, Project } from '../types'
@@ -39,8 +40,10 @@ function formatActiveTime(ms: number | null): string {
 }
 
 const PAGE_SIZE = 20
+type CaptureView = 'monitored' | 'all' | 'excluded'
 
 export default function GroupsPanel() {
+  const { context, setViewState } = usePageContext()
   const [items, setItems] = useState<Group[]>([])
   const [total, setTotal] = useState(0)
   const [projects, setProjects] = useState<Project[]>([])
@@ -49,9 +52,11 @@ export default function GroupsPanel() {
   const [editing, setEditing] = useState<Group | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [togglingId, setTogglingId] = useState<number>()
+  const [batchSaving, setBatchSaving] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [form] = Form.useForm<GroupBackgroundInput>()
 
-  const [relatedOnly, setRelatedOnly] = useState(true)
+  const [captureView, setCaptureView] = useState<CaptureView>(context.view_state.capture === 'excluded' ? 'excluded' : 'monitored')
   const [keyword, setKeyword] = useState('')
   const [chatMode, setChatMode] = useState<string>()
   const [tier, setTier] = useState<string>()
@@ -60,11 +65,15 @@ export default function GroupsPanel() {
 
   const reload = useCallback(() => {
     setLoading(true)
-    listGroups({ page, pageSize: PAGE_SIZE, relatedOnly, keyword: keyword.trim() || undefined, chatMode, tier })
-      .then((result) => { setItems(result.items); setTotal(result.total); setBroadened(result.broadened); setError(undefined) })
+    listGroups({
+      page, pageSize: PAGE_SIZE, relatedOnly: captureView === 'monitored',
+      captureState: captureView === 'excluded' ? 'excluded' : undefined,
+      keyword: keyword.trim() || undefined, chatMode, tier,
+    })
+      .then((result) => { setItems(result.items); setTotal(result.total); setBroadened(result.broadened); setSelectedIds([]); setError(undefined) })
       .catch((cause: unknown) => setError(errorText(cause)))
       .finally(() => setLoading(false))
-  }, [page, relatedOnly, keyword, chatMode, tier])
+  }, [page, captureView, keyword, chatMode, tier])
   useEffect(reload, [reload])
 
   useEffect(() => {
@@ -118,10 +127,31 @@ export default function GroupsPanel() {
     }
   }
 
+  const updateExclusion = async (groupIds: number[], excluded: boolean) => {
+    setBatchSaving(true)
+    try {
+      await updateGroupCaptureExclusion(groupIds, excluded)
+      setSelectedIds([])
+      reload()
+    } catch (cause: unknown) {
+      setError(errorText(cause))
+    } finally {
+      setBatchSaving(false)
+    }
+  }
+
   const columns: TableColumnsType<Group> = [
     { title: '会话', dataIndex: 'name', render: (_, g) => <Text strong>{g.name || '未命名会话'}</Text> },
     { title: '类型', dataIndex: 'chat_mode', width: 80, render: (m: string) => chatModeLabels[m] || m },
     { title: '分层', dataIndex: 'tier', width: 70, render: (t: string) => <Tag color={tierColors[t] || 'default'}>{tierLabels[t] || t}</Tag> },
+    {
+      title: '采集状态', width: 100, render: (_, g) => {
+        if (g.capture_excluded) return <Tag color="red">已排除</Tag>
+        if (g.related_group && g.pinned) return <Tag color="blue">手动固定</Tag>
+        if (g.related_group) return <Tag color="green">自动监听</Tag>
+        return <Tag>未监听</Tag>
+      },
+    },
     { title: '关联项目', width: 150, render: (_, g) => g.project?.name || '—' },
     { title: '关键群', dataIndex: 'is_key_group', width: 80, render: (v: boolean) => v ? <Tag color="volcano">是</Tag> : '—' },
     {
@@ -146,9 +176,13 @@ export default function GroupsPanel() {
     },
     { title: '消息数', dataIndex: 'message_count', width: 80, render: (v: number, g) => g.related_group ? v : <Text type="secondary">—</Text> },
     {
-      title: '操作', width: 180, fixed: 'right', render: (_, g) => (
+      title: '操作', width: 260, fixed: 'right', render: (_, g) => (
         <Flex gap={8} onClick={(event) => event.stopPropagation()}>
-          {g.related_group ? (
+          {g.capture_excluded ? (
+            <Popconfirm title="取消排除？可监听的会话将从当前时刻恢复" onConfirm={() => updateExclusion([g.id], false)} okText="恢复" cancelText="取消">
+              <Button size="small" loading={batchSaving}>取消排除</Button>
+            </Popconfirm>
+          ) : g.related_group ? (
             <Popconfirm title="移出监控？将停止采集该会话" onConfirm={() => toggleRelated(g, false)} okText="移出" cancelText="取消">
               <Button size="small" danger loading={togglingId === g.id}>移出监控</Button>
             </Popconfirm>
@@ -164,9 +198,14 @@ export default function GroupsPanel() {
   return <>
     <Flex justify="space-between" align="center" gap={12} wrap className="section-heading">
       <Segmented
-        value={relatedOnly ? 'related' : 'all'}
-        onChange={(value) => { setRelatedOnly(value === 'related'); resetToFirstPage() }}
-        options={[{ value: 'related', label: '已监控' }, { value: 'all', label: '全部会话' }]}
+        value={captureView}
+        onChange={(value) => {
+          const next = value as CaptureView
+          setCaptureView(next)
+          setViewState({ view: 'groups', capture: next === 'excluded' ? 'excluded' : undefined })
+          resetToFirstPage()
+        }}
+        options={[{ value: 'monitored', label: '已监控' }, { value: 'all', label: '全部会话' }, { value: 'excluded', label: '已排除' }]}
       />
       <Flex gap={8} wrap align="center">
         <Input.Search
@@ -188,8 +227,26 @@ export default function GroupsPanel() {
       </Flex>
     </Flex>
     <Text type="secondary" style={{ display: 'block', marginBottom: 8 }}>
-      {relatedOnly ? `已监控 ${total} 个会话（正在按调度增量采集）` : `全部 ${total} 个会话（由采集发现，纳入监控后才会采集消息）`}
+      {captureView === 'monitored'
+        ? `已监控 ${total} 个会话（正在按调度增量采集）`
+        : captureView === 'excluded'
+          ? `已排除 ${total} 个会话（不再后台采集新消息，历史数据保留）`
+          : `全部 ${total} 个会话（由采集发现，纳入监控后才会采集消息）`}
     </Text>
+    {selectedIds.length > 0 && (
+      <Flex align="center" gap={8} style={{ marginBottom: 8 }}>
+        <Text>已选择本页 {selectedIds.length} 个会话</Text>
+        {captureView === 'excluded' ? (
+          <Popconfirm title="取消排除？可监听的会话将从当前时刻恢复" onConfirm={() => updateExclusion(selectedIds, false)} okText="恢复" cancelText="取消">
+            <Button size="small" loading={batchSaving}>批量取消排除</Button>
+          </Popconfirm>
+        ) : (
+          <Popconfirm title="排除所选会话？将停止后台采集，历史数据仍会保留" onConfirm={() => updateExclusion(selectedIds, true)} okText="排除" cancelText="取消">
+            <Button size="small" danger loading={batchSaving}>批量排除监听</Button>
+          </Popconfirm>
+        )}
+      </Flex>
+    )}
     {broadened && (
       <Alert
         style={{ marginBottom: 8 }} type="info" showIcon
@@ -209,9 +266,18 @@ export default function GroupsPanel() {
           emptyText: keyword
             ? <Flex vertical align="center" gap={8} style={{ padding: '24px 0' }}>
                 <Text type="secondary">没有匹配「{keyword}」的会话</Text>
-                {relatedOnly && <Button size="small" onClick={() => { setRelatedOnly(false); resetToFirstPage() }}>在全部会话中搜索</Button>}
+                {captureView === 'monitored' && <Button size="small" onClick={() => { setCaptureView('all'); resetToFirstPage() }}>在全部会话中搜索</Button>}
               </Flex>
             : undefined,
+        }}
+        rowSelection={{
+          selectedRowKeys: selectedIds,
+          onChange: (keys) => setSelectedIds(keys.map(Number)),
+          getCheckboxProps: (group) => ({
+            disabled: (group.chat_mode !== 'group' && group.chat_mode !== 'topic' && group.chat_mode !== 'p2p') ||
+              (captureView !== 'excluded' && group.capture_excluded),
+          }),
+          selections: true,
         }}
         pagination={{ current: page, pageSize: PAGE_SIZE, total, showSizeChanger: false, onChange: setPage }}
       />
@@ -232,6 +298,7 @@ export default function GroupsPanel() {
           <Descriptions.Item label="消息数">{editing.related_group ? editing.message_count : '—'}</Descriptions.Item>
           <Descriptions.Item label="最近扫描">{editing.related_group ? formatScanTime(editing.last_scan_at) : '—'}</Descriptions.Item>
           <Descriptions.Item label="扫描状态">{editing.last_scan_status ? scanStatusMeta[editing.last_scan_status]?.label || editing.last_scan_status : '—'}</Descriptions.Item>
+          <Descriptions.Item label="后台采集">{editing.capture_excluded ? <Tag color="red">已排除</Tag> : '允许'}</Descriptions.Item>
           <Descriptions.Item label="会话说明">{editing.description || '—'}</Descriptions.Item>
         </Descriptions>
         <Form form={form} layout="vertical">
@@ -239,7 +306,7 @@ export default function GroupsPanel() {
             <Select allowClear placeholder="不关联" options={projects.map((p) => ({ value: p.id, label: p.name }))} />
           </Form.Item>
           <Flex gap={20} wrap>
-            <Form.Item name="related_group" label="纳入监控" valuePropName="checked"><Switch /></Form.Item>
+            <Form.Item name="related_group" label="纳入监控" valuePropName="checked"><Switch disabled={editing.capture_excluded} /></Form.Item>
             <Form.Item name="is_key_group" label="关键群" valuePropName="checked"><Switch /></Form.Item>
             <Form.Item name="pinned" label="固定监听" tooltip="开启后不会因长期无消息或自动轮换退出监听" valuePropName="checked"><Switch /></Form.Item>
             <Form.Item name="include_in_memory" label="纳入记忆" valuePropName="checked"><Switch /></Form.Item>

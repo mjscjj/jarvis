@@ -22,6 +22,12 @@ type SecuritySettingsService interface {
 
 type p2pCheckpointAdvancer interface {
 	AdvanceP2PCheckpoints(context.Context) error
+	AdvanceAutomaticP2PCheckpoints(context.Context) error
+}
+
+type securitySettingsRequest struct {
+	P2PScanEnabled     *bool `json:"p2p_scan_enabled"`
+	AutoRelatedP2PTopN *int  `json:"auto_related_p2p_top_n"`
 }
 
 func GetSecuritySettings(service SecuritySettingsService) app.HandlerFunc {
@@ -37,8 +43,8 @@ func GetSecuritySettings(service SecuritySettingsService) app.HandlerFunc {
 
 func UpdateSecuritySettings(service SecuritySettingsService, captureService p2pCheckpointAdvancer) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
-		var input config.SecuritySettings
-		if err := decodeStrictJSON(c.Request.Body(), &input); err != nil {
+		var request securitySettingsRequest
+		if err := decodeStrictJSON(c.Request.Body(), &request); err != nil {
 			writeAPIError(c, consts.StatusBadRequest, 40092, err)
 			return
 		}
@@ -47,6 +53,13 @@ func UpdateSecuritySettings(service SecuritySettingsService, captureService p2pC
 			writeAPIError(c, consts.StatusInternalServerError, 50092, fmt.Errorf("get security settings before save failed: %w", err))
 			return
 		}
+		input := current.Settings
+		if request.P2PScanEnabled != nil {
+			input.P2PScanEnabled = *request.P2PScanEnabled
+		}
+		if request.AutoRelatedP2PTopN != nil {
+			input.AutoRelatedP2PTopN = *request.AutoRelatedP2PTopN
+		}
 		if input.P2PScanEnabled && !current.Settings.P2PScanEnabled {
 			if captureService == nil {
 				writeAPIError(c, consts.StatusServiceUnavailable, 50392, fmt.Errorf("capture service is unavailable"))
@@ -54,6 +67,16 @@ func UpdateSecuritySettings(service SecuritySettingsService, captureService p2pC
 			}
 			if err := captureService.AdvanceP2PCheckpoints(ctx); err != nil {
 				writeAPIError(c, consts.StatusInternalServerError, 50092, fmt.Errorf("advance p2p checkpoints before enabling scans failed: %w", err))
+				return
+			}
+		}
+		if input.AutoRelatedP2PTopN > 0 && current.Settings.AutoRelatedP2PTopN == 0 {
+			if captureService == nil {
+				writeAPIError(c, consts.StatusServiceUnavailable, 50392, fmt.Errorf("capture service is unavailable"))
+				return
+			}
+			if err := captureService.AdvanceAutomaticP2PCheckpoints(ctx); err != nil {
+				writeAPIError(c, consts.StatusInternalServerError, 50092, fmt.Errorf("advance automatic p2p checkpoints before enabling scans failed: %w", err))
 				return
 			}
 		}

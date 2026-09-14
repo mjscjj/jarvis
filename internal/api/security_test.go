@@ -39,8 +39,16 @@ func (f *fakeSecuritySettingsService) UpdateSecurity(_ context.Context, input co
 }
 
 type fakeP2PCheckpointAdvancer struct {
-	err       error
-	callOrder *[]string
+	err          error
+	automaticErr error
+	callOrder    *[]string
+}
+
+func (f *fakeP2PCheckpointAdvancer) AdvanceAutomaticP2PCheckpoints(context.Context) error {
+	if f.callOrder != nil {
+		*f.callOrder = append(*f.callOrder, "advance_automatic")
+	}
+	return f.automaticErr
 }
 
 func (f *fakeP2PCheckpointAdvancer) AdvanceP2PCheckpoints(context.Context) error {
@@ -53,7 +61,9 @@ func (f *fakeP2PCheckpointAdvancer) AdvanceP2PCheckpoints(context.Context) error
 func TestUpdateSecuritySettingsAdvancesCheckpointsBeforeEnabling(t *testing.T) {
 	order := make([]string, 0, 2)
 	service := &fakeSecuritySettingsService{
-		view:      &config.SecuritySettingsView{Settings: config.SecuritySettings{P2PScanEnabled: false}},
+		view: &config.SecuritySettingsView{Settings: config.SecuritySettings{
+			P2PScanEnabled: false, AutoRelatedP2PTopN: 20,
+		}},
 		callOrder: &order,
 	}
 	advancer := &fakeP2PCheckpointAdvancer{callOrder: &order}
@@ -73,6 +83,9 @@ func TestUpdateSecuritySettingsAdvancesCheckpointsBeforeEnabling(t *testing.T) {
 	}
 	if !service.updated.P2PScanEnabled {
 		t.Fatalf("updated settings = %#v", service.updated)
+	}
+	if service.updated.AutoRelatedP2PTopN != 20 {
+		t.Fatalf("omitted auto p2p setting = %d, want preserved 20", service.updated.AutoRelatedP2PTopN)
 	}
 }
 
@@ -96,6 +109,47 @@ func TestUpdateSecuritySettingsDoesNotAdvanceWhenDisabling(t *testing.T) {
 	}
 	if len(order) != 1 || order[0] != "update" {
 		t.Fatalf("call order = %v, want [update]", order)
+	}
+}
+
+func TestUpdateSecuritySettingsAdvancesAutomaticP2PBeforeEnabling(t *testing.T) {
+	order := make([]string, 0, 2)
+	service := &fakeSecuritySettingsService{
+		view: &config.SecuritySettingsView{Settings: config.SecuritySettings{
+			P2PScanEnabled: true, AutoRelatedP2PTopN: 0,
+		}},
+		callOrder: &order,
+	}
+	advancer := &fakeP2PCheckpointAdvancer{callOrder: &order}
+	h := server.New()
+	h.PUT("/api/security-settings", UpdateSecuritySettings(service, advancer))
+	body := []byte(`{"p2p_scan_enabled":true,"auto_related_p2p_top_n":20}`)
+
+	response := ut.PerformRequest(h.Engine, "PUT", "/api/security-settings", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
+	if response.StatusCode() != consts.StatusOK {
+		t.Fatalf("status = %d body=%s", response.StatusCode(), response.Body())
+	}
+	if len(order) != 2 || order[0] != "advance_automatic" || order[1] != "update" {
+		t.Fatalf("call order = %v, want [advance_automatic update]", order)
+	}
+}
+
+func TestUpdateSecuritySettingsPreservesP2PScanWhenOnlyAutomaticSettingIsSent(t *testing.T) {
+	service := &fakeSecuritySettingsService{
+		view: &config.SecuritySettingsView{Settings: config.SecuritySettings{
+			P2PScanEnabled: true, AutoRelatedP2PTopN: 20,
+		}},
+	}
+	h := server.New()
+	h.PUT("/api/security-settings", UpdateSecuritySettings(service, &fakeP2PCheckpointAdvancer{}))
+	body := []byte(`{"auto_related_p2p_top_n":10}`)
+
+	response := ut.PerformRequest(h.Engine, "PUT", "/api/security-settings", &ut.Body{Body: bytes.NewReader(body), Len: len(body)}).Result()
+	if response.StatusCode() != consts.StatusOK {
+		t.Fatalf("status = %d body=%s", response.StatusCode(), response.Body())
+	}
+	if !service.updated.P2PScanEnabled || service.updated.AutoRelatedP2PTopN != 10 {
+		t.Fatalf("updated settings = %#v", service.updated)
 	}
 }
 

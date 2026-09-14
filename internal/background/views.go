@@ -75,6 +75,7 @@ type GroupView struct {
 	TenantKey       *string      `json:"tenant_key"`
 	ProjectID       *uint64      `json:"project_id"`
 	RelatedGroup    bool         `json:"related_group"`
+	CaptureExcluded bool         `json:"capture_excluded"`
 	Tier            string       `json:"tier"`
 	Pinned          bool         `json:"pinned"`
 	IncludeInMemory bool         `json:"include_in_memory"`
@@ -151,7 +152,8 @@ func toGroupView(g *domain.Group) GroupView {
 		Description: g.Description, Summary: g.Summary, LastProgressAt: g.LastProgressAt,
 		OwnerOpenID: g.OwnerOpenID, External: g.External,
 		TenantKey: g.TenantKey, ProjectID: g.ProjectID, RelatedGroup: g.RelatedGroup,
-		Tier: g.Tier, Pinned: g.Pinned, IncludeInMemory: g.IncludeInMemory,
+		CaptureExcluded: g.CaptureExcluded,
+		Tier:            g.Tier, Pinned: g.Pinned, IncludeInMemory: g.IncludeInMemory,
 		IsKeyGroup: g.IsKeyGroup, LastActiveAt: g.LastActiveAt,
 		CreatedAt: g.CreatedAt, UpdatedAt: g.UpdatedAt,
 	}
