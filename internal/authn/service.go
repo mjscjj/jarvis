@@ -5,6 +5,7 @@ package authn
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/common/hlog"
+	"gorm.io/gorm"
 )
 
 const (
@@ -74,10 +76,16 @@ type flow struct {
 	expiresAt time.Time
 }
 
+// Browser sessions belong to the private runtime DB, never the tracked OKR DB.
+// Only the hash of the opaque browser cookie is stored, not a reusable token.
 type session struct {
-	user      User
-	expiresAt time.Time
+	TokenHash string `gorm:"primaryKey"`
+	Username  string
+	Email     string
+	ExpiresAt time.Time `gorm:"index"`
 }
+
+func (session) TableName() string { return "browser_auth_session" }
 
 type Service struct {
 	enabled    bool
@@ -87,16 +95,16 @@ type Service struct {
 	allowed    map[string]bool
 	now        func() time.Time
 
-	mu       sync.Mutex
-	flows    map[string]flow
-	sessions map[string]session
+	mu    sync.Mutex
+	flows map[string]flow
+	db    *gorm.DB
 }
 
-func NewService(bin string, sessionTTL time.Duration, enabled bool, allowed []string, loginAPIBaseURL string) (*Service, error) {
-	return NewServiceWithRunner(bin, sessionTTL, enabled, allowed, execRunner{apiBaseURL: strings.TrimSpace(loginAPIBaseURL)})
+func NewService(db *gorm.DB, bin string, sessionTTL time.Duration, enabled bool, allowed []string, loginAPIBaseURL string) (*Service, error) {
+	return NewServiceWithRunner(db, bin, sessionTTL, enabled, allowed, execRunner{apiBaseURL: strings.TrimSpace(loginAPIBaseURL)})
 }
 
-func NewServiceWithRunner(bin string, sessionTTL time.Duration, enabled bool, allowed []string, runner CommandRunner) (*Service, error) {
+func NewServiceWithRunner(db *gorm.DB, bin string, sessionTTL time.Duration, enabled bool, allowed []string, runner CommandRunner) (*Service, error) {
 	if strings.TrimSpace(bin) == "" {
 		return nil, fmt.Errorf("authn bytedcli binary is empty")
 	}
@@ -105,6 +113,12 @@ func NewServiceWithRunner(bin string, sessionTTL time.Duration, enabled bool, al
 	}
 	if runner == nil {
 		return nil, fmt.Errorf("authn command runner is nil")
+	}
+	if db == nil {
+		return nil, fmt.Errorf("authn session database is nil")
+	}
+	if err := db.AutoMigrate(&session{}); err != nil {
+		return nil, fmt.Errorf("migrate browser sessions: %w", err)
 	}
 	allowList := make(map[string]bool, len(allowed))
 	for _, entry := range allowed {
@@ -123,7 +137,7 @@ func NewServiceWithRunner(bin string, sessionTTL time.Duration, enabled bool, al
 		allowed:    allowList,
 		now:        time.Now,
 		flows:      make(map[string]flow),
-		sessions:   make(map[string]session),
+		db:         db,
 	}, nil
 }
 
@@ -295,23 +309,32 @@ func (s *Service) Authenticate(token string) (User, bool) {
 	if token == "" {
 		return User{}, false
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	current, ok := s.sessions[token]
-	if !ok {
+	var current session
+	result := s.db.Where("token_hash = ? AND expires_at > ?", sessionHash(token), s.now()).Limit(1).Find(&current)
+	if result.Error != nil {
+		hlog.Errorf("read browser session: %v", result.Error)
 		return User{}, false
 	}
-	if !current.expiresAt.After(s.now()) {
-		delete(s.sessions, token)
+	if result.RowsAffected == 0 {
 		return User{}, false
 	}
-	return current.user, true
+	user := User{Username: current.Username, Email: current.Email}
+	if !s.allows(user) {
+		return User{}, false
+	}
+	user.IsPrincipal = true
+	return user, true
 }
 
-func (s *Service) Logout(token string) {
-	s.mu.Lock()
-	delete(s.sessions, strings.TrimSpace(token))
-	s.mu.Unlock()
+func (s *Service) Logout(token string) error {
+	if err := s.db.Where("token_hash = ?", sessionHash(strings.TrimSpace(token))).Delete(&session{}).Error; err != nil {
+		return fmt.Errorf("delete browser session: %w", err)
+	}
+	return nil
+}
+
+func sessionHash(token string) string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(token)))
 }
 
 func (s *Service) deleteFlow(flowID string) {
@@ -342,9 +365,14 @@ func (s *Service) startSession(user User) (LoginResult, error) {
 	if err != nil {
 		return LoginResult{}, fmt.Errorf("create login session: %w", err)
 	}
-	s.mu.Lock()
-	s.sessions[token] = session{user: user, expiresAt: s.now().Add(s.sessionTTL)}
-	s.mu.Unlock()
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("expires_at <= ?", s.now()).Delete(&session{}).Error; err != nil {
+			return err
+		}
+		return tx.Create(&session{TokenHash: sessionHash(token), Username: user.Username, Email: user.Email, ExpiresAt: s.now().Add(s.sessionTTL)}).Error
+	}); err != nil {
+		return LoginResult{}, fmt.Errorf("save browser session: %w", err)
+	}
 	return LoginResult{
 		View:         View{Enabled: true, Status: StatusAuthenticated, User: &user},
 		SessionToken: token,

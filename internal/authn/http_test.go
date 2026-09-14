@@ -133,7 +133,7 @@ func TestRedactAddress(t *testing.T) {
 }
 
 func TestBrowserMiddlewareAllowsBrowserWhenAuthenticationDisabled(t *testing.T) {
-	service, err := NewServiceWithRunner("bytedcli", time.Hour, false, nil, fakeRunner{run: func(_ string, _ []string) ([]byte, error) {
+	service, err := NewServiceWithRunner(openAuthTestDB(t), "bytedcli", time.Hour, false, nil, fakeRunner{run: func(_ string, _ []string) ([]byte, error) {
 		t.Fatal("disabled authentication must not invoke bytedcli")
 		return nil, nil
 	}})

@@ -56,7 +56,7 @@ func TestOKRVisitorsShareHistoryWithoutOpeningPrincipalChat(t *testing.T) {
 	}
 	addOKRIdentitySession(t, db, "alice", "on_alice", "")
 	addOKRIdentitySession(t, db, "bob", "on_bob", "")
-	principal, err := authn.NewServiceWithRunner("bytedcli", time.Hour, true, []string{"owner"}, authRunner{run: func(string, []string) ([]byte, error) {
+	principal, err := authn.NewServiceWithRunner(openAuthTestDB(t), "bytedcli", time.Hour, true, []string{"owner"}, authRunner{run: func(string, []string) ([]byte, error) {
 		t.Fatal("visitor request must not start principal login")
 		return nil, nil
 	}})

@@ -76,7 +76,10 @@ func CompleteByteDanceLogin(service *authn.Service) app.HandlerFunc {
 
 func LogoutFromJarvis(service *authn.Service) app.HandlerFunc {
 	return func(_ context.Context, c *app.RequestContext) {
-		service.Logout(string(c.Cookie(authn.CookieName)))
+		if err := service.Logout(string(c.Cookie(authn.CookieName))); err != nil {
+			c.JSON(consts.StatusInternalServerError, map[string]any{"code": 500, "msg": "退出登录失败，请重试"})
+			return
+		}
 		c.SetCookie(authn.CookieName, "", -1, "/", "", protocol.CookieSameSiteStrictMode, false, true)
 		c.JSON(consts.StatusOK, map[string]any{
 			"code": 0,

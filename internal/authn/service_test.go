@@ -3,7 +3,10 @@ package authn
 import (
 	"context"
 	"errors"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -124,7 +127,7 @@ func TestLogoutInvalidatesOnlyJarvisSession(t *testing.T) {
 }
 
 func TestDisabledAuthenticationDoesNotInvokeByteDanceSSO(t *testing.T) {
-	service, err := NewServiceWithRunner("bytedcli", 12*time.Hour, false, nil, fakeRunner{run: func(_ string, _ []string) ([]byte, error) {
+	service, err := NewServiceWithRunner(openAuthTestDB(t), "bytedcli", 12*time.Hour, false, nil, fakeRunner{run: func(_ string, _ []string) ([]byte, error) {
 		t.Fatal("disabled authentication must not invoke bytedcli")
 		return nil, nil
 	}})
@@ -145,7 +148,7 @@ func TestDisabledAuthenticationDoesNotInvokeByteDanceSSO(t *testing.T) {
 
 func newTestService(t *testing.T, runner CommandRunner) *Service {
 	t.Helper()
-	service, err := NewServiceWithRunner("bytedcli", 12*time.Hour, true, []string{"alice", "alice@bytedance.com"}, runner)
+	service, err := NewServiceWithRunner(openAuthTestDB(t), "bytedcli", 12*time.Hour, true, []string{"alice", "alice@bytedance.com"}, runner)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -316,4 +319,18 @@ func TestLoginReportsFailureInsteadOfProgressHint(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "TLS handshake timeout") || strings.Contains(err.Error(), "--debug") {
 		t.Fatalf("expected underlying login failure, got %v", err)
 	}
+}
+
+func openAuthTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "auth.db")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	return db
 }

@@ -1142,7 +1142,7 @@ func main() {
 	h.Use(api.Compression())
 	h.Use(observability.Middleware())
 	h.Use(api.StaticAssetCacheHeaders())
-	authService, err := authn.NewService("bytedcli", 12*time.Hour, cfg.Auth.IsEnabled(), cfg.Auth.AllowedPrincipals(), cfg.Auth.LoginAPIBaseURL)
+	authService, err := authn.NewService(db, "bytedcli", 12*time.Hour, cfg.Auth.IsEnabled(), cfg.Auth.AllowedPrincipals(), cfg.Auth.LoginAPIBaseURL)
 	if err != nil {
 		fatalf("initialize ByteDance SSO service failed: %v", err)
 	}
