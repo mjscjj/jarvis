@@ -8,10 +8,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 const assetManifestFilename = ".bundle-assets.json"
@@ -90,11 +92,12 @@ func validateBundle(layout Layout) error {
 
 func syncRuntimeAssets(layout Layout) error {
 	manifestPath := filepath.Join(layout.StateRoot, assetManifestFilename)
-	previous, err := readAssetManifest(manifestPath)
+	previous, manifestExists, err := readAssetManifest(manifestPath)
 	if err != nil {
 		return err
 	}
 	next := assetManifest{Version: 1, Files: make(map[string]string)}
+	var backupRoot string
 	for _, root := range runtimeAssetRoots {
 		sourceRoot := filepath.Join(layout.ResourceRoot, root)
 		err := filepath.WalkDir(sourceRoot, func(sourcePath string, entry fs.DirEntry, walkErr error) error {
@@ -129,11 +132,16 @@ func syncRuntimeAssets(layout Layout) error {
 			next.Files[relative] = sourceHash
 			targetHash, targetErr := fileHash(targetPath)
 			if targetErr == nil {
-				oldHash := previous.Files[relative]
-				if !isProgramAsset(relative) && targetHash != oldHash && targetHash != sourceHash {
+				if targetHash == sourceHash {
 					return nil
 				}
-				if targetHash == sourceHash {
+				if !manifestExists {
+					// Without a manifest there is no evidence of a user edit. Save
+					// every conflicting file before restoring the bundled version.
+					if err := backupRuntimeAsset(layout, &backupRoot, relative); err != nil {
+						return err
+					}
+				} else if !isProgramAsset(relative) && targetHash != previous.Files[relative] {
 					return nil
 				}
 			} else if !errors.Is(targetErr, os.ErrNotExist) {
@@ -143,7 +151,13 @@ func syncRuntimeAssets(layout Layout) error {
 			if err != nil {
 				return err
 			}
-			return copyFileAtomic(sourcePath, targetPath, info.Mode().Perm())
+			if err := copyFileAtomic(sourcePath, targetPath, info.Mode().Perm()); err != nil {
+				return err
+			}
+			if !manifestExists && targetErr == nil {
+				log.Printf("restored bundled runtime asset %q after missing manifest; backup: %q", relative, filepath.Join(backupRoot, relative))
+			}
+			return nil
 		})
 		if err != nil {
 			return fmt.Errorf("sync bundled runtime root %q: %w", root, err)
@@ -157,7 +171,30 @@ func syncRuntimeAssets(layout Layout) error {
 
 func isProgramAsset(relative string) bool {
 	path := filepath.ToSlash(relative)
-	return strings.HasPrefix(path, "scripts/") || strings.HasPrefix(path, "web/dist/")
+	// The strict baseline belongs to the bundle; local settings belong only
+	// in config.runtime.yaml, which is excluded from asset synchronization.
+	return path == "conf/config.yaml" || strings.HasPrefix(path, "scripts/") || strings.HasPrefix(path, "web/dist/")
+}
+
+func backupRuntimeAsset(layout Layout, backupRoot *string, relative string) error {
+	if *backupRoot == "" {
+		root, err := os.MkdirTemp(layout.StateRoot, "asset-backup-"+time.Now().UTC().Format("20060102T150405Z")+"-")
+		if err != nil {
+			return fmt.Errorf("create runtime asset backup directory: %w", err)
+		}
+		*backupRoot = root
+	}
+	source := filepath.Join(layout.RuntimeRoot, relative)
+	info, err := os.Stat(source)
+	if err != nil {
+		return fmt.Errorf("inspect runtime asset before backup %q: %w", relative, err)
+	}
+	backup := filepath.Join(*backupRoot, relative)
+	if err := copyFileAtomic(source, backup, info.Mode().Perm()); err != nil {
+		return fmt.Errorf("back up runtime asset %q: %w", relative, err)
+	}
+	log.Printf("backed up runtime asset %q before missing-manifest recovery: %q", relative, backup)
+	return nil
 }
 
 func shouldSkipRuntimeAsset(relative string, entry fs.DirEntry) bool {
@@ -227,22 +264,22 @@ dailydigest:
 	return nil
 }
 
-func readAssetManifest(path string) (assetManifest, error) {
+func readAssetManifest(path string) (assetManifest, bool, error) {
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return assetManifest{Version: 1, Files: map[string]string{}}, nil
+		return assetManifest{Version: 1, Files: map[string]string{}}, false, nil
 	}
 	if err != nil {
-		return assetManifest{}, fmt.Errorf("read asset manifest: %w", err)
+		return assetManifest{}, false, fmt.Errorf("read asset manifest: %w", err)
 	}
 	var manifest assetManifest
 	if err := json.Unmarshal(raw, &manifest); err != nil {
-		return assetManifest{}, fmt.Errorf("decode asset manifest: %w", err)
+		return assetManifest{}, false, fmt.Errorf("decode asset manifest: %w", err)
 	}
 	if manifest.Files == nil {
 		manifest.Files = map[string]string{}
 	}
-	return manifest, nil
+	return manifest, true, nil
 }
 
 func fileHash(path string) (string, error) {

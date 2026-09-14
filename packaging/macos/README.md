@@ -150,6 +150,23 @@ runtime 校验会 fail-fast 检查：
   在最小环境中可以启动并返回预期版本。
 - CC Connect 和 Lark CLI 版本与仓库 manifest 一致，Lark CLI 许可证随包分发。
 
+### 启动时的资源同步
+
+`internal/appservice/assets.go` 将包内资源同步到用户状态目录下的 `runtime/`。
+`conf/config.yaml`、`scripts/` 和 `web/dist/` 归安装包所有，始终同步；本机设置的
+`conf/config.runtime.yaml` 始终跳过。其他有历史哈希的资源继续保留用户修改。
+
+manifest 缺失时不能推断文件是否被修改：对新包中存在且内容不同的每个旧文件，先复制到
+状态目录下按 UTC 时间命名的 `asset-backup-*/`，再原子覆盖，并向启动诊断流逐项记录备份和
+恢复路径。备份失败直接返回错误；同步完成后才写新 manifest。内容相同的文件、新安装和
+不冲突的重启不产生备份；用户自建且包中不存在的文件不参与同步，manifest 损坏仍明确报错。
+
+修改同步代码后运行以下测试，并在发布前验证实际安装包的升级和首次安装：
+
+```bash
+go test ./internal/appservice ./internal/config ./internal/onboarding ./internal/store -count=1
+```
+
 ## 独立验收
 
 完整构建已经包含 runtime、应用签名和 DMG 校验。需要独立复核时执行：
