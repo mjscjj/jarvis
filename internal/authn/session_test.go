@@ -12,6 +12,7 @@ import (
 func TestSessionsSurviveDatabaseReopen(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "runtime.db")
 	now := time.Now().UTC().Truncate(time.Second)
+	ttl := 365 * 24 * time.Hour
 	runner := fakeRunner{run: func(string, []string) ([]byte, error) {
 		t.Fatal("restoring a session must not invoke SSO")
 		return nil, nil
@@ -27,7 +28,7 @@ func TestSessionsSurviveDatabaseReopen(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Cleanup(func() { _ = sqlDB.Close() })
-		s, err := NewServiceWithRunner(db, "bytedcli", 12*time.Hour, true, allowed, runner)
+		s, err := NewServiceWithRunner(db, "bytedcli", ttl, true, allowed, runner)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -39,6 +40,9 @@ func TestSessionsSurviveDatabaseReopen(t *testing.T) {
 		}
 	}
 	s, closeDB := open([]string{"alice", "bob"})
+	if s.SessionMaxAge() != 365*24*60*60 {
+		t.Fatal("cookie lifetime must match the one-year session")
+	}
 	tokens := make([]string, 3)
 	for i, name := range []string{"alice", "alice", "bob"} {
 		result, err := s.startSession(User{Username: name, Email: name + "@bytedance.com", IsPrincipal: true})
@@ -60,7 +64,7 @@ func TestSessionsSurviveDatabaseReopen(t *testing.T) {
 				t.Fatal("raw cookie persisted")
 			}
 		}
-		if !row.ExpiresAt.Equal(now.Add(12 * time.Hour)) {
+		if !row.ExpiresAt.Equal(now.Add(ttl)) {
 			t.Fatalf("session %d expiry changed", i)
 		}
 	}
@@ -91,7 +95,7 @@ func TestSessionsSurviveDatabaseReopen(t *testing.T) {
 		t.Fatal("logout revoked another browser")
 	}
 	closeDB()
-	now = now.Add(11 * time.Hour)
+	now = now.Add(ttl - time.Hour)
 	s, _ = open([]string{"alice"})
 	if _, ok := s.Authenticate(tokens[1]); ok {
 		t.Fatal("restart extended the original expiry")

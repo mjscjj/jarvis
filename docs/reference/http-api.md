@@ -18,7 +18,7 @@
 
 ## 字节身份
 
-- `GET /api/auth/status`：读取当前 Jarvis 浏览器会话。会话存于私有运行数据库，登录后 12 小时内可跨服务重启使用原 Cookie；重启不延长有效期。
+- `GET /api/auth/status`：读取当前 Jarvis 浏览器会话。会话存于私有运行数据库，登录后 365 天内可跨服务重启使用原 Cookie；重启不延长有效期。
 - `POST /api/auth/login`：现有实现启动独立 bytedcli profile 的 CLI 授权流程。
 - `POST /api/auth/login/complete`：轮询现有 CLI 授权流程。
 - `POST /api/auth/logout`：只清除 Jarvis 浏览器会话，不清除全机 BytedCLI 授权。
