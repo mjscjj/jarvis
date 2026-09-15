@@ -344,6 +344,7 @@ export interface RegionalAlignmentBoard {
   demands: RegionalDemand[]
   decisions: RegionalPlanDecisionItem[]
   recapOverlays: RegionalRecapOverlay[]
+  translations: Record<string, string>
 }
 
 export interface PageCommentList {

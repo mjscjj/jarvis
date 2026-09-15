@@ -27,6 +27,18 @@ func GetRegionalAlignmentBoard(service *okrworkspace.Service) app.HandlerFunc {
 	}
 }
 
+func RefreshRegionalAlignmentBoard(service *okrworkspace.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		quarter, region := regionalScope(c)
+		result, err := service.RefreshRegionalAlignmentBoard(ctx, quarter, region, currentOKRIdentity(c).OpenID)
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40090, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
 func CreateRegionalDemand(service *okrworkspace.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		var input okrworkspace.RegionalDemandInput

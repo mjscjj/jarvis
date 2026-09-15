@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"jarvis/internal/okrworkspace/domain"
@@ -29,6 +30,15 @@ type Service struct {
 	db              *gorm.DB
 	commentNotifier CommentMentionNotifier
 	people          peopleDirectory
+	translator      RegionalTranslator
+	translationMu   sync.Mutex
+}
+
+// RegionalTranslator owns model judgment for natural English phrasing. The
+// workspace only owns source collection, exact-text caching and board assembly.
+type RegionalTranslator interface {
+	CacheKey() string
+	Translate(ctx context.Context, texts []string) (map[string]string, error)
 }
 
 func NewService(db *gorm.DB) (*Service, error) {
@@ -36,6 +46,17 @@ func NewService(db *gorm.DB) (*Service, error) {
 		return nil, fmt.Errorf("create kr service: db is nil")
 	}
 	return &Service{db: db}, nil
+}
+
+func (s *Service) SetRegionalTranslator(translator RegionalTranslator) error {
+	if s == nil {
+		return fmt.Errorf("set regional translator: service is nil")
+	}
+	if translator == nil {
+		return fmt.Errorf("set regional translator: translator is nil")
+	}
+	s.translator = translator
+	return nil
 }
 
 // SetCommentMentionNotifier wires the optional external delivery edge without

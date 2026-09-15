@@ -505,6 +505,20 @@ type RegionalRecapOverlay struct {
 
 func (RegionalRecapOverlay) TableName() string { return "okr_workspace_regional_recap_overlay" }
 
+// OKRTranslation caches an English projection of one exact OKR text value.
+// SourceHash changes with the source text, so Plan/Review remain the only
+// Chinese source of truth and edited content can never reuse a stale translation.
+type OKRTranslation struct {
+	SourceHash   string    `gorm:"primaryKey;size:64"`
+	GlossaryHash string    `gorm:"not null;default:'';size:64;index"`
+	SourceText   string    `gorm:"not null;type:text"`
+	EnglishText  string    `gorm:"not null;type:text"`
+	CreatedAt    time.Time `gorm:"not null"`
+	UpdatedAt    time.Time `gorm:"not null"`
+}
+
+func (OKRTranslation) TableName() string { return "okr_workspace_translation" }
+
 // AuthSession stores an opaque browser session. It carries identity only; the
 // Feishu tokens of that same login live in the auth package's on-disk token
 // store, not in this table.
@@ -565,5 +579,5 @@ func IdentityModels() []any {
 // domain. Existing table names are intentionally preserved so enabling the
 // split never rewrites or loses historical data.
 func BizModels() []any {
-	return []any{&OKRPlan{}, &KRTag{}, &PointTag{}, &FollowUpItem{}, &WeeklyScore{}, &PageComment{}, &CommentDelivery{}, &RegionalAlignment{}, &RegionalAlignmentRegion{}, &RegionalDemand{}, &RegionalPlanDecision{}, &RegionalRecapOverlay{}, &MeegoSyncSnapshot{}, &ReminderBatch{}}
+	return []any{&OKRPlan{}, &KRTag{}, &PointTag{}, &FollowUpItem{}, &WeeklyScore{}, &PageComment{}, &CommentDelivery{}, &RegionalAlignment{}, &RegionalAlignmentRegion{}, &RegionalDemand{}, &RegionalPlanDecision{}, &RegionalRecapOverlay{}, &OKRTranslation{}, &MeegoSyncSnapshot{}, &ReminderBatch{}}
 }

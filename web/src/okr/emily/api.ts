@@ -156,6 +156,7 @@ interface APIRegionalBoard {
   demands: APIRegionalDemand[]
   decisions: APIRegionalDecision[]
   recap_overlays: APIRegionalRecapOverlay[]
+  translations: Record<string, string>
 }
 
 interface APIActivityEntry {
@@ -726,8 +727,7 @@ function fromAPIRegionalOverlay(value: APIRegionalRecapOverlay): RegionalRecapOv
   return { bucketKey: value.bucket_key, objectiveId: value.objective_id, version: value.version, sortOrder: value.sort_order, hidden: value.hidden }
 }
 
-export async function getRegionalAlignmentBoard(quarter: string, region: RegionalCode): Promise<RegionalAlignmentBoard> {
-  const value = await request<APIRegionalBoard>(`/api/biz-okr/regional-alignments/${encodeURIComponent(region)}/board?quarter=${encodeURIComponent(quarter)}`)
+function fromAPIRegionalBoard(value: APIRegionalBoard): RegionalAlignmentBoard {
   return {
     alignment: { id: value.alignment.id, quarter: value.alignment.quarter, planId: value.alignment.plan_id, recapQuarter: value.alignment.recap_quarter, version: value.alignment.version },
     region: { regionCode: value.region.region_code, version: value.region.version, categoryOrder: value.region.category_order ?? [] },
@@ -736,7 +736,16 @@ export async function getRegionalAlignmentBoard(quarter: string, region: Regiona
     demands: (value.demands ?? []).map(fromAPIRegionalDemand),
     decisions: (value.decisions ?? []).map(fromAPIRegionalDecision),
     recapOverlays: (value.recap_overlays ?? []).map(fromAPIRegionalOverlay),
+    translations: value.translations ?? {},
   }
+}
+
+export async function getRegionalAlignmentBoard(quarter: string, region: RegionalCode): Promise<RegionalAlignmentBoard> {
+  return fromAPIRegionalBoard(await request<APIRegionalBoard>(`/api/biz-okr/regional-alignments/${encodeURIComponent(region)}/board?quarter=${encodeURIComponent(quarter)}`))
+}
+
+export async function refreshRegionalAlignmentBoard(quarter: string, region: RegionalCode): Promise<RegionalAlignmentBoard> {
+  return fromAPIRegionalBoard(await request<APIRegionalBoard>(`/api/biz-okr/regional-alignments/${encodeURIComponent(region)}/refresh?quarter=${encodeURIComponent(quarter)}`, { method: 'POST' }))
 }
 
 export async function createRegionalDemand(quarter: string, region: RegionalCode, value: Omit<RegionalDemand, 'id'>): Promise<RegionalDemand> {

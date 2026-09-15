@@ -46,6 +46,7 @@ import (
 	"jarvis/internal/observability"
 	"jarvis/internal/okrchat"
 	"jarvis/internal/okrreview"
+	"jarvis/internal/okrtranslation"
 	"jarvis/internal/okrworkspace"
 	okrAuth "jarvis/internal/okrworkspace/auth"
 	"jarvis/internal/okrworkspace/moduleconfig"
@@ -720,16 +721,19 @@ func main() {
 	}
 	var extractWorker *extract.Worker
 	var semanticIndex *semantic.Index
+	var modelClient *provider.Client
 	if cfg.Extract.Enabled || *extractOnce {
-		modelClient, err := provider.NewClient(
+		modelClient, err = provider.NewClient(
 			ark.BaseURL,
 			ark.APIKey,
 			cfg.Model.Model,
 			time.Duration(cfg.Model.TimeoutSec)*time.Second,
 		)
 		if err != nil {
-			fatalf("initialize extraction model client failed: %v", err)
+			fatalf("initialize model client failed: %v", err)
 		}
+	}
+	if cfg.Extract.Enabled || *extractOnce {
 		embeddingClient, err := embedding.NewClient(time.Duration(cfg.Model.TimeoutSec) * time.Second)
 		if err != nil {
 			fatalf("initialize Todo embedding client failed: %v", err)
@@ -1223,6 +1227,27 @@ func main() {
 		}
 	}
 	if bizOKRModuleEnabled {
+		translationGlossary, translationErr := okrtranslation.LoadGlossary(filepath.Join(runtimeRoot, "data", "okr", "translation-glossary.json"))
+		if translationErr != nil {
+			fatalf("load regional OKR translation glossary failed: %v", translationErr)
+		}
+		translationCompleter, translationErr := okrtranslation.NewCodexCompleter(okrtranslation.CodexOptions{
+			Bin:             okrModuleConfig.PreviewReview.Bin,
+			Model:           okrModuleConfig.PreviewReview.Model,
+			Sandbox:         okrModuleConfig.PreviewReview.Sandbox,
+			ReasoningEffort: "low",
+			Timeout:         okrModuleConfig.PreviewReview.Timeout(),
+		})
+		if translationErr != nil {
+			fatalf("initialize regional OKR translation runner failed: %v", translationErr)
+		}
+		translationService, translationErr := okrtranslation.New(translationCompleter, translationGlossary)
+		if translationErr != nil {
+			fatalf("initialize regional OKR translator failed: %v", translationErr)
+		}
+		if err := okrWorkspaceService.SetRegionalTranslator(translationService); err != nil {
+			fatalf("wire regional OKR translator failed: %v", err)
+		}
 		previewReviewService, err := okrreview.NewService(okrreview.Options{
 			Workspace:       okrWorkspaceService,
 			Prompts:         textFileService,
