@@ -125,6 +125,27 @@ func testOKRPlanRoutesUseOwnLifecycle(t *testing.T, legacy bool) {
 	if point.Title != "更新后的产品 KR" || !ownersOK {
 		t.Fatalf("patched plan point = %+v", point)
 	}
+	kr := patchedPlan.Data.Objectives[0].KRs[0]
+	kr.Title = "单独保存后的计划 KR"
+	krBody, err := json.Marshal(okrworkspace.PlanKRWriteInput{
+		ExpectedVersion: kr.Version, ExpectedStructureToken: kr.StructureToken, KR: kr,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacy {
+		krBody = []byte(strings.Replace(string(krBody), `"email":"a@example.test"`, `"open_id":"ou_a"`, 1))
+	}
+	krResponse := ut.PerformRequest(h.Engine, "PATCH", "/api/biz-okr/plans/"+created.Data.ID+"/krs/plan-kr", &ut.Body{Body: strings.NewReader(string(krBody)), Len: len(krBody)}).Result()
+	if krResponse.StatusCode() != 200 {
+		t.Fatalf("patch plan KR status=%d body=%s", krResponse.StatusCode(), krResponse.Body())
+	}
+	if err := json.Unmarshal(krResponse.Body(), &patchedPlan); err != nil {
+		t.Fatal(err)
+	}
+	if got := patchedPlan.Data.Objectives[0].KRs[0]; got.Title != kr.Title || got.Version != kr.Version+1 || len(got.Owners) != 1 || got.Owners[0].Email != "a@example.test" || got.Points[0].Title != point.Title {
+		t.Fatalf("patched plan KR = %+v", got)
+	}
 	if legacy {
 		objective := patchedPlan.Data.Objectives[0]
 		objective.Title = "旧页面继续修改 O 正文"

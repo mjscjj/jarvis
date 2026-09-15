@@ -1,9 +1,9 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { APIError, createOKRPlan, createOKRPlanObjective, deleteOKRPlan, deleteOKRPlanObjective, getEnums, getOKRPlan, listOKRPlans, patchPointDefinition, reorderOKRPlanObjectives, updateOKRPlanObjective } from './api'
+import { APIError, createOKRPlan, createOKRPlanObjective, deleteOKRPlan, deleteOKRPlanObjective, getEnums, getOKRPlan, listOKRPlans, patchPointDefinition, reorderOKRPlanObjectives, updateOKRPlanKR, updateOKRPlanObjective } from './api'
 import { BoardContext, uid, type BoardApi, type SyncState } from './board'
 import { BUSINESS_CATEGORY_TAG, PRIORITY_TAG, replaceSingleTag } from './hierarchy'
 import { swappedOrder, swappedPointsWithinKind } from './ordering'
-import { rebasePendingChanges } from './concurrency'
+import { adoptRemoteVersionsForOverwrite, rebasePendingChanges } from './concurrency'
 import type { EnumValues, Kr, KrOwner, KrPriority, MetricLine, Objective, OKRPlan, OKRPlanSummary, Point, WeekTemplateKey } from './types'
 import { LIGHTS, STATUSES } from './template'
 
@@ -80,6 +80,8 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
   const dirtyObjectives = useRef(new Set<string>())
   const deletedObjectives = useRef(new Map<string, Objective>())
   const objectiveRevisions = useRef(new Map<string, number>())
+	const dirtyKRs = useRef(new Set<string>())
+	const krRevisions = useRef(new Map<string, number>())
   const objectiveOrderDirty = useRef(false)
   const objectiveOrderRevision = useRef(0)
   const saveInFlight = useRef(false)
@@ -122,6 +124,8 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
       dirtyObjectives.current.clear()
       deletedObjectives.current.clear()
       objectiveRevisions.current.clear()
+		dirtyKRs.current.clear()
+		krRevisions.current.clear()
       objectiveOrderDirty.current = false
       objectiveOrderRevision.current = 0
       pointPatches.current.clear()
@@ -143,6 +147,8 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
       dirtyObjectives.current.clear()
       deletedObjectives.current.clear()
       objectiveRevisions.current.clear()
+		dirtyKRs.current.clear()
+		krRevisions.current.clear()
       objectiveOrderDirty.current = false
       objectiveOrderRevision.current = 0
       pointTimers.current.clear()
@@ -153,7 +159,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
 
   useEffect(() => {
     const warnBeforeUnload = (event: BeforeUnloadEvent) => {
-      if (dirtyObjectives.current.size === 0 && !objectiveOrderDirty.current && pointPatches.current.size === 0 && pointSavesInFlight.current.size === 0) return
+      if (dirtyObjectives.current.size === 0 && dirtyKRs.current.size === 0 && !objectiveOrderDirty.current && pointPatches.current.size === 0 && pointSavesInFlight.current.size === 0) return
       event.preventDefault()
       event.returnValue = ''
     }
@@ -164,7 +170,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
   useEffect(() => {
     const nextQuarter = initialQuarter.trim()
     if (!nextQuarter || nextQuarter === quarterRef.current) return
-    if (syncState.kind === 'saving' || dirtyObjectives.current.size > 0 || pointPatches.current.size > 0 || pointSavesInFlight.current.size > 0) {
+    if (syncState.kind === 'saving' || dirtyObjectives.current.size > 0 || dirtyKRs.current.size > 0 || pointPatches.current.size > 0 || pointSavesInFlight.current.size > 0) {
       setSyncState({ kind: 'error', message: '请等待当前 Plan 保存后再切换季度。' })
       return
     }
@@ -195,6 +201,33 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
       updatedAt: saved.updatedAt,
     } : item))
   }, [])
+
+	const mergeSavedKR = useCallback((saved: OKRPlan, krId: string, submitted: Kr) => {
+		const current = planRef.current
+		if (!current) return
+		let remoteObjective: Objective | undefined
+		let remoteKR: Kr | undefined
+		for (const objective of saved.objectives) {
+			const candidate = objective.krs.find((kr) => kr.id === krId)
+			if (candidate) {
+				remoteObjective = objective
+				remoteKR = candidate
+				break
+			}
+		}
+		if (!remoteObjective || !remoteKR) return
+		const nextObjectives = objectivesRef.current.map((objective) => objective.id !== remoteObjective!.id ? objective : {
+			...objective,
+			structureToken: remoteObjective!.structureToken,
+			krs: objective.krs.map((kr) => kr.id === krId ? rebasePendingChanges(submitted, kr, remoteKR!) : kr),
+		})
+		const nextPlan = { ...current, version: saved.version, deleteToken: saved.deleteToken, updatedBy: saved.updatedBy, updatedAt: saved.updatedAt, objectives: nextObjectives }
+		planRef.current = nextPlan
+		setPlan(nextPlan)
+		objectivesRef.current = nextObjectives
+		setObjectives(nextObjectives)
+		setPlans((items) => items.map((item) => item.id === saved.id ? { ...item, version: saved.version, updatedAt: saved.updatedAt } : item))
+	}, [])
 
   const mergeSavedObjectiveOrder = useCallback((saved: OKRPlan) => {
     const currentByID = new Map(objectivesRef.current.map((objective) => [objective.id, objective]))
@@ -235,6 +268,9 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
 			: objective.structureToken,
         krs: objective.krs.map((kr) => ({
           ...kr,
+			structureToken: kr.points.some((point) => point.id === pointId)
+				? saved.krStructureToken ?? kr.structureToken
+				: kr.structureToken,
           points: kr.points.map((point) => point.id === pointId ? { ...point, version: saved.version } : point),
         })),
       }))
@@ -249,7 +285,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
         pointPatches.current.delete(pointId)
         pointRevisions.current.delete(pointId)
       }
-      if (pointPatches.current.size === 0 && dirtyObjectives.current.size === 0 && !objectiveOrderDirty.current) {
+      if (pointPatches.current.size === 0 && dirtyKRs.current.size === 0 && dirtyObjectives.current.size === 0 && !objectiveOrderDirty.current) {
         setSyncState({ kind: 'saved', message: 'Plan 已保存' })
       }
     } catch (error) {
@@ -271,7 +307,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
     } finally {
       pointSavesInFlight.current.delete(pointId)
       if (!failed && pointPatches.current.has(pointId)) schedulePointSaveRef.current(pointId)
-      if (dirtyObjectives.current.size > 0 || objectiveOrderDirty.current) scheduleSaveRef.current()
+      if (dirtyKRs.current.size > 0 || dirtyObjectives.current.size > 0 || objectiveOrderDirty.current) scheduleSaveRef.current()
     }
   }, [])
 
@@ -291,7 +327,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
 
   const saveNow = useCallback(async () => {
     if (!remoteReady.current || !planRef.current) return
-    if (pointSavesInFlight.current.size > 0) {
+    if (pointPatches.current.size > 0 || pointSavesInFlight.current.size > 0) {
       saveAgain.current = true
       return
     }
@@ -302,12 +338,53 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
     saveInFlight.current = true
     let failed = false
     let reordered = false
-    setSyncState({ kind: 'saving', message: dirtyObjectives.current.size === 0 && objectiveOrderDirty.current ? '正在调整顺序…' : '正在保存 Plan…' })
+    setSyncState({ kind: 'saving', message: dirtyKRs.current.size > 0 ? '正在保存 KR…' : dirtyObjectives.current.size === 0 && objectiveOrderDirty.current ? '正在调整顺序…' : '正在保存 Plan…' })
     try {
       do {
         saveAgain.current = false
-        const pending = Array.from(dirtyObjectives.current)
-        for (const objectiveId of pending) {
+		const pendingKRs = Array.from(dirtyKRs.current)
+		for (const krId of pendingKRs) {
+			const kr = findKr(objectivesRef.current, krId)
+			if (!kr || kr.version === undefined) {
+				dirtyKRs.current.delete(krId)
+				krRevisions.current.delete(krId)
+				continue
+			}
+			const revision = krRevisions.current.get(krId) ?? 0
+			const submitted = clone(kr)
+			try {
+				const saved = await updateOKRPlanKR(planRef.current.id, submitted)
+				mergeSavedKR(saved, krId, submitted)
+				if ((krRevisions.current.get(krId) ?? 0) === revision) {
+					dirtyKRs.current.delete(krId)
+					krRevisions.current.delete(krId)
+				}
+			} catch (error) {
+				if (error instanceof APIError && error.status === 409 && error.data) {
+					const remotePlan = error.data as OKRPlan
+					const remoteObjective = remotePlan.objectives.find((objective) => objective.krs.some((item) => item.id === krId))
+					const remoteKR = remoteObjective?.krs.find((item) => item.id === krId)
+					if (remoteObjective && remoteKR) {
+						const nextObjectives = objectivesRef.current.map((objective) => objective.id !== remoteObjective.id ? objective : {
+							...objective,
+							structureToken: remoteObjective.structureToken,
+							krs: objective.krs.map((item) => item.id === krId ? adoptRemoteVersionsForOverwrite(item, remoteKR) : item),
+						})
+						objectivesRef.current = nextObjectives
+						setObjectives(nextObjectives)
+						if (planRef.current) {
+							const nextPlan = { ...planRef.current, version: remotePlan.version, deleteToken: remotePlan.deleteToken, objectives: nextObjectives }
+							planRef.current = nextPlan
+							setPlan(nextPlan)
+						}
+					}
+					throw new Error(`${kr.title || krId} 已被其他人更新；本地内容仍保留，点击重试将按本地内容保存。`)
+				}
+				throw error
+			}
+		}
+        const pendingObjectives = Array.from(dirtyObjectives.current)
+        for (const objectiveId of pendingObjectives) {
           const objective = objectivesRef.current.find((item) => item.id === objectiveId)
           const deleted = deletedObjectives.current.get(objectiveId)
           const revision = objectiveRevisions.current.get(objectiveId) ?? 0
@@ -351,7 +428,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
           } catch (reorderError) {
             try {
               const remote = await getOKRPlan(planRef.current.id)
-              if (objectiveOrderRevision.current === revision && dirtyObjectives.current.size === 0) {
+              if (objectiveOrderRevision.current === revision && dirtyKRs.current.size === 0 && dirtyObjectives.current.size === 0) {
                 objectiveOrderDirty.current = false
                 objectiveOrderRevision.current = 0
                 publishPlan(remote)
@@ -369,16 +446,16 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
             mergeSavedPlan(saved)
           }
         }
-      } while (saveAgain.current || dirtyObjectives.current.size > 0 || objectiveOrderDirty.current)
+      } while (saveAgain.current || dirtyKRs.current.size > 0 || dirtyObjectives.current.size > 0 || objectiveOrderDirty.current)
       setSyncState({ kind: 'saved', message: reordered ? '顺序已保存' : 'Plan 已保存' })
     } catch (error) {
       failed = true
       setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '保存 Plan 失败。' })
     } finally {
       saveInFlight.current = false
-      if (!failed && (dirtyObjectives.current.size > 0 || objectiveOrderDirty.current)) scheduleSaveRef.current()
+      if (!failed && (dirtyKRs.current.size > 0 || dirtyObjectives.current.size > 0 || objectiveOrderDirty.current)) scheduleSaveRef.current()
     }
-  }, [mergeSavedObjectiveOrder, mergeSavedPlan, publishPlan])
+  }, [mergeSavedKR, mergeSavedObjectiveOrder, mergeSavedPlan, publishPlan])
 
   const scheduleSave = useCallback(() => {
     window.clearTimeout(saveTimer.current)
@@ -389,7 +466,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
     scheduleSaveRef.current = scheduleSave
   }, [scheduleSave])
 
-  const mutate = useCallback((fn: (draft: Objective[]) => void) => {
+  const mutateObjective = useCallback((fn: (draft: Objective[]) => void) => {
     if (!planRef.current) return
     const before = objectivesRef.current
     const draft = clone(before)
@@ -416,6 +493,30 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
     scheduleSave()
   }, [scheduleSave])
 
+	const mutateKR = useCallback((krId: string, fn: (kr: Kr) => void) => {
+		if (!planRef.current) return
+		const draft = clone(objectivesRef.current)
+		const kr = findKr(draft, krId)
+		if (!kr) return
+		const before = JSON.stringify(kr)
+		fn(kr)
+		if (JSON.stringify(kr) === before) return
+		objectivesRef.current = draft
+		setObjectives(draft)
+		if (kr.version !== undefined) {
+			dirtyKRs.current.add(krId)
+			krRevisions.current.set(krId, (krRevisions.current.get(krId) ?? 0) + 1)
+		} else {
+			const objective = draft.find((item) => item.krs.some((item) => item.id === krId))
+			if (objective) {
+				dirtyObjectives.current.add(objective.id)
+				objectiveRevisions.current.set(objective.id, (objectiveRevisions.current.get(objective.id) ?? 0) + 1)
+			}
+		}
+		setSyncState({ kind: 'ready', message: '有修改待保存…' })
+		scheduleSave()
+	}, [scheduleSave])
+
 	const mutatePointDefinition = useCallback((pointId: string, patch: PendingPointPatch) => {
 		const draft = clone(objectivesRef.current)
 		const point = findPoint(draft, pointId)
@@ -424,13 +525,21 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
 		Object.assign(point, patch)
     objectivesRef.current = draft
     setObjectives(draft)
-		// New points are created by the already queued structural Objective save.
+		// New points are created by the already queued KR save.
 		// Existing points never fall back to that whole-object write path.
 		if (!persisted) {
-			const objective = draft.find((item) => item.krs.some((kr) => kr.points.some((item) => item.id === pointId)))
-			if (objective) {
-				dirtyObjectives.current.add(objective.id)
-				objectiveRevisions.current.set(objective.id, (objectiveRevisions.current.get(objective.id) ?? 0) + 1)
+			const kr = draft.flatMap((objective) => objective.krs).find((item) => item.points.some((item) => item.id === pointId))
+			if (kr) {
+				if (kr.version !== undefined) {
+					dirtyKRs.current.add(kr.id)
+					krRevisions.current.set(kr.id, (krRevisions.current.get(kr.id) ?? 0) + 1)
+				} else {
+					const objective = draft.find((item) => item.krs.some((item) => item.id === kr.id))
+					if (objective) {
+						dirtyObjectives.current.add(objective.id)
+						objectiveRevisions.current.set(objective.id, (objectiveRevisions.current.get(objective.id) ?? 0) + 1)
+					}
+				}
 				setSyncState({ kind: 'ready', message: '有修改待保存…' })
 				scheduleSave()
 			}
@@ -469,7 +578,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
     availableQuarters,
     setQuarter: (nextQuarter) => {
       if (nextQuarter === quarterRef.current) return
-      if (syncState.kind === 'saving' || dirtyObjectives.current.size > 0 || pointPatches.current.size > 0 || pointSavesInFlight.current.size > 0) {
+      if (syncState.kind === 'saving' || dirtyKRs.current.size > 0 || dirtyObjectives.current.size > 0 || pointPatches.current.size > 0 || pointSavesInFlight.current.size > 0) {
         setSyncState({ kind: 'error', message: '请等待当前 Biz OKR Plan 保存后再切换季度。' })
         return
       }
@@ -479,7 +588,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
     },
     selectPlan: (id) => {
       if (id === planRef.current?.id) return
-      if (syncState.kind === 'saving' || dirtyObjectives.current.size > 0 || pointPatches.current.size > 0 || pointSavesInFlight.current.size > 0) {
+      if (syncState.kind === 'saving' || dirtyKRs.current.size > 0 || dirtyObjectives.current.size > 0 || pointPatches.current.size > 0 || pointSavesInFlight.current.size > 0) {
         setSyncState({ kind: 'error', message: '请等待当前 Biz OKR Plan 保存后再切换。' })
         return
       }
@@ -492,6 +601,9 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
       setSyncState({ kind: 'loading', message: '正在读取 Biz OKR Plan…' })
       getOKRPlan(id).then((loaded) => {
         publishPlan(loaded)
+        persistedObjectiveIDs.current = new Set(loaded.objectives.map((objective) => objective.id))
+        dirtyKRs.current.clear()
+        krRevisions.current.clear()
         dirtyObjectives.current.clear()
         deletedObjectives.current.clear()
         objectiveRevisions.current.clear()
@@ -510,6 +622,9 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
         setAvailableQuarters(list.availableQuarters)
         setPlans(list.plans)
         publishPlan(created)
+        persistedObjectiveIDs.current = new Set(created.objectives.map((objective) => objective.id))
+        dirtyKRs.current.clear()
+        krRevisions.current.clear()
         dirtyObjectives.current.clear()
         deletedObjectives.current.clear()
         objectiveRevisions.current.clear()
@@ -537,7 +652,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
       }
     },
     syncState,
-    hasPendingChanges: dirtyObjectives.current.size > 0 || objectiveOrderDirty.current || pointPatches.current.size > 0 || pointSavesInFlight.current.size > 0 || saveInFlight.current,
+    hasPendingChanges: dirtyKRs.current.size > 0 || dirtyObjectives.current.size > 0 || objectiveOrderDirty.current || pointPatches.current.size > 0 || pointSavesInFlight.current.size > 0 || saveInFlight.current,
     enums,
     templateKey: 'classic',
     week: '',
@@ -546,36 +661,25 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
     setWeek: () => undefined,
     setWeeklyScope: () => false,
     deleteWeeklyScope: async () => { throw new Error('Biz OKR Plan 没有周次。') },
-    setKrTitle: (_objId, krId, title) => mutate((draft) => {
-      const kr = findKr(draft, krId)
-      if (kr) kr.title = title
-    }),
-    setKrOwner: (krId, ownerName, ownerEmail, owners) => mutate((draft) => {
-      const kr = findKr(draft, krId)
-      if (!kr) return
+    setKrTitle: (_objId, krId, title) => mutateKR(krId, (kr) => { kr.title = title }),
+    setKrOwner: (krId, ownerName, ownerEmail, owners) => mutateKR(krId, (kr) => {
       kr.ownerName = ownerName
       kr.ownerEmail = ownerEmail ?? ''
       kr.owners = owners ?? ownerName.split(/[、,，;；]/).map((name) => ({ name: name.trim(), email: '' })).filter((owner) => owner.name)
     }),
-    setKrBusinessCategory: (krId, category) => mutate((draft) => {
-      const kr = findKr(draft, krId)
-      if (kr) kr.tags = replaceSingleTag(kr.tags, BUSINESS_CATEGORY_TAG, category)
-    }),
-    setKrPriority: (krId, priority) => mutate((draft) => {
-      const kr = findKr(draft, krId)
-      if (kr) kr.tags = replaceSingleTag(kr.tags, PRIORITY_TAG, priority)
-    }),
+    setKrBusinessCategory: (krId, category) => mutateKR(krId, (kr) => { kr.tags = replaceSingleTag(kr.tags, BUSINESS_CATEGORY_TAG, category) }),
+    setKrPriority: (krId, priority) => mutateKR(krId, (kr) => { kr.tags = replaceSingleTag(kr.tags, PRIORITY_TAG, priority) }),
     createObjective: async (input) => {
-      mutate((draft) => draft.push({ id: uid('plan-o'), title: input.title.trim(), krs: [] }))
+      mutateObjective((draft) => draft.push({ id: uid('plan-o'), title: input.title.trim(), krs: [] }))
     },
     updateObjective: async (id, title) => {
-      mutate((draft) => {
+      mutateObjective((draft) => {
         const objective = draft.find((item) => item.id === id)
         if (objective) objective.title = title.trim()
       })
     },
     deleteObjective: async (id) => {
-      mutate((draft) => {
+      mutateObjective((draft) => {
         const index = draft.findIndex((item) => item.id === id && item.krs.length === 0)
         if (index >= 0) draft.splice(index, 1)
       })
@@ -587,7 +691,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
     },
     reorderObjectives: queueObjectiveOrder,
     swapKrs: async (objectiveId, krId, targetId) => {
-      mutate((draft) => {
+      mutateObjective((draft) => {
         const objective = draft.find((item) => item.id === objectiveId)
         if (!objective) return
         const from = objective.krs.findIndex((item) => item.id === krId)
@@ -598,7 +702,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
       })
     },
     createKr: async (objectiveId, input) => {
-      mutate((draft) => {
+      mutateObjective((draft) => {
         const objective = draft.find((item) => item.id === objectiveId)
         if (!objective) return
         const owners = input.owners ?? []
@@ -619,21 +723,17 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
       })
     },
     deleteKr: async (krId) => {
-      mutate((draft) => {
+      mutateObjective((draft) => {
         for (const objective of draft) objective.krs = objective.krs.filter((item) => item.id !== krId)
       })
     },
-    addTag: (krId, value, type = 'custom') => mutate((draft) => {
+    addTag: (krId, value, type = 'custom') => mutateKR(krId, (kr) => {
       const clean = value.trim()
-      const kr = findKr(draft, krId)
-      if (!kr || !clean) return
+		if (!clean) return
       kr.tags ??= []
       if (!kr.tags.some((tag) => tag.type === type && tag.value === clean)) kr.tags.push({ type, value: clean })
     }),
-    removeTag: (krId, type, value) => mutate((draft) => {
-      const kr = findKr(draft, krId)
-      if (kr) kr.tags = (kr.tags ?? []).filter((tag) => tag.type !== type || tag.value !== value)
-    }),
+    removeTag: (krId, type, value) => mutateKR(krId, (kr) => { kr.tags = (kr.tags ?? []).filter((tag) => tag.type !== type || tag.value !== value) }),
     addPointTag: (_krId, pointId, value, type = 'custom') => {
       const clean = value.trim()
       const point = findPoint(objectivesRef.current, pointId)
@@ -647,39 +747,26 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
       if (point) mutatePointDefinition(pointId, { tags: (point.tags ?? []).filter((tag) => tag.type !== type || tag.value !== value) })
     },
     setPointOwners: (_krId, pointId, owners) => mutatePointDefinition(pointId, { owners }),
-    setMetricNote: (krId, note) => mutate((draft) => {
-      const kr = findKr(draft, krId)
-      if (kr) kr.metricNote = note
-    }),
-    patchMetric: (krId, metricId, patch) => mutate((draft) => {
-      const metric = findKr(draft, krId)?.metrics.find((item) => item.id === metricId)
+    setMetricNote: (krId, note) => mutateKR(krId, (kr) => { kr.metricNote = note }),
+    patchMetric: (krId, metricId, patch) => mutateKR(krId, (kr) => {
+      const metric = kr.metrics.find((item) => item.id === metricId)
       if (metric) Object.assign(metric, patch)
     }),
     addMetric: (krId, initial) => {
       const id = uid('plan-m')
-      mutate((draft) => {
-        findKr(draft, krId)?.metrics.push({ text: '', light: 'green', images: [], ...initial, id })
-      })
+      mutateKR(krId, (kr) => { kr.metrics.push({ text: '', light: 'green', images: [], ...initial, id }) })
       return id
     },
-    removeMetric: (krId, metricId) => mutate((draft) => {
-      const kr = findKr(draft, krId)
-      if (kr) kr.metrics = kr.metrics.filter((item) => item.id !== metricId)
-    }),
+    removeMetric: (krId, metricId) => mutateKR(krId, (kr) => { kr.metrics = kr.metrics.filter((item) => item.id !== metricId) }),
     setPointTitle: (_objId, _krId, pointId, title) => mutatePointDefinition(pointId, { title }),
     setPointMeegoLink: (_krId, pointId, patch) => mutatePointDefinition(pointId, patch),
-    addPoint: (_objId, krId, kind) => mutate((draft) => {
-      const kr = findKr(draft, krId)
-      if (!kr) return
+    addPoint: (_objId, krId, kind) => mutateKR(krId, (kr) => {
       const point: Point = { id: uid('plan-p'), kind, title: '', tags: [], owners: [], entries: [], previousEntries: [] }
       const lastSameKind = kr.points.map((item) => item.kind).lastIndexOf(kind)
       if (lastSameKind === -1) kr.points.push(point)
       else kr.points.splice(lastSameKind + 1, 0, point)
     }),
-    swapPoints: (krId, pointId, targetId) => mutate((draft) => {
-      const kr = findKr(draft, krId)
-      if (kr) kr.points = swappedPointsWithinKind(kr.points, pointId, targetId)
-    }),
+    swapPoints: (krId, pointId, targetId) => mutateKR(krId, (kr) => { kr.points = swappedPointsWithinKind(kr.points, pointId, targetId) }),
     setPointKind: (krId, pointId, kind) => {
 			const draft = clone(objectivesRef.current)
       const kr = findKr(draft, krId)
@@ -693,17 +780,14 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
 			setObjectives(draft)
 			mutatePointDefinition(pointId, { kind })
 		},
-    removePoint: (_objId, krId, pointId) => mutate((draft) => {
-      const kr = findKr(draft, krId)
-      if (kr) kr.points = kr.points.filter((item) => item.id !== pointId)
-    }),
+    removePoint: (_objId, krId, pointId) => mutateKR(krId, (kr) => { kr.points = kr.points.filter((item) => item.id !== pointId) }),
     patchEntry: () => undefined,
     addEntry: () => undefined,
     removeEntry: () => undefined,
     setKrScore: async () => undefined,
     setPointScore: async () => undefined,
     reset: () => {
-      if (dirtyObjectives.current.size > 0 || pointPatches.current.size > 0 || pointSavesInFlight.current.size > 0 || saveInFlight.current) {
+      if (dirtyKRs.current.size > 0 || dirtyObjectives.current.size > 0 || pointPatches.current.size > 0 || pointSavesInFlight.current.size > 0 || saveInFlight.current) {
         setSyncState({ kind: 'error', message: '请等待当前修改保存后再刷新。' })
         return
       }
@@ -712,17 +796,12 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
     retry: () => {
       if (remoteReady.current && pointPatches.current.size > 0) {
         for (const pointId of pointPatches.current.keys()) schedulePointSave(pointId)
-      } else if (remoteReady.current && (dirtyObjectives.current.size > 0 || objectiveOrderDirty.current)) void saveNow()
+      } else if (remoteReady.current && (dirtyKRs.current.size > 0 || dirtyObjectives.current.size > 0 || objectiveOrderDirty.current)) void saveNow()
       else void loadRemote()
     },
     resolveConflict: () => undefined,
-    applySavedKr: (kr) => mutate((draft) => {
-      for (const objective of draft) {
-        const index = objective.krs.findIndex((item) => item.id === kr.id)
-        if (index >= 0) objective.krs[index] = kr
-      }
-    }),
-  }), [availableQuarters, enums, loadRemote, mutate, mutatePointDefinition, objectives, plan, plans, publishPlan, quarter, queueObjectiveOrder, saveNow, schedulePointSave, syncState])
+    applySavedKr: (kr) => mutateKR(kr.id, (current) => { Object.assign(current, kr) }),
+  }), [availableQuarters, enums, loadRemote, mutateKR, mutateObjective, mutatePointDefinition, objectives, plan, plans, publishPlan, quarter, queueObjectiveOrder, saveNow, schedulePointSave, syncState])
 
   return (
     <PlanBoardContext.Provider value={api}>

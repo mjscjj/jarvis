@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { mergePointProgressOnly, mergeScoreOnly, rebasePendingChanges } from '../src/okr/emily/concurrency.ts'
+import { adoptRemoteVersionsForOverwrite, mergePointProgressOnly, mergeScoreOnly, rebasePendingChanges } from '../src/okr/emily/concurrency.ts'
 import type { Kr } from '../src/okr/emily/types.ts'
 
 function kr(entries: Kr['points'][number]['entries']): Kr {
@@ -39,4 +39,19 @@ test('Meego 回包只更新目标来源进展并保留人工草稿', () => {
   const remote = kr([{ id: 'meego-1', version: 1, status: 'done', text: 'Meego 已完成', docs: [], images: [], source: 'meego' }])
   const merged = mergePointProgressOnly(local, remote, 'p-1', 'meego')
   assert.deepEqual(merged.points[0].entries.map((entry) => entry.text), ['人工草稿', 'Meego 已完成'])
+})
+
+test('同一 KR 冲突重试采用远端版本与结构令牌并保留本地正文', () => {
+  const local = kr([])
+  local.title = '本地待保存正文'
+  local.structureToken = 'old-structure'
+  const remote = kr([])
+  remote.title = '远端正文'
+  remote.version = 8
+  remote.structureToken = 'new-structure'
+
+  const merged = adoptRemoteVersionsForOverwrite(local, remote)
+  assert.equal(merged.title, '本地待保存正文')
+  assert.equal(merged.version, 8)
+  assert.equal(merged.structureToken, 'new-structure')
 })

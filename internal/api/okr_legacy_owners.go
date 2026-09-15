@@ -105,11 +105,13 @@ func (people LegacyOKROwners) normalize(body []byte) ([]byte, int, int) {
 	}
 	// Traverse only OKR entity containers, never arbitrary document content,
 	// source_payload, comments, metrics or other embedded user JSON.
-	if raw, exists := object["objective"]; exists {
-		next, m, d := people.normalize(raw)
-		if m+d > 0 {
-			object["objective"] = next
-			mapped, dropped = mapped+m, dropped+d
+	for _, key := range []string{"objective", "kr"} {
+		if raw, exists := object[key]; exists {
+			next, m, d := people.normalize(raw)
+			if m+d > 0 {
+				object[key] = next
+				mapped, dropped = mapped+m, dropped+d
+			}
 		}
 	}
 	for _, key := range []string{"objectives", "krs", "points"} {

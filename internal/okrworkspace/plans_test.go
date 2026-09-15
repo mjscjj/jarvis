@@ -128,6 +128,82 @@ func TestPlanObjectiveWritesConflictOnlyWithinOneObjective(t *testing.T) {
 	if loaded.Objectives[0].Title != "一号-更新" || loaded.Objectives[1].Title != "二号-更新" {
 		t.Fatalf("objective blocks were not isolated: %+v", loaded.Objectives)
 	}
+	if loaded.Objectives[0].KRs[0].Version != first.KRs[0].Version || loaded.Objectives[1].KRs[0].Version != second.KRs[0].Version {
+		t.Fatalf("objective-only edits advanced unrelated KR versions: %+v", loaded.Objectives)
+	}
+}
+
+func TestPlanKRWritesConflictOnlyWithinOneKR(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := service.CreatePlan(t.Context(), CreatePlanInput{Quarter: "2026-Q4", Title: "concurrent KRs"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err = service.CreatePlanObjective(t.Context(), plan.ID, PlanObjectiveView{
+		ID: "plan-o", Title: "AI 提效", KRs: []PlanKRView{
+			{ID: "plan-kr-a", Title: "KR A", Points: []PlanPointView{{ID: "plan-p-a", Kind: domain.PointKindStrategy, Title: "A point"}}},
+			{ID: "plan-kr-b", Title: "KR B", Points: []PlanPointView{{ID: "plan-p-b", Kind: domain.PointKindProduct, Title: "B point"}}},
+		},
+	}, "creator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleObjective := plan.Objectives[0]
+	krA, krB := staleObjective.KRs[0], staleObjective.KRs[1]
+
+	krA.Title = "KR A by editor A"
+	if _, err := service.UpdatePlanKR(t.Context(), plan.ID, krA.ID, PlanKRWriteInput{
+		ExpectedVersion: krA.Version, ExpectedStructureToken: krA.StructureToken, KR: krA, UpdatedBy: "editor-a",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	krB.Title = "KR B by editor B"
+	updated, err := service.UpdatePlanKR(t.Context(), plan.ID, krB.ID, PlanKRWriteInput{
+		ExpectedVersion: krB.Version, ExpectedStructureToken: krB.StructureToken, KR: krB, UpdatedBy: "editor-b",
+	})
+	if err != nil {
+		t.Fatalf("sibling KR edit should not conflict: %v", err)
+	}
+	if updated.Objectives[0].Version != staleObjective.Version || updated.Objectives[0].KRs[0].Title != krA.Title || updated.Objectives[0].KRs[1].Title != krB.Title {
+		t.Fatalf("KR-scoped writes were not isolated: %+v", updated.Objectives[0])
+	}
+
+	if _, err := service.UpdatePlanKR(t.Context(), plan.ID, krA.ID, PlanKRWriteInput{
+		ExpectedVersion: krA.Version, ExpectedStructureToken: krA.StructureToken, KR: krA, UpdatedBy: "stale",
+	}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale same-KR update error = %v, want ErrConflict", err)
+	}
+	staleObjective.Title = "stale legacy O write"
+	if _, err := service.UpdatePlanObjective(t.Context(), plan.ID, staleObjective.ID, PlanObjectiveWriteInput{
+		ExpectedVersion: staleObjective.Version, ExpectedStructureToken: staleObjective.StructureToken, Objective: staleObjective, UpdatedBy: "legacy",
+	}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("legacy O snapshot overwrote newer KR versions: %v", err)
+	}
+
+	currentKR := updated.Objectives[0].KRs[0]
+	pointTitle := "point changed independently"
+	if _, err := service.PatchPlanPointDefinition(t.Context(), plan.ID, "plan-p-a", PatchPointDefinitionInput{
+		ExpectedVersion: currentKR.Points[0].Version, Title: &pointTitle, UpdatedBy: "point-editor",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	currentKR.Points = nil
+	if _, err := service.UpdatePlanKR(t.Context(), plan.ID, currentKR.ID, PlanKRWriteInput{
+		ExpectedVersion: currentKR.Version, ExpectedStructureToken: currentKR.StructureToken, KR: currentKR, UpdatedBy: "stale-remover",
+	}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale KR removal after point edit error = %v, want ErrConflict", err)
+	}
+	loaded, err := service.GetPlan(t.Context(), plan.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if point := loaded.Objectives[0].KRs[0].Points[0]; point.Title != pointTitle {
+		t.Fatalf("stale KR removal changed the point: %+v", point)
+	}
 }
 
 func TestPlanPointDefinitionPatchesDoNotOverwriteSiblingPoints(t *testing.T) {

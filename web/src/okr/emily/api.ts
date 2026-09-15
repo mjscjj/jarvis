@@ -57,6 +57,7 @@ interface APIPlanObjective {
     id: string
     title: string
     version?: number
+		structure_token?: string
     owners: Array<{ email: string; name: string; union_id?: string }>
     metric_note: string
     metrics: Array<{ id: string; text: string; light?: Light; images?: Entry['images'] }>
@@ -92,6 +93,7 @@ interface APIPointDefinitionPatchResult {
   point_id: string
 	version: number
 	structure_token?: string
+	kr_structure_token?: string
 	delete_token?: string
 	plan_delete_token?: string
 	title: string
@@ -102,6 +104,7 @@ export interface PointDefinitionPatchResult {
   pointId: string
 	version: number
 	structureToken?: string
+	krStructureToken?: string
 	deleteToken?: string
 	planDeleteToken?: string
 	title: string
@@ -500,6 +503,7 @@ function fromAPIPlanObjectives(value: APIPlanObjective[]): Objective[] {
         id: kr.id,
         title: normalizeKRTitle(kr.title),
         version: kr.version ?? 0,
+		structureToken: kr.structure_token ?? '',
         owners: (kr.owners ?? []).map((owner): KrOwner => ({ email: owner.email, name: owner.name, unionId: owner.union_id })),
         ownerName: (kr.owners ?? []).map((owner) => owner.name).filter(Boolean).join('、'),
         ownerEmail: (kr.owners ?? []).find((owner) => owner.email)?.email ?? '',
@@ -523,33 +527,38 @@ function fromAPIPlanObjectives(value: APIPlanObjective[]): Objective[] {
     }))
 }
 
+function toAPIPlanKR(kr: Kr): APIPlanObjective['krs'][number] {
+  return {
+    id: kr.id,
+    title: normalizeKRTitle(kr.title),
+    version: kr.version ?? 0,
+		structure_token: kr.structureToken,
+    owners: (kr.owners ?? []).map((owner) => ({ email: owner.email, name: owner.name, union_id: owner.unionId })),
+    metric_note: kr.metricNote ?? '',
+    metrics: kr.metrics.map((metric) => ({ id: metric.id, text: metric.text, light: metric.light, images: metric.images ?? [] })),
+    points: kr.points.map((point) => ({
+      id: point.id,
+			version: point.version ?? 0,
+			...(point.version === undefined ? {
+				kind: point.kind,
+				title: point.title,
+				meego_work_item_id: point.meegoWorkItemId ?? '',
+				meego_url: point.meegoUrl ?? '',
+				owners: (point.owners ?? []).map((owner) => ({ email: owner.email, name: owner.name, union_id: owner.unionId })),
+				tags: point.tags ?? [],
+			} : {}),
+    })),
+    tags: kr.tags ?? [],
+  }
+}
+
 function toAPIPlanObjective(objective: Objective): APIPlanObjective {
   return {
     id: objective.id,
     title: objective.title,
     version: objective.version ?? 0,
-	structure_token: objective.structureToken,
-    krs: objective.krs.map((kr) => ({
-      id: kr.id,
-      title: normalizeKRTitle(kr.title),
-      version: kr.version ?? 0,
-      owners: (kr.owners ?? []).map((owner) => ({ email: owner.email, name: owner.name, union_id: owner.unionId })),
-      metric_note: kr.metricNote ?? '',
-      metrics: kr.metrics.map((metric) => ({ id: metric.id, text: metric.text, light: metric.light, images: metric.images ?? [] })),
-      points: kr.points.map((point) => ({
-        id: point.id,
-				version: point.version ?? 0,
-				...(point.version === undefined ? {
-					kind: point.kind,
-					title: point.title,
-					meego_work_item_id: point.meegoWorkItemId ?? '',
-					meego_url: point.meegoUrl ?? '',
-					owners: (point.owners ?? []).map((owner) => ({ email: owner.email, name: owner.name, union_id: owner.unionId })),
-					tags: point.tags ?? [],
-				} : {}),
-      })),
-      tags: kr.tags ?? [],
-    })),
+		structure_token: objective.structureToken,
+    krs: objective.krs.map(toAPIPlanKR),
   }
 }
 
@@ -811,6 +820,24 @@ export async function updateOKRPlanObjective(planId: string, objective: Objectiv
   }
 }
 
+export async function updateOKRPlanKR(planId: string, kr: Kr): Promise<OKRPlan> {
+  try {
+    return fromAPIPlan(await request<APIPlan>(`/api/biz-okr/plans/${encodeURIComponent(planId)}/krs/${encodeURIComponent(kr.id)}`, {
+      method: 'PATCH',
+		body: JSON.stringify({
+			expected_version: kr.version ?? 0,
+			expected_structure_token: kr.structureToken ?? '',
+			kr: toAPIPlanKR(kr),
+		}),
+    }))
+  } catch (error) {
+    if (error instanceof APIError && error.status === 409 && error.data) {
+      throw new APIError(error.message, error.status, error.code, fromAPIPlan(error.data as APIPlan), error.logid)
+    }
+    throw error
+  }
+}
+
 export async function patchPointDefinition(input: { pointId: string; planId?: string; expectedVersion: number; title?: string; owners?: KrOwner[]; kind?: PointKind; meegoWorkItemId?: string; meegoUrl?: string; tags?: KrTag[] }): Promise<PointDefinitionPatchResult> {
   const path = input.planId
     ? `/api/biz-okr/plans/${encodeURIComponent(input.planId)}/points/${encodeURIComponent(input.pointId)}/definition`
@@ -827,6 +854,7 @@ export async function patchPointDefinition(input: { pointId: string; planId?: st
 	    pointId: value.point_id,
 	    version: value.version,
 		structureToken: value.structure_token,
+		krStructureToken: value.kr_structure_token,
 		deleteToken: value.delete_token,
 		planDeleteToken: value.plan_delete_token,
 	    title: value.title,

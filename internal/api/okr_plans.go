@@ -165,6 +165,38 @@ func UpdateOKRPlanObjective(service *okrworkspace.Service) app.HandlerFunc {
 	}
 }
 
+func UpdateOKRPlanKR(service *okrworkspace.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		var input okrworkspace.PlanKRWriteInput
+		if err := decodeStrictJSON(c.Request.Body(), &input); err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40086, err)
+			return
+		}
+		planID := strings.TrimSpace(c.Param("plan_id"))
+		krID := strings.TrimSpace(c.Param("kr_id"))
+		input.UpdatedBy = currentOKRIdentity(c).OpenID
+		result, err := service.UpdatePlanKR(ctx, planID, krID, input)
+		if errors.Is(err, okrworkspace.ErrConflict) {
+			current, currentErr := service.GetPlan(ctx, planID)
+			if currentErr != nil {
+				writeAPIError(c, consts.StatusInternalServerError, 50086, currentErr)
+				return
+			}
+			writeAPIConflict(c, 40986, err, current)
+			return
+		}
+		if errors.Is(err, okrworkspace.ErrNotFound) {
+			writeAPIError(c, consts.StatusNotFound, 40486, err)
+			return
+		}
+		if err != nil {
+			writeAPIError(c, consts.StatusBadRequest, 40086, err)
+			return
+		}
+		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result})
+	}
+}
+
 func DeleteOKRPlanObjective(service *okrworkspace.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		var input okrworkspace.PlanObjectiveDeleteInput

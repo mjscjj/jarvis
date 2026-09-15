@@ -29,13 +29,14 @@ type PatchPointDefinitionInput struct {
 // was written. Parent versions are deliberately absent: a point owns its own
 // concurrency boundary and never invalidates a sibling point or its KR.
 type PointDefinitionPatchResult struct {
-	PointID         string      `json:"point_id"`
-	Version         int32       `json:"version"`
-	StructureToken  string      `json:"structure_token,omitempty"`
-	DeleteToken     string      `json:"delete_token,omitempty"`
-	PlanDeleteToken string      `json:"plan_delete_token,omitempty"`
-	Title           string      `json:"title"`
-	Owners          []OwnerView `json:"owners"`
+	PointID          string      `json:"point_id"`
+	Version          int32       `json:"version"`
+	StructureToken   string      `json:"structure_token,omitempty"`
+	KRStructureToken string      `json:"kr_structure_token,omitempty"`
+	DeleteToken      string      `json:"delete_token,omitempty"`
+	PlanDeleteToken  string      `json:"plan_delete_token,omitempty"`
+	Title            string      `json:"title"`
+	Owners           []OwnerView `json:"owners"`
 }
 
 // PatchPointDefinition updates one point in the committed OKR definition used
@@ -217,6 +218,12 @@ func (s *Service) pointDefinitionResult(ctx context.Context, pointID string) (Po
 		for _, item := range plan.Objectives {
 			if item.ID == objective.ID {
 				result.StructureToken = item.StructureToken
+				for _, krItem := range item.KRs {
+					if krItem.ID == kr.ID {
+						result.KRStructureToken = krItem.StructureToken
+						break
+					}
+				}
 				break
 			}
 		}

@@ -66,6 +66,28 @@ func TestLegacyOwnersNormalizeOnlyOwnerFields(t *testing.T) {
 	}
 }
 
+func TestLegacyOwnersNormalizePlanKRWrapper(t *testing.T) {
+	people := LegacyOKROwners{"ou_known": {Email: "a@example.test", Name: "甲"}}
+	body, mapped, dropped := people.normalize([]byte(`{"kr":{"owners":[{"open_id":"ou_known","name":"旧姓名"}],"points":[{"owners":[{"open_id":"ou_missing"}]}]}}`))
+	if mapped != 1 || dropped != 1 {
+		t.Fatalf("mapped=%d dropped=%d body=%s", mapped, dropped, body)
+	}
+	var got struct {
+		KR struct {
+			Owners []domain.PersonRef `json:"owners"`
+			Points []struct {
+				Owners []domain.PersonRef `json:"owners"`
+			} `json:"points"`
+		} `json:"kr"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got.KR.Owners) != 1 || got.KR.Owners[0].Email != "a@example.test" || len(got.KR.Points[0].Owners) != 0 {
+		t.Fatalf("unexpected normalized KR wrapper: %s", body)
+	}
+}
+
 func TestLegacyOwnersMiddlewareLogsOriginalEvenWhenRejected(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "requests.jsonl")
 	logger, err := observability.NewAPIRequestLogger(path)
