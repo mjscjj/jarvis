@@ -11,7 +11,7 @@ func TestRepositoryGlossaryLoadsAuthoritativeTerms(t *testing.T) {
 		t.Fatalf("glossary terms/hash = %d/%q", len(glossary.Terms), glossary.hash)
 	}
 	want := map[string]string{
-		"公会":   "Creator Network",
+		"公会":   "Agency",
 		"公会任务": "Fee Policy",
 		"主播中心": "Host Center",
 	}

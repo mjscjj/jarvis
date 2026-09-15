@@ -108,7 +108,7 @@ function CollapsibleBlock({ title, subtitle, level, action, children }: { title:
 function CategoryTabs({ order, value, onChange, onReorder, labels = 'alignment' }: { order: Category[]; value?: Category; onChange: (value: Category) => void; onReorder: (values: Category[]) => void; labels?: 'platform' | 'alignment' | 'recap' }) {
   const [dragging, setDragging] = useState<Category>()
   const label = (category: Category) => {
-    if (category === '公会业务') return '公会业务 / Creator Network'
+    if (category === '公会业务') return '公会业务 / Agency'
     if (category === '运营效率') return '运营效率 / Operational Efficiency'
     if (category === '优质主播专项') return labels === 'platform' ? '优质内容 / Quality Content' : labels === 'recap' ? '优质主播&内容专项 / Premium Creators & Content' : '优质主播专项 / Premium Creators'
     return labels === 'platform' ? 'AI 提效 / AI Efficiency' : 'AI提效 / AI Efficiency'
@@ -382,7 +382,7 @@ function RecapSection({ board, busy, onOrder, onHide }: { board: RegionalAlignme
   const filtered = board.recap.objectives.filter((objective) => objective.krs.some((kr) => (category === '全部OKR' || categoryOf(kr) === category) && matchesRegionalPriority(kr, priority)))
   const ordered = [...filtered].sort((left, right) => (overlays.get(left.id)?.sortOrder ?? 9999) - (overlays.get(right.id)?.sortOrder ?? 9999))
   const visible = ordered.filter((objective) => showHidden || !overlays.get(objective.id)?.hidden)
-  const categoryLabel = (item: '全部OKR' | Category) => item === '全部OKR' ? '全部 OKR / All OKRs' : item === '公会业务' ? '公会业务 / Creator Network' : item === '运营效率' ? '运营效率 / Operational Efficiency' : item === '优质主播专项' ? '优质主播&内容专项 / Premium Creators & Content' : 'AI提效 / AI Efficiency'
+  const categoryLabel = (item: '全部OKR' | Category) => item === '全部OKR' ? '全部 OKR / All OKRs' : item === '公会业务' ? '公会业务 / Agency' : item === '运营效率' ? '运营效率 / Operational Efficiency' : item === '优质主播专项' ? '优质主播&内容专项 / Premium Creators & Content' : 'AI提效 / AI Efficiency'
   return <>
     <div className="mb-3 flex flex-wrap items-center gap-2"><div className="flex flex-wrap gap-1">{(['全部OKR', ...CATEGORIES] as const).map((item) => <button key={item} type="button" onClick={() => setCategory(item)} className={`rounded-lg border px-2.5 py-1 text-[10px] ${category === item ? 'border-indigo-300 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-500'}`}>{categoryLabel(item)}</button>)}</div><label className="ml-auto text-[10px] text-slate-400"><input type="checkbox" checked={showHidden} onChange={(event) => setShowHidden(event.target.checked)} className="mr-1" />显示已移除 / Show removed</label></div>
     <div className="mb-4 border-t border-slate-100 pt-3"><PriorityTabs value={priority} onChange={setPriority} /></div>

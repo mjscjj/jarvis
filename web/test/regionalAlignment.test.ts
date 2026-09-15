@@ -74,6 +74,7 @@ test('区域对齐页面保留直接表格、自动保存、双语和刷新交�
   assert.match(source, /function CollapsibleBlock/)
   assert.equal([...source.matchAll(/level="primary"/g)].length, 3)
   assert.equal([...source.matchAll(/level="secondary"/g)].length, 2)
+  assert.equal([...source.matchAll(/公会业务 \/ Agency/g)].length, 2)
   assert.match(source, /Regional Ops Team 高优痛点&核心需求/)
   assert.match(source, /新增需求 \/ Add requirement/)
   assert.match(source, /saveDemand\(emptyDemand\(nextDemandSortOrder\(board\.demands\)\)\)/)

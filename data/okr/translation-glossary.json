@@ -422,19 +422,19 @@
     },
     {
       "zh": "公会",
-      "en": "Creator Network",
+      "en": "Agency",
       "definition": "",
       "source": "business-terms-sheet1"
     },
     {
       "zh": "公会 ID",
-      "en": "Creator Network ID",
+      "en": "Agency ID",
       "definition": "建议与上项配套使用",
       "source": "arena-ui"
     },
     {
       "zh": "公会中心",
-      "en": "Creator Network",
+      "en": "Agency",
       "definition": "中文公会中心对应英文 Creator Network",
       "source": "arena-ui"
     },
@@ -452,25 +452,25 @@
     },
     {
       "zh": "公会名称",
-      "en": "Creator Network Name",
+      "en": "Agency Name",
       "definition": "与公会中心命名保持一致",
       "source": "arena-ui"
     },
     {
       "zh": "公会成材线",
-      "en": "Creator Network's graduation threshold",
+      "en": "Agency's graduation threshold",
       "definition": "Once the creator network reaches the CN revenue target, it will be considered  as a senior creator network.",
       "source": "terminology-final"
     },
     {
       "zh": "公会成熟度",
-      "en": "Creator Network maturity",
+      "en": "Agency maturity",
       "definition": "To describe how long the CN has been on the platform since its onboarding",
       "source": "terminology-final"
     },
     {
       "zh": "公会收入",
-      "en": "creator network revenue",
+      "en": "agency revenue",
       "definition": "",
       "source": "terminology-backup"
     },
@@ -482,7 +482,7 @@
     },
     {
       "zh": "公会治理",
-      "en": "Creator Network governance",
+      "en": "Agency governance",
       "definition": "",
       "source": "terminology-final"
     },
@@ -494,7 +494,7 @@
     },
     {
       "zh": "公会长",
-      "en": "Creator Network Owner",
+      "en": "Agency Owner",
       "definition": "",
       "source": "business-terms-sheet1"
     },
@@ -992,7 +992,7 @@
     },
     {
       "zh": "成熟公会",
-      "en": "senior Creator Network",
+      "en": "senior Agency",
       "definition": "Senior CN: Starting from the first onboarding of the Creator Network on the platform, if the CN's revenue last month is greater than or equal to $30k/$50k/$80k.",
       "source": "terminology-final"
     },
@@ -1172,7 +1172,7 @@
     },
     {
       "zh": "新公会",
-      "en": "new Creator Network",
+      "en": "new Agency",
       "definition": "New CN: A CN that has onboarded for the first time within 6 calendar months (excluding the month of onboard) and had last month's revenue of less than $30k/$50k/$80k.",
       "source": "terminology-final"
     },
@@ -1184,7 +1184,7 @@
     },
     {
       "zh": "新公会限时任务",
-      "en": "New Creator Network task",
+      "en": "New Agency task",
       "definition": "Bonus will be distributed based on  creators  in the creator network who meet the go-LIVE activeness and monthly total revenue requirements",
       "source": "terminology-final"
     },
@@ -1730,13 +1730,13 @@
     },
     {
       "zh": "经营失活公会",
-      "en": "Creator Networks with low activity",
+      "en": "Agencies with low activity",
       "definition": "CNs with extremely low recruitment amount and low revenue and low rookie graduation rate, thus suspected to have ceased operations",
       "source": "terminology-final"
     },
     {
       "zh": "经营波动公会",
-      "en": "Creator Networks with irregular performance",
+      "en": "Agencies with irregular performance",
       "definition": "CNs that cannot meet the standards of new rookie graduation rate/ 15-day voluntary quit rate",
       "source": "terminology-final"
     },
@@ -1748,13 +1748,13 @@
     },
     {
       "zh": "老大公会 / 成熟公会",
-      "en": "Senior Creator Network",
+      "en": "Senior Agency",
       "definition": "",
       "source": "terminology-backup"
     },
     {
       "zh": "老小公会 / 非成熟公会",
-      "en": "Junior Creator Network",
+      "en": "Junior Agency",
       "definition": "",
       "source": "terminology-backup"
     },
@@ -2114,13 +2114,13 @@
     },
     {
       "zh": "非成熟公会",
-      "en": "junior Creator Network",
+      "en": "junior Agency",
       "definition": "Junior CN: Starting from the 7th calendar month after onboarding for the first time, if the CN's revenue in the previous month is less than $30k/$50k/$80k.",
       "source": "terminology-final"
     },
     {
       "zh": "非新公会",
-      "en": "Non-new Creator Network / Existing Creator Network",
+      "en": "Non-new Agency / Existing Agency",
       "definition": "",
       "source": "terminology-backup"
     },

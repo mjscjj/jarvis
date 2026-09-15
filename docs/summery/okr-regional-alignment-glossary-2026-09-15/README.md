@@ -19,4 +19,6 @@
 
 合并时按 `Terminology Final EN → business Sheet1 → Arena/UI → Terminology-backup` 处理重复项，最终得到 355 个唯一中文术语，保存到 `data/okr/translation-glossary.json`。模型每批只接收在当前原文中实际出现的 glossary 条目，并优先使用最长匹配，避免较短词覆盖复合术语。
 
+产品明确指定“公会”统一使用 `Agency`，其优先级高于表格中的 `Creator Network`。因此 glossary 中中文包含“公会”且英文仍使用 `Creator Network` 的 18 个词条已统一改为 `Agency` 口径。
+
 原始 Sheets API 回执及各工作表单元格值位于 `evidence/`。
