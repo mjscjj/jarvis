@@ -117,3 +117,14 @@ func TestRefreshRegionalAlignmentUsesLatestReviewProgressAndCachesEnglish(t *tes
 		t.Fatalf("stored glossary hash = %q", translated.GlossaryHash)
 	}
 }
+
+func TestRegionalViewsEncodeMissingOwnersAsEmptyArrays(t *testing.T) {
+	demand := regionalDemandView(domain.RegionalDemand{})
+	if demand.RegionalPOCs == nil || demand.PlatformPOCs == nil {
+		t.Fatalf("demand owner arrays must be non-nil: regional=%v platform=%v", demand.RegionalPOCs, demand.PlatformPOCs)
+	}
+	decision := regionalDecisionView(domain.RegionalPlanDecision{})
+	if decision.RegionalPOCs == nil {
+		t.Fatal("decision owner array must be non-nil")
+	}
+}

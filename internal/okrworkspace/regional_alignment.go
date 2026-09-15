@@ -405,11 +405,11 @@ func regionalAlignmentView(row domain.RegionalAlignment) RegionalAlignmentView {
 }
 
 func regionalDemandView(row domain.RegionalDemand) RegionalDemandView {
-	return RegionalDemandView{ID: row.ID, Version: row.Version, RegionalOKR: row.RegionalOKR, Item: row.Item, Requirement: row.Requirement, Docs: nonNilDocs(row.Docs), Images: nonNilImages(row.Images), Priority: row.Priority, RegionalPOCs: append([]domain.FollowUpOwner(nil), row.RegionalPOCs...), PlatformPOCs: append([]domain.FollowUpOwner(nil), row.PlatformPOCs...), Acceptance: row.Acceptance, PlanKRIDs: nonNilStrings(row.PlanKRIDs), Deliverable: row.Deliverable, SortOrder: row.SortOrder}
+	return RegionalDemandView{ID: row.ID, Version: row.Version, RegionalOKR: row.RegionalOKR, Item: row.Item, Requirement: row.Requirement, Docs: nonNilDocs(row.Docs), Images: nonNilImages(row.Images), Priority: row.Priority, RegionalPOCs: nonNilFollowUpOwners(row.RegionalPOCs), PlatformPOCs: nonNilFollowUpOwners(row.PlatformPOCs), Acceptance: row.Acceptance, PlanKRIDs: nonNilStrings(row.PlanKRIDs), Deliverable: row.Deliverable, SortOrder: row.SortOrder}
 }
 
 func regionalDecisionView(row domain.RegionalPlanDecision) RegionalPlanDecisionView {
-	return RegionalPlanDecisionView{PlanKRID: row.PlanKRID, Version: row.Version, Onboard: row.Onboard, LaunchRegions: nonNilStrings(row.LaunchRegions), RegionalPOCs: append([]domain.FollowUpOwner(nil), row.RegionalPOCs...), RegionalOKR: row.RegionalOKR, Hidden: row.Hidden}
+	return RegionalPlanDecisionView{PlanKRID: row.PlanKRID, Version: row.Version, Onboard: row.Onboard, LaunchRegions: nonNilStrings(row.LaunchRegions), RegionalPOCs: nonNilFollowUpOwners(row.RegionalPOCs), RegionalOKR: row.RegionalOKR, Hidden: row.Hidden}
 }
 
 func nonNilStrings(values []string) []string {
@@ -418,6 +418,14 @@ func nonNilStrings(values []string) []string {
 	}
 	return values
 }
+
+func nonNilFollowUpOwners(values []domain.FollowUpOwner) []domain.FollowUpOwner {
+	if values == nil {
+		return []domain.FollowUpOwner{}
+	}
+	return append([]domain.FollowUpOwner(nil), values...)
+}
+
 func normalizeRegionalDemandInput(input RegionalDemandInput) (RegionalDemandInput, error) {
 	input.RegionalOKR, input.Item, input.Requirement, input.Deliverable = strings.TrimSpace(input.RegionalOKR), strings.TrimSpace(input.Item), strings.TrimSpace(input.Requirement), strings.TrimSpace(input.Deliverable)
 	input.Priority, input.Acceptance = strings.ToLower(strings.TrimSpace(input.Priority)), strings.ToLower(strings.TrimSpace(input.Acceptance))
