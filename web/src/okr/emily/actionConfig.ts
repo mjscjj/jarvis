@@ -41,7 +41,7 @@ export const OKR_ACTIONS: OKRActionDefinition[] = [
     key: 'remind_missing',
     title: '周报催填',
     shortLabel: '催',
-    description: '周一定位 Platform Team 周会，会前先逐人私聊催填，再按 O-KR 维度群内汇总提醒。',
+    description: '周一定位 Platform Team 周会，首轮逐人私聊催填并给出 AI 进展评审建议，再按 O-KR 维度群内汇总提醒。',
     promptKey: 'okr_agent_weekly_reminder',
     cadence: 'weekly',
     category: 'notification',

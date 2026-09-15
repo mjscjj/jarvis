@@ -453,8 +453,8 @@ function fromAPIKr(value: APIKr): Kr {
 		metricNote: value.metric_note,
     version: value.version,
 		weeklyCoreVersion: value.weekly_core_version,
-    metrics: value.metrics.map((metric) => ({ ...metric, images: metric.images ?? [] })),
-	    points: value.points.map((point) => ({
+    metrics: (value.metrics ?? []).map((metric) => ({ ...metric, images: metric.images ?? [] })),
+	    points: (value.points ?? []).map((point) => ({
 	      id: point.id,
 	      version: point.version ?? 0,
       kind: point.kind,
@@ -464,7 +464,7 @@ function fromAPIKr(value: APIKr): Kr {
       tags: point.tags ?? [],
       owners: (point.owners ?? []).map((owner): KrOwner => ({ email: owner.email, name: owner.name, unionId: owner.union_id })),
       score: point.score,
-      entries: point.entries.map((entry) => ({
+      entries: (point.entries ?? []).map((entry) => ({
         id: entry.id,
 		version: entry.version,
         status: entry.status,

@@ -71,10 +71,12 @@ func TestRepositoryWeeklyReportReminderTemplateListsReviewIssues(t *testing.T) {
 		"{{missing_core_section}}",
 		"{{missing_score_section}}",
 		"{{unchanged_section}}",
+		"{{quality_review_section}}",
 		"{{week}}",
 		"{{count}}",
 		"{{kr_title}}",
 		"{{fill_url}}",
+		"以上为AI评审判断，仅供参考",
 	} {
 		if !strings.Contains(template, placeholder) {
 			t.Errorf("reminder template missing review issue placeholder %s", placeholder)
@@ -96,6 +98,8 @@ func TestOKRWeeklyReminderUsesBroadcastDelivery(t *testing.T) {
 	for _, want := range []string{
 		"`feishu-broadcast` Skill", "Jarvis通知机器人", "企业邮箱", "不得搜索、复用或创建助手群",
 		"`Platform Team Weekly Catch Up`", "`yield-until`", "前一个自然日的 19:30", "前 4 小时",
+		"2026-W38", "2026-09-16T17:00:00+08:00", "2026-09-16T18:00:00+08:00", "2026-09-15T19:30:00+08:00", "2026-09-16T13:00:00+08:00",
+		"`okr_agent_progress_review`", "吴拓、刘洋、耿馨妍、苏穆辰、刘寅、张月仁、刘力华", "数据足以支撑结论、与上周有实质差异且业务价值已经写清", "每个一级 KR 最多输出一句", "以上为AI评审判断，仅供参考",
 		"`[Core Group] Platform Team`", "`feishu-send-message` Skill", "按 O-KR 维度", "请尽快更新：https://emily.bytedance.net/#/weekly-report?quarter=2026-Q3&tab=review-fill",
 		"<at user_id=\"...\">姓名</at>", "mentions[]", "禁止只写普通文本 `@姓名`",
 	} {
@@ -127,6 +131,10 @@ func TestWeeklyReportReminderSkillUsesTwoBoardsAndFinalPrompt(t *testing.T) {
 		"missing_core_section",
 		"missing_score_section",
 		"unchanged_section",
+		"quality_review_section",
+		"scripts/okr-agent-tools prompt --key okr_agent_progress_review",
+		"每个一级 KR 最多一句修改建议",
+		"以上为AI评审判断，仅供参考",
 		"`feishu-send-message` Skill",
 		"<at user_id=\"...\">姓名</at>",
 	} {
