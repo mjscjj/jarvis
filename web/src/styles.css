@@ -411,7 +411,7 @@ body {
 
 .app-main.is-chat-page,
 .app-content.is-chat-page {
-  height: 100vh;
+  height: 100dvh;
   min-height: 0;
 }
 
@@ -625,11 +625,6 @@ body {
   .app-content {
     width: 100%;
     padding: 68px var(--space-3) 92px;
-  }
-
-  .app-main.is-chat-page,
-  .app-content.is-chat-page {
-    height: calc(100vh - 120px);
   }
 
   .app-content.is-chat-page {

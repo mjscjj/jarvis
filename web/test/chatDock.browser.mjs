@@ -90,8 +90,8 @@ try {
     const {PageContextProvider,usePageContext}=await import('${contextPath}');
     await import('/src/styles.css');
     function Harness(){const {context,navigate}=usePageContext();return React.createElement('div',{className:'app-shell',style:{'--sider-width':'184px'}},
-      React.createElement('nav',{},React.createElement('button',{onClick:()=>navigate('chat')},'对话入口'),React.createElement('button',{onClick:()=>navigate('tasks',{mode:'delegated',page:'2',state:'open'})},'工作台入口')),
-      React.createElement('div',{className:'app-content '+(context.active_key==='chat'?'is-chat-page':'')},React.createElement(Chat,{compact:context.active_key!=='chat'})));}
+      React.createElement('nav',{style:{position:'fixed',zIndex:200}},React.createElement('button',{onClick:()=>navigate('chat')},'对话入口'),React.createElement('button',{onClick:()=>navigate('tasks',{mode:'delegated',page:'2',state:'open'})},'工作台入口')),
+      React.createElement('div',{className:'app-main '+(context.active_key==='chat'?'is-chat-page':'')},React.createElement('div',{className:'app-content '+(context.active_key==='chat'?'is-chat-page':'')},React.createElement(Chat,{compact:context.active_key!=='chat'}))));}
     ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(React.StrictMode,null,React.createElement(AgentIdentityProvider,null,React.createElement(PageContextProvider,{initialKey:'tasks'},React.createElement(Harness)))));
   </script>` }))
   await page.goto(`${base}/__chat-test#/work?mode=delegated&page=2&state=open`)
@@ -267,6 +267,52 @@ try {
   await page.reload()
   await page.getByText('模型授权已过期（测试）', { exact: true }).waitFor()
   await page.getByText('回复已中断，以上为已保存内容。', { exact: true }).waitFor()
+
+  const assertChatLayout = async (label, scrollable) => {
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    const geometry = await page.evaluate(() => {
+      const content = document.querySelector('.app-content').getBoundingClientRect()
+      const list = document.querySelector('.chat-message-list')
+      const composer = document.querySelector('.chat-composer-area').getBoundingClientRect()
+      const send = document.querySelector('.chat-composer-actions > button').getBoundingClientRect()
+      return { viewport: innerHeight, mobile: innerWidth <= 767, contentBottom: content.bottom, listBottom: list.getBoundingClientRect().bottom, listHeight: list.clientHeight, listScrollHeight: list.scrollHeight, composerTop: composer.top, composerBottom: composer.bottom, sendBottom: send.bottom, pageHeight: document.documentElement.scrollHeight }
+    })
+    const bottom = Math.min(geometry.contentBottom, geometry.viewport - (geometry.mobile ? 68 : 0))
+    assert.ok(geometry.composerTop >= (geometry.mobile ? 52 : 0), `${label}: ${JSON.stringify(geometry)}`)
+    assert.ok(geometry.composerBottom <= bottom + 1 && geometry.sendBottom <= bottom + 1, `${label}: composer is clipped: ${JSON.stringify(geometry)}`)
+    assert.ok(geometry.listHeight > 0 && geometry.listBottom <= geometry.composerTop + 1, `${label}: messages overlap composer: ${JSON.stringify(geometry)}`)
+    assert.ok(geometry.pageHeight <= geometry.viewport + 1, `${label}: page scrolls: ${JSON.stringify(geometry)}`)
+    if (scrollable) assert.ok(geometry.listScrollHeight > geometry.listHeight, `${label}: messages should scroll`)
+  }
+  const fullInput = page.getByPlaceholder('问一个问题，或告诉我你想推进什么…')
+  const viewports = [{ width: 1280, height: 800 }, { width: 1280, height: 500 }, { width: 844, height: 390 }, { width: 767, height: 600 }, { width: 390, height: 844 }, { width: 390, height: 500 }]
+  for (const longHistory of [false, true]) {
+    sessions.get('s4').messages = longHistory ? Array.from({ length: 80 }, (_, index) => ({ id: `layout-${index}`, role: index % 2 ? 'assistant' : 'user', text: `第 ${index + 1} 条消息\n\n` + '检查长对话的滚动区域。\n\n'.repeat(5), created_at: new Date().toISOString() })) : []
+    sessions.get('s4').draft = {}
+    await page.reload()
+    await fullInput.waitFor()
+    for (const viewport of viewports) {
+      await page.setViewportSize(viewport)
+      await assertChatLayout(`${longHistory ? 'long history' : 'empty chat'} ${JSON.stringify(viewport)}`, longHistory)
+    }
+  }
+  await fullInput.fill(Array.from({ length: 12 }, (_, index) => `草稿第 ${index + 1} 行`).join('\n'))
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport)
+    await assertChatLayout(`multiline draft ${JSON.stringify(viewport)}`, true)
+  }
+  await fullInput.fill('长回复布局测试')
+  await fullInput.press('Enter')
+  await page.locator('.chat-composer-actions > button').filter({ hasText: '停止' }).waitFor()
+  await page.evaluate(() => window.__chatDelta('新增的流式回复段落。\n\n'.repeat(300)))
+  await assertChatLayout('streaming reply', true)
+  await page.locator('.chat-message-list').evaluate(el => { el.scrollTop = 0 })
+  await assertChatLayout('scrolled to history start', true)
+  await fullInput.fill('滚动后仍可继续输入')
+  assert.equal(await fullInput.inputValue(), '滚动后仍可继续输入')
+  if (process.env.CHAT_TEST_SCREENSHOT) await page.screenshot({ path: process.env.CHAT_TEST_SCREENSHOT })
+  await page.evaluate(() => window.__chatFinish())
+  await page.locator('.chat-composer-actions > button').filter({ hasText: '发送' }).waitFor()
   assert.deepEqual(errors, [])
   console.log(JSON.stringify({ result: 'passed', composerHeight: initialHeight, checks: ['draft across pages', 'draft on fast session switch', 'serialized autosaves', 'same-session draft', 'model and effort', 'automatic source lookup', 'file upload/remove', 'stream across pages', 'stop', 'reply detail', 'visible API errors', '320–1280px layout', 'collapse/expand focus', 'archived deep link', 'new session', 'visible Agent selection', 'unavailable Agent disabled', 'Agent switch cancellation', 'light theme', 'selected session styling', 'Shift+Enter newline', 'rejected input and attachments retained', 'remote reply stop', 'refresh and completion polling', 'clear only after acceptance'], apiCalls: calls.length }))
 } catch (error) {
