@@ -70,6 +70,12 @@ OKR 飞书登录会话已持久化在 Jarvis 私有运行主库的 `okr_workspac
 
 ## 当前读写边界
 
+### 旧页面负责人兼容
+
+`internal/api/okr_legacy_owners.go` 在 OKR API 入口、严格 JSON 校验前转换 `owners[].open_id`，覆盖 O/KR/Point 嵌套负责人。已核验映射来自 `data/okr/legacy-owner-identities.json`（94 个历史 ID，保留来源应用及文档行证据）；命中后写入邮箱与规范姓名，未命中直接移除该负责人，不因未知 OpenID 拒绝正文保存。已有 email 优先；没有 open_id 的现代请求和仅姓名负责人保持原有语义。其它字段、版本冲突等仍按原接口校验。
+
+兼容只发生在输入边界，数据库及响应继续使用 email，不重新持久化旧 ID，不修改评论 mention 或任意嵌入正文。映射文件启动时加载，缺失或无效即启动失败；更新映射后需重新部署。原始请求在转换前由通用 Hertz 请求日志保存，转换/移除计数另记服务日志。
+
 ### 通用 OKR
 
 - API 前缀：`/api/okr/*`。实际注册见 `internal/api/okr_module_routes.go`。
@@ -89,7 +95,7 @@ OKR 飞书登录会话已持久化在 Jarvis 私有运行主库的 `okr_workspac
 - “区域 OKR 对齐”按季度绑定一份 Biz OKR Plan，并只读投影上一季度 Review；五个区域分别保存需求、Platform KR 上车决定、分类顺序和 Recap 展示覆盖，不复制 O/KR/Point。分享链接仍进入同一 Biz 页面，登录用户可共同编辑和评论；`regional_auto_match_access` 只控制张若怡的“自动匹配”按钮可见性，不作为数据接口权限。
 - Review 的结构化待跟进事项支持 `not_started`、`in_progress`、`done`、`abandoned` 四种状态；Review 会议页只开放状态编辑，其余字段保持只读。
 - 正式 Progress 的写入仍调用 `/api/okr/*`，写完再回读 Biz 组合视图，防止页面本地状态丢失 Biz 字段。
-- 多人填写使用细粒度乐观并发：已有实体按 `version` 做 CAS，首次周核心数据与首次评分从版本 1 开始；页面以服务端最新结果为基线重放保存期间的新草稿，评分和 Meego 确认只合并自己负责的字段。Objective/KR 排序使用范围顺序快照，评论编辑使用版本；级联删除以及从 KR 中移除 Metric/Point 都在同一写入临界区校验覆盖子项/回复的删除快照。冲突返回 409 并保留可继续处理的本地输入，不允许旧页面静默覆盖或删除协作者刚保存的数据。
+- 多人填写使用细粒度乐观并发：Plan 的 KR 文案、负责人、标签、指标和具体条目结构通过 `PATCH /api/biz-okr/plans/:plan_id/krs/:kr_id` 按单个 KR 的 `version` 保存；不同 KR 即使位于同一个 O 下也可并行保存，只有同一个 KR 的并发编辑才会冲突。具体条目正文继续按 Point 独立保存，O 级接口只用于 O 文案及 KR 增删、排序，并校验全部既有 KR 版本，防止旧浏览器的 O 快照覆盖新版 KR 写入。首次周核心数据与首次评分从版本 1 开始；页面以服务端最新结果为基线重放保存期间的新草稿，评分和 Meego 确认只合并自己负责的字段。Objective/KR 排序使用范围顺序快照，评论编辑使用版本；级联删除以及从 KR 中移除 Metric/Point 都校验覆盖子项/回复的删除快照。冲突返回 409 并保留可继续处理的本地输入，不允许旧页面静默覆盖或删除协作者刚保存的数据。
 - `OKR Agent` 页面按“通知与跟进 / 材料生成 / Prompt”组织：四个可调度行动在各自任务详情中维护执行时间和绑定 Prompt；第三个 Tab 集中编辑没有绑定定时行动的 Markdown Prompt。
 - OKR AI Review 是只读同步能力。Plan 页面使用 `okr-agent-plan-review.md` 评审执行前的目标、成功标准、取舍和路径；Review 周使用 `okr-agent-progress-review.md` 评审结果、数据、归因、风险和下一步。两份文件是各自唯一语义真源。
 
@@ -151,7 +157,7 @@ Objective→KR、KR→Metric/Point 和 Owner 等 OKR 内部关系由 OKR 原生�
 
 ### 稳定飞书人员身份（2026-09-14）
 
-业务 Owner、Follow-up 与评论 mentions 统一使用 `email,name,union_id?`，邮箱必须完整；邮箱前缀只用于搜索。`open_id` 只在飞书接口内部及作者认证留痕中使用。`owner_key/person_id` 从邮箱派生，姓名不改变身份。旧客户端提交 `open_id` 会被拒绝，需刷新。
+业务 Owner、Follow-up 与评论 mentions 统一使用 `email,name,union_id?`，邮箱必须完整；邮箱前缀只用于搜索。`open_id` 只在飞书接口内部及作者认证留痕中使用。`owner_key/person_id` 从邮箱派生，姓名不改变身份。旧客户端提交的 Owner `open_id` 会在 API 入口按固定历史映射转换；完全找不到的负责人被移除，但正文继续保存。
 
 通知与登录共用 `feishu.app_id`；每条通知显式选择 `feishu.cli_profile`，启动校验实际 App ID。目录默认使用同应用 Bot，需通讯录基本资料、邮箱权限及相应数据范围。权限未开通时，仅允许显式配置 `directory_identity: user`、`directory_app_id`、`directory_profile` 的过渡目录；不继承 CLI 默认身份。头像按同目录的精确邮箱匹配，缺图显示姓名占位。
 

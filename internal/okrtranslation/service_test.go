@@ -50,7 +50,7 @@ func TestTranslateSuppliesOnlyMatchingGlossaryTerms(t *testing.T) {
 	model := &fakeCompleter{omitID: -1}
 	service, err := New(model, Glossary{hash: "glossary-v1", Terms: []GlossaryTerm{
 		{Chinese: "公会任务", English: "Fee Policy"},
-		{Chinese: "公会", English: "Creator Network"},
+		{Chinese: "公会", English: "Agency"},
 		{Chinese: "直播间", English: "LIVE Room"},
 	}})
 	if err != nil {

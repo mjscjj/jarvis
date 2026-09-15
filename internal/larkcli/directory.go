@@ -114,7 +114,7 @@ func (d *Directory) search(ctx context.Context, query string, avatars bool) ([]D
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if d.refreshed.IsZero() || time.Since(d.refreshed) > 15*time.Minute {
+	if d.refreshed.IsZero() || time.Since(d.refreshed) > directoryQueryTTL {
 		people, err := d.fetch(ctx)
 		if err != nil {
 			return nil, err
@@ -146,7 +146,7 @@ func (d *Directory) Resolve(ctx context.Context, email string) (DirectoryPerson,
 		d.mu.Lock()
 		p, ok := d.userCache.People[email]
 		d.mu.Unlock()
-		if ok && !p.Ambiguous && time.Since(p.At) < directoryTTL {
+		if ok && !p.Ambiguous && time.Since(p.At) < directoryIdentityTTL {
 			return p.Person, nil
 		}
 	}

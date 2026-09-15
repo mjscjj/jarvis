@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { generateReminderBatch, getReminderBatches, getReminderPreview } from '../api'
 import type { ReminderBatch, ReminderPreview as ReminderPreviewData } from '../types'
+import { PersonAvatar } from './PersonAvatar'
 
 type PreviewState =
   | { kind: 'loading'; requestKey: string }
@@ -93,8 +94,9 @@ export function ReminderPreview({ quarter, week, onClose, readOnly = false }: { 
               {visibleState.data.recipients.filter((recipient) => recipient.needsReminder).map((recipient) => (
                 <article key={recipient.ownerEmail || recipient.ownerName} className="rounded-md border border-slate-200 bg-slate-50/60 p-3">
                   <div className="mb-2 flex items-center justify-between gap-2">
-                    <div className="text-xs font-medium text-slate-700">
-                      {recipient.ownerName}
+                    <div className="inline-flex items-center gap-1 text-xs font-medium text-slate-700">
+                      <PersonAvatar name={recipient.ownerName} email={recipient.ownerEmail} size="size-5 text-[9px]" />
+                      <span>{recipient.ownerName}</span>
                       <span className="ml-1.5 font-normal text-amber-600">缺 {recipient.missingCount}/{recipient.dueCount}</span>
                     </div>
                     <button

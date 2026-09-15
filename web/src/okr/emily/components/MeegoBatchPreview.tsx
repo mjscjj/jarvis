@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { APIError, confirmMeegoProgress, getMeegoBatchPreview } from '../api'
 import { useBoard } from '../board'
 import type { Kr, MeegoBatchPreview as MeegoBatchPreviewData, MeegoBatchPreviewItem, Status } from '../types'
+import { PeopleInline } from './PeopleInline'
 
 type PreviewState =
   | { kind: 'loading'; requestKey: string }
@@ -152,7 +153,10 @@ export function MeegoBatchPreview({ quarter, week, onClose, onOpenPoint, readOnl
                       <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${tone.className}`}>{tone.label}</span>
                       <div className="min-w-0 flex-1">
                         <div className="text-xs font-medium text-slate-700">{item.pointTitle}</div>
-                        <div className="mt-0.5 truncate text-[10px] text-slate-400">{item.ownerName || '未分配'} · {item.krTitle}</div>
+                        <div className="mt-0.5 flex min-w-0 items-center gap-1 text-[10px] text-slate-400">
+                          <PeopleInline people={item.owners} compact empty="未分配" />
+                          <span className="truncate">· {item.krTitle}</span>
+                        </div>
                         <div className={`mt-0.5 text-[10px] ${sync.className}`} title={item.sync?.lastError}>{sync.text}</div>
                       </div>
 							{!readOnly && item.preview?.needsReview && <button type="button" onClick={() => beginConfirm(item)} className="rounded-md border border-blue-200 bg-white px-2 py-1 text-[10px] text-blue-600 hover:bg-blue-50">确认进展</button>}

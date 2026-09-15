@@ -51,14 +51,15 @@ type PlanObjectiveView struct {
 }
 
 type PlanKRView struct {
-	ID         string          `json:"id"`
-	Title      string          `json:"title"`
-	Version    int32           `json:"version"`
-	Owners     []OwnerView     `json:"owners"`
-	MetricNote string          `json:"metric_note"`
-	Metrics    []MetricView    `json:"metrics"`
-	Points     []PlanPointView `json:"points"`
-	Tags       []TagView       `json:"tags"`
+	ID             string          `json:"id"`
+	Title          string          `json:"title"`
+	Version        int32           `json:"version"`
+	StructureToken string          `json:"structure_token"`
+	Owners         []OwnerView     `json:"owners"`
+	MetricNote     string          `json:"metric_note"`
+	Metrics        []MetricView    `json:"metrics"`
+	Points         []PlanPointView `json:"points"`
+	Tags           []TagView       `json:"tags"`
 }
 
 type PlanPointView struct {

@@ -74,6 +74,7 @@ export function adoptRemoteVersionsForOverwrite(local: Kr, remote: Kr): Kr {
   const merged = clone(local)
   const remotePoints = new Map(remote.points.map((point) => [point.id, point]))
   merged.version = remote.version
+	merged.structureToken = remote.structureToken
   merged.weeklyCoreVersion = remote.weeklyCoreVersion
   for (const point of merged.points) {
     const remotePoint = remotePoints.get(point.id)

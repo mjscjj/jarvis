@@ -1,0 +1,2164 @@
+{
+  "version": 1,
+  "fetched_at": "2026-09-15T09:45:00Z",
+  "precedence": [
+    "terminology-final",
+    "business-terms-sheet1",
+    "arena-ui",
+    "terminology-backup"
+  ],
+  "sources": [
+    {
+      "url": "https://bytedance.my.larkoffice.com/sheets/DgBcsRc49hwN7ltuCDllS2gwgAe",
+      "sheet": "Sheet1",
+      "mapping": "中文CN → EN"
+    },
+    {
+      "url": "https://bytedance.sg.larkoffice.com/sheets/Xxl9s00jYh8nn9tqfZBlSXVGg8g",
+      "sheet": "Terminology",
+      "mapping": "中文含义 / CN → @周旻淅 Minxi Zhou Final EN；为空时使用英文 / EN"
+    },
+    {
+      "url": "https://bytedance.sg.larkoffice.com/sheets/Xxl9s00jYh8nn9tqfZBlSXVGg8g",
+      "sheet": "Terminology-backup",
+      "mapping": "中文含义 / CN → 英文 / EN（最低优先级）"
+    },
+    {
+      "url": "https://bytedance.sg.larkoffice.com/sheets/RVpQsK3mwh38Zyt2Pexl0LJng7b",
+      "sheet": "Sheet1",
+      "mapping": "中文 → English（Arena UI 语境）"
+    }
+  ],
+  "terms": [
+    {
+      "zh": "75 分位",
+      "en": "75 percentile",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "Arena Global",
+      "en": "Arena Global",
+      "definition": "站点名，中英文一致",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "Creator Network",
+      "en": "Creator Network",
+      "definition": "产品/模块语境下建议保留原文",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "Go LIVE",
+      "en": "Go LIVE",
+      "definition": "中英文一致",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "KA跨国经营",
+      "en": "KA transnational operation",
+      "definition": "",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "LIVE Icon",
+      "en": "LIVE Icon",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "M1素人营收突破主播数",
+      "en": "Number of creators who achieved M1",
+      "definition": "rookie creators who achieved the rookie milestone 1 bonus (a certain diamond request ) in task A",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "MCN转型",
+      "en": "multi-channel network",
+      "definition": "MCN are transforming to  TikTok live streaming",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "Operation Region",
+      "en": "Operation Region",
+      "definition": "FAQ 中出现的业务词，建议保留英文为标准写法",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "TnS",
+      "en": "TnS",
+      "definition": "中英文一致",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "UID",
+      "en": "UID",
+      "definition": "中英文一致",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "User Handle",
+      "en": "User Handle",
+      "definition": "页面实际保留英文",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "xxx 维度",
+      "en": "xxx-level",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "一次性奖励",
+      "en": "one-off bonus",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "一次性激励",
+      "en": "one-time bonus",
+      "definition": "A bonus that is given only once when creators hit a certain milestone",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "一级导航",
+      "en": "Primary Navigation",
+      "definition": "用于描述左侧主模块层级",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "三方仲裁",
+      "en": "platform resolution",
+      "definition": "A platform resolution rule. Both the CN and the creator could provide evidence, and TT platform will determine who is at fault. If the CN has no responsibility, then the creator cannot quit from the CN; If the CN is at fault, the creator can quit without a cooling-off period after quitting",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "三方关系",
+      "en": "Tripartite Relationship",
+      "definition": "Creator’s entry, transfer, exit rules",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "下载",
+      "en": "Download",
+      "definition": "导出或下载动作入口",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "专门",
+      "en": "exclusively",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "两方判责",
+      "en": "additional fees associated with quitting creators",
+      "definition": "The creator will quit from the CN on the 30th day after initiating the quit notice. During this period, creator and CN could submit materials, and the platform will determine who is at fault. If the CN has no responsibility, the creator will have a 60 day cooling-off period after leaving the CN (cannot join any CN), and the platform will provide additional fee for the corresponding CN for 60 days; If the CN is at fault, there will be no cooling off period after the creator quits",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "中位数 / 中价值的",
+      "en": "median",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "中文",
+      "en": "Chinese",
+      "definition": "页面实际写法",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "中腰部",
+      "en": "mid-tier",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "主播",
+      "en": "Creator",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "主播15日主动退会率",
+      "en": "15-day voluntary quit rate",
+      "definition": "= The number of creators who voluntarily exit the creator network within the first 15 days after joining divided by the number of creators who joined the creator network in the previous calendar month.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "主播T+15退会率",
+      "en": "15-day quit rate",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "主播中心",
+      "en": "Host Center",
+      "definition": "页面实际写法",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "主播入会基线",
+      "en": "baseline Diamond goal at joining",
+      "definition": "The revenue of the creator before joining the creator network.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "主播入会弹窗机制",
+      "en": "creator entry reminder",
+      "definition": "one of the tools of graduation challenge; for some of the CNs with fluctuating performance, when they inviting creators, creators will get a pop-up alert window to display the risk of poor performance of the certain CN",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "主播入会邀请函",
+      "en": "creator network invitation",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "主播团队",
+      "en": "Creator's Team",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "主播成材线",
+      "en": "graduation threshold",
+      "definition": "If a creator's revenue reaches the graduation threshold level, they are considered a graduate creator",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "主播招募",
+      "en": "creator recruitment",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "主播流转",
+      "en": "creator mobility",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "主页头像挂件",
+      "en": "profile frame",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "二级页面",
+      "en": "Secondary Page",
+      "definition": "用于描述一级模块下的具体功能页面",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "交叉验证",
+      "en": "cross-validate",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "付费转化率",
+      "en": "gifting rate",
+      "definition": "",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "任务分档",
+      "en": "task level",
+      "definition": "2025年没有档位了",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "任务目标",
+      "en": "Diamond target",
+      "definition": "Diamond target for this month",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "任务目标达成率",
+      "en": "task target completion rate",
+      "definition": "the actual diamond÷the diamond target",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "任务等级",
+      "en": "task level",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "传奇",
+      "en": "Legend",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "传达 / 传递",
+      "en": "communicate",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "作恶",
+      "en": "hack",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "供给侧",
+      "en": "（on）supply side",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "侧边栏",
+      "en": "Sidebar",
+      "definition": "可用于描述左侧模块栏",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "促销（加热）工具",
+      "en": "promotion tools / heating tools",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "保存",
+      "en": "Save",
+      "definition": "常见表单动作词",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "保底",
+      "en": "minimum guarantee",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "保底分成",
+      "en": "guarantee payout",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "保级",
+      "en": "retention",
+      "definition": "The creator's revenue reaches a milestone for two consecutive months.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "信息流广告",
+      "en": "contextual in-feeds ads",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "修改",
+      "en": "Modify / Edit / Update",
+      "definition": "根据语境选择；配置项调整常见 Modify 或 Edit",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "候选池",
+      "en": "Candidate Pool",
+      "definition": "FAQ 中出现的业务词",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "停播",
+      "en": "cessation",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "停用",
+      "en": "Disable",
+      "definition": "配置开关或功能停用动作",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "健康分",
+      "en": "health score",
+      "definition": "Health Score is a rating system (from 0 to 100) to evaluate an creator network's operational compliance on the platform based on the Agency Service Agreement and display to each CN.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "光辉",
+      "en": "Glow",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "入会主播",
+      "en": "creators who joined",
+      "definition": "Creator who has passed the entry process and successfully joined the creator network who invited them.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "入会审核",
+      "en": "entry review",
+      "definition": "Creator entry process while the system and manual moderation will check the creator’s threshold.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "入会政策",
+      "en": "entry policy",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "入会模式",
+      "en": "Regular Creator Program / RCP",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "入驻",
+      "en": "onboarding",
+      "definition": "The creator network signs a contract with the platform to start the live streaming business.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "公会",
+      "en": "Agency",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "公会 ID",
+      "en": "Agency ID",
+      "definition": "建议与上项配套使用",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "公会中心",
+      "en": "Agency",
+      "definition": "中文公会中心对应英文 Creator Network",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "公会任务",
+      "en": "Fee Policy",
+      "definition": "Policy for awarding the creator network",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "公会判责",
+      "en": "bipartite platform resolution",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "公会名称",
+      "en": "Agency Name",
+      "definition": "与公会中心命名保持一致",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "公会成材线",
+      "en": "Agency's graduation threshold",
+      "definition": "Once the creator network reaches the CN revenue target, it will be considered  as a senior creator network.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "公会成熟度",
+      "en": "Agency maturity",
+      "definition": "To describe how long the CN has been on the platform since its onboarding",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "公会收入",
+      "en": "agency revenue",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "公会服务费",
+      "en": "Buddy Reward",
+      "definition": "",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "公会治理",
+      "en": "Agency governance",
+      "definition": "",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "公会管理机制",
+      "en": "CN Management Mechanism",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "公会长",
+      "en": "Agency Owner",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "公会首次产生流水时间",
+      "en": "time of first Diamond received",
+      "definition": "time of first Diamond received by a CN",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "共识",
+      "en": "consensus",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "内容管理",
+      "en": "CMS",
+      "definition": "中文界面显示内容管理，英文直接显示 CMS",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "冷启动",
+      "en": "cold-start",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "分成比",
+      "en": "bonus ratio",
+      "definition": "",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "分成比扣减",
+      "en": "bonus adjustment",
+      "definition": "one of the tools of graduation challenge; the bonus ratio will be adjusted for some CNs with a very low rookie graduation rate / high 15-day voluntary quit rate",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "分摊",
+      "en": "apportion",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "划线",
+      "en": "tiering",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "列",
+      "en": "Column",
+      "definition": "表格列表字段",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "列表",
+      "en": "List",
+      "definition": "通用页面类型",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "创建",
+      "en": "Create",
+      "definition": "常见动作词",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "删除",
+      "en": "Delete",
+      "definition": "常见动作词",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "利润",
+      "en": "profit",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "刷新",
+      "en": "Refresh",
+      "definition": "列表或面板常见按钮",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "刻画",
+      "en": "depict / describe",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "削峰",
+      "en": "peak flattening",
+      "definition": "制定公会流水目标时要确定流水基线，基线定义过程中会用削峰的方式处理公会历史流水高点。When setting the CN revenue targets, it is essential to establish a baseline. During the baseline definition process, the historical revenue peaks of the CN will be addressed using a smoothing approach(revenue peak will be excluded).",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "前 10 名",
+      "en": "TOP 10",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "剔除 / 去除",
+      "en": "exclude",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "区分 / 差异化",
+      "en": "differentitaion",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "半白盒",
+      "en": "partial disclosure",
+      "definition": "不完全向公会透传的目标制定逻辑",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "原型",
+      "en": "prototype",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "去极致",
+      "en": "ex-outlier",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "发现",
+      "en": "Discover",
+      "definition": "首页左侧一级模块",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "取消",
+      "en": "Cancel",
+      "definition": "弹窗或配置页常见按钮",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "变现模式",
+      "en": "monetization model",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "史诗",
+      "en": "Epic",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "合规评估",
+      "en": "compliance review",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "启用",
+      "en": "Enable",
+      "definition": "配置开关或功能启用动作",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "回本周期",
+      "en": "payback cycle",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "回溯",
+      "en": "backfill",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "团播",
+      "en": "group LIVE",
+      "definition": "Number of on-screen participants ≥ 3 AND Requires a host (must be present, usually as a voice-over)",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "在会天数",
+      "en": "in-creator network days",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "在用于主播招募的申请链接中，展示获胜者标签",
+      "en": "Application link with winner label for creator scouting",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "垂直视角",
+      "en": "vertical perspective",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "基础活跃",
+      "en": "go-LIVE requirement",
+      "definition": "The minimum requirements that a creator needs to meet  for live streaming each month.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "基线",
+      "en": "baseline",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "填谷",
+      "en": "valley filling",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "增效度量",
+      "en": "uplift",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "复盘",
+      "en": "retrospective / review",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "外站",
+      "en": "off-platform",
+      "definition": "other live streaming platform",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "大小号状态",
+      "en": "Multiple account status",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "失败",
+      "en": "Failed / Failure",
+      "definition": "状态用 Failed，名词可用 Failure",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "头像",
+      "en": "Avatar",
+      "definition": "用于描述头像入口",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "奖励",
+      "en": "reward",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "套利 / 套汇",
+      "en": "arbitrage",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "字段",
+      "en": "Field",
+      "definition": "表单或配置项通用术语",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "存量",
+      "en": "existing / current",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "季度滚动",
+      "en": "rolling iterate quarterly",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "季度营收任务",
+      "en": "Quarterly incremental revenue task",
+      "definition": "Bonus will be distributed based on the quarterly revenue growth and graduation ratio of the creator network.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "完全透传",
+      "en": "full disclosure",
+      "definition": "full disclosure to CN",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "完整性",
+      "en": "integrity",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "定性逻辑",
+      "en": "qualitative logic",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "审核",
+      "en": "Review / Approve",
+      "definition": "依语境可能不同",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "宽松条款",
+      "en": "lenient terms",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "导入",
+      "en": "Import",
+      "definition": "上传数据或配置场景",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "导出",
+      "en": "Export",
+      "definition": "报表、列表导出场景",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "导航栏",
+      "en": "Navigation Bar",
+      "definition": "可用于描述左侧主导航",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "封禁",
+      "en": "suspension",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "展开",
+      "en": "Expand",
+      "definition": "与收起对应",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "工作台",
+      "en": "Cockpit",
+      "definition": "更偏总览/驾驶舱语义",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "已停用",
+      "en": "Disabled",
+      "definition": "功能状态",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "已取消",
+      "en": "Canceled",
+      "definition": "流程或任务取消状态",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "已启用",
+      "en": "Enabled",
+      "definition": "功能状态",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "已完成",
+      "en": "Completed",
+      "definition": "任务处理完成状态",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "已批准",
+      "en": "Approved",
+      "definition": "权限或审批结果状态",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "帮助文档",
+      "en": "Help Center / Documentation",
+      "definition": "帮助入口常见表达",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "平台原型",
+      "en": "platform archetypr",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "年度订阅总结",
+      "en": "Subscription annual wrap",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "应用管理",
+      "en": "Application management",
+      "definition": "页面实际写法首字母并非全大写",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "底层口径",
+      "en": "bottom criteria",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "底薪",
+      "en": "base salary",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "建联",
+      "en": "contact",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "开播",
+      "en": "go LIVE",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "开播小时数",
+      "en": "Live Duration",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "归档",
+      "en": "round-down",
+      "definition": "入会前基线设定：主播加入公会前3个月max，经过向下取整数至以下档位之一的基线Baseline setting when joining an creator network : The maximum revenue in 3 months before joining an creator network (peak-flattened and rounded-down to one of the following baselines)",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "待处理",
+      "en": "Pending",
+      "definition": "等待处理的状态",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "成本",
+      "en": "cost",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "成材 Bonus",
+      "en": "Milestone Bonus",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "成材主播",
+      "en": "graduated creator",
+      "definition": "If a creator's revenue reaches the graduation threshold level, they are considered a graduate creator",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "成材挑战",
+      "en": "Graduation Challenge",
+      "definition": "a management mechanism using a series of \"Carrots & Sticks\" to  encourage CNs to improve their incubation cabability, so as to increase the graduated creators amout and rookie graduation rate of the platform",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "成材率",
+      "en": "graduation rate",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "成材线",
+      "en": "graduation baseline",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "成熟公会",
+      "en": "senior Agency",
+      "definition": "Senior CN: Starting from the first onboarding of the Creator Network on the platform, if the CN's revenue last month is greater than or equal to $30k/$50k/$80k.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "手动",
+      "en": "Manual / Manually",
+      "definition": "形容词与副词用法不同",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "手动修改",
+      "en": "Modify Manually / Manually Modify",
+      "definition": "推荐根据句式选用",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "手动定义",
+      "en": "Define Manually",
+      "definition": "FAQ 中 modified manually 语境可扩展使用",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "打正",
+      "en": "break-even",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "打赏人",
+      "en": "gifter",
+      "definition": "",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "批量操作",
+      "en": "Bulk Action",
+      "definition": "多选后的统一处理动作",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "找不到",
+      "en": "Not Found / Cannot Be Found",
+      "definition": "报错或 FAQ 场景高频表达",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "报名期",
+      "en": "Signup stage",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "拆解",
+      "en": "decompose",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "拉新基线",
+      "en": "creator revenue baseline before onboarding",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "拒绝",
+      "en": "Reject / Rejected",
+      "definition": "动作与结果状态",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "拦截",
+      "en": "intercept",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "指标一致性",
+      "en": "metric consistency",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "指标体系",
+      "en": "metrics system",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "指标口径",
+      "en": "metrics caliber",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "指标相关性",
+      "en": "metric correlation",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "推导 / 派生",
+      "en": "derivate",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "提交",
+      "en": "Submit",
+      "definition": "常见操作按钮术语",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "提成",
+      "en": "commission",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "提示",
+      "en": "Tooltip / Hint",
+      "definition": "悬浮提示或说明性文案",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "搜索",
+      "en": "Search",
+      "definition": "搜索动作或搜索入口",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "搜索框",
+      "en": "Search Box",
+      "definition": "通用组件名",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "操作列",
+      "en": "Actions",
+      "definition": "列表右侧操作区常用命名",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "收入",
+      "en": "revenue",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "收起",
+      "en": "Collapse",
+      "definition": "左侧导航栏折叠按钮",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "改善期",
+      "en": "improvement period",
+      "definition": "CNs with fluctuating performance will get a improvement period before the creator entry reminder period. if they complete the improvement and meet all the standards, the creator entry reminder period will not start.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "教育管理",
+      "en": "Education Management",
+      "definition": "培训、教育类模块",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "数据中心",
+      "en": "Data",
+      "definition": "页面英文实际写法较短",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "新入会主播目标",
+      "en": "target for new creators",
+      "definition": "the baseline of new creators joining in current month",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "新公会",
+      "en": "new Agency",
+      "definition": "New CN: A CN that has onboarded for the first time within 6 calendar months (excluding the month of onboard) and had last month's revenue of less than $30k/$50k/$80k.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "新公会考核",
+      "en": "trial period",
+      "definition": "From the day the CN joins to the end of the complete sixth calendar month, The platform identify and terminate CNs who do not comply with platform rules, have poor recruitment ability, weak business growth potential and poor service quality during the Trial Period.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "新公会限时任务",
+      "en": "New Agency task",
+      "definition": "Bonus will be distributed based on  creators  in the creator network who meet the go-LIVE activeness and monthly total revenue requirements",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "新手",
+      "en": "Novice",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "新手村",
+      "en": "Creator Network bootcamp",
+      "definition": "The Creator Network bootcamp is a learning and growth module designed for new Creator Networks on LIVE Backstage. It features a mission system centered around the core objectives of Creator Network operations. In the bootcamp, you can learn relevant courses, complete the missions, and get rewards. You will discover best practices for the livestreaming business, the platform, and how to scout and manage creators. This bootcamp helps you quickly get started with running a Creator Network.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "新星",
+      "en": "Breakthrough",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "无法显示",
+      "en": "Cannot Be Displayed",
+      "definition": "对应 FAQ 中 cannot be displayed",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "星启",
+      "en": "Rising",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "显示",
+      "en": "Display / Show",
+      "definition": "UI 呈现场景常用",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "暂无数据",
+      "en": "No Data",
+      "definition": "空状态高频文案",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "更多",
+      "en": "More",
+      "definition": "折叠菜单或更多操作入口",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "更新",
+      "en": "Update",
+      "definition": "高通用动作词",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "最佳粉丝团",
+      "en": "Best Fan Club",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "最高限额 / 封顶",
+      "en": "cap",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "月开播小时数",
+      "en": "monthly LIVE duration",
+      "definition": "The number of streaming hours for the creator in the current month.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "月有效开播天",
+      "en": "monthly valid go LIVE days",
+      "definition": "The number of valid streaming days for the creator in the current month.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "有效开播数",
+      "en": "Valid Live Day",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "未生效",
+      "en": "Not Taking Effect",
+      "definition": "常见 FAQ 语境",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "本月钻石",
+      "en": "Diamonds this month",
+      "definition": "",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "杠杆",
+      "en": "lever",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "标准",
+      "en": "criteria / criterion",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "标签页",
+      "en": "Tab",
+      "definition": "页面内切换区域的常见写法",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "档位数值",
+      "en": "tiered ratios",
+      "definition": "In the task, it will be categorized into different tiers, each with its own requirements and corresponding profit-sharing ratios.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "模块",
+      "en": "Module",
+      "definition": "通用层级名称",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "模型调优",
+      "en": "model optimization",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "次月公会任务目标",
+      "en": "Diamond target next month",
+      "definition": "Diamond target for next month",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "每日排行榜",
+      "en": "Daily Ranking",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "毛利润",
+      "en": "gross profit / gross margin",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "毛利率",
+      "en": "gross profit rate",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "水平视角",
+      "en": "horizontal perspective",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "汰换率",
+      "en": "Targeted separation rate",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "沟通中心",
+      "en": "Communication",
+      "definition": "页面实际写法",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "波动 / 波幅",
+      "en": "volatility",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "活动",
+      "en": "activity",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "活动中心",
+      "en": "Campaign",
+      "definition": "活动管理模块",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "活跃任务",
+      "en": "Activeness task",
+      "definition": "Bonus ratio are given based on the number of days and duration that the creator streams.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "流失",
+      "en": "attrition",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "流水增速",
+      "en": "growth rate",
+      "definition": "growth rate corresponding to current month’s revenue tier",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "流水增量任务",
+      "en": "Revenue Increment Task",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "流水目标任务",
+      "en": "Revenue Target Task",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "流水规模任务",
+      "en": "Revenue Scale Task",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "消费测",
+      "en": "（on）customer side",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "深入研究",
+      "en": "deep-dive",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "渗透率",
+      "en": "penetration rate",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "游戏运营",
+      "en": "Gaming",
+      "definition": "游戏业务相关",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "漏水",
+      "en": "leakage",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "漏洞",
+      "en": "loophole",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "激励期",
+      "en": "incentive period",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "激励框架",
+      "en": "incentive structure",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "激进版目标",
+      "en": "stretch goal",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "特殊入会",
+      "en": "special entry",
+      "definition": "Entry rule of special scenarios, eg misoperation, MCN incubation, multiple account special entry",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "特殊激励",
+      "en": "special bonus",
+      "definition": "",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "状态更新",
+      "en": "Status Update",
+      "definition": "首页公告中已出现 Feature Request Status Update",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "状态标签",
+      "en": "Status Tag",
+      "definition": "彩色状态标识或标签",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "生态中心",
+      "en": "Ecosystem",
+      "definition": "页面实际写法",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "生效",
+      "en": "Take Effect / Effective",
+      "definition": "权限、配置类文档常用",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "用户付费直播收入",
+      "en": "user-pay LIVE streaming revenue",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "用户服务",
+      "en": "Service center",
+      "definition": "页面实际写法为 Service center",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "申诉机制",
+      "en": "appeal rules",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "申请",
+      "en": "Apply / Application",
+      "definition": "动作用 Apply，名词用 Application",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "登船期",
+      "en": "onboarding period",
+      "definition": "",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "白银",
+      "en": "Silver",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "盈利压力",
+      "en": "profitability pressure",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "直播",
+      "en": "LIVE",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "直播广告",
+      "en": "in-stream LIVE ads",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "直播管理",
+      "en": "LIVE Hub",
+      "definition": "页面实际使用全大写 LIVE",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "直播间",
+      "en": "LIVE Room / Room",
+      "definition": "页面搜索框中出现 Room ID，正式文档可写 LIVE Room",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "直播间 ID",
+      "en": "Room ID",
+      "definition": "页面实际出现",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "看播转化率",
+      "en": "tap-through rate",
+      "definition": "",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "确认",
+      "en": "Confirm",
+      "definition": "弹窗或配置页常见按钮",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "空状态",
+      "en": "Empty State",
+      "definition": "列表无数据时的页面状态",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "站点切换",
+      "en": "Website",
+      "definition": "页面英文写法为 Website",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "竞赛期",
+      "en": "Competition stage",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "筛选器",
+      "en": "Filter",
+      "definition": "列表页高频组件",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "筛选条件",
+      "en": "Filter Criteria",
+      "definition": "用于描述当前筛选组合",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "签约落地",
+      "en": "contract signing",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "粉丝",
+      "en": "follower",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "粉丝团",
+      "en": "creator's team",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "系数",
+      "en": "coefficient",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "素人M1保级奖励",
+      "en": "Rookie milestone1 retention bonus",
+      "definition": "When the creator's revenue reaches a milestone for two consecutive months, they will receive a one-time bonus.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "素人主播",
+      "en": "rookie",
+      "definition": "If a creator's revenue has not reached the threshold level, they are considered a rookie.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "素人培养",
+      "en": "rookie incubation",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "素人新主播成材率",
+      "en": "New rookie graduation rate",
+      "definition": "=The number of creators whose revenue in the recent 30 days exceeds graduation threshold/The number of rookie creators who joined the CN in last 90 days and have a certain revenue level",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "素人突破",
+      "en": "Rookie Breakthrough",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "素人突破奖",
+      "en": "Rookie Breakthrough Bonus",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "素人营收突破奖励",
+      "en": "Rookie milestone bonus",
+      "definition": "When the creator's revenue reaches a milestone, they will receive a one-time bonus.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "素人营收突破奖励 0.5",
+      "en": "Rookie half-milestone bonus",
+      "definition": "When the creator's revenue reaches a half of milestone, they will receive a one-time bonus.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "素人营收突破奖励 1",
+      "en": "Rookie milestone 1 bonus",
+      "definition": "When the creator's revenue reaches a milestone, they will receive a one-time bonus.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "素人营收突破奖励 2",
+      "en": "Rookie milestone 2 bonus",
+      "definition": "When the creator's revenue reaches a more advanced milestone, they will receive another one-time bonus.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "累积的",
+      "en": "cumulative / accumulative",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "线下直播间",
+      "en": "offline studio",
+      "definition": "Individual live that make offline settings including room, decoration, equipment, offline operational services etc.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "经济模型",
+      "en": "economic model",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "经纪人",
+      "en": "Creator Manager",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "经营失活公会",
+      "en": "Agencies with low activity",
+      "definition": "CNs with extremely low recruitment amount and low revenue and low rookie graduation rate, thus suspected to have ceased operations",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "经营波动公会",
+      "en": "Agencies with irregular performance",
+      "definition": "CNs that cannot meet the standards of new rookie graduation rate/ 15-day voluntary quit rate",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "网路达人营销",
+      "en": "Live influencer marketing",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "老大公会 / 成熟公会",
+      "en": "Senior Agency",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "老小公会 / 非成熟公会",
+      "en": "Junior Agency",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "耦合",
+      "en": "couple",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "联运模式",
+      "en": "Advanced Creator Program / ACP",
+      "definition": "",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "腾挪",
+      "en": "move / transfer",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "自上而下地",
+      "en": "top down",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "自上而下的",
+      "en": "top-down",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "至尊",
+      "en": "Super",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "英语",
+      "en": "EN / English",
+      "definition": "页面按钮中出现 EN",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "草稿",
+      "en": "Draft",
+      "definition": "未正式提交前的状态",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "营收",
+      "en": "Revenue",
+      "definition": "与 LIVE Revenue 术语保持一致",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "营收 / 流水",
+      "en": "revenue / payout",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "营收基线",
+      "en": "Baseline Revenue",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "营收增量任务",
+      "en": "Incremental revenue task",
+      "definition": "Bonus will be distributed based on the achievement of the monthly revenue targets of the creator network",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "营收管理",
+      "en": "LIVE Revenue",
+      "definition": "与 LIVE 收益管理相关",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "营收规模任务",
+      "en": "Revenue scale task",
+      "definition": "Bonus are distributed based on the monthly revenue of the creator network.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "落地（实施）",
+      "en": "implementation",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "虚拟礼物",
+      "en": "virtual gifting",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "补发",
+      "en": "reissuement / supplyment",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "规模 / 等级",
+      "en": "scale",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "规模对应增速",
+      "en": "growth rate corresponding to revenue scale",
+      "definition": "growth rate corresponding to last month’s revenue tier",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "解耦",
+      "en": "decouple",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "计算公式",
+      "en": "calculation formula",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "订阅礼盒",
+      "en": "Subscription Swag Box",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "详情",
+      "en": "Details",
+      "definition": "进入对象详情页的常见写法",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "语言",
+      "en": "Language",
+      "definition": "账号菜单字段",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "误封",
+      "en": "mistaken suspension",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "调节系数",
+      "en": "adjustment coefficient",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "负增长",
+      "en": "negative growth / negative incremental",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "账号菜单",
+      "en": "Account Menu",
+      "definition": "推荐统一术语",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "资源管理",
+      "en": "Resource Hub",
+      "definition": "页面实际写法",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "赛道",
+      "en": "track",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "趋势调节",
+      "en": "trend adjustment",
+      "definition": "trend adjustment may take seasonality, previous month's revenue and events into consideration to make the target more reasonable.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "跃升率",
+      "en": "upward transition rate",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "跑通",
+      "en": "run through",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "转会主播",
+      "en": "transferred creator",
+      "definition": "Creators who transfer from other creator networks.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "转会政策",
+      "en": "transfer policy",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "返点",
+      "en": "rebate",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "进行中",
+      "en": "In Progress",
+      "definition": "任务或审批处理中状态",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "退会主播",
+      "en": "creator who quits / quitting creators",
+      "definition": "Originally a CN creator, then quitted from the CN",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "退会政策",
+      "en": "exit policy",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "退出",
+      "en": "Exit",
+      "definition": "账号菜单退出项",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "送出礼物",
+      "en": "Send Gift",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "透传",
+      "en": "disclosure",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "透露 / 公开",
+      "en": "disclose",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "通知期",
+      "en": "notice period",
+      "definition": "",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "通过",
+      "en": "Pass / Approved",
+      "definition": "审核通过语境",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "邀约管控",
+      "en": "invitation cap",
+      "definition": "for CNs with poor operation capability, a certain amount of invitation quota will be given to limit their recruitment.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "配置",
+      "en": "Configure / Configuration",
+      "definition": "动作可用 Configure，名词可用 Configuration",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "配置失败",
+      "en": "Configuration Failed",
+      "definition": "建议用于问题排查文档",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "重置",
+      "en": "Reset",
+      "definition": "筛选区常见按钮",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "金主",
+      "en": "top gifter",
+      "definition": "",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "金主 / 消费者",
+      "en": "Spender",
+      "definition": "与 Spender Hub 命名保持一致",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "金主中心",
+      "en": "Spender Hub",
+      "definition": "与打赏用户/消费者运营相关",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "金票",
+      "en": "elite quota",
+      "definition": "Quota for special creators joining the creator network.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "铂金",
+      "en": "Platinum",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "长线",
+      "en": "long-term",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "门槛 / 阈值",
+      "en": "threshold",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "闪光",
+      "en": "Gleam",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "附加值的",
+      "en": "value-adding",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "青铜",
+      "en": "Bronze",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "非成熟公会",
+      "en": "junior Agency",
+      "definition": "Junior CN: Starting from the 7th calendar month after onboarding for the first time, if the CN's revenue in the previous month is less than $30k/$50k/$80k.",
+      "source": "terminology-final"
+    },
+    {
+      "zh": "非新公会",
+      "en": "Non-new Agency / Existing Agency",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "面包屑",
+      "en": "Breadcrumb",
+      "definition": "页面导航层级结构",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "首页",
+      "en": "Homepage",
+      "definition": "面包屑中的首页入口",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "首页公告",
+      "en": "Homepage Notice",
+      "definition": "推荐用于首页公告区命名",
+      "source": "arena-ui"
+    },
+    {
+      "zh": "高粉主播",
+      "en": "high-follower creator",
+      "definition": "",
+      "source": "terminology-backup"
+    },
+    {
+      "zh": "黄金",
+      "en": "Gold",
+      "definition": "",
+      "source": "business-terms-sheet1"
+    },
+    {
+      "zh": "黑天鹅事件",
+      "en": "Black Swan event",
+      "definition": "",
+      "source": "terminology-backup"
+    }
+  ]
+}

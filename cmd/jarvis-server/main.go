@@ -69,6 +69,7 @@ import (
 	"jarvis/internal/worldprogress"
 
 	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/app/middlewares/server/recovery"
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/common/hlog"
 	"gorm.io/gorm"
@@ -722,7 +723,7 @@ func main() {
 	var extractWorker *extract.Worker
 	var semanticIndex *semantic.Index
 	var modelClient *provider.Client
-	if cfg.Extract.Enabled || *extractOnce {
+	if cfg.Extract.Enabled || *extractOnce || bizOKRModuleEnabled {
 		modelClient, err = provider.NewClient(
 			ark.BaseURL,
 			ark.APIKey,
@@ -1155,14 +1156,35 @@ func main() {
 		}
 		defer closeOKRChat()
 	}
-	h := server.Default(
+	h := server.New(
 		server.WithHostPorts(cfg.Server.Addr),
 		// Chat accepts 12 MiB files (OKR images: 10 MiB). Reserve 64 KiB for
 		// multipart framing; each upload handler still enforces its file limit.
 		server.WithMaxRequestBodySize(chat.MaxAttachmentBytes+(64<<10)),
+		// Keep exact multipart bytes available to the incoming-request journal;
+		// upload handlers still parse the form lazily through Hertz.
+		server.WithDisablePreParseMultipartForm(true),
 	)
-	h.Use(api.Compression())
 	h.Use(observability.Middleware())
+	apiRequestLog, err := observability.NewAPIRequestLogger(filepath.Join(runtimeRoot, "var", "log", "api-requests.jsonl"))
+	if err != nil {
+		fatalf("initialize API request log failed: %v", err)
+	}
+	defer apiRequestLog.Close()
+	// Capture the original payload before the development proxy, authentication,
+	// owner compatibility or strict request decoding can consume/reject it.
+	h.Use(apiRequestLog.Middleware(strings.TrimRight(cfg.Server.DevelopmentPath, "/") + "/api/"))
+	// Recovery must run inside the journal, so a handler panic is recorded with
+	// the actual recovered HTTP status rather than the default pre-recovery 200.
+	h.Use(recovery.Recovery())
+	h.Use(api.Compression())
+	if okrModuleEnabled {
+		legacyOwners, loadErr := api.LoadLegacyOKROwners(filepath.Join(runtimeRoot, "data", "okr", "legacy-owner-identities.json"))
+		if loadErr != nil {
+			fatalf("initialize legacy OKR owner compatibility failed: %v", loadErr)
+		}
+		h.Use(legacyOwners.Middleware())
+	}
 	h.Use(api.StaticAssetCacheHeaders())
 	if cfg.Server.DevelopmentSocket != "" {
 		h.Use(api.DevelopmentProxy(cfg.Server.DevelopmentSocket, cfg.Server.DevelopmentPath))
@@ -1231,17 +1253,10 @@ func main() {
 		if translationErr != nil {
 			fatalf("load regional OKR translation glossary failed: %v", translationErr)
 		}
-		translationCompleter, translationErr := okrtranslation.NewCodexCompleter(okrtranslation.CodexOptions{
-			Bin:             okrModuleConfig.PreviewReview.Bin,
-			Model:           okrModuleConfig.PreviewReview.Model,
-			Sandbox:         okrModuleConfig.PreviewReview.Sandbox,
-			ReasoningEffort: "low",
-			Timeout:         okrModuleConfig.PreviewReview.Timeout(),
-		})
-		if translationErr != nil {
-			fatalf("initialize regional OKR translation runner failed: %v", translationErr)
+		if modelClient == nil {
+			fatalf("initialize regional OKR translator failed: model client is nil")
 		}
-		translationService, translationErr := okrtranslation.New(translationCompleter, translationGlossary)
+		translationService, translationErr := okrtranslation.New(modelClient, translationGlossary)
 		if translationErr != nil {
 			fatalf("initialize regional OKR translator failed: %v", translationErr)
 		}

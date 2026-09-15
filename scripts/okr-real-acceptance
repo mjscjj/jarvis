@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Run the real OKR browser path and Feishu artifact readback as one check.
+set -uo pipefail
+okr_repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$okr_repo_root" || exit 1
+okr_run_dir="$(mktemp -d "$okr_repo_root/var/okr-real-run.XXXXXXXX")"
+chmod 700 "$okr_run_dir"
+okr_base_url="${OKR_REAL_BASE_URL:-https://emily.bytedance.net}"
+export OKR_REAL_BASE_URL="$okr_base_url"
+export OKR_REAL_PROFILE_DIR="${OKR_REAL_PROFILE_DIR:-$okr_repo_root/var/okr-real-browser-profile}"
+export OKR_REAL_EXPECTED_OPEN_ID="${OKR_REAL_EXPECTED_OPEN_ID:-ou_0f7d5f75fe23c57c1cf98c5123404f63}"
+mkdir -p "$OKR_REAL_PROFILE_DIR"
+chmod 700 "$OKR_REAL_PROFILE_DIR"
+if ! scripts/okr-real-test-session > "$okr_run_dir/session-path"; then
+  exit 1
+fi
+read -r okr_session_path < "$okr_run_dir/session-path"
+export OKR_REAL_SESSION_FILE="$okr_session_path"
+trap 'scripts/okr-real-test-session --revoke "$okr_session_path" >/dev/null 2>&1 || true' EXIT
+if node web/test/okrRealPath.browser.mjs > "$okr_run_dir/browser.json" 2> "$okr_run_dir/browser.log"; then
+  okr_browser_status=0
+else
+  okr_browser_status=$?
+fi
+if scripts/okr-real-readback "$okr_run_dir/browser.json" > "$okr_run_dir/feishu-readback.json" 2> "$okr_run_dir/feishu-readback.log"; then
+  okr_feishu_status=0
+else
+  okr_feishu_status=$?
+fi
+printf 'OKR real acceptance: browser=%s Feishu-readback=%s\nEvidence: %s\n' "$okr_browser_status" "$okr_feishu_status" "$okr_run_dir"
+if (( okr_browser_status != 0 || okr_feishu_status != 0 )); then
+  exit 1
+fi

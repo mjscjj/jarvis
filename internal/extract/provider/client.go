@@ -136,6 +136,25 @@ func (c *Client) Complete(ctx context.Context, system, user string) (string, err
 	return content, nil
 }
 
+// CompleteStructured exposes the shared strict JSON-schema transport to
+// model-only services that do not need M3's extraction contracts.
+func (c *Client) CompleteStructured(ctx context.Context, operation, schemaName string, schema map[string]any, system, user string) ([]byte, error) {
+	for name, value := range map[string]string{
+		"operation":   operation,
+		"schema_name": schemaName,
+		"system":      system,
+		"user":        user,
+	} {
+		if strings.TrimSpace(value) == "" {
+			return nil, fmt.Errorf("model structured completion %s must be non-empty", name)
+		}
+	}
+	if schema == nil {
+		return nil, fmt.Errorf("model structured completion schema must be non-nil")
+	}
+	return c.completeStructured(ctx, operation, schemaName, schema, extract.Prompt{System: system, User: user})
+}
+
 func (c *Client) completeStructured(ctx context.Context, operation, schemaName string, schema map[string]any, prompt extract.Prompt) ([]byte, error) {
 	requestBody := map[string]any{
 		"model": c.model,

@@ -29,6 +29,7 @@ func OKRChatRoutes() []string {
 		"GET /api/biz-okr/plans/{id}", "DELETE /api/biz-okr/plans/{id}",
 		"GET /api/biz-okr/plans/{id}/comments", "POST /api/biz-okr/plans/{id}/objectives",
 		"PATCH /api/biz-okr/plans/{id}/objectives/{objective}", "DELETE /api/biz-okr/plans/{id}/objectives/{objective}",
+		"PATCH /api/biz-okr/plans/{id}/krs/{kr}",
 		"PUT /api/biz-okr/plans/{id}/objectives/order", "PATCH /api/biz-okr/plans/{id}/points/{point}/definition",
 		"GET /api/biz-okr/comments", "GET /api/biz-okr/meego-preview", "GET /api/biz-okr/points/{id}/meego-preview",
 		"GET /api/biz-okr/follow-ups", "POST /api/biz-okr/follow-ups",

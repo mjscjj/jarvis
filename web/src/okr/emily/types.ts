@@ -108,7 +108,7 @@ export interface MeegoBatchPreviewItem {
   krId: string
   krTitle: string
 	progressVersion: number
-  ownerName: string
+  owners: KrOwner[]
   pointId: string
   pointTitle: string
   risk: boolean
@@ -127,6 +127,7 @@ export interface Kr {
   id: string
   title: string
 	deleteToken?: string
+	structureToken?: string
   /** 核心数据的口径说明，可选，如「6 月 vs 7 月」 */
   metricNote: string
   metrics: MetricLine[]

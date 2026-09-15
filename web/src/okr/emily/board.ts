@@ -7,8 +7,8 @@ export type SyncState =
   | { kind: 'ready'; message: string }
   | { kind: 'saving'; message: string }
   | { kind: 'saved'; message: string }
-  | { kind: 'error'; message: string; title?: string }
-  | { kind: 'conflict'; message: string; krId: string; local: Kr; remote: Kr }
+  | { kind: 'error'; message: string; title?: string; logid?: string }
+  | { kind: 'conflict'; message: string; krId: string; pointId?: string; location: string; local: Kr; remote: Kr }
 
 export interface BoardApi {
   objectives: Objective[]

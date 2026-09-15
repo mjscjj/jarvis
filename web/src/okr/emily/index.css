@@ -110,3 +110,11 @@
   scrollbar-width: thin;
   scrollbar-color: var(--color-slate-300) transparent;
 }
+@keyframes okr-save-toast-in {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.okr-save-toast {
+  animation: okr-save-toast-in 160ms ease-out;
+}

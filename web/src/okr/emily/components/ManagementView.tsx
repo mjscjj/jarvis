@@ -2,11 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useBoard } from '../board'
 import { buildAllBusinessNavigation, buildKRHierarchy, businessCategoryOf, businessCategoryOptions, commonObjectiveBusinessCategory, filterObjectivesByHierarchy, isStructuralTag, objectivesForBusiness, priorityOf, withCompletePriorityNavigation, withSelectedBusinessCategory } from '../hierarchy'
 import { tagLabel } from '../labels'
-import { hasOwner, krOwners, ownerOptions } from '../people'
+import { krHasAnyOwner, krOwnerCounts, krOwnerOptions, krOwners, ownerIdentityKey, ownerOptions } from '../people'
 import type { Kr, KrOwner, KrPriority, KrTag, Objective } from '../types'
 import { BusinessCategoryTabs } from './BusinessCategoryTabs'
 import { FeishuPeoplePicker, FeishuPeoplePickerInput } from './FeishuPeoplePicker'
 import { HierarchyNav } from './HierarchyNav'
+import { OwnerFilterPicker } from './OwnerFilterPicker'
+import { PeopleInline } from './PeopleInline'
 import { PersonAvatar } from './PersonAvatar'
 import { KrDefinitionDetails } from './Table'
 import { TagEditor } from './TagEditor'
@@ -95,7 +97,7 @@ function KrEditorRow({ compactPresentation = false, objectiveId, kr, tagSuggesti
     }
   }
 
-  const ownerControl = (readOnly ? <span className="flex flex-wrap justify-end gap-1">{krOwners(kr).map((owner) => <span key={`${owner.email}:${owner.name}`} title={owner.name} aria-label={owner.name} className={`inline-flex min-h-5 max-w-full items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-slate-500 ${compactPresentation ? '!min-h-4 !gap-1 !border-0 !bg-transparent !px-0.5 !py-0 text-[8px] leading-3' : 'text-[10px] leading-3.5'}`}>{compactPresentation && <PersonAvatar name={owner.name} email={owner.email} size="size-3 text-[7px]" />}<span className="min-w-0 break-words">{owner.name}</span></span>)}</span> : <FeishuPeoplePicker kr={kr} compact={!cardHierarchy} small={compactPresentation} />)
+  const ownerControl = (readOnly ? <PeopleInline people={krOwners(kr)} compact={compactPresentation} chips={!compactPresentation} empty="" /> : <FeishuPeoplePicker kr={kr} compact={!cardHierarchy} small={compactPresentation} />)
 
   return (
     <article id={commentTargetElementId(commentTarget)} onClick={compactPresentation ? undefined : commentSurface.onClick} className={`group/kr group/commentable grid grid-cols-[minmax(0,1fr)_auto] gap-2 transition-[background-color,box-shadow] ${cardHierarchy ? `overflow-hidden rounded-xl border border-slate-200 bg-white px-3.5 ${compactPresentation ? 'py-1.5' : 'py-2.5'} shadow-[0_2px_8px_rgba(31,35,40,0.035)]` : 'px-3.5 py-2'} ${!compactPresentation && commentSurface.enabled ? 'cursor-pointer hover:bg-indigo-50/70' : cardHierarchy ? '' : 'hover:bg-slate-50/70'} ${!compactPresentation && (commentSurface.selected || commentSurface.focused) ? 'bg-indigo-50/80 ring-2 ring-inset ring-indigo-500' : ''}`}>
@@ -347,7 +349,7 @@ export function ManagementView({
   const { objectives, quarter, syncState, createObjective, swapObjectives, reorderObjectives, swapKrs } = useBoard()
   const commentInteraction = useCommentInteraction()
   const [query, setQuery] = useState('')
-  const [owner, setOwner] = useState('')
+  const [ownerFilters, setOwnerFilters] = useState<string[]>([])
   const [priority, setPriority] = useState('')
   const [tag, setTag] = useState('')
   // undefined means every category; '' is the untagged one, which is a real
@@ -364,9 +366,15 @@ export function ManagementView({
   const [objectiveQuarter, setObjectiveQuarter] = useState(quarter)
 	const [placementNotice, setPlacementNotice] = useState('')
 	const toolbarPriority = hierarchyNavigation ? '' : priority
-	const hasFilters = Boolean(query.trim() || owner || toolbarPriority || (showTags && tag) || businessCategory !== undefined || hierarchyPriority !== undefined || hierarchyObjectiveId)
+	const hasFilters = Boolean(query.trim() || ownerFilters.length || toolbarPriority || (showTags && tag) || businessCategory !== undefined || hierarchyPriority !== undefined || hierarchyObjectiveId)
 	const peopleOptions = useMemo(() => ownerOptions(objectives), [objectives])
-	const owners = useMemo(() => peopleOptions.map((person) => person.name), [peopleOptions])
+	const ownerFilterOptions = useMemo(() => krOwnerOptions(objectives), [objectives])
+	const ownersByKey = useMemo(() => new Map(ownerFilterOptions.map((owner) => [ownerIdentityKey(owner), owner])), [ownerFilterOptions])
+	const selectedOwners = useMemo(() => ownerFilters.flatMap((key) => {
+		const owner = ownersByKey.get(key)
+		return owner ? [owner] : []
+	}), [ownerFilters, ownersByKey])
+	const ownerCounts = useMemo(() => krOwnerCounts(objectives, ownerFilterOptions), [objectives, ownerFilterOptions])
 	const tags = useMemo(() => [...new Map(objectives.flatMap((objective) => objective.krs.flatMap((kr) => allTagsOf(kr).map((item) => [`${item.type}:${item.value}`, item] as const)))).entries()].map(([key, item]) => ({ key, ...item })).sort((left, right) => tagLabel(left.type, left.value).localeCompare(tagLabel(right.type, right.value))), [objectives])
 	const businessCategories = useMemo(() => [...new Set(objectives.flatMap((objective) => objective.krs.map(businessCategoryOf)).filter(Boolean))].sort(), [objectives])
   const filtered = useMemo(() => objectives.map((objective) => ({
@@ -374,9 +382,9 @@ export function ManagementView({
 		totalKrCount: objective.krs.length,
     krs: objective.krs.filter((kr) => {
       const matchesQuery = !query.trim() || `${objective.title} ${kr.title} ${kr.points.map((point) => point.title).join(' ')}`.toLowerCase().includes(query.trim().toLowerCase())
-				return matchesQuery && (!owner || hasOwner(kr.ownerName, owner)) && (!toolbarPriority || priorityOf(kr) === toolbarPriority) && (!showTags || !tag || allTagsOf(kr).some((item) => `${item.type}:${item.value}` === tag))
+				return matchesQuery && krHasAnyOwner(kr, selectedOwners) && (!toolbarPriority || priorityOf(kr) === toolbarPriority) && (!showTags || !tag || allTagsOf(kr).some((item) => `${item.type}:${item.value}` === tag))
     }),
-  })), [objectives, owner, query, showTags, tag, toolbarPriority])
+  })), [objectives, query, selectedOwners, showTags, tag, toolbarPriority])
 	const navigation = useMemo(() => buildKRHierarchy(filtered.filter((objective) => objective.krs.length > 0)), [filtered])
   // Counts read every filter except the category itself, so each tab states how
   // many rows picking it would leave. Objectives the other filters emptied
@@ -415,6 +423,13 @@ export function ManagementView({
 	const definitionIdsKey = useMemo(() => objectives.flatMap((objective) => objective.krs.map((kr) => kr.id)).join('\n'), [objectives])
 
 	useEffect(() => {
+		setOwnerFilters((current) => {
+			const valid = current.filter((key) => ownersByKey.has(key))
+			return valid.length === current.length ? current : valid
+		})
+	}, [ownersByKey])
+
+	useEffect(() => {
 		if (!hierarchyNavigation) return
 		setBusinessCategory(undefined)
 		setHierarchyPriority(undefined)
@@ -448,7 +463,7 @@ export function ManagementView({
 		const location = findCommentTargetLocation(objectives, comment)
 		if (!location) return
 		setQuery('')
-		setOwner('')
+		setOwnerFilters([])
 		setPriority('')
 		setTag('')
 		if (hierarchyNavigation) {
@@ -512,7 +527,7 @@ export function ManagementView({
 
   const clearFilters = () => {
     setQuery('')
-    setOwner('')
+    setOwnerFilters([])
     setPriority('')
     setTag('')
     setBusinessCategory(undefined)
@@ -546,7 +561,7 @@ export function ManagementView({
 		  {placementNotice && <div role="status" className="mt-3 flex items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-[10px] text-emerald-700"><span className="flex-1">{placementNotice}</span><button type="button" onClick={() => setPlacementNotice('')} className="text-emerald-500 hover:text-emerald-700">知道了</button></div>}
           <div className="mt-3 flex flex-wrap gap-1.5 rounded-xl border border-slate-200 bg-slate-50/70 p-2">
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索 O / KR 内容" className="h-8 min-w-48 flex-1 rounded-lg border border-slate-200 bg-white px-3 text-[11px] outline-none transition-colors focus:border-blue-400 focus:ring-2 focus:ring-blue-50 sm:max-w-72" />
-            <select value={owner} onChange={(event) => setOwner(event.target.value)} className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] text-slate-600 outline-none focus:border-blue-400"><option value="">全部负责人</option>{owners.map((item) => <option key={item} value={item}>{item}</option>)}</select>
+            <OwnerFilterPicker options={ownerFilterOptions} ownerCounts={ownerCounts} selectedKeys={ownerFilters} onChange={setOwnerFilters} />
 			{!hierarchyNavigation && <select value={priority} onChange={(event) => setPriority(event.target.value)} className="h-8 rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] text-slate-600 outline-none focus:border-blue-400"><option value="">全部优先级</option><option value="p0">P0</option><option value="p1">P1</option><option value="p2">P2</option></select>}
             {showTags && <select value={tag} onChange={(event) => setTag(event.target.value)} title={tags.find((item) => item.key === tag)?.value ?? '全部标签'} className="h-8 max-w-80 rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] text-slate-600 outline-none focus:border-blue-400"><option value="">全部标签</option>{tags.map((item) => <option key={item.key} value={item.key}>{tagLabel(item.type, item.value)}</option>)}</select>}
             {hasFilters && <button type="button" onClick={clearFilters} className="h-8 rounded-lg px-2.5 text-[10px] font-medium text-slate-500 hover:bg-white hover:text-slate-800">清空筛选</button>}

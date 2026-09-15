@@ -94,6 +94,7 @@ test('区域对齐页面保留直接表格、自动保存、双语和刷新交�
   assert.match(source, /function CollapsibleBlock/)
   assert.equal([...source.matchAll(/level="primary"/g)].length, 3)
   assert.equal([...source.matchAll(/level="secondary"/g)].length, 2)
+  assert.equal([...source.matchAll(/公会业务 \/ Agency/g)].length, 2)
   assert.match(source, /Regional Ops Team 高优痛点&核心需求/)
   assert.match(source, /新增需求 \/ Add requirement/)
   assert.match(source, /onClick=\{addDemandDraft\}/)
@@ -106,4 +107,8 @@ test('区域对齐页面保留直接表格、自动保存、双语和刷新交�
   assert.match(source, /aria-label="分享链接 \/ Share link"/)
   assert.equal([...source.matchAll(/'刷新 \/ Refresh'/g)].length, 2)
   assert.equal([...source.matchAll(/<PriorityTabs /g)].length, 2)
+
+  const api = readFileSync(new URL('../src/okr/emily/api.ts', import.meta.url), 'utf8')
+  assert.match(api, /\/refresh-status\?/)
+  assert.match(api, /result\.pending/)
 })

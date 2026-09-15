@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -29,7 +30,13 @@ func (s *Service) planObjectives(ctx context.Context, planID string) ([]PlanObje
 			if err != nil {
 				return nil, fmt.Errorf("load plan KR %s: %w", kr.ID, err)
 			}
-			view.KRs = append(view.KRs, planKRFromDefinition(definition))
+			krView := planKRFromDefinition(definition)
+			structureToken, err := planKRStructureToken(krView)
+			if err != nil {
+				return nil, err
+			}
+			krView.StructureToken = structureToken
+			view.KRs = append(view.KRs, krView)
 		}
 		structureToken, err := planObjectiveStructureToken(view)
 		if err != nil {
@@ -95,7 +102,7 @@ func (s *Service) writePlanObjectiveChildren(ctx context.Context, objective Plan
 // objective without deleting and recreating its points. Existing point rows,
 // wording and owners are exclusively owned by the point endpoint, so an old
 // browser snapshot cannot overwrite a collaborator's point edit.
-func (s *Service) updatePlanObjectiveChildren(ctx context.Context, objective PlanObjectiveView, actor string, now time.Time) error {
+func (s *Service) updatePlanObjectiveChildren(ctx context.Context, currentObjective, objective PlanObjectiveView, actor string, now time.Time) error {
 	db := s.db.WithContext(ctx)
 	var existingKRs []domain.KR
 	if err := db.Where("objective_id = ?", objective.ID).Find(&existingKRs).Error; err != nil {
@@ -105,10 +112,22 @@ func (s *Service) updatePlanObjectiveChildren(ctx context.Context, objective Pla
 	for _, kr := range existingKRs {
 		existingKRByID[kr.ID] = kr
 	}
+	currentKRByID := make(map[string]PlanKRView, len(currentObjective.KRs))
+	for _, kr := range currentObjective.KRs {
+		currentKRByID[kr.ID] = kr
+	}
 	incomingKRIDs := make(map[string]struct{}, len(objective.KRs))
 	for krIndex, kr := range objective.KRs {
 		incomingKRIDs[kr.ID] = struct{}{}
 		if current, exists := existingKRByID[kr.ID]; exists {
+			if samePlanKRDefinition(currentKRByID[kr.ID], kr) {
+				if current.SortOrder != krIndex {
+					if err := db.Model(&domain.KR{}).Where("id = ? AND objective_id = ?", kr.ID, objective.ID).Update("sort_order", krIndex).Error; err != nil {
+						return fmt.Errorf("update plan KR order: %w", err)
+					}
+				}
+				continue
+			}
 			updates := map[string]any{"title": kr.Title, "metric_note": kr.MetricNote, "sort_order": krIndex, "version": gorm.Expr("version + 1"), "updated_at": now, "updated_by": actor}
 			result := db.Model(&domain.KR{}).Where("id = ? AND objective_id = ? AND version = ?", kr.ID, objective.ID, current.Version).Updates(updates)
 			if result.Error != nil {
@@ -123,65 +142,7 @@ func (s *Service) updatePlanObjectiveChildren(ctx context.Context, objective Pla
 				return fmt.Errorf("create plan KR %s: %w", kr.ID, err)
 			}
 		}
-		if err := replaceKROwners(db, kr.ID, normalizeOwners(kr.Owners)); err != nil {
-			return err
-		}
-		if err := db.Where("kr_id = ?", kr.ID).Delete(&domain.KRMetric{}).Error; err != nil {
-			return fmt.Errorf("replace plan KR metrics: %w", err)
-		}
-		for metricIndex, metric := range kr.Metrics {
-			if err := db.Create(&domain.KRMetric{ID: metric.ID, KRID: kr.ID, Text: metric.Text, Light: metric.Light, Images: nonNilImages(metric.Images), SortOrder: metricIndex}).Error; err != nil {
-				return fmt.Errorf("create plan metric %s: %w", metric.ID, err)
-			}
-		}
-		if err := db.Where("kr_id = ?", kr.ID).Delete(&domain.KRTag{}).Error; err != nil {
-			return fmt.Errorf("replace plan KR tags: %w", err)
-		}
-		for _, tag := range kr.Tags {
-			if err := db.Create(&domain.KRTag{KRID: kr.ID, Type: tag.Type, Value: tag.Value}).Error; err != nil {
-				return fmt.Errorf("create plan KR tag: %w", err)
-			}
-		}
-
-		var existingPoints []domain.KRPoint
-		if err := db.Where("kr_id = ?", kr.ID).Find(&existingPoints).Error; err != nil {
-			return fmt.Errorf("list existing plan points: %w", err)
-		}
-		existingPointByID := make(map[string]domain.KRPoint, len(existingPoints))
-		for _, point := range existingPoints {
-			existingPointByID[point.ID] = point
-		}
-		incomingPointIDs := make(map[string]struct{}, len(kr.Points))
-		for pointIndex, point := range kr.Points {
-			incomingPointIDs[point.ID] = struct{}{}
-			if _, exists := existingPointByID[point.ID]; exists {
-				// Only ordering is structural. All editable point definition fields
-				// remain untouched and are saved through PatchPointDefinition.
-				if err := db.Model(&domain.KRPoint{}).Where("id = ? AND kr_id = ?", point.ID, kr.ID).Update("sort_order", pointIndex).Error; err != nil {
-					return fmt.Errorf("update plan point order: %w", err)
-				}
-				continue
-			}
-			pointRow := domain.KRPoint{ID: point.ID, KRID: kr.ID, Version: point.Version, Kind: point.Kind, Title: point.Title, MeegoWorkItemID: strings.TrimSpace(point.MeegoWorkItemID), MeegoURL: strings.TrimSpace(point.MeegoURL), SortOrder: pointIndex}
-			if err := db.Create(&pointRow).Error; err != nil {
-				return fmt.Errorf("create plan point %s: %w", point.ID, err)
-			}
-			if err := replacePointOwners(db, point.ID, normalizeOwners(point.Owners)); err != nil {
-				return err
-			}
-			for _, tag := range point.Tags {
-				if err := db.Create(&domain.PointTag{PointID: point.ID, Type: tag.Type, Value: tag.Value}).Error; err != nil {
-					return fmt.Errorf("create plan point tag: %w", err)
-				}
-			}
-		}
-		var removedPointIDs []string
-		for _, point := range existingPoints {
-			if _, kept := incomingPointIDs[point.ID]; !kept {
-				removedPointIDs = append(removedPointIDs, point.ID)
-			}
-		}
-		if err := purgePoints(db, removedPointIDs, true); err != nil {
+		if err := s.replacePlanKRChildren(db, kr); err != nil {
 			return err
 		}
 	}
@@ -206,6 +167,28 @@ func (s *Service) updatePlanObjectiveChildren(ctx context.Context, objective Pla
 		}
 	}
 	return nil
+}
+
+func samePlanKRDefinition(current, incoming PlanKRView) bool {
+	type pointRef struct {
+		ID string
+	}
+	type definition struct {
+		Title      string
+		Owners     []OwnerView
+		MetricNote string
+		Metrics    []MetricView
+		Points     []pointRef
+		Tags       []TagView
+	}
+	snapshot := func(kr PlanKRView) definition {
+		points := make([]pointRef, 0, len(kr.Points))
+		for _, point := range kr.Points {
+			points = append(points, pointRef{ID: point.ID})
+		}
+		return definition{Title: kr.Title, Owners: kr.Owners, MetricNote: kr.MetricNote, Metrics: kr.Metrics, Points: points, Tags: kr.Tags}
+	}
+	return reflect.DeepEqual(snapshot(current), snapshot(incoming))
 }
 
 func (s *Service) deletePlanObjectiveChildren(ctx context.Context, objectiveID string) error {

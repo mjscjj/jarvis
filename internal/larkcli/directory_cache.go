@@ -10,7 +10,23 @@ import (
 	"time"
 )
 
-const directoryTTL = 5 * time.Minute
+const (
+	directoryQueryTTL    = 300 * time.Minute
+	directoryIdentityTTL = 100 * time.Hour
+	directoryEmptyTTL    = 2 * time.Minute
+	directoryAvatarTTL   = 24 * time.Hour
+)
+
+func directoryQueryKey(query string) string {
+	return strings.ToLower(strings.TrimSpace(query))
+}
+
+func directoryPageTTL(page directoryPage) time.Duration {
+	if len(page.People) == 0 {
+		return directoryEmptyTTL
+	}
+	return directoryQueryTTL
+}
 
 type directoryPage struct {
 	People  []DirectoryPerson
@@ -53,12 +69,12 @@ func (d *Directory) initUserCache(userID string) {
 // Called under mu; the cache is bounded, private and scoped to both app and user.
 func (d *Directory) saveUserCache() {
 	for key, p := range d.userCache.Queries {
-		if time.Since(p.At) > directoryTTL {
+		if time.Since(p.At) > directoryPageTTL(p) {
 			delete(d.userCache.Queries, key)
 		}
 	}
 	for key, p := range d.userCache.People {
-		if time.Since(p.At) > directoryTTL {
+		if time.Since(p.At) > directoryIdentityTTL {
 			delete(d.userCache.People, key)
 		}
 	}
@@ -139,10 +155,11 @@ func (d *Directory) coalesce(ctx context.Context, key string, run func(context.C
 }
 
 func (d *Directory) cachedPage(query string) (directoryPage, bool) {
+	query = directoryQueryKey(query)
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	page, ok := d.userCache.Queries[query]
-	if !ok || time.Since(page.At) > directoryTTL {
+	if !ok || time.Since(page.At) > directoryPageTTL(page) {
 		return directoryPage{}, false
 	}
 	page.People = append([]DirectoryPerson{}, page.People...)
@@ -159,11 +176,12 @@ func (d *Directory) searchUserCached(ctx context.Context, query string) (directo
 	if query == "" {
 		return directoryPage{}, fmt.Errorf("请输入姓名或邮箱")
 	}
-	if p, ok := d.cachedPage(query); ok {
+	key := directoryQueryKey(query)
+	if p, ok := d.cachedPage(key); ok {
 		return p, nil
 	}
-	err := d.coalesce(ctx, "search:"+query, func(ctx context.Context) error {
-		if _, ok := d.cachedPage(query); ok {
+	err := d.coalesce(ctx, "search:"+key, func(ctx context.Context) error {
+		if _, ok := d.cachedPage(key); ok {
 			return nil
 		}
 		var response searchUserResponse
@@ -202,14 +220,14 @@ func (d *Directory) searchUserCached(ctx context.Context, query string) (directo
 			seen[address] = u.OpenID
 			d.userCache.People[address] = cachedDirectoryPerson{Ambiguous: ambiguous, Person: p, OpenID: u.OpenID, At: page.At, AvatarAt: previous.AvatarAt}
 		}
-		d.userCache.Queries[query] = page
+		d.userCache.Queries[key] = page
 		d.saveUserCache()
 		return nil
 	})
 	if err != nil {
 		return directoryPage{}, err
 	}
-	p, _ := d.cachedPage(query)
+	p, _ := d.cachedPage(key)
 	return p, nil
 }
 
@@ -222,16 +240,24 @@ func (d *Directory) SearchPage(ctx context.Context, query string) ([]DirectoryPe
 	return p, false, err
 }
 
-// Bulk page avatars never trigger a directory search per historical owner.
-// Only identities already verified by a recent search can fetch a missing photo.
+// Avatar lookup resolves an uncached enterprise email once, then reuses the
+// 100-hour identity and 24-hour avatar caches across every OKR surface.
 func (d *Directory) userAvatar(ctx context.Context, email string) (DirectoryPerson, error) {
 	d.mu.Lock()
 	p, ok := d.userCache.People[email]
 	d.mu.Unlock()
-	if !ok || p.Ambiguous || time.Since(p.At) > directoryTTL {
-		return DirectoryPerson{Email: email}, nil
+	if !ok || p.Ambiguous || time.Since(p.At) > directoryIdentityTTL {
+		if _, err := d.searchUserCached(ctx, email); err != nil {
+			return DirectoryPerson{Email: email}, err
+		}
+		d.mu.Lock()
+		p, ok = d.userCache.People[email]
+		d.mu.Unlock()
+		if !ok || p.Ambiguous {
+			return DirectoryPerson{Email: email}, nil
+		}
 	}
-	if time.Since(p.AvatarAt) < 24*time.Hour {
+	if time.Since(p.AvatarAt) < directoryAvatarTTL {
 		return p.Person, nil
 	}
 	err := d.coalesce(ctx, "avatar:"+email, func(ctx context.Context) error {
@@ -250,7 +276,7 @@ func (d *Directory) userAvatar(ctx context.Context, email string) (DirectoryPers
 		d.mu.Lock()
 		p := d.userCache.People[email]
 		d.mu.Unlock()
-		if time.Since(p.AvatarAt) < 24*time.Hour {
+		if time.Since(p.AvatarAt) < directoryAvatarTTL {
 			return nil
 		}
 		params, _ := json.Marshal(map[string]any{"query": email, "page_size": 20})

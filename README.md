@@ -10,6 +10,8 @@ Jarvis 是运行在本地可信环境中的个人任务 Agent。它持续接收�
 4. [文档导航](docs/README.md)：当前文档、提案、研究与交付物
 5. [OKR 模块当前实现](docs/modules/06-okr.md)：通用 OKR、Biz OKR 与世界模型的维护边界
 6. [Emily 完整研发环境](docs/summery/emily-development-environment.md)：开发 worktree、共享 OKR 数据、实例配置与提交规则
+7. [OKR 真实路径测试规范](docs/summery/okr-real-path-testing-standard.md)：本人现有授权、评论与导出验收、部署后回归和证据要求
+8. [OKR 测试覆盖盘点](docs/summery/okr-test-coverage-audit.md)：现有自动测试、真实验收缺口与优先补齐项
 
 ## 核心链路
 
@@ -40,6 +42,7 @@ Jarvis 是运行在本地可信环境中的个人任务 Agent。它持续接收�
 | 项目目标 | `goal.md` |
 | Agent 关键原则 | `AGENTS.md` |
 | Agent 详细开发规范 | `README.md` 的“AI Agent 详细开发规范” |
+| OKR 测试与真实验收 | [OKR 真实路径测试规范](docs/summery/okr-real-path-testing-standard.md) |
 | 当前跨模块架构 | `docs/00-overview.md` |
 | 数据模型与迁移 | `internal/domain/`, `internal/store/sqlite.go` |
 | OKR 产品模块 | `internal/okrworkspace/`, `internal/okrreview/`, `conf/okr-module.yaml`, `data/okr/`；本机应用绑定在 `conf/okr-module.runtime.yaml` |
@@ -55,7 +58,7 @@ Jarvis 是运行在本地可信环境中的个人任务 Agent。它持续接收�
 
 有效配置是 `conf/config.yaml` 与同目录 `conf/config.runtime.yaml` 的合并结果：runtime 按叶子 key 覆盖基线，未出现的 key 保留基线值，两个文件都拒绝未知字段。OKR 模块同理由 `conf/okr-module.yaml` 和本机 `conf/okr-module.runtime.yaml` 合并。**本机参数、身份和密钥写 runtime 文件，不改仓库基线。** runtime 文件不进 Git，权限保持 `600`。后台保存后需要重启；prompts、rules 和 Skills 按各自 reader 实时读取。
 
-Jarvis 本体使用 lark-cli 当前默认身份，只服务 principal；OKR 页面登录使用独立低敏应用。网页登录、白名单与授权 API 域名排查见 [网页 SSO 登录接入](docs/summery/sso-web-login.md)：当前使用 CLI 授权，已记录 CN / i18n 超时对比与实际地址配置方法；个人 JWT SDK 方案尚未实施，真实账号完整登录仍待验收。
+Jarvis 本体只服务 principal；OKR 页面登录使用独立低敏应用。**所有面向人员的外部消息、提醒和通知统一由“Jarvis通知机器人”发送**，不得使用网页登录应用、Emily Bot、目录查询应用或 principal 的用户身份代发。人员目标以完整企业邮箱为跨应用真源；某个应用产生的 `open_id` 只能交给同一应用使用，跨应用发送优先按企业邮箱投递，禁止复用 `open_id`。网页登录、白名单与授权 API 域名排查见 [网页 SSO 登录接入](docs/summery/sso-web-login.md)：当前使用 CLI 授权，已记录 CN / i18n 超时对比与实际地址配置方法；个人 JWT SDK 方案尚未实施，真实账号完整登录仍待验收。
 
 `server.addr` 是实例后端监听地址的配置真源。主进程向 Agent 子进程导出 `JARVIS_API_BASE`、`JARVIS_CONFIG` 和仓库工具 PATH；切换工作目录不会切换实例。通用、世界模型、OKR/周报工具统一用 `scripts/jarvis-api-base`，优先采用继承地址，否则读取选定配置；配置错误直接失败，不扫描端口。模块工具的显式 `--base-url` 可指定其它实例。
 
@@ -116,6 +119,10 @@ curl --fail "$(./scripts/jarvis-api-base)/readyz" | jq
 服务名、地址、日志从配置派生，不手写固定值。Linux unit 会被部署脚本重新生成，实例额外环境变量（如 OKR 登录应用密钥）放同名 `.d/` 目录的 drop-in。完整服务管理、前端开发、退出和恢复见 [运行与部署](docs/reference/operations.md)。
 
 ## 开发验证
+
+OKR 业务修改须遵循 [OKR 真实路径测试规范](docs/summery/okr-real-path-testing-standard.md)。使用已授权的 `chujiejie.1 / 储节节` 完成受影响的真实页面、后端和飞书路径；设备登录流程单独验收。模拟测试和健康检查不能代替真实业务结果。未运行、被跳过或只模拟通过的项目必须分别报告，不能计为真实验收通过。
+
+`scripts/okr-real-acceptance` 是 OKR 真实浏览器测试入口：它核对本人既有飞书授权、签发短时测试会话、运行 `web/test/okrRealPath.browser.mjs`，再由 `scripts/okr-real-readback` 核对文档归属、正文及通知卡片。需配置可用的 Playwright 模块和 Chromium 路径；结果保存在不入库的 `var/okr-real-run.*`。短时会话只用于登录后的业务验收，不能证明设备登录本身通过。
 
 ```bash
 go test ./cmd/... ./internal/...
@@ -287,6 +294,13 @@ M2 → M3 → M5 是一条通用流水线，每段只有一套协议。M3 用 `e
 
 **代码不判断风险，但必须记录后果。** 对外产生的副作用一律原样写进 `ExecutionRun.effects`，不校验、不重写、不拒绝未知类型。
 
+**对外人员触达身份。** 所有发给具体人员或群聊的外部消息，包括普通沟通、任务提醒、OKR/周报催填、AI 填写建议、结果通知和批量广播，统一使用“Jarvis通知机器人”作为发送身份。实现和 Skill 必须遵守以下边界：
+
+- 收件人的业务真源是完整企业邮箱；可保存 `union_id` 辅助关联，但不能把一个飞书应用解析出的 `open_id` 交给另一个应用发送。
+- 使用 Jarvis 通知应用时，优先按企业邮箱投递；只有 `open_id` 已由同一 Jarvis 通知应用解析并能证明 namespace 一致时，才允许按 `open_id` 投递。
+- 禁止使用 Emily Bot、OKR 网页登录应用、目录查询应用或 principal 的 user identity 发送这类消息；发送失败必须原样暴露，不能 fallback 成用户代发或其它 Bot。
+- 发送必须使用稳定幂等键，成功后以同一 Bot 回读并核对 `message_id`、目标会话和正文，再把真实外部副作用写入 `ExecutionRun.effects`。
+
 反面例子：
 
 - `if task.ActionType == "code_change" { 跳过审批 }`——用类型标签替模型判断风险，本质是"为特定动作类型开专用链路"，和 §3 是同一个错误。
@@ -333,4 +347,5 @@ M2 → M3 → M5 是一条通用流水线，每段只有一套协议。M3 用 `e
 - 写组件/代码前优先复用已有官方包和仓库内已有实现。
 - 让大模型填写的语义字段尽量使用自然语言或宽松 JSON，不用枚举限制模型发挥；Jarvis 的目标不是通用 Agent 平台。
 - 构建或重启主服务必须执行 `./scripts/jarvis-deploy --skip-pull`；禁止裸 `go build` 覆盖 `bin/jarvis-server` 后直接 `launchctl kickstart`，否则会破坏 macOS TCC 稳定签名。
-- 重要架构图、绘制说明、可编辑源文件、导出图片和文章写作统一放在 `docs/summery/`，不再散落到 `docs/` 根目录或临时目录；该目录用于表达与交付，架构事实真源仍是 `goal.md`、`docs/00-overview.md` 和当前代码。
+- 重要架构图、绘制说明、可编辑源文件、最终导出和文章写作统一放在 `docs/summery/`；该目录只用于需要进入 Git 的正式表达与交付，架构事实真源仍是 `goal.md`、`docs/00-overview.md` 和当前代码。
+- Agent 调查和交付过程中的原始 API 返回、证据快照、下载材料、生成草稿、创建/更新回读、通知 payload 与回执等临时运行产物，建议写入用户目录 `~/tmp/jarvis/<skill-or-task>/`，不进入 Git。模块已有明确持久化真源时继续写入模块目录，例如 OKR 产品数据仍写入并提交 `data/okr/`；用户指定路径和需要提交的正式交付也遵循各自权威目录。需要长期保留的临时结论应提炼后再进入 `docs/summery/`，不得直接提交整份运行工作区。

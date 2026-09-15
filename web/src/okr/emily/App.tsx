@@ -19,6 +19,7 @@ import { okrTabForWeeklyWorkspace, weeklyDatasetLabel, weeklyViewLabel, weeklyWo
 import { WeeklyShareNav } from './components/WeeklyShareNav'
 import { templateKeyForDataset } from './weekCatalog'
 import { ActivityLogButton } from './components/ActivityLogButton'
+import { SaveToast } from './components/SaveToast'
 
 function weekLabel(week: string): string {
   const matched = /^(\d{4})-W(\d{2})$/.exec(week)
@@ -46,30 +47,6 @@ function currentISOWeek(): string {
 function currentQuarter(): string {
   const now = new Date()
   return `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`
-}
-
-function SyncNotice() {
-  const { syncState, retry, resolveConflict } = useBoard()
-
-  if (syncState.kind === 'conflict') {
-    return (
-      <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-        <span className="min-w-64 flex-1">{syncState.message}</span>
-        <button type="button" onClick={() => resolveConflict('remote')} className="rounded-md border border-amber-300 bg-white px-2.5 py-1 hover:bg-amber-100">载入他人版本</button>
-        <button type="button" onClick={() => resolveConflict('local')} className="rounded-md bg-amber-700 px-2.5 py-1 text-white hover:bg-amber-800">保留我的修改</button>
-      </div>
-    )
-  }
-
-  if (syncState.kind === 'error') {
-    return (
-      <div className="mb-3 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
-        <span className="flex-1">{syncState.message}</span>
-        <button type="button" onClick={retry} className="rounded-md border border-red-200 bg-white px-2.5 py-1 hover:bg-red-100">重试</button>
-      </div>
-    )
-  }
-  return null
 }
 
 export default function App({
@@ -251,6 +228,7 @@ export default function App({
 
   return (
     <div className="min-h-full">
+      <SaveToast scopeLabel={`${quarter} · ${lifecycleName}`} />
       <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur-md">
 			{/* The chrome wraps onto a second row when it runs out of width; squeezing
 			    it onto one line instead breaks the button labels mid-word. */}
@@ -331,7 +309,6 @@ export default function App({
 					<div>{shareNotice}</div>
 					{shareLink && <input aria-label="分享链接" value={shareLink} readOnly onFocus={(event) => event.currentTarget.select()} onClick={(event) => event.currentTarget.select()} className="mt-2 h-8 w-full rounded-md border border-blue-200 bg-white px-2 text-[11px] text-slate-700 outline-none" />}
 				</div>}
-				<SyncNotice />
 				{week ? <>
 					{/* Meego 差异和催办预览是维护动作，分享链接的收件人只负责填写，
 					    不该看到它们。 */}

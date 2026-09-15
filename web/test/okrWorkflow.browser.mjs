@@ -10,7 +10,7 @@ const page = await context.newPage()
 page.setDefaultTimeout(12000)
 const errors = [], requests = [], checks = []
 const tasks = new Map(), schedules = new Map()
-let nextID = 1, expectedError = false
+let nextID = 1, expectedError = false, avatarRequests = 0
 const promptKeys = ['weekly_reminder', 'progress_sync', 'report_c', 'report_b', 'plan_review', 'progress_review']
 const prompts = promptKeys.map(key => ({ key: `okr_agent_${key}`, stage: 'okr_agent', kind: 'system_prompt', name: key, content: `Test prompt ${key}`, description: `Regression ${key}` }))
 page.on('pageerror', error => errors.push(error.message))
@@ -23,8 +23,14 @@ await context.route('**/api/**', async route => {
   const request = route.request(), url = new URL(request.url()), path = url.pathname, method = request.method()
   requests.push({ method, path })
   const ok = data => route.fulfill({ json: { code: 0, data } })
+  if (path === '/api/biz-okr/people/avatars') {
+    avatarRequests++
+    if (avatarRequests === 1) return route.fulfill({ status: 502, json: { code: 50272, message: 'transient avatar failure' } })
+    return ok({ people: url.searchParams.get('emails').split(',').filter(Boolean).map(email => ({ email, name: 'Regression Owner', avatar_url: 'https://example.test/avatar.png' })), failed_emails: [] })
+  }
   if (/^\/api\/(okr|biz-okr)\//.test(path) || path === '/api/people/search') {
-    const response = await fetch(backend + path + url.search, { method, headers: { 'content-type': request.headers()['content-type'] || 'application/json' }, body: method === 'GET' ? undefined : request.postDataBuffer() })
+    const backendPath = path === '/api/biz-okr/people/search' ? '/api/people/search' : path
+    const response = await fetch(backend + backendPath + url.search, { method, headers: { 'content-type': request.headers()['content-type'] || 'application/json' }, body: method === 'GET' ? undefined : request.postDataBuffer() })
     const body = await response.text()
     if (!response.ok && !expectedError) errors.push(`${method} ${path}: ${response.status} ${body}`)
     return route.fulfill({ status: response.status, contentType: 'application/json', body })
@@ -88,6 +94,14 @@ const go = async hash => {
   await page.reload()
   await page.locator('#okr-workspace-root h1').waitFor()
 }
+const exerciseOwnerFilter = async ownerName => {
+  await page.getByRole('button', { name: '筛选负责人', exact: true }).click()
+  const picker = page.getByRole('dialog', { name: '筛选负责人', exact: true })
+  await picker.getByPlaceholder('输入姓名或邮箱搜索').fill(ownerName)
+  await picker.locator(`img[alt="${ownerName}"]`).first().waitFor()
+  await picker.getByRole('button').filter({ hasText: ownerName }).click()
+  await page.getByLabel(`移除${ownerName}筛选`, { exact: true }).click()
+}
 const pass = text => { checks.push(text); console.log('PASS:', text) }
 const board = (week = '2026-W36') => api(`/api/biz-okr/board?quarter=2026-Q3&week=${week}`)
 let planID, objectiveID
@@ -123,12 +137,14 @@ try {
   await page.getByPlaceholder('填写新 KR 内容').fill('提高转化率')
   await page.getByLabel('新 KR 业务分类', { exact: true }).fill('增长')
   await page.getByRole('button', { name: '确定', exact: true }).click()
-  await write(objectivePath, () => page.getByRole('button', { name: '创建', exact: true }).click())
-  await write(objectivePath, () => page.getByLabel('KR 内容', { exact: true }).fill('提高有效转化率'))
-  await write(objectivePath, () => page.getByLabel('优先级标签', { exact: true }).selectOption('p0'))
+  const withKR = await write(objectivePath, () => page.getByRole('button', { name: '创建', exact: true }).click())
+  const planKRID = withKR.objectives.find(objective => objective.id === objectiveID).krs[0].id
+  const planKRPath = `/api/biz-okr/plans/${planID}/krs/${planKRID}`
+  await write(planKRPath, () => page.getByLabel('KR 内容', { exact: true }).fill('提高有效转化率'))
+  await write(planKRPath, () => page.getByLabel('优先级标签', { exact: true }).selectOption('p0'))
   await page.getByRole('button', { name: '+ 添加标签', exact: true }).first().click()
   await page.getByPlaceholder('标签值').fill('回归标签')
-  await write(objectivePath, () => page.getByRole('button', { name: '添加', exact: true }).click())
+  await write(planKRPath, () => page.getByRole('button', { name: '添加', exact: true }).click())
   const planNow = await api(`/api/biz-okr/plans/${planID}`)
   assert.equal(planNow.objectives[0].krs[0].title, '提高有效转化率')
   assert(planNow.objectives[0].krs[0].tags.some(tag => tag.value === '回归标签'))
@@ -141,12 +157,12 @@ try {
 
   await page.getByRole('button', { name: '管理关联人', exact: true }).first().click()
   await page.getByPlaceholder('输入姓名或邮箱搜索').fill('Regression')
-  await write(objectivePath, () => page.getByRole('button', { name: /Regression Owner.*owner@example.test/ }).click())
-  await write(objectivePath, () => page.getByRole('button', { name: '例：Q3 累计自然入驻 1,253 家，线索到入驻转化率 16.51%', exact: true }).click())
-  await write(objectivePath, () => page.getByPlaceholder('例：Q3 累计自然入驻 1,253 家，线索到入驻转化率 16.51%').fill('Plan 转化率达到 25%'))
-  await write(objectivePath, () => page.getByRole('button', { name: '+ 一条核心数据', exact: true }).click())
-  await write(objectivePath, () => page.getByTitle('删除这条核心数据', { exact: true }).last().click())
-  await write(objectivePath, () => page.getByRole('button', { name: '+ 策略具体 KR', exact: true }).click())
+  await write(planKRPath, () => page.getByRole('button', { name: /Regression Owner.*owner@example.test/ }).click())
+  await write(planKRPath, () => page.getByRole('button', { name: '例：Q3 累计自然入驻 1,253 家，线索到入驻转化率 16.51%', exact: true }).click())
+  await write(planKRPath, () => page.getByPlaceholder('例：Q3 累计自然入驻 1,253 家，线索到入驻转化率 16.51%').fill('Plan 转化率达到 25%'))
+  await write(planKRPath, () => page.getByRole('button', { name: '+ 一条核心数据', exact: true }).click())
+  await write(planKRPath, () => page.getByTitle('删除这条核心数据', { exact: true }).last().click())
+  await write(planKRPath, () => page.getByRole('button', { name: '+ 策略具体 KR', exact: true }).click())
   const planPoint = (await api(`/api/biz-okr/plans/${planID}`)).objectives[0].krs[0].points[0]
   const planPointPath = `/api/biz-okr/plans/${planID}/points/${planPoint.id}/definition`
   const planPointRow = page.locator(`#point-${planPoint.id}`)
@@ -160,12 +176,13 @@ try {
   await write(planPointPath, () => planPointRow.getByPlaceholder('工作项 ID').fill('regression-item'))
   await write(planPointPath, () => planPointRow.getByPlaceholder('链接（可选）').fill('https://example.test/meego/regression-item'))
   const detailedPlan = await api(`/api/biz-okr/plans/${planID}`)
-  assert.equal(detailedPlan.objectives[0].krs[0].owners[0].email, 'regression@example.test')
+  assert.equal(detailedPlan.objectives[0].krs[0].owners[0].email, 'owner@example.test')
   assert.equal(detailedPlan.objectives[0].krs[0].metrics[0].text, 'Plan 转化率达到 25%')
   assert(detailedPlan.objectives[0].krs[0].points[0].tags.some(tag => tag.value === '具体 KR 标签'))
   assert.equal(detailedPlan.objectives[0].krs[0].points[0].meego_work_item_id, 'regression-item')
+  await exerciseOwnerFilter('Regression Owner')
   await planPointRow.getByTitle('删除这个具体 KR', { exact: true }).click()
-  await write(objectivePath, () => planPointRow.getByRole('button', { name: '确认', exact: true }).click())
+  await write(planKRPath, () => planPointRow.getByRole('button', { name: '确认', exact: true }).click())
   assert.equal((await api(`/api/biz-okr/plans/${planID}`)).objectives[0].krs[0].points.length, 0)
   pass('Plan owner search, metric create/edit/delete, point edit/Meego association/delete')
 
@@ -220,6 +237,7 @@ try {
 
   await go('/biz-okr?tab=review-fill&quarter=2026-Q3&week=2026-W36')
   await page.getByLabel('周次', { exact: true }).waitFor()
+  await exerciseOwnerFilter('Regression Owner')
   assert.deepEqual(await page.locator('select[aria-label="周次"] option').evaluateAll(options => options.map(option => option.value)), ['2026-W36'])
   const point = page.locator('#point-official-p')
   await point.getByRole('button', { name: '+ 一条进展', exact: true }).click()
@@ -248,6 +266,7 @@ try {
   await api(`/api/okr/progress/${entry.id}`, 'PUT', { week: '2026-W36', text: '协作者已保存', status: entry.status, docs: entry.docs, images: entry.images, source: 'manual', expected_version: entry.version })
   expectedError = true
   await write(`/api/okr/progress/${entry.id}`, () => point.getByPlaceholder('可衡量的本周进展；无更新请写明预期更新时间').fill('我的冲突草稿'), 409)
+  await page.getByRole('button', { name: '查看差异', exact: true }).click()
   await page.getByRole('button', { name: '保留我的修改', exact: true }).waitFor()
   assert.equal(await point.getByPlaceholder('可衡量的本周进展；无更新请写明预期更新时间').inputValue(), '我的冲突草稿')
   expectedError = false
@@ -264,6 +283,7 @@ try {
   assert.equal((await api(followUpPath)).update, '验收进展已记录')
   await go('/biz-okr?tab=review-meeting&quarter=2026-Q3&week=2026-W36')
   await page.getByText('跟进量化验收', { exact: true }).waitFor()
+  await exerciseOwnerFilter('Regression Owner')
   const followSelect = page.locator('tr').filter({ hasText: '跟进量化验收' }).locator('select')
   await write(followUpPath, () => followSelect.selectOption('done'))
   assert.equal(await page.getByRole('button', { name: '+ 一条进展', exact: true }).count(), 0)
@@ -396,6 +416,7 @@ try {
   assert.equal((await board()).objectives[0].krs[0].points.find(item => item.id === 'official-p').entries[0].text, '我的冲突草稿')
   pass('Official OKR management creates/edits/deletes definitions without changing existing progress')
   }
+  assert(avatarRequests >= 2, `avatar request was not retried: ${avatarRequests}`)
   assert.deepEqual(errors, [])
   console.log(JSON.stringify({ result: 'passed', checks, realAPIRequests: requests.filter(request => /^\/api\/(biz-okr|okr)\//.test(request.path)).length, isolatedAgentTasks: tasks.size }))
 } catch (error) {

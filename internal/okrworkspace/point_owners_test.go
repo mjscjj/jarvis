@@ -83,6 +83,36 @@ func TestReplaceKRCorePersistsOwnersPerPoint(t *testing.T) {
 	}
 }
 
+func TestMeegoBatchPreviewReturnsStructuredOwners(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	objective := domain.Objective{ID: "o-meego-owner", Title: "增长", Quarter: "2026-Q3"}
+	kr := domain.KR{ID: "kr-meego-owner", ObjectiveID: objective.ID, Title: "供给增长"}
+	point := domain.KRPoint{ID: "point-meego-owner", KRID: kr.ID, Kind: domain.PointKindStrategy, Title: "策略", MeegoWorkItemID: "123"}
+	owners := []domain.KROwner{
+		{KRID: kr.ID, PersonID: 1, OwnerKey: "a", Email: "a@example.test", Name: "甲", SortOrder: 0},
+		{KRID: kr.ID, PersonID: 2, OwnerKey: "b", Email: "b@example.test", Name: "乙", SortOrder: 1},
+	}
+	for _, row := range []any{&objective, &kr, &point, &owners[0], &owners[1]} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview, err := service.MeegoBatchPreview(t.Context(), "2026-Q3", "2026-W36")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(preview.Items) != 1 || !reflect.DeepEqual(preview.Items[0].Owners, []OwnerView{
+		{Email: "a@example.test", Name: "甲"},
+		{Email: "b@example.test", Name: "乙"},
+	}) {
+		t.Fatalf("items=%+v", preview.Items)
+	}
+}
+
 func TestReplaceKRCoreClearsOwnersOfRemovedPoints(t *testing.T) {
 	db := openWorkspaceTestDB(t)
 	objective := domain.Objective{ID: "o-point-owner-drop", Title: "增长", Quarter: "2026-Q3"}

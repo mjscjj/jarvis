@@ -103,6 +103,18 @@ func (s *Service) UpdatePlanObjective(ctx context.Context, planID, objectiveID s
 	if current.ID == "" {
 		return PlanView{}, ErrNotFound
 	}
+	currentKRs := make(map[string]PlanKRView, len(current.KRs))
+	for _, kr := range current.KRs {
+		currentKRs[kr.ID] = kr
+	}
+	for _, incomingKR := range input.Objective.KRs {
+		if saved, exists := currentKRs[incomingKR.ID]; exists && incomingKR.Version != saved.Version {
+			// The legacy Objective endpoint still replaces all KR definitions.
+			// Reject a stale aggregate snapshot before it can overwrite a KR that
+			// another browser saved through the KR-scoped endpoint.
+			return PlanView{}, ErrConflict
+		}
+	}
 	if planObjectiveRemovesChildren(current, input.Objective) && current.StructureToken != strings.TrimSpace(input.ExpectedStructureToken) {
 		return PlanView{}, ErrConflict
 	}
@@ -146,7 +158,7 @@ func (s *Service) UpdatePlanObjective(ctx context.Context, planID, objectiveID s
 	if result.RowsAffected != 1 {
 		return PlanView{}, ErrConflict
 	}
-	if err := s.updatePlanObjectiveChildren(ctx, objective, input.UpdatedBy, time.Now().UTC()); err != nil {
+	if err := s.updatePlanObjectiveChildren(ctx, current, objective, input.UpdatedBy, time.Now().UTC()); err != nil {
 		return PlanView{}, err
 	}
 	if err := s.bumpPlan(ctx, planID, input.UpdatedBy); err != nil {

@@ -46,7 +46,7 @@ esac`
 
 func TestDirectoryFailedRefreshPreservesPreviousSnapshot(t *testing.T) {
 	client, _ := New(testOptions(writeScript(t, `printf '%s' '{"ok":true,"data":{"has_more":true,"page_token":"repeat"}}'`), fixtureCommandTimeout))
-	before := time.Now().Add(-time.Hour)
+	before := time.Now().Add(-301 * time.Minute)
 	d := &Directory{client: client, profile: "notify", identity: "bot", people: []DirectoryPerson{{Email: "old@example.test"}}, refreshed: before}
 	_, err := d.Search(t.Context(), "old")
 	if err == nil || !strings.Contains(err.Error(), "pagination") {

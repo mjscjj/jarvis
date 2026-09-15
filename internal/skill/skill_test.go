@@ -394,9 +394,10 @@ func TestRepositoryFeishuBroadcastSkillIsExecuteOnlyAndOwnsDirectDelivery(t *tes
 		"个性化广播",
 		"im:message:send_multi_users",
 		"union_id",
-		"enterprise_email",
+		"owners.email",
+		"mentions.email",
 		"receive_id_type",
-		"open_id` 按飞书 App 隔离",
+		"不能把一个应用的 ID 交给另一个应用解析",
 	} {
 		if !strings.Contains(skill, want) {
 			t.Fatalf("Feishu broadcast skill missing delivery contract %q:\n%s", want, skill)

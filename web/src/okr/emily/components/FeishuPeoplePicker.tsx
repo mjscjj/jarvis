@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useFeishuPeopleSearch } from '../../../useFeishuPeopleSearch'
-import { searchOKRPeople, getPeopleAvatars } from '../api'
+import { searchOKRPeople } from '../api'
 import { useBoard } from '../board'
 import { addOrResolveOwner, joinOwnerNames, ownerIdentityKey, ownerOptions, splitOwnerNames } from '../people'
 import type { Kr, KrOwner, PersonSearchItem, Point } from '../types'
-import { PersonAvatar, rememberPersonAvatars } from './PersonAvatar'
+import { PersonAvatar } from './PersonAvatar'
+import { PersonSearchResults } from './PersonSearchResults'
 
 export function FeishuPeoplePickerInput({ owners, options, onChange, compact = false, small = false, preferredDepartmentKeywords = [] }: { owners: KrOwner[]; options: KrOwner[]; onChange: (owners: KrOwner[]) => void; compact?: boolean; small?: boolean; preferredDepartmentKeywords?: string[] }) {
   const root = useRef<HTMLSpanElement>(null)
@@ -88,15 +89,6 @@ export function FeishuPeoplePickerInput({ owners, options, onChange, compact = f
 
   useEffect(() => {
     setResultAvatars(Object.fromEntries(peopleSearch.candidates.filter(p => p.avatar_url).map(p => [p.email, p.avatar_url!])))
-    const emails = peopleSearch.candidates.filter(p => !p.avatar_url).map(p => p.email)
-    if (!emails.length) return
-    const controller = new AbortController()
-    void getPeopleAvatars(emails, controller.signal).then(people => {
-      if (controller.signal.aborted) return
-      rememberPersonAvatars(people)
-      setResultAvatars(current => ({...current,...Object.fromEntries(people.map(p => [p.email,p.avatarUrl]))}))
-    }).catch(() => {})
-    return () => controller.abort()
   }, [peopleSearch.candidates])
 
   const add = (person: PersonSearchItem) => {
@@ -131,7 +123,7 @@ export function FeishuPeoplePickerInput({ owners, options, onChange, compact = f
         <span ref={panel} style={panelStyle} className="overflow-hidden rounded-lg border border-slate-200 bg-white text-left shadow-xl">
           <span className="block border-b border-slate-100 p-2">
             <span className="mb-1.5 flex items-center gap-1.5 text-[10px] font-medium text-slate-500"><span className="size-1.5 rounded-full bg-blue-500" />飞书联系人</span>
-			{small && owners.length > 0 && <span className="flex flex-wrap gap-1 border-b border-slate-100 p-2">{owners.map((owner, index) => <span key={`${ownerIdentityKey(owner)}:${index}`} className="inline-flex items-center gap-1 rounded bg-slate-50 px-2 py-1 text-[11px]">{owner.name}<button type="button" onClick={() => remove(index)} aria-label={`移除${owner.name}`} className="text-slate-400 hover:text-red-500">×</button></span>)}</span>}
+			{small && owners.length > 0 && <span className="flex flex-wrap gap-1 border-b border-slate-100 p-2">{owners.map((owner, index) => <span key={`${ownerIdentityKey(owner)}:${index}`} className="inline-flex items-center gap-1 rounded bg-slate-50 px-2 py-1 text-[11px]"><PersonAvatar name={owner.name} email={owner.email} />{owner.name}<button type="button" onClick={() => remove(index)} aria-label={`移除${owner.name}`} className="text-slate-400 hover:text-red-500">×</button></span>)}</span>}
           <input ref={input} value={peopleSearch.query} onChange={(event) => peopleSearch.setQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') setOpen(false) }} placeholder="输入姓名或邮箱搜索" className="h-8 w-full rounded-md border border-slate-200 bg-slate-50 px-2.5 text-[11px] text-slate-700 outline-none focus:border-blue-400 focus:bg-white" />
           </span>
           {compact && !small && owners.length > 0 && <span className="block border-b border-slate-100 p-2">
@@ -139,19 +131,16 @@ export function FeishuPeoplePickerInput({ owners, options, onChange, compact = f
             <span className="flex flex-wrap gap-1">{owners.map((owner, index) => <span key={`${ownerIdentityKey(owner)}:${index}`} className="inline-flex h-6 items-center gap-1 rounded-full bg-slate-50 pr-1 pl-1.5 text-[10px] text-slate-600 ring-1 ring-slate-200"><PersonAvatar name={owner.name} email={owner.email} />{owner.name}<button type="button" onClick={() => remove(index)} title={`移除${owner.name}`} className="text-slate-300 hover:text-red-500">×</button></span>)}</span>
           </span>}
           <span className="block max-h-64 overflow-auto p-1">
-			{peopleSearch.loading && <span className="block px-2 py-3 text-center text-[10px] text-slate-400">正在搜索飞书联系人…</span>}
-			{!peopleSearch.loading && visibleResults.map((person) => (
-              <button key={person.email || person.name} type="button" onClick={() => add(person)} className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-left hover:bg-slate-50">
-                <PersonAvatar name={person.name} email={person.email} ownUrl={searching ? resultAvatars[person.email] ?? '' : undefined} size="size-7 text-[10px]" tone="bg-slate-400" />
-                <span className="min-w-0">
-				  <span className="block text-[11px] font-medium text-slate-700">{person.name}{person.isExternal && <span className="ml-1 text-[9px] font-normal text-amber-600">外部</span>}</span>
-				  <span className="block truncate text-[9px] text-slate-400">{[person.department, person.email].filter(Boolean).join(' · ') || '飞书用户'}</span>
-                </span>
-              </button>
-            ))}
-			{!peopleSearch.loading && peopleSearch.hasSearched && visibleResults.length === 0 && !peopleSearch.error && <span className="block px-2 py-3 text-center text-[10px] text-slate-400">未找到飞书联系人，请补全姓名或改用邮箱</span>}
-			{!peopleSearch.loading && peopleSearch.hasMore && !peopleSearch.error && <span className="block px-2 py-2 text-[10px] leading-4 text-amber-600">结果较多，请补全姓名或改用邮箱缩小范围</span>}
-			{!peopleSearch.loading && peopleSearch.error && <span className="block px-2 py-2 text-[10px] leading-4 text-red-600">{peopleSearch.error}</span>}
+            <PersonSearchResults
+              people={visibleResults}
+              loading={peopleSearch.loading}
+              error={peopleSearch.error}
+              emptyMessage="未找到飞书联系人，请补全姓名或改用邮箱"
+              showEmpty={peopleSearch.hasSearched}
+              hasMore={peopleSearch.hasMore}
+              avatarUrls={searching ? resultAvatars : undefined}
+              onSelect={add}
+            />
           </span>
         </span>,
         document.body,

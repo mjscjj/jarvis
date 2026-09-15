@@ -354,6 +354,84 @@ func (s *Service) attachRegionalTranslations(ctx context.Context, board *Regiona
 	return nil
 }
 
+type regionalRefreshJob struct {
+	Running bool
+	Error   string
+}
+
+type RegionalRefreshResult struct {
+	Board   RegionalAlignmentBoard `json:"board"`
+	Pending bool                   `json:"pending"`
+}
+
+func regionalTranslationsComplete(board RegionalAlignmentBoard) bool {
+	return len(board.Translations) == len(regionalBoardTexts(board))
+}
+
+// StartRegionalAlignmentRefresh detaches model translation from the HTTP
+// request so public gateways do not terminate a cold glossary refresh.
+func (s *Service) StartRegionalAlignmentRefresh(ctx context.Context, quarter, region, actor string) (RegionalRefreshResult, error) {
+	board, err := s.RegionalAlignmentBoard(ctx, quarter, region, actor)
+	if err != nil {
+		return RegionalRefreshResult{}, err
+	}
+	if s.translator == nil {
+		return RegionalRefreshResult{}, fmt.Errorf("regional OKR translator is unavailable")
+	}
+	if regionalTranslationsComplete(board) {
+		return RegionalRefreshResult{Board: board}, nil
+	}
+	key := board.Alignment.Quarter + ":" + board.Region.RegionCode
+	s.regionalRefreshMu.Lock()
+	job, exists := s.regionalRefreshJobs[key]
+	if exists && job.Running {
+		s.regionalRefreshMu.Unlock()
+		return RegionalRefreshResult{Board: board, Pending: true}, nil
+	}
+	s.regionalRefreshJobs[key] = regionalRefreshJob{Running: true}
+	s.regionalRefreshMu.Unlock()
+
+	go func() {
+		_, refreshErr := s.RefreshRegionalAlignmentBoard(context.Background(), board.Alignment.Quarter, board.Region.RegionCode, actor)
+		s.regionalRefreshMu.Lock()
+		defer s.regionalRefreshMu.Unlock()
+		finished := regionalRefreshJob{}
+		if refreshErr != nil {
+			finished.Error = refreshErr.Error()
+		}
+		s.regionalRefreshJobs[key] = finished
+	}()
+	return RegionalRefreshResult{Board: board, Pending: true}, nil
+}
+
+func (s *Service) RegionalAlignmentRefreshStatus(ctx context.Context, quarter, region, actor string) (RegionalRefreshResult, error) {
+	quarter, region, err := normalizeRegionalScope(quarter, region)
+	if err != nil {
+		return RegionalRefreshResult{}, err
+	}
+	key := quarter + ":" + region
+	s.regionalRefreshMu.Lock()
+	job, exists := s.regionalRefreshJobs[key]
+	if exists && !job.Running {
+		delete(s.regionalRefreshJobs, key)
+	}
+	s.regionalRefreshMu.Unlock()
+	board, err := s.RegionalAlignmentBoard(ctx, quarter, region, actor)
+	if err != nil {
+		return RegionalRefreshResult{}, err
+	}
+	if exists && job.Running {
+		return RegionalRefreshResult{Board: board, Pending: true}, nil
+	}
+	if exists && job.Error != "" {
+		return RegionalRefreshResult{}, fmt.Errorf("regional OKR refresh failed: %s", job.Error)
+	}
+	if !regionalTranslationsComplete(board) {
+		return RegionalRefreshResult{}, fmt.Errorf("regional OKR refresh is not running")
+	}
+	return RegionalRefreshResult{Board: board}, nil
+}
+
 // RefreshRegionalAlignmentBoard reloads both live sources and translates only
 // exact texts not already cached. A source edit gets a new hash automatically.
 func (s *Service) RefreshRegionalAlignmentBoard(ctx context.Context, quarter, region, actor string) (RegionalAlignmentBoard, error) {
@@ -405,11 +483,11 @@ func regionalAlignmentView(row domain.RegionalAlignment) RegionalAlignmentView {
 }
 
 func regionalDemandView(row domain.RegionalDemand) RegionalDemandView {
-	return RegionalDemandView{ID: row.ID, Version: row.Version, RegionalOKR: row.RegionalOKR, Item: row.Item, Requirement: row.Requirement, Docs: nonNilDocs(row.Docs), Images: nonNilImages(row.Images), Priority: row.Priority, RegionalPOCs: append([]domain.FollowUpOwner(nil), row.RegionalPOCs...), PlatformPOCs: append([]domain.FollowUpOwner(nil), row.PlatformPOCs...), Acceptance: row.Acceptance, PlanKRIDs: nonNilStrings(row.PlanKRIDs), Deliverable: row.Deliverable, SortOrder: row.SortOrder}
+	return RegionalDemandView{ID: row.ID, Version: row.Version, RegionalOKR: row.RegionalOKR, Item: row.Item, Requirement: row.Requirement, Docs: nonNilDocs(row.Docs), Images: nonNilImages(row.Images), Priority: row.Priority, RegionalPOCs: nonNilFollowUpOwners(row.RegionalPOCs), PlatformPOCs: nonNilFollowUpOwners(row.PlatformPOCs), Acceptance: row.Acceptance, PlanKRIDs: nonNilStrings(row.PlanKRIDs), Deliverable: row.Deliverable, SortOrder: row.SortOrder}
 }
 
 func regionalDecisionView(row domain.RegionalPlanDecision) RegionalPlanDecisionView {
-	return RegionalPlanDecisionView{PlanKRID: row.PlanKRID, Version: row.Version, Onboard: row.Onboard, LaunchRegions: nonNilStrings(row.LaunchRegions), RegionalPOCs: append([]domain.FollowUpOwner(nil), row.RegionalPOCs...), RegionalOKR: row.RegionalOKR, Hidden: row.Hidden}
+	return RegionalPlanDecisionView{PlanKRID: row.PlanKRID, Version: row.Version, Onboard: row.Onboard, LaunchRegions: nonNilStrings(row.LaunchRegions), RegionalPOCs: nonNilFollowUpOwners(row.RegionalPOCs), RegionalOKR: row.RegionalOKR, Hidden: row.Hidden}
 }
 
 func nonNilStrings(values []string) []string {
@@ -418,6 +496,11 @@ func nonNilStrings(values []string) []string {
 	}
 	return values
 }
+
+func nonNilFollowUpOwners(values []domain.FollowUpOwner) []domain.FollowUpOwner {
+	return append([]domain.FollowUpOwner{}, values...)
+}
+
 func normalizeRegionalDemandInput(input RegionalDemandInput) (RegionalDemandInput, error) {
 	input.RegionalOKR, input.Item, input.Requirement, input.Deliverable = strings.TrimSpace(input.RegionalOKR), strings.TrimSpace(input.Item), strings.TrimSpace(input.Requirement), strings.TrimSpace(input.Deliverable)
 	input.Priority, input.Acceptance = strings.ToLower(strings.TrimSpace(input.Priority)), strings.ToLower(strings.TrimSpace(input.Acceptance))

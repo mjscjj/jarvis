@@ -53,6 +53,13 @@ export function krHasAnyOwner(kr: Kr, selectedOwners: KrOwner[]): boolean {
 	return krOwners(kr).some((owner) => selectedOwners.some((selected) => ownerMatches(owner, selected)))
 }
 
+export function krOwnerCounts(objectives: Objective[], owners: KrOwner[] = krOwnerOptions(objectives)): Map<string, number> {
+	return new Map(owners.map((owner) => [
+		ownerIdentityKey(owner),
+		objectives.reduce((count, objective) => count + objective.krs.filter((kr) => krHasAnyOwner(kr, [owner])).length, 0),
+	]))
+}
+
 export function rankKrOwnerSuggestions(options: KrOwner[], recentKeys: string[], ownerCounts: ReadonlyMap<string, number>, limit = 5): KrOwner[] {
 	const byKey = new Map(options.map((owner) => [ownerIdentityKey(owner), owner]))
 	const recent = recentKeys.flatMap((key) => {

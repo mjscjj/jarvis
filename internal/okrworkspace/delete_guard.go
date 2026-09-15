@@ -56,6 +56,51 @@ func planObjectiveStructureToken(objective PlanObjectiveView) (string, error) {
 	return deletionToken(snapshot)
 }
 
+// planKRStructureToken guards destructive edits inside one Plan KR without
+// coupling ordinary KR edits to sibling KRs in the same Objective. Point
+// versions are included because point definitions are saved independently.
+func planKRStructureToken(kr PlanKRView) (string, error) {
+	type pointVersion struct {
+		ID      string `json:"id"`
+		Version int32  `json:"version"`
+	}
+	snapshot := struct {
+		Metrics []string       `json:"metrics"`
+		Points  []pointVersion `json:"points"`
+	}{
+		Metrics: make([]string, 0, len(kr.Metrics)),
+		Points:  make([]pointVersion, 0, len(kr.Points)),
+	}
+	for _, metric := range kr.Metrics {
+		snapshot.Metrics = append(snapshot.Metrics, metric.ID)
+	}
+	for _, point := range kr.Points {
+		snapshot.Points = append(snapshot.Points, pointVersion{ID: point.ID, Version: point.Version})
+	}
+	return deletionToken(snapshot)
+}
+
+func planKRRemovesChildren(current, incoming PlanKRView) bool {
+	incomingIDs := make(map[string]struct{}, len(incoming.Metrics)+len(incoming.Points))
+	for _, metric := range incoming.Metrics {
+		incomingIDs[metric.ID] = struct{}{}
+	}
+	for _, point := range incoming.Points {
+		incomingIDs[point.ID] = struct{}{}
+	}
+	for _, metric := range current.Metrics {
+		if _, exists := incomingIDs[metric.ID]; !exists {
+			return true
+		}
+	}
+	for _, point := range current.Points {
+		if _, exists := incomingIDs[point.ID]; !exists {
+			return true
+		}
+	}
+	return false
+}
+
 func planObjectiveRemovesChildren(current, incoming PlanObjectiveView) bool {
 	incomingKRs := make(map[string]map[string]struct{}, len(incoming.KRs))
 	for _, kr := range incoming.KRs {

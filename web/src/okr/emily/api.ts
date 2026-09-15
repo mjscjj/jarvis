@@ -1,5 +1,6 @@
 import { appPath } from '../../appPath.ts'
 import { normalizeKRTitle } from './krTitle'
+import { createPeopleSearchCache } from './peopleSearchCache'
 import type { AuthStatus, CommentDelivery, CommentMention, Entry, EnumValues, FeishuDeviceLogin, FeishuDeviceLoginPoll, FeishuDocumentResult, FollowUpItem, FollowUpList, FollowUpStatus, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, OKRActivityEntry, OKRPlan, OKRPlanList, PageComment, PageCommentList, PersonAvatarItem, PointKind, RegionalAlignmentBoard, RegionalCode, RegionalDemand, RegionalPlanDecisionItem, RegionalRecapOverlay, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
 
 interface Envelope<T> {
@@ -56,6 +57,7 @@ interface APIPlanObjective {
     id: string
     title: string
     version?: number
+		structure_token?: string
     owners: Array<{ email: string; name: string; union_id?: string }>
     metric_note: string
     metrics: Array<{ id: string; text: string; light?: Light; images?: Entry['images'] }>
@@ -91,20 +93,30 @@ interface APIPointDefinitionPatchResult {
   point_id: string
 	version: number
 	structure_token?: string
+	kr_structure_token?: string
 	delete_token?: string
 	plan_delete_token?: string
 	title: string
+	kind: PointKind
+	meego_work_item_id: string
+	meego_url: string
 	owners: Array<{ email: string; name: string; union_id?: string }>
+	tags: KrTag[]
 }
 
 export interface PointDefinitionPatchResult {
   pointId: string
 	version: number
 	structureToken?: string
+	krStructureToken?: string
 	deleteToken?: string
 	planDeleteToken?: string
 	title: string
+	kind: PointKind
+	meegoWorkItemId: string
+	meegoUrl: string
 	owners: KrOwner[]
+	tags: KrTag[]
 }
 
 interface APIPlanList {
@@ -157,6 +169,11 @@ interface APIRegionalBoard {
   decisions: APIRegionalDecision[]
   recap_overlays: APIRegionalRecapOverlay[]
   translations: Record<string, string>
+}
+
+interface APIRegionalRefreshResult {
+  board: APIRegionalBoard
+  pending: boolean
 }
 
 interface APIActivityEntry {
@@ -371,7 +388,7 @@ interface APIMeegoBatchPreview {
     kr_id: string
     kr_title: string
 	progress_version: number
-    owner_name: string
+    owners: Array<{ email: string; name: string; union_id?: string }>
     point_id: string
     point_title: string
     risk: boolean
@@ -500,6 +517,7 @@ function fromAPIPlanObjectives(value: APIPlanObjective[]): Objective[] {
         id: kr.id,
         title: normalizeKRTitle(kr.title),
         version: kr.version ?? 0,
+		structureToken: kr.structure_token ?? '',
         owners: (kr.owners ?? []).map((owner): KrOwner => ({ email: owner.email, name: owner.name, unionId: owner.union_id })),
         ownerName: (kr.owners ?? []).map((owner) => owner.name).filter(Boolean).join('、'),
         ownerEmail: (kr.owners ?? []).find((owner) => owner.email)?.email ?? '',
@@ -523,33 +541,38 @@ function fromAPIPlanObjectives(value: APIPlanObjective[]): Objective[] {
     }))
 }
 
+function toAPIPlanKR(kr: Kr): APIPlanObjective['krs'][number] {
+  return {
+    id: kr.id,
+    title: normalizeKRTitle(kr.title),
+    version: kr.version ?? 0,
+		structure_token: kr.structureToken,
+    owners: (kr.owners ?? []).map((owner) => ({ email: owner.email, name: owner.name, union_id: owner.unionId })),
+    metric_note: kr.metricNote ?? '',
+    metrics: kr.metrics.map((metric) => ({ id: metric.id, text: metric.text, light: metric.light, images: metric.images ?? [] })),
+    points: kr.points.map((point) => ({
+      id: point.id,
+			version: point.version ?? 0,
+			...(point.version === undefined ? {
+				kind: point.kind,
+				title: point.title,
+				meego_work_item_id: point.meegoWorkItemId ?? '',
+				meego_url: point.meegoUrl ?? '',
+				owners: (point.owners ?? []).map((owner) => ({ email: owner.email, name: owner.name, union_id: owner.unionId })),
+				tags: point.tags ?? [],
+			} : {}),
+    })),
+    tags: kr.tags ?? [],
+  }
+}
+
 function toAPIPlanObjective(objective: Objective): APIPlanObjective {
   return {
     id: objective.id,
     title: objective.title,
     version: objective.version ?? 0,
-	structure_token: objective.structureToken,
-    krs: objective.krs.map((kr) => ({
-      id: kr.id,
-      title: normalizeKRTitle(kr.title),
-      version: kr.version ?? 0,
-      owners: (kr.owners ?? []).map((owner) => ({ email: owner.email, name: owner.name, union_id: owner.unionId })),
-      metric_note: kr.metricNote ?? '',
-      metrics: kr.metrics.map((metric) => ({ id: metric.id, text: metric.text, light: metric.light, images: metric.images ?? [] })),
-      points: kr.points.map((point) => ({
-        id: point.id,
-				version: point.version ?? 0,
-				...(point.version === undefined ? {
-					kind: point.kind,
-					title: point.title,
-					meego_work_item_id: point.meegoWorkItemId ?? '',
-					meego_url: point.meegoUrl ?? '',
-					owners: (point.owners ?? []).map((owner) => ({ email: owner.email, name: owner.name, union_id: owner.unionId })),
-					tags: point.tags ?? [],
-				} : {}),
-      })),
-      tags: kr.tags ?? [],
-    })),
+		structure_token: objective.structureToken,
+    krs: objective.krs.map(toAPIPlanKR),
   }
 }
 
@@ -745,7 +768,15 @@ export async function getRegionalAlignmentBoard(quarter: string, region: Regiona
 }
 
 export async function refreshRegionalAlignmentBoard(quarter: string, region: RegionalCode): Promise<RegionalAlignmentBoard> {
-  return fromAPIRegionalBoard(await request<APIRegionalBoard>(`/api/biz-okr/regional-alignments/${encodeURIComponent(region)}/refresh?quarter=${encodeURIComponent(quarter)}`, { method: 'POST' }))
+  const base = `/api/biz-okr/regional-alignments/${encodeURIComponent(region)}`
+  const query = `quarter=${encodeURIComponent(quarter)}`
+  let result = await request<APIRegionalRefreshResult>(`${base}/refresh?${query}`, { method: 'POST' })
+  for (let attempt = 0; result.pending; attempt += 1) {
+    if (attempt >= 600) throw new Error('区域 OKR 刷新超时 / Regional OKR refresh timed out')
+    await new Promise<void>((resolve) => setTimeout(resolve, 2000))
+    result = await request<APIRegionalRefreshResult>(`${base}/refresh-status?${query}`)
+  }
+  return fromAPIRegionalBoard(result.board)
 }
 
 export async function createRegionalDemand(quarter: string, region: RegionalCode, value: Omit<RegionalDemand, 'id'>): Promise<RegionalDemand> {
@@ -819,6 +850,24 @@ export async function updateOKRPlanObjective(planId: string, objective: Objectiv
   }
 }
 
+export async function updateOKRPlanKR(planId: string, kr: Kr): Promise<OKRPlan> {
+  try {
+    return fromAPIPlan(await request<APIPlan>(`/api/biz-okr/plans/${encodeURIComponent(planId)}/krs/${encodeURIComponent(kr.id)}`, {
+      method: 'PATCH',
+		body: JSON.stringify({
+			expected_version: kr.version ?? 0,
+			expected_structure_token: kr.structureToken ?? '',
+			kr: toAPIPlanKR(kr),
+		}),
+    }))
+  } catch (error) {
+    if (error instanceof APIError && error.status === 409 && error.data) {
+      throw new APIError(error.message, error.status, error.code, fromAPIPlan(error.data as APIPlan), error.logid)
+    }
+    throw error
+  }
+}
+
 export async function patchPointDefinition(input: { pointId: string; planId?: string; expectedVersion: number; title?: string; owners?: KrOwner[]; kind?: PointKind; meegoWorkItemId?: string; meegoUrl?: string; tags?: KrTag[] }): Promise<PointDefinitionPatchResult> {
   const path = input.planId
     ? `/api/biz-okr/plans/${encodeURIComponent(input.planId)}/points/${encodeURIComponent(input.pointId)}/definition`
@@ -830,16 +879,31 @@ export async function patchPointDefinition(input: { pointId: string; planId?: st
 	  if (input.meegoWorkItemId !== undefined) body.meego_work_item_id = input.meegoWorkItemId
 	  if (input.meegoUrl !== undefined) body.meego_url = input.meegoUrl
 	  if (input.tags !== undefined) body.tags = input.tags
-  const value = await request<APIPointDefinitionPatchResult>(path, { method: 'PATCH', body: JSON.stringify(body) })
-	  return {
+	try {
+		return fromAPIPointDefinitionPatchResult(await request<APIPointDefinitionPatchResult>(path, { method: 'PATCH', body: JSON.stringify(body) }))
+	} catch (error) {
+		if (error instanceof APIError && error.status === 409 && error.data) {
+			throw new APIError(error.message, error.status, error.code, fromAPIPointDefinitionPatchResult(error.data as APIPointDefinitionPatchResult), error.logid)
+		}
+		throw error
+	}
+}
+
+function fromAPIPointDefinitionPatchResult(value: APIPointDefinitionPatchResult): PointDefinitionPatchResult {
+	return {
 	    pointId: value.point_id,
 	    version: value.version,
 		structureToken: value.structure_token,
+		krStructureToken: value.kr_structure_token,
 		deleteToken: value.delete_token,
-		planDeleteToken: value.plan_delete_token,
+	    planDeleteToken: value.plan_delete_token,
 	    title: value.title,
+		kind: value.kind,
+		meegoWorkItemId: value.meego_work_item_id,
+		meegoUrl: value.meego_url,
 	    owners: (value.owners ?? []).map((owner) => ({ email: owner.email, name: owner.name, unionId: owner.union_id })),
-	  }
+		tags: value.tags ?? [],
+	}
 }
 
 export async function deleteOKRPlanObjective(planId: string, objective: Objective): Promise<void> {
@@ -1360,7 +1424,7 @@ function fromAPIMeegoBatchPreview(value: APIMeegoBatchPreview): MeegoBatchPrevie
       krId: item.kr_id,
       krTitle: item.kr_title,
 		progressVersion: item.progress_version,
-      ownerName: item.owner_name,
+      owners: item.owners.map((owner) => ({ email: owner.email, name: owner.name, unionId: owner.union_id })),
       pointId: item.point_id,
       pointTitle: item.point_title,
       risk: item.risk,
@@ -1539,9 +1603,12 @@ export async function replaceKR(kr: Kr): Promise<Kr> {
   }
 }
 
-export async function getPeopleAvatars(emails: string[], signal?: AbortSignal): Promise<PersonAvatarItem[]> {
-  const value = await request<{ people: Array<{ email: string; name: string; avatar_url: string }> }>(`/api/biz-okr/people/avatars?emails=${encodeURIComponent(emails.join(','))}`, { signal })
-  return value.people.map((item) => ({ email: item.email, name: item.name, avatarUrl: item.avatar_url }))
+export async function getPeopleAvatars(emails: string[], signal?: AbortSignal): Promise<{ people: PersonAvatarItem[]; failedEmails: string[] }> {
+  const value = await request<{ people: Array<{ email: string; name: string; avatar_url: string }>; failed_emails: string[] }>(`/api/biz-okr/people/avatars?emails=${encodeURIComponent(emails.join(','))}`, { signal })
+  return {
+    people: value.people.map((item) => ({ email: item.email, name: item.name, avatarUrl: item.avatar_url })),
+    failedEmails: value.failed_emails ?? [],
+  }
 }
 
 export async function createObjective(input: { quarter: string; title: string }): Promise<Objective> {
@@ -1622,9 +1689,14 @@ export interface OKRDirectoryCandidate {
  is_external: boolean
  has_chatted: boolean
 }
-export async function searchOKRPeople(query: string, signal?: AbortSignal): Promise<{ candidates: OKRDirectoryCandidate[]; has_more: boolean }> {
- const result = await request<{candidates: OKRDirectoryCandidate[];has_more:boolean}>(`/api/biz-okr/people/search?q=${encodeURIComponent(query)}`, {signal})
+
+const cachedOKRPeopleSearch = createPeopleSearchCache<OKRDirectoryCandidate>(async (query) => {
+ const result = await request<{candidates: OKRDirectoryCandidate[];has_more:boolean}>(`/api/biz-okr/people/search?q=${encodeURIComponent(query)}`)
  return {...result, candidates: result.candidates.map(person => ({...person, department: person.department ?? '', is_external:false, has_chatted:false}))}
+})
+
+export async function searchOKRPeople(query: string, signal?: AbortSignal): Promise<{ candidates: OKRDirectoryCandidate[]; has_more: boolean }> {
+ return cachedOKRPeopleSearch(query, signal)
 }
 export async function retryCommentNotifications(id: string, email: string): Promise<CommentDelivery[]> {
  return request<CommentDelivery[]>(`/api/biz-okr/comments/${encodeURIComponent(id)}/notifications/retry`, { method:'POST', body:JSON.stringify({email}) })

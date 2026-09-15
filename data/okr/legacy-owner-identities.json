@@ -1,0 +1,587 @@
+{
+  "source": "2026-09-14 verified OKR identity migration; document-derived IDs retain their original row evidence",
+  "people": {
+    "ou_00d85cd2b9e183289fcfc5098bcf2958": {
+      "email": "ann.tt@bytedance.com",
+      "name": "李暖安",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_06ca2a76e2d197ce9014089ac3a98150": {
+      "email": "panxiaofeng@bytedance.com",
+      "name": "潘晓凤",
+      "source_app_id": "cli_a96a0c8d82b85cb1",
+      "document_reference": {
+        "resolved_open_id": "ou_649eadad4ff8e8ca726edd64eddf046e",
+        "document_id": "DAF4dqfploOMAkxW9Ucm1elPyqg",
+        "revision_id": 17962,
+        "row_block_id": "H0vkdvzADojrcfxtDaZmQuv3yif",
+        "old_name": "潘晓凤",
+        "new_name": null
+      }
+    },
+    "ou_08f5a2e91399057ad4a598e10423bc63": {
+      "email": "zhengyuemiao@bytedance.com",
+      "name": "郑月妙",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_0c17b4924a626064ea4bd7905821623c": {
+      "email": "puxinpian.521@bytedance.com",
+      "name": "浦新翩",
+      "source_app_id": "cli_a96a0c8d82b85cb1",
+      "document_reference": {
+        "resolved_open_id": "ou_6ce6d760b03c757caaf19d65fcf5d26e",
+        "document_id": "DAF4dqfploOMAkxW9Ucm1elPyqg",
+        "revision_id": 17962,
+        "row_block_id": "LhoKdohNwoFXs5xa7DGm6dzryxc",
+        "old_name": "浦新翩",
+        "new_name": null
+      }
+    },
+    "ou_0cec307c87fe6ec915599e3e5fdb3177": {
+      "email": "liuyin.01@bytedance.com",
+      "name": "刘寅",
+      "source_app_id": "cli_a96a0c8d82b85cb1",
+      "document_reference": {
+        "resolved_open_id": "ou_8cbb262e021e5a36d7f527b3b4b31d52",
+        "document_id": "DAF4dqfploOMAkxW9Ucm1elPyqg",
+        "revision_id": 17962,
+        "row_block_id": "HiJCdG949oe8cKxZOsnmlLDNyac",
+        "old_name": "刘寅",
+        "new_name": null
+      }
+    },
+    "ou_0f05a794fa9bf4b648558fafa9af8d19": {
+      "email": "wuyang.kevin@bytedance.com",
+      "name": "吴阳",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_12dd2cafb835bd0e545b7b390093c293": {
+      "email": "wangmanqi.6@bytedance.com",
+      "name": "王曼琪",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_13efbf79ecfa798767f10dbc7f2ccf62": {
+      "email": "fenganqi.faq@bytedance.com",
+      "name": "冯安琪",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_14c8e3a94e8cde757e37ad14e98eef1f": {
+      "email": "fengcheng.charles@bytedance.com",
+      "name": "冯程",
+      "source_app_id": "cli_a9521bb5a8f79bdb"
+    },
+    "ou_18b415b464d9fab6ea439e87f2a3bbee": {
+      "email": "guotaizhang@bytedance.com",
+      "name": "郭泰章",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_19942a7206bc5a93b16c7f0670677f14": {
+      "email": "gongxiaoying@bytedance.com",
+      "name": "龚晓颖",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_1bf1f2335746a8284b0ca722e75f5d3b": {
+      "email": "zhangxi.16@bytedance.com",
+      "name": "张熙",
+      "source_app_id": "cli_a96a0c8d82b85cb1",
+      "document_reference": {
+        "resolved_open_id": "ou_cfa7124ffa1ad683efe8fee331633b9c",
+        "document_id": "DAF4dqfploOMAkxW9Ucm1elPyqg",
+        "revision_id": 17962,
+        "row_block_id": "HiJCdG949oe8cKxZOsnmlLDNyac",
+        "old_name": "张熙",
+        "new_name": null
+      }
+    },
+    "ou_1f657d8a5c44e531ca37d749448dfc00": {
+      "email": "liangjiaqi.05@bytedance.com",
+      "name": "梁嘉琦",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_220af8be42a1bc782b0a485ea0abec7c": {
+      "email": "enru.guo@bytedance.com",
+      "name": "郭恩如",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_2590bfd06bc41e7c02d51d4d05b2b0f8": {
+      "email": "janson.liu@bytedance.com",
+      "name": "刘正乙",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_25e7a72a74e2cec955e6533c300277a7": {
+      "email": "sumuchen.001@bytedance.com",
+      "name": "苏穆辰",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_266e5fa4bebed519150ca0fc9783f4b6": {
+      "email": "xiaoxinhang@bytedance.com",
+      "name": "肖新航",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_28ac12a047c276f579f309d095e8c524": {
+      "email": "fangyiguo@bytedance.com",
+      "name": "张颖思",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_29864ae0df4d4e294f54f5f40755f43c": {
+      "email": "pengzhe.liam@bytedance.com",
+      "name": "彭哲",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_2c678701d0e35d3df4affec139c3f785": {
+      "email": "ruoyizhang@bytedance.com",
+      "name": "张若怡",
+      "source_app_id": "cli_a96a0c8d82b85cb1",
+      "document_reference": {
+        "resolved_open_id": "ou_4f9796d856ffa67c1b32206f6e81e5bf",
+        "document_id": "DAF4dqfploOMAkxW9Ucm1elPyqg",
+        "revision_id": 17962,
+        "row_block_id": "KCmMdWx7wozF1lxtBgAmnLyXyZg",
+        "old_name": "张若怡",
+        "new_name": null
+      }
+    },
+    "ou_2cca2ad40bb29353b084e51e2fcca581": {
+      "email": "tangbeier@bytedance.com",
+      "name": "唐贝尓",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_321cdb6090b03452088278a08f3cf5f1": {
+      "email": "liulihua.1728@bytedance.com",
+      "name": "刘力华",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_34a8a820cb70c95daadc2ba5486f3811": {
+      "email": "young.chen@bytedance.com",
+      "name": "陈凯扬",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_39de8bac88ee0de4cbf50b4902083700": {
+      "email": "zichen.chen@bytedance.com",
+      "name": "陈子宸",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_3b293c4ffc76e4d457976cffe5e30a21": {
+      "email": "wangnan.tracey@bytedance.com",
+      "name": "王楠",
+      "source_app_id": "cli_a96a0c8d82b85cb1",
+      "document_reference": {
+        "resolved_open_id": "ou_a342a811efc200d78401aede14deb093",
+        "document_id": "DAF4dqfploOMAkxW9Ucm1elPyqg",
+        "revision_id": 17962,
+        "row_block_id": "KCmMdWx7wozF1lxtBgAmnLyXyZg",
+        "old_name": "王楠",
+        "new_name": null
+      }
+    },
+    "ou_3d0794510369258969da85d998086076": {
+      "email": "louhaoyun.6@bytedance.com",
+      "name": "楼昊芸",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_41ad18ab53d8eec2d6d9abbb9e98a033": {
+      "email": "wangxueling.520@bytedance.com",
+      "name": "王雪凌",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_4f5ca1e73cc8fc7a9a62fe29b9579c2e": {
+      "email": "linjunjie.brandon@bytedance.com",
+      "name": "林俊杰",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_4f9796d856ffa67c1b32206f6e81e5bf": {
+      "email": "ruoyizhang@bytedance.com",
+      "name": "张若怡",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_519b89dfff84001d25e69a9a2e064c5c": {
+      "email": "liulihua.1728@bytedance.com",
+      "name": "刘力华",
+      "source_app_id": "cli_a96a0c8d82b85cb1",
+      "document_reference": {
+        "resolved_open_id": "ou_321cdb6090b03452088278a08f3cf5f1",
+        "document_id": "DAF4dqfploOMAkxW9Ucm1elPyqg",
+        "revision_id": 17962,
+        "row_block_id": "KCmMdWx7wozF1lxtBgAmnLyXyZg",
+        "old_name": "刘力华",
+        "new_name": null
+      }
+    },
+    "ou_53fa389604e6bbc737bac0a365a9f69e": {
+      "email": "saif.mujahid@bytedance.com",
+      "name": "Saif Mujahid",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_54c7d4681d7a872cd9677ebf6704a782": {
+      "email": "wangyi.yeee@bytedance.com",
+      "name": "王奕",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_55529ebf4f1a7d328a27067f14778b34": {
+      "email": "luosha.sha@bytedance.com",
+      "name": "罗沙",
+      "source_app_id": "cli_a96a0c8d82b85cb1",
+      "document_reference": {
+        "resolved_open_id": "ou_fbc787425fb1d3179d4266b3ce8aa4d1",
+        "document_id": "DAF4dqfploOMAkxW9Ucm1elPyqg",
+        "revision_id": 17962,
+        "row_block_id": "I3cndTKDeoPcB0xMmeamVWwDyug",
+        "old_name": "罗沙",
+        "new_name": null
+      }
+    },
+    "ou_577fb993187609afee9ba46f75684500": {
+      "email": "zhangyueren@bytedance.com",
+      "name": "张月仁",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_57df51ad6e8aa60ac48b99f98f5e8c54": {
+      "email": "hannah.chen@bytedance.com",
+      "name": "陈晗",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_6053ff2261cb429091447bf4af607b4d": {
+      "email": "ethan.ng@bytedance.com",
+      "name": "Ethan Ng",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_64eef95237380690cd7215436098c0be": {
+      "email": "xuanzi.zhou@bytedance.com",
+      "name": "周炫孜",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_650c33c67d3278a327b394858d3b5a6a": {
+      "email": "wu.tuo@bytedance.com",
+      "name": "吴拓",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_68b2c9ea72e1abcf5469b0afa353dd92": {
+      "email": "qianzhengxuan@bytedance.com",
+      "name": "钱政渲",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_6b20f2c339e5942d8fe2e27700d2fd13": {
+      "email": "lijiayu.1005@bytedance.com",
+      "name": "李佳玉",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_6ce6d760b03c757caaf19d65fcf5d26e": {
+      "email": "puxinpian.521@bytedance.com",
+      "name": "浦新翩",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_6d3f70378a74a4d014f685bbd9f11301": {
+      "email": "liwenxin.20040505@bytedance.com",
+      "name": "李文欣",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_6f8f4534618fb1fbca3ce5f8a6587dd8": {
+      "email": "hsiangfukuo@bytedance.com",
+      "name": "郭祥莆",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_71080f4c041b5ab588dad4af5014041c": {
+      "email": "fengcheng.charles@bytedance.com",
+      "name": "冯程",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_714a423183e8d2016d81a5c04a855fe5": {
+      "email": "zhanyuqiong@bytedance.com",
+      "name": "战宇琼",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_7af3aa6a7b60cbffe6ace258807f5224": {
+      "email": "xiakun.928@bytedance.com",
+      "name": "夏坤",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_7b147a46b74179aacbc1abfa05b3337a": {
+      "email": "yeshiyao.112@bytedance.com",
+      "name": "叶诗瑶",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_7f4889cc3d59426a2c4ededf094e608b": {
+      "email": "liuyang.816@bytedance.com",
+      "name": "刘洋",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_8047d23d1a807731d958351ddda2b1d7": {
+      "email": "renjing.07@bytedance.com",
+      "name": "任静",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_81a396900833eb0e08f2ef75de191731": {
+      "email": "xiaozixia@bytedance.com",
+      "name": "肖子夏",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_82b1008236302b9e9daf17a191599579": {
+      "email": "dan.dli@bytedance.com",
+      "name": "李丹",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_89c0e51aee5605c8398284c3e64f28c0": {
+      "email": "linmujun214@bytedance.com",
+      "name": "林沐钧",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_8cbb262e021e5a36d7f527b3b4b31d52": {
+      "email": "liuyin.01@bytedance.com",
+      "name": "刘寅",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_911aace82fd84f03f995d9d029d9f2a6": {
+      "email": "zhoulin.joyce@bytedance.com",
+      "name": "周琳",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_95fb3da865154a19a9d93776cfb75b80": {
+      "email": "zhaoyilin.98@bytedance.com",
+      "name": "赵依琳",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_96443e80944007d0fd1f24dd08a3520b": {
+      "email": "xuchangxi.123@bytedance.com",
+      "name": "徐昌熙",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_988f7724a7886a88d2a05fa77b0c00d1": {
+      "email": "wushuying.01@bytedance.com",
+      "name": "吴姝颖",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_a137ba43a1f52ebfe0a29bd986bded80": {
+      "email": "liuyang.816@bytedance.com",
+      "name": "刘洋",
+      "source_app_id": "cli_a96a0c8d82b85cb1",
+      "document_reference": {
+        "resolved_open_id": "ou_7f4889cc3d59426a2c4ededf094e608b",
+        "document_id": "DAF4dqfploOMAkxW9Ucm1elPyqg",
+        "revision_id": 17962,
+        "row_block_id": "ATAvdPz1XoDf6vxlIwgmpkWIyif",
+        "old_name": "刘洋",
+        "new_name": null
+      }
+    },
+    "ou_a342a811efc200d78401aede14deb093": {
+      "email": "wangnan.tracey@bytedance.com",
+      "name": "王楠",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_a48f9064a8d2e943513cbc46ff181664": {
+      "email": "tanxiaoping.13@bytedance.com",
+      "name": "谭晓萍",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_a63971ab08f4f26ab8ea566c891664c2": {
+      "email": "xuzixuan.zx@bytedance.com",
+      "name": "徐紫喧",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_a93fea1f57215869be4cc270ba1dbfe4": {
+      "email": "lvjixuan@bytedance.com",
+      "name": "吕霁璇",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_a9e026b3c2476fc59c25aca9b70ba8b6": {
+      "email": "lujijin@bytedance.com",
+      "name": "陆吉瑾",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_ad43d47be6df9b83d0ec5a5609040fae": {
+      "email": "malin.18@bytedance.com",
+      "name": "elena",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_b1e0ac2e4c23f589777135993922589c": {
+      "email": "qiaomeixuan@bytedance.com",
+      "name": "乔美萱",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_b6dc19a5ec48e34c1d1ebed5a6d0345c": {
+      "email": "chauncey.shen@bytedance.com",
+      "name": "Chauncey Shen",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_b708be474cd72d6de108b0aabf1bd8e9": {
+      "email": "yindonghui@bytedance.com",
+      "name": "尹东辉",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_bcd2cb6115b6d7e200348ddbf3546f39": {
+      "email": "cw.jeff@bytedance.com",
+      "name": "王淙",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_bce78874ae35c0cd70e22424af0ca3de": {
+      "email": "richard.ho@bytedance.com",
+      "name": "何金川",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_bd3733363c7bda2534ccd17eb4749d49": {
+      "email": "xujingwen.0213@bytedance.com",
+      "name": "徐婧雯",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_bffc72cdf6ff2521bfcf01e2fdb20bf9": {
+      "email": "gengxinyan@bytedance.com",
+      "name": "耿馨妍",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_c7d1ebdf2b0feed3ee23f27aaf6967c9": {
+      "email": "yangxiaonan.bj@bytedance.com",
+      "name": "杨晓楠",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_c90e62c7fe06329f0e29d98aeffdc677": {
+      "email": "kikokuang.23@bytedance.com",
+      "name": "况筱晓",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_cfa7124ffa1ad683efe8fee331633b9c": {
+      "email": "zhangxi.16@bytedance.com",
+      "name": "张熙",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_cfd9e106436c46adf20aaf9fe076c65d": {
+      "email": "chujiejie.1@bytedance.com",
+      "name": "储节节",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_d0984966ee8c1e54ec12e05089b1cd3e": {
+      "email": "zhangyueren@bytedance.com",
+      "name": "张月仁",
+      "source_app_id": "cli_a96a0c8d82b85cb1",
+      "document_reference": {
+        "resolved_open_id": "ou_577fb993187609afee9ba46f75684500",
+        "document_id": "DAF4dqfploOMAkxW9Ucm1elPyqg",
+        "revision_id": 17962,
+        "row_block_id": "I3cndTKDeoPcB0xMmeamVWwDyug",
+        "old_name": "张月仁",
+        "new_name": null
+      }
+    },
+    "ou_d36e77dc71f499c472e0718e8c85ed95": {
+      "email": "xupei.peila@bytedance.com",
+      "name": "徐琲",
+      "source_app_id": "cli_a96a0c8d82b85cb1",
+      "document_reference": {
+        "resolved_open_id": "ou_ecb4fd3e40a774f20d0ada5fa1684d10",
+        "document_id": "DAF4dqfploOMAkxW9Ucm1elPyqg",
+        "revision_id": 17962,
+        "row_block_id": "C22kds8aioI5rGxpGR0m1KbeyHd",
+        "old_name": "徐琲",
+        "new_name": null
+      }
+    },
+    "ou_dc8246219ef9d896d41c1535ad187849": {
+      "email": "wangyanan.yn@bytedance.com",
+      "name": "王亚南",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_dd68b60e180c9715d7322235773dd5c0": {
+      "email": "gengxinyan@bytedance.com",
+      "name": "耿馨妍",
+      "source_app_id": "cli_a96a0c8d82b85cb1",
+      "document_reference": {
+        "resolved_open_id": "ou_bffc72cdf6ff2521bfcf01e2fdb20bf9",
+        "document_id": "DAF4dqfploOMAkxW9Ucm1elPyqg",
+        "revision_id": 17962,
+        "row_block_id": "ATAvdPz1XoDf6vxlIwgmpkWIyif",
+        "old_name": "耿馨妍",
+        "new_name": null
+      }
+    },
+    "ou_e3167574240b2eee1250d0d7e7158b10": {
+      "email": "kexinzhang.78@bytedance.com",
+      "name": "张可馨",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_e3d4531cd6f14285e8ae22ae14e53730": {
+      "email": "lixiuting.echo@bytedance.com",
+      "name": "李秀婷",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_eb642af1264cfff11c9a80adfc810c77": {
+      "email": "zhang.wangyuhui@bytedance.com",
+      "name": "张王宇慧",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_ecb4fd3e40a774f20d0ada5fa1684d10": {
+      "email": "xupei.peila@bytedance.com",
+      "name": "徐琲",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_edc44aaf8b164622c62ad6550a6c6067": {
+      "email": "linziyu.7@bytedance.com",
+      "name": "林子钰",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_ee650eb069c4ab4b200672ea29615e01": {
+      "email": "zhang.wangyuhui@bytedance.com",
+      "name": "张王宇慧",
+      "source_app_id": "cli_a96a0c8d82b85cb1",
+      "document_reference": {
+        "resolved_open_id": "ou_eb642af1264cfff11c9a80adfc810c77",
+        "document_id": "DAF4dqfploOMAkxW9Ucm1elPyqg",
+        "revision_id": 17962,
+        "row_block_id": "HXxfdBvTOoSCjHxkD49mOyHOyLd",
+        "old_name": "张王宇慧",
+        "new_name": null
+      }
+    },
+    "ou_efcf87aebe59e8a2b8014e0543b916a5": {
+      "email": "cuijianxun@bytedance.com",
+      "name": "崔建勋",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_f80cb6366a8902b45ddb0dbc2f7a96e7": {
+      "email": "islam.abdo@bytedance.com",
+      "name": "Islam Abdo",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_f83c561e6463cfb9ce7ba2c74fb9e281": {
+      "email": "siqiaolei.66@bytedance.com",
+      "name": "司乔磊",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_fbc787425fb1d3179d4266b3ce8aa4d1": {
+      "email": "luosha.sha@bytedance.com",
+      "name": "罗沙",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_fc308e8948d7d88abdd3145468ddfbf6": {
+      "email": "chenyula.0@bytedance.com",
+      "name": "陈渝腊",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_fc8d9db4d3d4e7cc37bff9ec276e725b": {
+      "email": "zhangjiaming.0321@bytedance.com",
+      "name": "张家铭",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_fc9d862c9c8b4faa22e5004f7d272486": {
+      "email": "yayu.weng@bytedance.com",
+      "name": "翁雅羽",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    },
+    "ou_fd7f2e5bfd26788a3bffa9d563ff8904": {
+      "email": "wu.tuo@bytedance.com",
+      "name": "吴拓",
+      "source_app_id": "cli_a96a0c8d82b85cb1",
+      "document_reference": {
+        "resolved_open_id": "ou_650c33c67d3278a327b394858d3b5a6a",
+        "document_id": "DAF4dqfploOMAkxW9Ucm1elPyqg",
+        "revision_id": 17962,
+        "row_block_id": "LhoKdohNwoFXs5xa7DGm6dzryxc",
+        "old_name": "吴拓",
+        "new_name": null
+      }
+    },
+    "ou_ff8c0e84b31295e94b13c18d316a16c1": {
+      "email": "liam.liang@bytedance.com",
+      "name": "梁宇",
+      "source_app_id": "cli_a96a0c8d82b85cb1"
+    }
+  }
+}

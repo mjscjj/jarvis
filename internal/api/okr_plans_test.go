@@ -19,6 +19,12 @@ import (
 )
 
 func TestOKRPlanRoutesUseOwnLifecycle(t *testing.T) {
+	for _, legacy := range []bool{false, true} {
+		t.Run(fmt.Sprintf("legacy=%t", legacy), func(t *testing.T) { testOKRPlanRoutesUseOwnLifecycle(t, legacy) })
+	}
+}
+
+func testOKRPlanRoutesUseOwnLifecycle(t *testing.T, legacy bool) {
 	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatal(err)
@@ -45,6 +51,7 @@ func TestOKRPlanRoutesUseOwnLifecycle(t *testing.T) {
 	}
 	enabled := true
 	h := server.New()
+	h.Use((LegacyOKROwners{"ou_a": {Email: "a@example.test", Name: "甲"}}).Middleware())
 	if err := RegisterBizOKRModuleRoutes(h, BizOKRModuleDependencies{
 		Workspace: workspace, Identity: identity, Documents: weeklyPreviewDocumentStub{},
 		People: newTestOKRPeopleResolver(t, &stubOKRPeopleSearcher{}), PreviewReview: previewReviewServiceStub(t, workspace),
@@ -84,11 +91,18 @@ func TestOKRPlanRoutesUseOwnLifecycle(t *testing.T) {
 		t.Fatalf("created plan = %+v", created.Data)
 	}
 	objectiveBody := `{"id":"plan-o","title":"计划 O","krs":[{"id":"plan-kr","title":"计划 KR","owners":[{"email":"a@example.test","name":"甲"}],"metric_note":"口径","metrics":[{"id":"plan-m","text":"核心目标","light":"green","images":[]}],"points":[{"id":"plan-p","kind":"product","title":"产品 KR","owners":[],"tags":[]}],"tags":[{"type":"business_category","value":"直播"},{"type":"priority","value":"p1"}]}]}`
+	if legacy {
+		objectiveBody = strings.Replace(objectiveBody, `{"email":"a@example.test","name":"甲"}`, `{"open_id":"ou_a","name":"旧姓名"},{"open_id":"ou_missing","name":"未匹配"}`, 1)
+		objectiveBody = strings.Replace(objectiveBody, `"owners":[]`, `"owners":[{"open_id":"ou_a","name":"旧姓名"}]`, 1)
+	}
 	objectiveResponse := ut.PerformRequest(h.Engine, "POST", "/api/biz-okr/plans/"+created.Data.ID+"/objectives", &ut.Body{Body: strings.NewReader(objectiveBody), Len: len(objectiveBody)}).Result()
 	if objectiveResponse.StatusCode() != 201 {
 		t.Fatalf("create objective status=%d body=%s", objectiveResponse.StatusCode(), objectiveResponse.Body())
 	}
 	pointPatchBody := `{"title":"更新后的产品 KR","owners":[{"email":"b@example.test","name":"乙"}]}`
+	if legacy {
+		pointPatchBody = `{"title":"更新后的产品 KR","owners":[{"open_id":"ou_missing","name":"未匹配"}]}`
+	}
 	pointPatchResponse := ut.PerformRequest(h.Engine, "PATCH", "/api/biz-okr/plans/"+created.Data.ID+"/points/plan-p/definition", &ut.Body{Body: strings.NewReader(pointPatchBody), Len: len(pointPatchBody)}).Result()
 	if pointPatchResponse.StatusCode() != 200 {
 		t.Fatalf("patch plan point status=%d body=%s", pointPatchResponse.StatusCode(), pointPatchResponse.Body())
@@ -100,8 +114,58 @@ func TestOKRPlanRoutesUseOwnLifecycle(t *testing.T) {
 	if err := json.Unmarshal(planResponse.Body(), &patchedPlan); err != nil {
 		t.Fatal(err)
 	}
-	if point := patchedPlan.Data.Objectives[0].KRs[0].Points[0]; point.Title != "更新后的产品 KR" || len(point.Owners) != 1 || point.Owners[0].Name != "乙" {
+	if owners := patchedPlan.Data.Objectives[0].KRs[0].Owners; len(owners) != 1 || owners[0].Email != "a@example.test" || owners[0].Name != "甲" {
+		t.Fatalf("persisted KR owners = %+v", owners)
+	}
+	point := patchedPlan.Data.Objectives[0].KRs[0].Points[0]
+	ownersOK := len(point.Owners) == 1 && point.Owners[0].Name == "乙"
+	if legacy {
+		ownersOK = len(point.Owners) == 0
+	}
+	if point.Title != "更新后的产品 KR" || !ownersOK {
 		t.Fatalf("patched plan point = %+v", point)
+	}
+	kr := patchedPlan.Data.Objectives[0].KRs[0]
+	kr.Title = "单独保存后的计划 KR"
+	krBody, err := json.Marshal(okrworkspace.PlanKRWriteInput{
+		ExpectedVersion: kr.Version, ExpectedStructureToken: kr.StructureToken, KR: kr,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if legacy {
+		krBody = []byte(strings.Replace(string(krBody), `"email":"a@example.test"`, `"open_id":"ou_a"`, 1))
+	}
+	krResponse := ut.PerformRequest(h.Engine, "PATCH", "/api/biz-okr/plans/"+created.Data.ID+"/krs/plan-kr", &ut.Body{Body: strings.NewReader(string(krBody)), Len: len(krBody)}).Result()
+	if krResponse.StatusCode() != 200 {
+		t.Fatalf("patch plan KR status=%d body=%s", krResponse.StatusCode(), krResponse.Body())
+	}
+	if err := json.Unmarshal(krResponse.Body(), &patchedPlan); err != nil {
+		t.Fatal(err)
+	}
+	if got := patchedPlan.Data.Objectives[0].KRs[0]; got.Title != kr.Title || got.Version != kr.Version+1 || len(got.Owners) != 1 || got.Owners[0].Email != "a@example.test" || got.Points[0].Title != point.Title {
+		t.Fatalf("patched plan KR = %+v", got)
+	}
+	if legacy {
+		objective := patchedPlan.Data.Objectives[0]
+		objective.Title = "旧页面继续修改 O 正文"
+		body, err := json.Marshal(okrworkspace.PlanObjectiveWriteInput{
+			ExpectedVersion: objective.Version, ExpectedStructureToken: objective.StructureToken, Objective: objective,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		oldBody := strings.Replace(string(body), `"email":"a@example.test"`, `"open_id":"ou_a"`, 1)
+		response := ut.PerformRequest(h.Engine, "PATCH", "/api/biz-okr/plans/"+created.Data.ID+"/objectives/plan-o", &ut.Body{Body: strings.NewReader(oldBody), Len: len(oldBody)}).Result()
+		if response.StatusCode() != 200 {
+			t.Fatalf("legacy objective PATCH failed: %s", response.Body())
+		}
+		if err := json.Unmarshal(response.Body(), &patchedPlan); err != nil {
+			t.Fatal(err)
+		}
+		if got := patchedPlan.Data.Objectives[0]; got.Title != objective.Title || got.KRs[0].Owners[0].Email != "a@example.test" || got.KRs[0].Points[0].Title != point.Title {
+			t.Fatalf("legacy objective not persisted: %+v", got)
+		}
 	}
 	reorderBody := fmt.Sprintf(`{"ids":["plan-o"],"expected_version":%d}`, patchedPlan.Data.Version)
 	reorderResponse := ut.PerformRequest(h.Engine, "PUT", "/api/biz-okr/plans/"+created.Data.ID+"/objectives/order", &ut.Body{Body: strings.NewReader(reorderBody), Len: len(reorderBody)}).Result()
