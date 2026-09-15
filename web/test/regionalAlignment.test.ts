@@ -82,4 +82,8 @@ test('区域对齐页面保留直接表格、自动保存、双语和刷新交�
   assert.match(source, /refreshRegionalAlignmentBoard/)
   assert.equal([...source.matchAll(/'刷新 \/ Refresh'/g)].length, 2)
   assert.equal([...source.matchAll(/<PriorityTabs /g)].length, 2)
+
+  const api = readFileSync(new URL('../src/okr/emily/api.ts', import.meta.url), 'utf8')
+  assert.match(api, /\/refresh-status\?/)
+  assert.match(api, /result\.pending/)
 })

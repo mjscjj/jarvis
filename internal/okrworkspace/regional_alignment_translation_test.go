@@ -14,6 +14,29 @@ type fakeRegionalTranslator struct {
 	calls    [][]string
 }
 
+type blockingRegionalTranslator struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (f *blockingRegionalTranslator) CacheKey() string {
+	return "test-glossary-async"
+}
+
+func (f *blockingRegionalTranslator) Translate(ctx context.Context, texts []string) (map[string]string, error) {
+	close(f.started)
+	select {
+	case <-f.release:
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+	result := make(map[string]string, len(texts))
+	for _, source := range texts {
+		result[source] = "ASYNC: " + source
+	}
+	return result, nil
+}
+
 func (f *fakeRegionalTranslator) CacheKey() string {
 	if f.cacheKey == "" {
 		return "test-glossary-v1"
@@ -115,6 +138,44 @@ func TestRefreshRegionalAlignmentUsesLatestReviewProgressAndCachesEnglish(t *tes
 	}
 	if translated.GlossaryHash != "test-glossary-v2" {
 		t.Fatalf("stored glossary hash = %q", translated.GlossaryHash)
+	}
+
+	blocking := &blockingRegionalTranslator{started: make(chan struct{}), release: make(chan struct{})}
+	if err := service.SetRegionalTranslator(blocking); err != nil {
+		t.Fatal(err)
+	}
+	started, err := service.StartRegionalAlignmentRefresh(t.Context(), "2026-Q4", "eu", "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !started.Pending {
+		t.Fatal("cold asynchronous refresh must be pending")
+	}
+	<-blocking.started
+	running, err := service.RegionalAlignmentRefreshStatus(t.Context(), "2026-Q4", "eu", "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !running.Pending {
+		t.Fatal("blocked asynchronous refresh must remain pending")
+	}
+	close(blocking.release)
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		finished, err := service.RegionalAlignmentRefreshStatus(t.Context(), "2026-Q4", "eu", "owner")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !finished.Pending {
+			if got := finished.Board.Translations["最新复盘进展"]; got != "ASYNC: 最新复盘进展" {
+				t.Fatalf("asynchronous translation = %q", got)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("asynchronous refresh did not finish")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 

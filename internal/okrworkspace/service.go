@@ -27,11 +27,13 @@ var (
 )
 
 type Service struct {
-	db              *gorm.DB
-	commentNotifier CommentMentionNotifier
-	people          peopleDirectory
-	translator      RegionalTranslator
-	translationMu   sync.Mutex
+	db                  *gorm.DB
+	commentNotifier     CommentMentionNotifier
+	people              peopleDirectory
+	translator          RegionalTranslator
+	translationMu       sync.Mutex
+	regionalRefreshMu   sync.Mutex
+	regionalRefreshJobs map[string]regionalRefreshJob
 }
 
 // RegionalTranslator owns model judgment for natural English phrasing. The
@@ -45,7 +47,7 @@ func NewService(db *gorm.DB) (*Service, error) {
 	if db == nil {
 		return nil, fmt.Errorf("create kr service: db is nil")
 	}
-	return &Service{db: db}, nil
+	return &Service{db: db, regionalRefreshJobs: make(map[string]regionalRefreshJob)}, nil
 }
 
 func (s *Service) SetRegionalTranslator(translator RegionalTranslator) error {

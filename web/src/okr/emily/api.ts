@@ -171,6 +171,11 @@ interface APIRegionalBoard {
   translations: Record<string, string>
 }
 
+interface APIRegionalRefreshResult {
+  board: APIRegionalBoard
+  pending: boolean
+}
+
 interface APIActivityEntry {
   at: string
   actor_id: string
@@ -763,7 +768,15 @@ export async function getRegionalAlignmentBoard(quarter: string, region: Regiona
 }
 
 export async function refreshRegionalAlignmentBoard(quarter: string, region: RegionalCode): Promise<RegionalAlignmentBoard> {
-  return fromAPIRegionalBoard(await request<APIRegionalBoard>(`/api/biz-okr/regional-alignments/${encodeURIComponent(region)}/refresh?quarter=${encodeURIComponent(quarter)}`, { method: 'POST' }))
+  const base = `/api/biz-okr/regional-alignments/${encodeURIComponent(region)}`
+  const query = `quarter=${encodeURIComponent(quarter)}`
+  let result = await request<APIRegionalRefreshResult>(`${base}/refresh?${query}`, { method: 'POST' })
+  for (let attempt = 0; result.pending; attempt += 1) {
+    if (attempt >= 150) throw new Error('区域 OKR 刷新超时 / Regional OKR refresh timed out')
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 2000))
+    result = await request<APIRegionalRefreshResult>(`${base}/refresh-status?${query}`)
+  }
+  return fromAPIRegionalBoard(result.board)
 }
 
 export async function createRegionalDemand(quarter: string, region: RegionalCode, value: Omit<RegionalDemand, 'id'>): Promise<RegionalDemand> {
