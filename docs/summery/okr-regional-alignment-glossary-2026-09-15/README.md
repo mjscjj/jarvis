@@ -24,3 +24,11 @@
 翻译使用 Jarvis 既有的 OpenAI-compatible strict JSON-schema model client 和轻量模型；不启动带沙箱的 Agent CLI。冷缓存刷新由后台任务执行，页面通过 refresh status 短轮询读取完成或失败结果。
 
 原始 Sheets API 回执及各工作表单元格值位于 `evidence/`。
+
+## 应用与核验
+
+- glossary 内容哈希已纳入翻译缓存版本；术语表变更后，旧英文不会被继续复用。
+- 已重新翻译区域对齐页当前 Plan/Review 的 829 个唯一文本，数据库中 829 行均使用同一新 glossary 哈希。
+- 621 个文本命中至少一个 glossary 条目，共 1451 个术语出现位置。
+- 对 Final EN 与业务 Sheet1 两个高优先级来源做大小写无关、支持 `/` 备选词的严格检查：676/676 个出现位置采用指定英文，未命中 0。
+- 页面 API 回读：Plan 19 个 Objective；上季度复盘为 `2026-W36`，25 个 Objective、288 条具体 KR 进展；翻译映射 829 条。

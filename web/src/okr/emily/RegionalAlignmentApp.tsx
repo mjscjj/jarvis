@@ -86,7 +86,9 @@ function emptyDemand(sortOrder: number): Omit<RegionalDemand, 'id'> {
   return { version: 0, regionalOkr: '', item: '', requirement: '', docs: [], images: [], priority: '', regionalPocs: [], platformPocs: [], acceptance: 'tbd', planKrIds: [], deliverable: '', sortOrder }
 }
 
-function nextDemandSortOrder(demands: RegionalDemand[]): number {
+type RegionalDemandDraft = { key: string; value: Omit<RegionalDemand, 'id'> }
+
+function nextDemandSortOrder(demands: Array<Pick<RegionalDemand, 'sortOrder'>>): number {
   return demands.reduce((maximum, demand) => Math.max(maximum, demand.sortOrder), -1) + 1
 }
 
@@ -263,7 +265,7 @@ function DemandEditor({ initial, objectives, translations, people, busy, onSave,
   </div>
 }
 
-function DemandTable({ demands, objectives, translations, people, busy, onSave, onDelete, onComment }: { demands: RegionalDemand[]; objectives: Objective[]; translations: TranslationMap; people: KrOwner[]; busy: boolean; onSave: (value: RegionalDemand | Omit<RegionalDemand, 'id'>) => Promise<RegionalDemand | undefined>; onDelete: (value: RegionalDemand) => void; onComment: (value: RegionalDemand) => void }) {
+function DemandTable({ demands, drafts, objectives, translations, people, busy, onSave, onDraftSaved, onDelete, onComment }: { demands: RegionalDemand[]; drafts: RegionalDemandDraft[]; objectives: Objective[]; translations: TranslationMap; people: KrOwner[]; busy: boolean; onSave: (value: RegionalDemand | Omit<RegionalDemand, 'id'>) => Promise<RegionalDemand | undefined>; onDraftSaved: (key: string) => void; onDelete: (value: RegionalDemand) => void; onComment: (value: RegionalDemand) => void }) {
   return <div>
     <div className="mb-3 rounded-lg border border-sky-100 bg-sky-50/70 px-3 py-2 text-xs leading-5 text-slate-600">
       <p>区域 OKR、具体需求、优先级、区域负责人列由区域运营填写；是否承接、平台负责人、关联 Platform OKR 列由 Platform 团队填写。</p>
@@ -275,6 +277,7 @@ function DemandTable({ demands, objectives, translations, people, busy, onSave, 
           <div className={DEMAND_TABLE_HEADER} role="columnheader"><Bilingual zh="区域 OKR" en="Regional OKR" /></div><div className={DEMAND_TABLE_HEADER} role="columnheader"><Bilingual zh="具体需求" en="Detailed requirement" /></div><div className={DEMAND_TABLE_HEADER} role="columnheader"><Bilingual zh="优先级" en="Priority" /></div><div className={DEMAND_TABLE_HEADER} role="columnheader"><Bilingual zh="区域负责人" en="Regional POC" /></div><div className={`${DEMAND_TABLE_HEADER} !bg-sky-100`} role="columnheader"><Bilingual zh="是否承接" en="Accepted" /></div><div className={`${DEMAND_TABLE_HEADER} !bg-sky-100`} role="columnheader"><Bilingual zh="平台负责人" en="Platform POC" /></div><div className={`${DEMAND_TABLE_HEADER} !bg-sky-100`} role="columnheader"><Bilingual zh="关联 Platform OKR" en="Related Platform OKR" /></div><div className={DEMAND_TABLE_HEADER} role="columnheader"><Bilingual zh="交付物" en="Deliverable" /></div><div className={DEMAND_TABLE_HEADER} role="columnheader"><Bilingual zh="操作" en="Actions" /></div>
         </div>
         {demands.map((demand) => <DemandEditor key={demand.id} initial={demand} objectives={objectives} translations={translations} people={people} busy={busy} onSave={onSave} onDelete={() => onDelete(demand)} onComment={() => onComment(demand)} />)}
+        {drafts.map((draft) => <DemandEditor key={draft.key} initial={draft.value} objectives={objectives} translations={translations} people={people} busy={busy} onSave={async (value) => { const saved = await onSave(value); if (saved) onDraftSaved(draft.key); return saved }} />)}
       </div>
     </div>
     <p className="mt-2 text-[10px] text-slate-400">停止输入后自动保存。/ Changes save automatically after you stop typing.</p>
@@ -396,6 +399,7 @@ export default function RegionalAlignmentApp({ initialQuarter, initialRegion, in
   const [quarterDraft, setQuarterDraft] = useState(initialQuarter)
   const [region, setRegion] = useState<RegionalCode>(validRegion)
   const [board, setBoard] = useState<RegionalAlignmentBoard>()
+  const [demandDrafts, setDemandDrafts] = useState<RegionalDemandDraft[]>([])
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -425,6 +429,7 @@ export default function RegionalAlignmentApp({ initialQuarter, initialRegion, in
     finally { setLoading(false) }
   }
   useEffect(() => { void load() }, [quarter, region])
+  useEffect(() => { setDemandDrafts([]) }, [quarter, region])
   useEffect(() => { if (focusedComment) window.setTimeout(() => scrollToCommentSource(focusedComment), 80) }, [focusedComment])
   useEffect(() => {
     const refreshSourceBoards = () => {
@@ -446,6 +451,13 @@ export default function RegionalAlignmentApp({ initialQuarter, initialRegion, in
   const objectives = board?.plan.objectives ?? []
   const people = useMemo(() => ownerOptions(objectives), [objectives])
   const categoryOrder = normalizedCategoryOrder(board?.region.categoryOrder ?? [])
+  const addDemandDraft = useCallback(() => {
+    if (!board) return
+    setDemandDrafts((current) => [...current, {
+      key: uid('regional-demand-draft'),
+      value: emptyDemand(nextDemandSortOrder([...board.demands, ...current.map((draft) => draft.value)])),
+    }])
+  }, [board])
   const saveDemand = useCallback(async (value: RegionalDemand | Omit<RegionalDemand, 'id'>): Promise<RegionalDemand | undefined> => {
     setBusy(true); setError('')
     try {
@@ -524,8 +536,8 @@ export default function RegionalAlignmentApp({ initialQuarter, initialRegion, in
           <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
             <CollapsibleBlock title="Part 0 · Pre-alignment" level="primary">
               <div className="space-y-8">
-                <CollapsibleBlock title="Regional Ops Team 高优痛点&核心需求" subtitle="High-priority pain points & core requirements" level="secondary" action={<button type="button" disabled={busy} onClick={() => void saveDemand(emptyDemand(nextDemandSortOrder(board.demands)))} className="h-9 rounded-lg bg-indigo-600 px-4 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-40">新增需求 / Add requirement</button>}>
-                  <DemandTable demands={board.demands} objectives={objectives} translations={board.translations} people={people} busy={busy} onSave={saveDemand} onDelete={(demand) => void removeDemand(demand)} onComment={(demand) => openComments({ type: 'alignment_item', id: `demand:${demand.id}`, title: demand.requirement || demand.item || '区域需求 / Regional requirement' })} />
+                <CollapsibleBlock title="Regional Ops Team 高优痛点&核心需求" subtitle="High-priority pain points & core requirements" level="secondary" action={<button type="button" onClick={addDemandDraft} className="h-9 rounded-lg bg-indigo-600 px-4 text-xs font-semibold text-white hover:bg-indigo-700">新增需求 / Add requirement</button>}>
+                  <DemandTable demands={board.demands} drafts={demandDrafts} objectives={objectives} translations={board.translations} people={people} busy={busy} onSave={saveDemand} onDraftSaved={(key) => setDemandDrafts((current) => current.filter((draft) => draft.key !== key))} onDelete={(demand) => void removeDemand(demand)} onComment={(demand) => openComments({ type: 'alignment_item', id: `demand:${demand.id}`, title: demand.requirement || demand.item || '区域需求 / Regional requirement' })} />
                 </CollapsibleBlock>
                 <div className="border-t border-slate-200 pt-6">
                   <CollapsibleBlock title="Platform Team 平台团队关键项目 & 重要业务解决方案" subtitle="Key projects & important solutions" level="secondary" action={<button type="button" disabled={Boolean(refreshing)} onClick={() => void refreshLiveSources('platform')} className="h-9 rounded-lg border border-indigo-200 bg-white px-4 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 disabled:opacity-40">{refreshing === 'platform' ? '刷新并翻译中… / Refreshing…' : '刷新 / Refresh'}</button>}>
