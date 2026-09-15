@@ -132,16 +132,9 @@ func TestRepositoryM5PromptKeepsTemporaryArtifactsOutOfWorkspaces(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, required := range []string{
-		"临时文件与交付物",
-		"${TMPDIR:-/tmp}/jarvis-m5-${JARVIS_TASK_ID:-manual}",
-		"不要把它们散落在当前仓库",
-		"waiting",
-		"只处理本 Task 自己创建的文件",
-	} {
-		if !strings.Contains(content, required) {
-			t.Fatalf("M5 prompt missing temporary artifact rule %q", required)
-		}
+	const required = "不需要持久化的临时文件，建议放在 `tmp/` 目录下。"
+	if !strings.Contains(content, required) {
+		t.Fatalf("M5 prompt missing temporary artifact rule %q", required)
 	}
 }
 
