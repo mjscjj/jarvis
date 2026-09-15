@@ -1,6 +1,6 @@
 # Claire（李潇琳）PRD 评审关注点归纳 — 三评审群近 3 个月
 
-> 依据：`docs/summery/group-prd-comments/raw-comments.md`（18 篇 PRD、52 条本人评论，全量翻页采集，覆盖 2026-06-11 ~ 09-02）。
+> 依据：`docs/summery/group-prd-comments/raw-comments.md`（18 篇 PRD、52 条本人评论，全量翻页采集，覆盖 2026-06-11 ~ 09-02）。采集期结构化返回本地保存在 `~/tmp/jarvis/prd-review/calibration/group-prd-comments/evidence/`，不进入 Git。
 > 采集口径：三个评审群内分享的 871 篇云文档 → 抽本人评论 → 仅保留近 3 个月。命中集中在组内评审群（10 篇/33 条）与 Backstage 初评群（8 篇/19 条）；平台融合初评群近 3 个月无本人评论。
 > 本归纳只覆盖**群内 PRD 评审**语境；OKR/周报/PPT 场景的评论习惯不在此列。
 

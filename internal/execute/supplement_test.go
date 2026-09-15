@@ -84,6 +84,7 @@ func TestRepositoryM5EffectivePromptUsesExplicitMessageTool(t *testing.T) {
 		t.Fatalf("build repository M5 prompt: %v", err)
 	}
 	for _, want := range []string{
+		"建议放在 `~/tmp/jarvis/<task-or-skill>/`",
 		"普通业务消息：显式工具动作",
 		"先完整确定受众、会话位置或原消息锚点",
 		"给我本人的主动通知和动作回执使用 `jarvis-tools notice-principal` 发卡片",

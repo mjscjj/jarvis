@@ -1,6 +1,6 @@
 # Claire（李潇琳）近一个月飞书评论关注点归纳
 
-数据来源：`lark-cli drive +search --commented-since 40d`（36 篇），逐篇 `list-comments`/`list-replies` 过滤 `user_id=ou_4bb78ddd152503b76a40232afa2420dd`，共 270 条本人评论。原始证据见 `evidence/my-comments.json`。
+数据来源：`lark-cli drive +search --commented-since 40d`（36 篇），逐篇 `list-comments`/`list-replies` 过滤 `user_id=ou_4bb78ddd152503b76a40232afa2420dd`，共 270 条本人评论。采集期原始证据本地存放在 `~/tmp/jarvis/prd-review/calibration/prd-review-comments/evidence/`，不进入 Git。
 
 ## 高频关注视角（按出现次数从高到低）
 

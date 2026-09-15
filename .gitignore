@@ -33,7 +33,10 @@ __pycache__/
 !/data/okr/assets/**
 /var/
 /runs/
+# 兼容仍要求仓库内 workdir 的本地运行工具；Agent 通用临时文件优先放 ~/tmp/jarvis/
 /tmp/
+# 工具误在仓库根目录生成飞书文档草稿时的兜底
+/draft_*_folder/
 /.world/
 /minutes/
 /lark-im-resources/
