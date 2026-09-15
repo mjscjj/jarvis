@@ -772,8 +772,8 @@ export async function refreshRegionalAlignmentBoard(quarter: string, region: Reg
   const query = `quarter=${encodeURIComponent(quarter)}`
   let result = await request<APIRegionalRefreshResult>(`${base}/refresh?${query}`, { method: 'POST' })
   for (let attempt = 0; result.pending; attempt += 1) {
-    if (attempt >= 150) throw new Error('区域 OKR 刷新超时 / Regional OKR refresh timed out')
-    await new Promise<void>((resolve) => window.setTimeout(resolve, 2000))
+    if (attempt >= 600) throw new Error('区域 OKR 刷新超时 / Regional OKR refresh timed out')
+    await new Promise<void>((resolve) => setTimeout(resolve, 2000))
     result = await request<APIRegionalRefreshResult>(`${base}/refresh-status?${query}`)
   }
   return fromAPIRegionalBoard(result.board)
