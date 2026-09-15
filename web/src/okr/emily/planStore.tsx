@@ -1,11 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { APIError, createOKRPlan, createOKRPlanObjective, deleteOKRPlan, deleteOKRPlanObjective, getEnums, getOKRPlan, listOKRPlans, patchPointDefinition, reorderOKRPlanObjectives, updateOKRPlanKR, updateOKRPlanObjective } from './api'
+import { APIError, createOKRPlan, createOKRPlanObjective, deleteOKRPlan, deleteOKRPlanObjective, getEnums, getOKRPlan, listOKRPlans, patchPointDefinition, reorderOKRPlanObjectives, updateOKRPlanKR, updateOKRPlanObjective, type PointDefinitionPatchResult } from './api'
 import { BoardContext, uid, type BoardApi, type SyncState } from './board'
 import { BUSINESS_CATEGORY_TAG, PRIORITY_TAG, replaceSingleTag } from './hierarchy'
 import { swappedOrder, swappedPointsWithinKind } from './ordering'
 import { adoptRemoteVersionsForOverwrite, rebasePendingChanges } from './concurrency'
 import type { EnumValues, Kr, KrOwner, KrPriority, MetricLine, Objective, OKRPlan, OKRPlanSummary, Point, WeekTemplateKey } from './types'
 import { LIGHTS, STATUSES } from './template'
+import { krConflictLocation } from './saveNotice'
 
 const SAVE_DELAY_MS = 700
 
@@ -47,6 +48,25 @@ function findPoint(draft: Objective[], pointId: string): Point | undefined {
       if (point) return point
     }
   }
+}
+
+function findKrByPoint(draft: Objective[], pointId: string): Kr | undefined {
+  return draft.flatMap((objective) => objective.krs).find((kr) => kr.points.some((point) => point.id === pointId))
+}
+
+function withPointDefinition(kr: Kr, pointId: string, saved: PointDefinitionPatchResult): Kr {
+  const next = clone(kr)
+  const point = next.points.find((item) => item.id === pointId)
+  if (point) Object.assign(point, {
+    version: saved.version,
+    title: saved.title,
+    kind: saved.kind,
+    meegoWorkItemId: saved.meegoWorkItemId,
+    meegoUrl: saved.meegoUrl,
+    owners: saved.owners,
+    tags: saved.tags,
+  })
+  return next
 }
 
 export interface PlanBoardApi extends BoardApi {
@@ -134,7 +154,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
       setSyncState({ kind: 'ready', message: loadedPlan ? 'Biz OKR Plan 已加载' : '当前季度暂无 Biz OKR Plan' })
       return { list, plan: loadedPlan }
     } catch (error) {
-      setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '加载 Biz OKR Plan 失败。' })
+      setSyncState({ kind: 'error', title: '读取失败', message: error instanceof Error ? error.message : '加载 Biz OKR Plan 失败。', logid: error instanceof APIError ? error.logid : undefined })
     }
   }, [onQuarterChange, publishPlan])
 
@@ -291,23 +311,26 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
     } catch (error) {
       failed = true
 			if (error instanceof APIError && error.status === 409 && error.data) {
-				const remote = error.data as { version?: number }
-				const nextObjectives = objectivesRef.current.map((objective) => ({ ...objective, krs: objective.krs.map((kr) => ({ ...kr, points: kr.points.map((point) => point.id === pointId ? { ...point, version: remote.version ?? point.version } : point) })) }))
-				objectivesRef.current = nextObjectives
-				setObjectives(nextObjectives)
-				if (planRef.current) {
-					const nextPlan = { ...planRef.current, objectives: nextObjectives }
-					planRef.current = nextPlan
-					setPlan(nextPlan)
-				}
-				setSyncState({ kind: 'error', message: '这个具体 KR 已被其他人更新；你的内容仍保留，点击重试可按最新版保存。' })
+				const remote = error.data as PointDefinitionPatchResult
+				const current = findKrByPoint(objectivesRef.current, pointId)
+				if (current) {
+					setSyncState({
+						kind: 'conflict',
+						message: '这个具体 KR 刚被其他人更新，请选择保留哪一版。',
+						krId: current.id,
+						pointId,
+						location: krConflictLocation(objectivesRef.current, current.id, pointId),
+						local: clone(current),
+						remote: withPointDefinition(current, pointId, remote),
+					})
+				} else setSyncState({ kind: 'error', message: '具体 KR 已不存在，请重新载入后再编辑。', logid: error.logid })
 			} else {
-				setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '具体 KR 保存失败，请重试。' })
+				setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '具体 KR 保存失败，请重试。', logid: error instanceof APIError ? error.logid : undefined })
 			}
     } finally {
       pointSavesInFlight.current.delete(pointId)
       if (!failed && pointPatches.current.has(pointId)) schedulePointSaveRef.current(pointId)
-      if (dirtyKRs.current.size > 0 || dirtyObjectives.current.size > 0 || objectiveOrderDirty.current) scheduleSaveRef.current()
+      if (!failed && (dirtyKRs.current.size > 0 || dirtyObjectives.current.size > 0 || objectiveOrderDirty.current)) scheduleSaveRef.current()
     }
   }, [])
 
@@ -365,20 +388,27 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
 					const remoteObjective = remotePlan.objectives.find((objective) => objective.krs.some((item) => item.id === krId))
 					const remoteKR = remoteObjective?.krs.find((item) => item.id === krId)
 					if (remoteObjective && remoteKR) {
-						const nextObjectives = objectivesRef.current.map((objective) => objective.id !== remoteObjective.id ? objective : {
-							...objective,
-							structureToken: remoteObjective.structureToken,
-							krs: objective.krs.map((item) => item.id === krId ? adoptRemoteVersionsForOverwrite(item, remoteKR) : item),
-						})
+						const nextObjectives = objectivesRef.current.map((objective) => objective.id === remoteObjective.id
+							? { ...objective, structureToken: remoteObjective.structureToken }
+							: objective)
 						objectivesRef.current = nextObjectives
 						setObjectives(nextObjectives)
 						if (planRef.current) {
-							const nextPlan = { ...planRef.current, version: remotePlan.version, deleteToken: remotePlan.deleteToken, objectives: nextObjectives }
+							const nextPlan = { ...planRef.current, version: remotePlan.version, deleteToken: remotePlan.deleteToken, updatedBy: remotePlan.updatedBy, updatedAt: remotePlan.updatedAt, objectives: nextObjectives }
 							planRef.current = nextPlan
 							setPlan(nextPlan)
 						}
+						failed = true
+						setSyncState({
+							kind: 'conflict',
+							message: '这条 KR 刚被其他人更新，请选择保留哪一版。',
+							krId,
+							location: krConflictLocation(objectivesRef.current, krId),
+							local: submitted,
+							remote: remoteKR,
+						})
+						return
 					}
-					throw new Error(`${kr.title || krId} 已被其他人更新；本地内容仍保留，点击重试将按本地内容保存。`)
 				}
 				throw error
 			}
@@ -450,7 +480,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
       setSyncState({ kind: 'saved', message: reordered ? '顺序已保存' : 'Plan 已保存' })
     } catch (error) {
       failed = true
-      setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '保存 Plan 失败。' })
+      setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '保存 Plan 失败。', logid: error instanceof APIError ? error.logid : undefined })
     } finally {
       saveInFlight.current = false
       if (!failed && (dirtyKRs.current.size > 0 || dirtyObjectives.current.size > 0 || objectiveOrderDirty.current)) scheduleSaveRef.current()
@@ -465,6 +495,44 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
   useEffect(() => {
     scheduleSaveRef.current = scheduleSave
   }, [scheduleSave])
+
+  const resolveConflict = useCallback((choice: 'remote' | 'local') => {
+    if (syncState.kind !== 'conflict') return
+    const selected = choice === 'remote' ? syncState.remote : adoptRemoteVersionsForOverwrite(syncState.local, syncState.remote)
+    const nextObjectives = objectivesRef.current.map((objective) => objective.krs.some((kr) => kr.id === syncState.krId)
+      ? { ...objective, krs: objective.krs.map((kr) => kr.id === syncState.krId ? selected : kr) }
+      : objective)
+    objectivesRef.current = nextObjectives
+    setObjectives(nextObjectives)
+    if (planRef.current) {
+      const nextPlan = { ...planRef.current, objectives: nextObjectives }
+      planRef.current = nextPlan
+      setPlan(nextPlan)
+    }
+    if (choice === 'remote') {
+      if (syncState.pointId) {
+        pointPatches.current.delete(syncState.pointId)
+        pointRevisions.current.delete(syncState.pointId)
+      } else {
+        dirtyKRs.current.delete(syncState.krId)
+        krRevisions.current.delete(syncState.krId)
+      }
+      setSyncState({ kind: 'saved', message: '已使用服务器版本' })
+      if (pointPatches.current.size > 0) {
+        for (const pointId of pointPatches.current.keys()) schedulePointSave(pointId)
+      } else if (dirtyKRs.current.size > 0 || dirtyObjectives.current.size > 0 || objectiveOrderDirty.current) scheduleSave()
+      return
+    }
+    setSyncState({ kind: 'saving', message: '正在保存你的修改…' })
+    if (syncState.pointId) {
+      pointRevisions.current.set(syncState.pointId, (pointRevisions.current.get(syncState.pointId) ?? 0) + 1)
+      schedulePointSave(syncState.pointId)
+      return
+    }
+    dirtyKRs.current.add(syncState.krId)
+    krRevisions.current.set(syncState.krId, (krRevisions.current.get(syncState.krId) ?? 0) + 1)
+    scheduleSave()
+  }, [schedulePointSave, scheduleSave, syncState])
 
   const mutateObjective = useCallback((fn: (draft: Objective[]) => void) => {
     if (!planRef.current) return
@@ -799,9 +867,9 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
       } else if (remoteReady.current && (dirtyKRs.current.size > 0 || dirtyObjectives.current.size > 0 || objectiveOrderDirty.current)) void saveNow()
       else void loadRemote()
     },
-    resolveConflict: () => undefined,
+    resolveConflict,
     applySavedKr: (kr) => mutateKR(kr.id, (current) => { Object.assign(current, kr) }),
-  }), [availableQuarters, enums, loadRemote, mutateKR, mutateObjective, mutatePointDefinition, objectives, plan, plans, publishPlan, quarter, queueObjectiveOrder, saveNow, schedulePointSave, syncState])
+  }), [availableQuarters, enums, loadRemote, mutateKR, mutateObjective, mutatePointDefinition, objectives, plan, plans, publishPlan, quarter, queueObjectiveOrder, resolveConflict, saveNow, schedulePointSave, syncState])
 
   return (
     <PlanBoardContext.Provider value={api}>

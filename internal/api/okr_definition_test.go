@@ -186,7 +186,7 @@ func TestPointDefinitionRoutePatchesOnlyOneExistingPoint(t *testing.T) {
 	if err := json.Unmarshal(staleResponse.Body(), &conflict); err != nil {
 		t.Fatal(err)
 	}
-	if conflict.Data.Version != 1 || conflict.Data.Title != "新策略" {
+	if conflict.Data.Version != 1 || conflict.Data.Title != "新策略" || conflict.Data.Kind != domain.PointKindStrategy || conflict.Data.Tags == nil {
 		t.Fatalf("stale point conflict = %+v", conflict.Data)
 	}
 

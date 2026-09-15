@@ -97,7 +97,11 @@ interface APIPointDefinitionPatchResult {
 	delete_token?: string
 	plan_delete_token?: string
 	title: string
+	kind: PointKind
+	meego_work_item_id: string
+	meego_url: string
 	owners: Array<{ email: string; name: string; union_id?: string }>
+	tags: KrTag[]
 }
 
 export interface PointDefinitionPatchResult {
@@ -108,7 +112,11 @@ export interface PointDefinitionPatchResult {
 	deleteToken?: string
 	planDeleteToken?: string
 	title: string
+	kind: PointKind
+	meegoWorkItemId: string
+	meegoUrl: string
 	owners: KrOwner[]
+	tags: KrTag[]
 }
 
 interface APIPlanList {
@@ -849,17 +857,31 @@ export async function patchPointDefinition(input: { pointId: string; planId?: st
 	  if (input.meegoWorkItemId !== undefined) body.meego_work_item_id = input.meegoWorkItemId
 	  if (input.meegoUrl !== undefined) body.meego_url = input.meegoUrl
 	  if (input.tags !== undefined) body.tags = input.tags
-  const value = await request<APIPointDefinitionPatchResult>(path, { method: 'PATCH', body: JSON.stringify(body) })
-	  return {
+	try {
+		return fromAPIPointDefinitionPatchResult(await request<APIPointDefinitionPatchResult>(path, { method: 'PATCH', body: JSON.stringify(body) }))
+	} catch (error) {
+		if (error instanceof APIError && error.status === 409 && error.data) {
+			throw new APIError(error.message, error.status, error.code, fromAPIPointDefinitionPatchResult(error.data as APIPointDefinitionPatchResult), error.logid)
+		}
+		throw error
+	}
+}
+
+function fromAPIPointDefinitionPatchResult(value: APIPointDefinitionPatchResult): PointDefinitionPatchResult {
+	return {
 	    pointId: value.point_id,
 	    version: value.version,
 		structureToken: value.structure_token,
 		krStructureToken: value.kr_structure_token,
 		deleteToken: value.delete_token,
-		planDeleteToken: value.plan_delete_token,
+	    planDeleteToken: value.plan_delete_token,
 	    title: value.title,
+		kind: value.kind,
+		meegoWorkItemId: value.meego_work_item_id,
+		meegoUrl: value.meego_url,
 	    owners: (value.owners ?? []).map((owner) => ({ email: owner.email, name: owner.name, unionId: owner.union_id })),
-	  }
+		tags: value.tags ?? [],
+	}
 }
 
 export async function deleteOKRPlanObjective(planId: string, objective: Objective): Promise<void> {

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { APIError, createKR, createObjective as createObjectiveRequest, createProgress, deleteKR, deleteObjective as deleteObjectiveRequest, deleteProgress, deleteWeeklyReportWeek, deleteWeeklyScore, getBoard, getEnums, getWeeklyKR, listWeeklyReportWeeks, patchPointDefinition, reorderKRs, reorderObjectives, replaceKR, replaceKRDefinition, replaceWeeklyKRCore, replaceWeeklyScore, updateObjective as updateObjectiveRequest, updateProgress, type BoardData, type BoardSurface } from './api'
+import { APIError, createKR, createObjective as createObjectiveRequest, createProgress, deleteKR, deleteObjective as deleteObjectiveRequest, deleteProgress, deleteWeeklyReportWeek, deleteWeeklyScore, getBoard, getEnums, getWeeklyKR, listWeeklyReportWeeks, patchPointDefinition, reorderKRs, reorderObjectives, replaceKR, replaceKRDefinition, replaceWeeklyKRCore, replaceWeeklyScore, updateObjective as updateObjectiveRequest, updateProgress, type BoardData, type BoardSurface, type PointDefinitionPatchResult } from './api'
 import { BoardContext, uid, type BoardApi, type SyncState } from './board'
 import { definitionSignature } from './definition'
 import { adoptRemoteVersionsForOverwrite, mergePointProgressOnly, mergeScoreOnly, rebasePendingChanges } from './concurrency'
@@ -9,6 +9,7 @@ import { swappedOrder, swappedPointsWithinKind } from './ordering'
 import { LIGHTS, STATUSES } from './template'
 import type { Entry, EnumValues, Kr, KrOwner, Objective, Point, WeekTemplateKey, WeeklyScore } from './types'
 import { resolveWeeklyBoardScope } from './weeklyScope'
+import { krConflictLocation } from './saveNotice'
 
 const SAVE_DELAY_MS = 700
 
@@ -39,6 +40,21 @@ function findPoint(draft: Objective[], pointId: string): Point | undefined {
       if (point) return point
     }
   }
+}
+
+function withPointDefinition(kr: Kr, pointId: string, saved: PointDefinitionPatchResult): Kr {
+  const next = clone(kr)
+  const point = next.points.find((item) => item.id === pointId)
+  if (point) Object.assign(point, {
+    version: saved.version,
+    title: saved.title,
+    kind: saved.kind,
+    meegoWorkItemId: saved.meegoWorkItemId,
+    meegoUrl: saved.meegoUrl,
+    owners: saved.owners,
+    tags: saved.tags,
+  })
+  return next
 }
 
 function findKr(draft: Objective[], krId: string): Kr | undefined {
@@ -215,24 +231,28 @@ export function BoardProvider({
       if (pointPatches.current.size === 0 && timers.current.size === 0) setSyncState({ kind: 'saved', message: '已自动保存' })
     } catch (error) {
       failed = true
-			if (error instanceof APIError && error.status === 409 && error.data) {
-				const remote = error.data as { version?: number }
+		if (error instanceof APIError && error.status === 409 && error.data) {
+				const remote = error.data as PointDefinitionPatchResult
 				const current = findKr(objectivesRef.current, patch.krId)
 				if (current) {
-					const next = clone(current)
-					const point = next.points.find((item) => item.id === pointId)
-					if (point) point.version = remote.version ?? point.version
-					publish(replaceKrIn(objectivesRef.current, patch.krId, next))
-				}
-				setSyncState({ kind: 'error', message: '这个具体 KR 已被其他人更新；你的内容仍保留，点击重试可按最新版保存。' })
+					setSyncState({
+						kind: 'conflict',
+						message: '这个具体 KR 刚被其他人更新，请选择保留哪一版。',
+						krId: patch.krId,
+						pointId,
+						location: krConflictLocation(objectivesRef.current, patch.krId, pointId),
+						local: clone(current),
+						remote: withPointDefinition(current, pointId, remote),
+					})
+				} else setSyncState({ kind: 'error', message: '具体 KR 已不存在，请重新载入后再编辑。', logid: error.logid })
 			} else {
-				setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '具体 KR 保存失败，请重试。' })
+				setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '具体 KR 保存失败，请重试。', logid: error instanceof APIError ? error.logid : undefined })
 			}
     } finally {
       pointSavesInFlight.current.delete(pointId)
       if (!failed && pointPatches.current.has(pointId)) schedulePointSaveRef.current(pointId)
       const pendingKR = pointPatches.current.get(pointId)?.krId ?? patch.krId
-      if (timers.current.has(pendingKR)) scheduleSaveRef.current(pendingKR)
+      if (!failed && timers.current.has(pendingKR)) scheduleSaveRef.current(pendingKR)
     }
   }, [publish])
 
@@ -292,10 +312,10 @@ export function BoardProvider({
     } catch (error) {
       lastFailedKr.current = krId
       if (error instanceof APIError && error.status === 409 && error.data) {
-        setSyncState({ kind: 'conflict', message: '这条 KR 刚被其他人更新，请选择保留哪一版。', krId, local: snapshot, remote: error.data as Kr })
+        setSyncState({ kind: 'conflict', message: '这条 KR 刚被其他人更新，请选择保留哪一版。', krId, location: krConflictLocation(objectivesRef.current, krId), local: snapshot, remote: error.data as Kr })
         return
       }
-      setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '保存失败，请稍后重试。' })
+	  setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '保存失败，请稍后重试。', logid: error instanceof APIError ? error.logid : undefined })
     }
   }, [publish, surface])
 
@@ -358,7 +378,7 @@ export function BoardProvider({
       setSyncState({ kind: 'ready', message: board.week ? '本周进展已加载' : surface === 'weekly-report' ? '当前季度暂无对应周次' : 'OKR 已加载' })
       return board
     } catch (error) {
-      setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '加载失败，请稍后重试。' })
+      setSyncState({ kind: 'error', title: '读取失败', message: error instanceof Error ? error.message : '加载失败，请稍后重试。', logid: error instanceof APIError ? error.logid : undefined })
     }
   }, [onQuarterChange, publish, surface, weekTemplateKey])
 
@@ -431,12 +451,23 @@ export function BoardProvider({
     serverKrs.current.set(syncState.krId, clone(syncState.remote))
     publish(replaceKrIn(objectivesRef.current, syncState.krId, selected))
     if (choice === 'remote') {
+		if (syncState.pointId) {
+			pointPatches.current.delete(syncState.pointId)
+			pointRevisions.current.delete(syncState.pointId)
+		} else if (lastFailedKr.current === syncState.krId) lastFailedKr.current = null
       setSyncState({ kind: 'saved', message: '已载入他人更新' })
+		for (const pointId of pointPatches.current.keys()) schedulePointSave(pointId)
       return
     }
+	setSyncState({ kind: 'saving', message: '正在保存你的修改…' })
+	if (syncState.pointId) {
+		pointRevisions.current.set(syncState.pointId, (pointRevisions.current.get(syncState.pointId) ?? 0) + 1)
+		schedulePointSave(syncState.pointId)
+		return
+	}
     revisions.current.set(syncState.krId, (revisions.current.get(syncState.krId) ?? 0) + 1)
     scheduleSave(syncState.krId)
-  }, [publish, scheduleSave, syncState])
+  }, [publish, schedulePointSave, scheduleSave, syncState])
 
   const saveWeeklyScore = useCallback(async (krId: string, targetKind: 'kr' | 'point', targetId: string, currentScore: WeeklyScore | undefined, score?: number) => {
     if (templateKey !== 'okr_weekly_preview_v1') throw new Error('当前周次不是 OKR 周度 Preview 模板。')

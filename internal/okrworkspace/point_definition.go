@@ -29,14 +29,18 @@ type PatchPointDefinitionInput struct {
 // was written. Parent versions are deliberately absent: a point owns its own
 // concurrency boundary and never invalidates a sibling point or its KR.
 type PointDefinitionPatchResult struct {
-	PointID          string      `json:"point_id"`
-	Version          int32       `json:"version"`
-	StructureToken   string      `json:"structure_token,omitempty"`
-	KRStructureToken string      `json:"kr_structure_token,omitempty"`
-	DeleteToken      string      `json:"delete_token,omitempty"`
-	PlanDeleteToken  string      `json:"plan_delete_token,omitempty"`
-	Title            string      `json:"title"`
-	Owners           []OwnerView `json:"owners"`
+	PointID          string           `json:"point_id"`
+	Version          int32            `json:"version"`
+	StructureToken   string           `json:"structure_token,omitempty"`
+	KRStructureToken string           `json:"kr_structure_token,omitempty"`
+	DeleteToken      string           `json:"delete_token,omitempty"`
+	PlanDeleteToken  string           `json:"plan_delete_token,omitempty"`
+	Title            string           `json:"title"`
+	Kind             domain.PointKind `json:"kind"`
+	MeegoWorkItemID  string           `json:"meego_work_item_id"`
+	MeegoURL         string           `json:"meego_url"`
+	Owners           []OwnerView      `json:"owners"`
+	Tags             []TagView        `json:"tags"`
 }
 
 // PatchPointDefinition updates one point in the committed OKR definition used
@@ -194,7 +198,20 @@ func (s *Service) pointDefinitionResult(ctx context.Context, pointID string) (Po
 	for _, owner := range records {
 		owners = append(owners, storedOwnerView(owner.Email, owner.Name, owner.UnionID))
 	}
-	result := PointDefinitionPatchResult{PointID: point.ID, Version: point.Version, Title: point.Title, Owners: owners}
+	var tagRecords []domain.PointTag
+	if s.db.Migrator().HasTable(&domain.PointTag{}) {
+		if err := s.db.WithContext(ctx).Where("point_id = ?", point.ID).Order("type, value").Find(&tagRecords).Error; err != nil {
+			return PointDefinitionPatchResult{}, fmt.Errorf("list point definition tags: %w", err)
+		}
+	}
+	tags := make([]TagView, 0, len(tagRecords))
+	for _, tag := range tagRecords {
+		tags = append(tags, TagView{Type: tag.Type, Value: tag.Value})
+	}
+	result := PointDefinitionPatchResult{
+		PointID: point.ID, Version: point.Version, Title: point.Title, Kind: point.Kind,
+		MeegoWorkItemID: point.MeegoWorkItemID, MeegoURL: point.MeegoURL, Owners: owners, Tags: tags,
+	}
 	var kr domain.KR
 	if err := s.db.WithContext(ctx).First(&kr, "id = ?", point.KRID).Error; err != nil {
 		return PointDefinitionPatchResult{}, fmt.Errorf("get point KR result: %w", err)

@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
 import { getWebConfig } from '../../api'
-import { useBoard } from './board'
 import { PlanBoardProvider, usePlanBoard } from './planStore'
 import { QuarterSelect } from './components/QuarterSelect'
 import { ManagementView } from './components/ManagementView'
@@ -12,6 +11,7 @@ import type { CommentTarget, PageComment } from './types'
 import { weeklyShareURLForTab, type WeeklyShareTab } from './share'
 import { planOptionLabel } from './planTitle'
 import { PreviewReviewButton, PreviewReviewPanel, PreviewReviewProvider } from './aiReviewContext'
+import { SaveToast } from './components/SaveToast'
 
 const PLAN_SCROLL_KEY_PREFIX = 'jarvis-okr-plan-scroll'
 
@@ -36,17 +36,6 @@ function savePlanScrollPosition(key: string) {
   } catch {
     // 浏览位置只是体验增强，本地存储不可用时不影响 Plan 编辑。
   }
-}
-
-function SyncNotice() {
-  const { syncState, retry } = useBoard()
-  if (syncState.kind !== 'error') return null
-  return (
-    <div className="mb-3 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800">
-      <span className="flex-1">{syncState.message}</span>
-      <button type="button" onClick={retry} className="rounded-md border border-red-200 bg-white px-2.5 py-1 hover:bg-red-100">重试</button>
-    </div>
-  )
 }
 
 function NewPlanPanel({ onClose }: { onClose: () => void }) {
@@ -228,6 +217,7 @@ function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }:
 
   return (
     <>
+      <SaveToast scopeLabel={`${quarter} · ${plan?.title || 'OKR Plan'}`} />
       <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur">
         <div className={`mx-auto flex min-h-14 max-w-[1580px] flex-wrap items-center gap-3 px-4 py-2 transition-[padding] sm:px-6 lg:px-8 ${commentsOpen ? 'lg:pr-[420px]' : ''}`}>
           <span className="flex size-8 items-center justify-center rounded-lg bg-emerald-600 text-xs font-semibold text-white shadow-sm">P</span>
@@ -273,7 +263,6 @@ function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }:
             <button type="button" onClick={() => setConfirmDelete(false)} disabled={saving} className="h-9 px-2 text-xs text-slate-500 disabled:opacity-40">取消</button>
           </section>
         )}
-        <SyncNotice />
         {plan ? (
 	          <PreviewReviewProvider reviewType="plan" planId={plan.id}>
 	            <div className="mb-3">
