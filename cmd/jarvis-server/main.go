@@ -723,7 +723,7 @@ func main() {
 	var extractWorker *extract.Worker
 	var semanticIndex *semantic.Index
 	var modelClient *provider.Client
-	if cfg.Extract.Enabled || *extractOnce {
+	if cfg.Extract.Enabled || *extractOnce || bizOKRModuleEnabled {
 		modelClient, err = provider.NewClient(
 			ark.BaseURL,
 			ark.APIKey,
@@ -1253,17 +1253,10 @@ func main() {
 		if translationErr != nil {
 			fatalf("load regional OKR translation glossary failed: %v", translationErr)
 		}
-		translationCompleter, translationErr := okrtranslation.NewCodexCompleter(okrtranslation.CodexOptions{
-			Bin:             okrModuleConfig.PreviewReview.Bin,
-			Model:           okrModuleConfig.PreviewReview.Model,
-			Sandbox:         okrModuleConfig.PreviewReview.Sandbox,
-			ReasoningEffort: "low",
-			Timeout:         okrModuleConfig.PreviewReview.Timeout(),
-		})
-		if translationErr != nil {
-			fatalf("initialize regional OKR translation runner failed: %v", translationErr)
+		if modelClient == nil {
+			fatalf("initialize regional OKR translator failed: model client is nil")
 		}
-		translationService, translationErr := okrtranslation.New(translationCompleter, translationGlossary)
+		translationService, translationErr := okrtranslation.New(modelClient, translationGlossary)
 		if translationErr != nil {
 			fatalf("initialize regional OKR translator failed: %v", translationErr)
 		}

@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	maxBatchItems        = 100
-	maxBatchRunes        = 12000
+	maxBatchItems        = 50
+	maxBatchRunes        = 6000
 	maxConcurrentBatches = 3
 )
 
