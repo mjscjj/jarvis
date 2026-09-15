@@ -420,10 +420,7 @@ func nonNilStrings(values []string) []string {
 }
 
 func nonNilFollowUpOwners(values []domain.FollowUpOwner) []domain.FollowUpOwner {
-	if values == nil {
-		return []domain.FollowUpOwner{}
-	}
-	return append([]domain.FollowUpOwner(nil), values...)
+	return append([]domain.FollowUpOwner{}, values...)
 }
 
 func normalizeRegionalDemandInput(input RegionalDemandInput) (RegionalDemandInput, error) {

@@ -119,12 +119,22 @@ func TestRefreshRegionalAlignmentUsesLatestReviewProgressAndCachesEnglish(t *tes
 }
 
 func TestRegionalViewsEncodeMissingOwnersAsEmptyArrays(t *testing.T) {
-	demand := regionalDemandView(domain.RegionalDemand{})
-	if demand.RegionalPOCs == nil || demand.PlatformPOCs == nil {
-		t.Fatalf("demand owner arrays must be non-nil: regional=%v platform=%v", demand.RegionalPOCs, demand.PlatformPOCs)
+	for _, row := range []domain.RegionalDemand{
+		{},
+		{RegionalPOCs: []domain.FollowUpOwner{}, PlatformPOCs: []domain.FollowUpOwner{}},
+	} {
+		demand := regionalDemandView(row)
+		if demand.RegionalPOCs == nil || demand.PlatformPOCs == nil {
+			t.Fatalf("demand owner arrays must be non-nil: regional=%v platform=%v", demand.RegionalPOCs, demand.PlatformPOCs)
+		}
 	}
-	decision := regionalDecisionView(domain.RegionalPlanDecision{})
-	if decision.RegionalPOCs == nil {
-		t.Fatal("decision owner array must be non-nil")
+	for _, row := range []domain.RegionalPlanDecision{
+		{},
+		{RegionalPOCs: []domain.FollowUpOwner{}},
+	} {
+		decision := regionalDecisionView(row)
+		if decision.RegionalPOCs == nil {
+			t.Fatal("decision owner array must be non-nil")
+		}
 	}
 }
