@@ -12,6 +12,7 @@ import (
 	"jarvis/internal/okrworkspace/domain"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 var regionalAlignmentRegions = map[string]struct{}{
@@ -70,13 +71,14 @@ type RegionalRecapOverlayView struct {
 }
 
 type RegionalAlignmentBoard struct {
-	Alignment RegionalAlignmentView       `json:"alignment"`
-	Region    RegionalAlignmentRegionView `json:"region"`
-	Plan      PlanView                    `json:"plan"`
-	Recap     Board                       `json:"recap"`
-	Demands   []RegionalDemandView        `json:"demands"`
-	Decisions []RegionalPlanDecisionView  `json:"decisions"`
-	Overlays  []RegionalRecapOverlayView  `json:"recap_overlays"`
+	Alignment    RegionalAlignmentView       `json:"alignment"`
+	Region       RegionalAlignmentRegionView `json:"region"`
+	Plan         PlanView                    `json:"plan"`
+	Recap        Board                       `json:"recap"`
+	Demands      []RegionalDemandView        `json:"demands"`
+	Decisions    []RegionalPlanDecisionView  `json:"decisions"`
+	Overlays     []RegionalRecapOverlayView  `json:"recap_overlays"`
+	Translations map[string]string           `json:"translations"`
 }
 
 type RegionalDemandInput struct {
@@ -223,7 +225,7 @@ func (s *Service) RegionalAlignmentBoard(ctx context.Context, quarter, region, a
 	if err != nil {
 		return RegionalAlignmentBoard{}, err
 	}
-	recap, err := s.BizCoreBoard(ctx, alignment.RecapQuarter)
+	recap, err := s.regionalRecapBoard(ctx, alignment.RecapQuarter)
 	if err != nil {
 		return RegionalAlignmentBoard{}, err
 	}
@@ -243,7 +245,7 @@ func (s *Service) RegionalAlignmentBoard(ctx context.Context, quarter, region, a
 		Alignment: regionalAlignmentView(alignment),
 		Region:    RegionalAlignmentRegionView{RegionCode: settings.RegionCode, Version: settings.Version, CategoryOrder: nonNilStrings(settings.CategoryOrder)},
 		Plan:      plan, Recap: recap,
-		Demands: make([]RegionalDemandView, 0, len(demandRows)), Decisions: make([]RegionalPlanDecisionView, 0, len(decisionRows)), Overlays: make([]RegionalRecapOverlayView, 0, len(overlayRows)),
+		Demands: make([]RegionalDemandView, 0, len(demandRows)), Decisions: make([]RegionalPlanDecisionView, 0, len(decisionRows)), Overlays: make([]RegionalRecapOverlayView, 0, len(overlayRows)), Translations: map[string]string{},
 	}
 	for _, row := range demandRows {
 		result.Demands = append(result.Demands, regionalDemandView(row))
@@ -254,7 +256,148 @@ func (s *Service) RegionalAlignmentBoard(ctx context.Context, quarter, region, a
 	for _, row := range overlayRows {
 		result.Overlays = append(result.Overlays, RegionalRecapOverlayView{BucketKey: row.BucketKey, ObjectiveID: row.ObjectiveID, Version: row.Version, SortOrder: row.SortOrder, Hidden: row.Hidden})
 	}
+	if err := s.attachRegionalTranslations(ctx, &result); err != nil {
+		return RegionalAlignmentBoard{}, err
+	}
 	return result, nil
+}
+
+// regionalRecapBoard projects the latest opened Review week, including its
+// progress entries. A quarter without a Review week still shows definitions.
+func (s *Service) regionalRecapBoard(ctx context.Context, quarter string) (Board, error) {
+	weeks, err := s.ListWeeks(ctx, quarter)
+	if err != nil {
+		return Board{}, err
+	}
+	if len(weeks.Weeks) == 0 {
+		return s.BizCoreBoard(ctx, quarter)
+	}
+	return s.Board(ctx, quarter, weeks.Weeks[0].Week)
+}
+
+func regionalTranslationHash(source string) string {
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(source)))
+}
+
+func regionalBoardTexts(board RegionalAlignmentBoard) []string {
+	seen := map[string]struct{}{}
+	result := []string{}
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if _, exists := seen[value]; exists {
+			return
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	collectObjectives := func(objectives []ObjectiveView) {
+		for _, objective := range objectives {
+			add(objective.Title)
+			for _, kr := range objective.KRs {
+				add(kr.Title)
+				add(kr.MetricNote)
+				for _, metric := range kr.Metrics {
+					add(metric.Text)
+				}
+				for _, point := range kr.Points {
+					add(point.Title)
+					for _, entry := range point.Entries {
+						add(entry.Text)
+					}
+				}
+			}
+		}
+	}
+	for _, objective := range board.Plan.Objectives {
+		add(objective.Title)
+		for _, kr := range objective.KRs {
+			add(kr.Title)
+			add(kr.MetricNote)
+			for _, metric := range kr.Metrics {
+				add(metric.Text)
+			}
+			for _, point := range kr.Points {
+				add(point.Title)
+			}
+		}
+	}
+	collectObjectives(board.Recap.Objectives)
+	return result
+}
+
+func (s *Service) attachRegionalTranslations(ctx context.Context, board *RegionalAlignmentBoard) error {
+	texts := regionalBoardTexts(*board)
+	board.Translations = make(map[string]string, len(texts))
+	if len(texts) == 0 {
+		return nil
+	}
+	if s.translator == nil {
+		return nil
+	}
+	hashes := make([]string, 0, len(texts))
+	for _, source := range texts {
+		hashes = append(hashes, regionalTranslationHash(source))
+	}
+	var rows []domain.OKRTranslation
+	cacheKey := s.translator.CacheKey()
+	if err := s.db.WithContext(ctx).Where("source_hash IN ? AND glossary_hash = ?", hashes, cacheKey).Find(&rows).Error; err != nil {
+		return fmt.Errorf("load regional OKR translations: %w", err)
+	}
+	for _, row := range rows {
+		if regionalTranslationHash(row.SourceText) == row.SourceHash && strings.TrimSpace(row.EnglishText) != "" {
+			board.Translations[row.SourceText] = row.EnglishText
+		}
+	}
+	return nil
+}
+
+// RefreshRegionalAlignmentBoard reloads both live sources and translates only
+// exact texts not already cached. A source edit gets a new hash automatically.
+func (s *Service) RefreshRegionalAlignmentBoard(ctx context.Context, quarter, region, actor string) (RegionalAlignmentBoard, error) {
+	s.translationMu.Lock()
+	defer s.translationMu.Unlock()
+	if s.translator == nil {
+		return RegionalAlignmentBoard{}, fmt.Errorf("regional OKR translator is unavailable")
+	}
+	board, err := s.RegionalAlignmentBoard(ctx, quarter, region, actor)
+	if err != nil {
+		return RegionalAlignmentBoard{}, err
+	}
+	missing := []string{}
+	for _, source := range regionalBoardTexts(board) {
+		if strings.TrimSpace(board.Translations[source]) == "" {
+			missing = append(missing, source)
+		}
+	}
+	if len(missing) == 0 {
+		return board, nil
+	}
+	translated, err := s.translator.Translate(ctx, missing)
+	if err != nil {
+		return RegionalAlignmentBoard{}, err
+	}
+	now := time.Now().UTC()
+	rows := make([]domain.OKRTranslation, 0, len(missing))
+	for _, source := range missing {
+		english := strings.TrimSpace(translated[source])
+		if english == "" {
+			return RegionalAlignmentBoard{}, fmt.Errorf("regional OKR translation missing for %q", source)
+		}
+		rows = append(rows, domain.OKRTranslation{SourceHash: regionalTranslationHash(source), GlossaryHash: s.translator.CacheKey(), SourceText: source, EnglishText: english, CreatedAt: now, UpdatedAt: now})
+	}
+	if err := s.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "source_hash"}},
+		DoUpdates: clause.AssignmentColumns([]string{"glossary_hash", "source_text", "english_text", "updated_at"}),
+	}).Create(&rows).Error; err != nil {
+		return RegionalAlignmentBoard{}, fmt.Errorf("store regional OKR translations: %w", err)
+	}
+	if err := s.attachRegionalTranslations(ctx, &board); err != nil {
+		return RegionalAlignmentBoard{}, err
+	}
+	return board, nil
 }
 
 func regionalAlignmentView(row domain.RegionalAlignment) RegionalAlignmentView {
