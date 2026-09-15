@@ -20,8 +20,10 @@ import { uid } from './board'
 import { businessCategoryOf, priorityOf } from './hierarchy'
 import { krOwners, ownerOptions } from './people'
 import {
+  copyRegionalAlignmentShareLink,
   launchRegionOptions,
   matchesRegionalPriority,
+  regionalAlignmentShareURL,
   regionalDecisionSignature,
   REGIONAL_PRIORITY_FILTERS,
   type RegionalPriorityFilter,
@@ -503,7 +505,32 @@ export default function RegionalAlignmentApp({ initialQuarter, initialRegion, in
       setRefreshing('')
     }
   }, [quarter, region])
-  const copyShare = async () => { setShareNotice(''); setShareLink(''); try { const config = await getWebConfig(); const url = new URL(config.public_base_url.trim() || window.location.href); url.hash = `/biz-okr?${new URLSearchParams({ tab: 'regional-alignment', quarter, region })}`; const link = url.toString(); if (navigator.clipboard) { await navigator.clipboard.writeText(link); setShareNotice('区域 OKR 对齐页链接已复制 / Link copied') } else { setShareLink(link); setShareNotice('请复制下方链接 / Copy the link below') } } catch (reason) { setShareNotice(reason instanceof Error ? reason.message : '分享链接生成失败 / Failed to create share link') } }
+  const copyShare = async () => {
+    setShareNotice('')
+    setShareLink('')
+    let link: string
+    try {
+      const config = await getWebConfig()
+      link = regionalAlignmentShareURL(window.location.href, config.public_base_url, quarter, region)
+    } catch (reason) {
+      setShareNotice(reason instanceof Error ? `分享链接生成失败：${reason.message}` : '分享链接生成失败 / Failed to create share link')
+      return
+    }
+
+    // The link is useful output in its own right. Keep it visible whether the
+    // browser grants clipboard access or the automatic copy falls back.
+    setShareLink(link)
+    try {
+      const copied = await copyRegionalAlignmentShareLink(link, navigator.clipboard)
+      if (!copied) {
+        setShareNotice('当前页面无法自动复制，请复制下方链接 / Copy the link below')
+        return
+      }
+      setShareNotice('区域 OKR 对齐页链接已复制 / Link copied')
+    } catch (reason) {
+      setShareNotice(reason instanceof Error ? `自动复制失败：${reason.message}；请复制下方链接` : '自动复制失败，请复制下方链接 / Copy the link below')
+    }
+  }
   const openComments = (target?: CommentTarget) => { setCommentTarget(target); setFocusedComment(undefined); setReviewingComments(false); setCommentsOpen(true) }
 
   return <>
@@ -528,7 +555,7 @@ export default function RegionalAlignmentApp({ initialQuarter, initialRegion, in
     <main className={`mx-auto max-w-[1480px] space-y-6 px-4 py-5 sm:px-6 lg:px-8 ${commentsOpen ? 'lg:pr-[420px]' : ''}`}>
       {savedNotice && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-medium text-emerald-700 shadow-sm">✓ {savedNotice}</div>}
       {refreshNotice && <div role="status" className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs font-medium text-blue-700 shadow-sm">↻ {refreshNotice}</div>}
-      {(shareNotice || error) && <div className={`rounded-xl border px-4 py-3 text-xs ${error ? 'border-red-200 bg-red-50 text-red-700' : 'border-blue-100 bg-blue-50 text-blue-700'}`}>{error || shareNotice}{shareLink && <input readOnly value={shareLink} onFocus={(event) => event.currentTarget.select()} className="mt-2 h-9 w-full rounded-lg border border-blue-200 bg-white px-3" />}</div>}
+      {(shareNotice || error) && <div role={error ? 'alert' : 'status'} className={`rounded-xl border px-4 py-3 text-xs ${error ? 'border-red-200 bg-red-50 text-red-700' : 'border-blue-100 bg-blue-50 text-blue-700'}`}>{error || shareNotice}{shareLink && <input aria-label="分享链接 / Share link" readOnly value={shareLink} onFocus={(event) => event.currentTarget.select()} onClick={(event) => event.currentTarget.select()} className="mt-2 h-9 w-full rounded-lg border border-blue-200 bg-white px-3" />}</div>}
       <nav className="flex min-w-0 gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1 shadow-sm">{REGIONS.map((item) => <button key={item.code} type="button" onClick={() => setRegion(item.code)} className={`min-w-24 flex-1 rounded-lg px-4 py-2.5 text-xs font-semibold transition ${region === item.code ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'}`}>{item.label}</button>)}</nav>
       {loading ? <div className="rounded-2xl border border-slate-200 bg-white py-24 text-center text-sm text-slate-400">正在加载区域对齐数据… / Loading…</div> : board ? <CommentInteractionProvider value={{ enabled: true, triggerMode: 'button', selected: commentTarget, focused: focusedComment, comments, counts: commentCounts, setPendingSelection: () => undefined, select: openComments }}>
         <div className="space-y-6">

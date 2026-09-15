@@ -24,6 +24,18 @@ export function launchRegionOptions(region: RegionalCode): string[] {
   }
 }
 
+export function regionalAlignmentShareURL(currentURL: string, publicBaseURL: string, quarter: string, region: RegionalCode): string {
+  const url = new URL(publicBaseURL.trim() || currentURL)
+  url.hash = `/biz-okr?${new URLSearchParams({ tab: 'regional-alignment', quarter, region })}`
+  return url.toString()
+}
+
+export async function copyRegionalAlignmentShareLink(link: string, clipboard?: { writeText(value: string): Promise<void> }): Promise<boolean> {
+  if (!clipboard?.writeText) return false
+  await clipboard.writeText(link)
+  return true
+}
+
 export function regionalDecisionSignature(value: RegionalPlanDecisionItem): string {
   return JSON.stringify({
     onboard: value.onboard,

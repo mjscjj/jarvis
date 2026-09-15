@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
-import { launchRegionOptions, matchesRegionalPriority, regionalDecisionSignature, REGIONAL_PRIORITY_FILTERS } from '../src/okr/emily/regionalAlignment.ts'
+import { copyRegionalAlignmentShareLink, launchRegionOptions, matchesRegionalPriority, regionalAlignmentShareURL, regionalDecisionSignature, REGIONAL_PRIORITY_FILTERS } from '../src/okr/emily/regionalAlignment.ts'
 import type { Kr, RegionalPlanDecisionItem } from '../src/okr/emily/types.ts'
 
 function kr(priority: 'p0' | 'p1' | 'p2' | ''): Kr {
@@ -35,6 +35,26 @@ test('自动保存只比较可编辑内容，不把服务端版本递增当成�
   const value: RegionalPlanDecisionItem = { planKrId: 'kr-1', version: 1, onboard: 'yes', launchRegions: ['MENAT'], regionalPocs: [{ name: 'Owner', email: 'owner@example.com' }], regionalOkr: 'O1', hidden: false }
   assert.equal(regionalDecisionSignature(value), regionalDecisionSignature({ ...value, version: 2 }))
   assert.notEqual(regionalDecisionSignature(value), regionalDecisionSignature({ ...value, launchRegions: ['MENAT', 'TR'] }))
+})
+
+test('区域对齐分享链接保留公开部署路径和当前季度、区域', () => {
+  assert.equal(
+    regionalAlignmentShareURL(
+      'http://127.0.0.1:5173/#/biz-okr?tab=regional-alignment',
+      'https://example.com/jarvis/',
+      '2026-Q4',
+      'sea-cca',
+    ),
+    'https://example.com/jarvis/#/biz-okr?tab=regional-alignment&quarter=2026-Q4&region=sea-cca',
+  )
+})
+
+test('区域对齐分享操作把页面展示的同一链接写入剪贴板', async () => {
+  const writes: string[] = []
+  const link = 'https://example.com/jarvis/#/biz-okr?tab=regional-alignment&quarter=2026-Q4&region=eu'
+  assert.equal(await copyRegionalAlignmentShareLink(link, { writeText: async (value) => { writes.push(value) } }), true)
+  assert.deepEqual(writes, [link])
+  assert.equal(await copyRegionalAlignmentShareLink(link), false)
 })
 
 test('区域对齐页面保留直接表格、自动保存、双语和刷新交互闭包', () => {
@@ -82,6 +102,8 @@ test('区域对齐页面保留直接表格、自动保存、双语和刷新交�
   assert.match(demand, /isNew && !demandHasContent\(value\)/)
   assert.match(source, /flex cursor-pointer list-none items-start gap-2/)
   assert.match(source, /refreshRegionalAlignmentBoard/)
+  assert.match(source, /setShareLink\(link\)[\s\S]*copyRegionalAlignmentShareLink\(link, navigator\.clipboard\)/)
+  assert.match(source, /aria-label="分享链接 \/ Share link"/)
   assert.equal([...source.matchAll(/'刷新 \/ Refresh'/g)].length, 2)
   assert.equal([...source.matchAll(/<PriorityTabs /g)].length, 2)
 })
