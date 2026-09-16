@@ -356,7 +356,7 @@ export interface FactSearchQuery {
   pageSize?: number
 }
 
-export type PageType = 'principal' | 'person' | 'project' | 'key_matter' | 'group' | 'resource'
+export type PageType = 'principal' | 'person' | 'project' | 'key_matter' | 'project_risk' | 'project_change' | 'group' | 'resource'
 
 export interface PageIndexItem {
   type: PageType
@@ -455,6 +455,34 @@ export interface KeyMatter {
   project: Project | null
 }
 
+export interface ProjectRisk {
+  id: number
+  project_id: number
+  title: string
+  probability: string
+  impact: string
+  summary: string | null
+  triggered_at: string | null
+  closed_at: string | null
+  last_progress_at: string | null
+  created_at: string
+  updated_at: string
+  project?: Project
+}
+
+export interface ProjectChange {
+  id: number
+  project_id: number
+  title: string
+  summary: string | null
+  changed_at: string
+  closed_at: string | null
+  last_progress_at: string | null
+  created_at: string
+  updated_at: string
+  project?: Project
+}
+
 export interface Person {
   id: number
   open_id: string
@@ -548,6 +576,20 @@ export interface KeyMatterInput {
   status: string
   project_id: number | null
   due_at: string | null
+}
+
+export interface ProjectRiskInput {
+  project_id: number
+  title: string
+  probability: string
+  impact: string
+  triggered_at: string | null
+}
+
+export interface ProjectChangeInput {
+  project_id: number
+  title: string
+  changed_at: string
 }
 
 export interface PersonUpdateInput {

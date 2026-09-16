@@ -58,6 +58,8 @@ const worldTypeLabels: Record<string, string> = {
   person: '协作人',
   project: '项目',
   key_matter: '关键事项',
+  project_risk: '项目风险',
+  project_change: '项目变更',
   group: '群聊',
   resource: '资料',
 }

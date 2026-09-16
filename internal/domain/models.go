@@ -29,7 +29,9 @@ type Project struct {
 	CreatedAt      time.Time  `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`
 	UpdatedAt      time.Time  `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP;autoUpdateTime"`
 
-	KeyMatters []KeyMatter `gorm:"foreignKey:ProjectID"`
+	KeyMatters []KeyMatter     `gorm:"foreignKey:ProjectID"`
+	Risks      []ProjectRisk   `gorm:"foreignKey:ProjectID"`
+	Changes    []ProjectChange `gorm:"foreignKey:ProjectID"`
 }
 
 func (Project) TableName() string { return "project" }
@@ -59,6 +61,47 @@ type KeyMatter struct {
 }
 
 func (KeyMatter) TableName() string { return "key_matter" }
+
+// ProjectRisk is a project-level uncertainty that needs durable tracking. Its
+// narrative (trigger conditions, mitigation and evidence) lives in Summary;
+// TriggeredAt and ClosedAt are the only lifecycle controls. A triggered risk
+// can be linked to one or more ordinary KeyMatters through EntityRelation.
+type ProjectRisk struct {
+	ID             uint64     `gorm:"column:id;primaryKey;autoIncrement"`
+	ProjectID      uint64     `gorm:"column:project_id;not null;index:idx_project_risk_project"`
+	Title          string     `gorm:"column:title;not null"`
+	Probability    string     `gorm:"column:probability;not null;default:''"`
+	Impact         string     `gorm:"column:impact;not null;default:''"`
+	Summary        *string    `gorm:"column:summary"`
+	TriggeredAt    *time.Time `gorm:"column:triggered_at;index:idx_project_risk_triggered"`
+	ClosedAt       *time.Time `gorm:"column:closed_at;index:idx_project_risk_closed"`
+	LastProgressAt *time.Time `gorm:"column:last_progress_at;index:idx_project_risk_last_progress"`
+	CreatedAt      time.Time  `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`
+	UpdatedAt      time.Time  `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP;autoUpdateTime"`
+
+	Project *Project `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE"`
+}
+
+func (ProjectRisk) TableName() string { return "project_risk" }
+
+// ProjectChange records a project-level target or scope change. The before /
+// after state, rationale, impact and evidence remain flexible Markdown in
+// Summary; ChangedAt is the effective time used for ordering and review.
+type ProjectChange struct {
+	ID             uint64     `gorm:"column:id;primaryKey;autoIncrement"`
+	ProjectID      uint64     `gorm:"column:project_id;not null;index:idx_project_change_project"`
+	Title          string     `gorm:"column:title;not null"`
+	Summary        *string    `gorm:"column:summary"`
+	ChangedAt      time.Time  `gorm:"column:changed_at;not null;index:idx_project_change_changed"`
+	ClosedAt       *time.Time `gorm:"column:closed_at;index:idx_project_change_closed"`
+	LastProgressAt *time.Time `gorm:"column:last_progress_at;index:idx_project_change_last_progress"`
+	CreatedAt      time.Time  `gorm:"column:created_at;not null;default:CURRENT_TIMESTAMP;autoCreateTime"`
+	UpdatedAt      time.Time  `gorm:"column:updated_at;not null;default:CURRENT_TIMESTAMP;autoUpdateTime"`
+
+	Project *Project `gorm:"foreignKey:ProjectID;constraint:OnDelete:CASCADE"`
+}
+
+func (ProjectChange) TableName() string { return "project_change" }
 
 // Group is a Feishu group chat or p2p conversation. The physical name avoids
 // the reserved SQL keyword GROUP.
@@ -388,6 +431,8 @@ func CoreModels() []any {
 	return []any{
 		&Project{},
 		&KeyMatter{},
+		&ProjectRisk{},
+		&ProjectChange{},
 		&Group{},
 		&Person{},
 		&Todo{},

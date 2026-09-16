@@ -1,6 +1,6 @@
 import type { PageIndexItem, PageLink, PageType, PageView } from '../types'
 
-export const pageTypes: PageType[] = ['principal', 'project', 'key_matter', 'person', 'group', 'resource']
+export const pageTypes: PageType[] = ['principal', 'project', 'key_matter', 'project_risk', 'project_change', 'person', 'group', 'resource']
 export const okrNodeTypes = ['okr_objective', 'okr_kr', 'okr_point'] as const
 export type OKRNodeType = typeof okrNodeTypes[number]
 export type WorldNodeType = PageType | OKRNodeType | 'external'
@@ -10,6 +10,8 @@ export const worldNodeTypeMeta: Record<WorldNodeType, { label: string; color: st
   principal: { label: '我', color: '#e56f50', dimColor: '#c8aaa2' },
   project: { label: '项目', color: '#4cab8c', dimColor: '#a9c9bf' },
   key_matter: { label: '关键事项', color: '#d65d86', dimColor: '#cda7b4' },
+  project_risk: { label: '项目风险', color: '#d94b4b', dimColor: '#d2a5a5' },
+  project_change: { label: '项目变更', color: '#9b62c8', dimColor: '#bea9ce' },
   person: { label: '人物', color: '#6385d2', dimColor: '#a8b3cc' },
   group: { label: '会话', color: '#936bc2', dimColor: '#b9a9ca' },
   resource: { label: '资源', color: '#d29c35', dimColor: '#cbbd9f' },

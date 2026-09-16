@@ -33,7 +33,8 @@ func ResolveWorldNode(pages *background.PageService, okr *OKRModuleDependencies,
 		}
 		switch nodeType {
 		case background.PageTypePrincipal, background.PageTypePerson, background.PageTypeProject,
-			background.PageTypeKeyMatter, background.PageTypeGroup, background.PageTypeResource:
+			background.PageTypeKeyMatter, background.PageTypeProjectRisk, background.PageTypeProjectChange,
+			background.PageTypeGroup, background.PageTypeResource:
 			pageID, parseErr := strconv.ParseUint(id, 10, 64)
 			if parseErr != nil || pageID == 0 {
 				writeAPIError(c, consts.StatusBadRequest, 40094, fmt.Errorf("world entity id must be a positive integer"))

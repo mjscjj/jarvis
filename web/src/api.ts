@@ -39,6 +39,10 @@ import type {
   ProjectBundle,
   ProjectImportPreview,
   ProjectInput,
+  ProjectRisk,
+  ProjectRiskInput,
+  ProjectChange,
+  ProjectChangeInput,
   RepositoryBinding,
   Resource,
   ResourceInput,
@@ -533,6 +537,42 @@ export function touchKeyMatter(id: number): Promise<KeyMatter> {
 
 export function closeKeyMatter(id: number): Promise<{ id: number; closed: boolean }> {
   return request(`/api/key-matters/${id}`, { method: 'DELETE' })
+}
+
+export function listProjectRisks(projectId: number, includeClosed = false, signal?: AbortSignal): Promise<Paged<ProjectRisk>> {
+  const params = new URLSearchParams({ page: '1', page_size: '100', project_id: String(projectId) })
+  if (includeClosed) params.set('include_closed', 'true')
+  return request<Paged<ProjectRisk>>(`/api/project-risks?${params.toString()}`, { signal })
+}
+
+export function createProjectRisk(body: ProjectRiskInput): Promise<ProjectRisk> {
+  return request<ProjectRisk>('/api/project-risks', { method: 'POST', body })
+}
+
+export function updateProjectRisk(id: number, body: ProjectRiskInput): Promise<ProjectRisk> {
+  return request<ProjectRisk>(`/api/project-risks/${id}`, { method: 'PUT', body })
+}
+
+export function closeProjectRisk(id: number): Promise<{ id: number; closed: boolean }> {
+  return request(`/api/project-risks/${id}`, { method: 'DELETE' })
+}
+
+export function listProjectChanges(projectId: number, includeClosed = false, signal?: AbortSignal): Promise<Paged<ProjectChange>> {
+  const params = new URLSearchParams({ page: '1', page_size: '100', project_id: String(projectId) })
+  if (includeClosed) params.set('include_closed', 'true')
+  return request<Paged<ProjectChange>>(`/api/project-changes?${params.toString()}`, { signal })
+}
+
+export function createProjectChange(body: ProjectChangeInput): Promise<ProjectChange> {
+  return request<ProjectChange>('/api/project-changes', { method: 'POST', body })
+}
+
+export function updateProjectChange(id: number, body: ProjectChangeInput): Promise<ProjectChange> {
+  return request<ProjectChange>(`/api/project-changes/${id}`, { method: 'PUT', body })
+}
+
+export function closeProjectChange(id: number): Promise<{ id: number; closed: boolean }> {
+  return request(`/api/project-changes/${id}`, { method: 'DELETE' })
 }
 
 export function listSubjectFacts(subjectType: string, id: number, signal?: AbortSignal, options: {

@@ -631,6 +631,14 @@ func main() {
 	if err != nil {
 		fatalf("initialize key matter service failed: %v", err)
 	}
+	projectRiskService, err := background.NewProjectRiskService(db)
+	if err != nil {
+		fatalf("initialize project risk service failed: %v", err)
+	}
+	projectChangeService, err := background.NewProjectChangeService(db)
+	if err != nil {
+		fatalf("initialize project change service failed: %v", err)
+	}
 	personService, err := background.NewPersonService(db)
 	if err != nil {
 		fatalf("initialize person service failed: %v", err)
@@ -1292,8 +1300,8 @@ func main() {
 		MessageRecaller:  messageRecaller,
 		PrincipalNotices: principalNotices,
 		Projects:         projectService, ProjectPortability: projectPortabilityService,
-		KeyMatters: keyMatterService,
-		Persons:    personService, Groups: groupService,
+		KeyMatters: keyMatterService, ProjectRisks: projectRiskService, ProjectChanges: projectChangeService,
+		Persons: personService, Groups: groupService,
 		Resolve: resolveService, Profile: profileService, Resources: resourceService,
 		Pages:          pageService,
 		Relations:      relationService,

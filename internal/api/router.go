@@ -54,6 +54,8 @@ type Dependencies struct {
 	Projects           *background.ProjectService
 	ProjectPortability *background.ProjectPortabilityService
 	KeyMatters         *background.KeyMatterService
+	ProjectRisks       *background.ProjectRiskService
+	ProjectChanges     *background.ProjectChangeService
 	Persons            *background.PersonService
 	Groups             *background.GroupBackgroundService
 	Resolve            *background.ResolveService
@@ -135,6 +137,12 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	}
 	if deps.KeyMatters == nil {
 		return fmt.Errorf("api key matter service dependency is nil")
+	}
+	if deps.ProjectRisks == nil {
+		return fmt.Errorf("api project risk service dependency is nil")
+	}
+	if deps.ProjectChanges == nil {
+		return fmt.Errorf("api project change service dependency is nil")
 	}
 	if deps.Persons == nil {
 		return fmt.Errorf("api person service dependency is nil")
@@ -315,6 +323,16 @@ func Register(h *server.Hertz, deps Dependencies) error {
 	h.PUT("/api/key-matters/:key_matter_id", UpdateKeyMatter(deps.KeyMatters))
 	h.POST("/api/key-matters/:key_matter_id/touch", TouchKeyMatter(deps.KeyMatters))
 	h.DELETE("/api/key-matters/:key_matter_id", DeleteKeyMatter(deps.KeyMatters))
+	h.GET("/api/project-risks", ListProjectRisks(deps.ProjectRisks))
+	h.POST("/api/project-risks", CreateProjectRisk(deps.ProjectRisks))
+	h.GET("/api/project-risks/:project_risk_id", GetProjectRisk(deps.ProjectRisks))
+	h.PUT("/api/project-risks/:project_risk_id", UpdateProjectRisk(deps.ProjectRisks))
+	h.DELETE("/api/project-risks/:project_risk_id", DeleteProjectRisk(deps.ProjectRisks))
+	h.GET("/api/project-changes", ListProjectChanges(deps.ProjectChanges))
+	h.POST("/api/project-changes", CreateProjectChange(deps.ProjectChanges))
+	h.GET("/api/project-changes/:project_change_id", GetProjectChange(deps.ProjectChanges))
+	h.PUT("/api/project-changes/:project_change_id", UpdateProjectChange(deps.ProjectChanges))
+	h.DELETE("/api/project-changes/:project_change_id", DeleteProjectChange(deps.ProjectChanges))
 	h.GET("/api/facts", ListFacts(deps.Progress))
 	h.POST("/api/facts", AppendFact(deps.Progress))
 	h.POST("/api/facts/batch", AppendFacts(deps.Progress))

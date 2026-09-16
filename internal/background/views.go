@@ -41,6 +41,34 @@ type KeyMatterView struct {
 	Project        *ProjectView `json:"project"`
 }
 
+type ProjectRiskView struct {
+	ID             uint64       `json:"id"`
+	ProjectID      uint64       `json:"project_id"`
+	Title          string       `json:"title"`
+	Probability    string       `json:"probability"`
+	Impact         string       `json:"impact"`
+	Summary        *string      `json:"summary"`
+	TriggeredAt    *time.Time   `json:"triggered_at"`
+	ClosedAt       *time.Time   `json:"closed_at"`
+	LastProgressAt *time.Time   `json:"last_progress_at"`
+	CreatedAt      time.Time    `json:"created_at"`
+	UpdatedAt      time.Time    `json:"updated_at"`
+	Project        *ProjectView `json:"project,omitempty"`
+}
+
+type ProjectChangeView struct {
+	ID             uint64       `json:"id"`
+	ProjectID      uint64       `json:"project_id"`
+	Title          string       `json:"title"`
+	Summary        *string      `json:"summary"`
+	ChangedAt      time.Time    `json:"changed_at"`
+	ClosedAt       *time.Time   `json:"closed_at"`
+	LastProgressAt *time.Time   `json:"last_progress_at"`
+	CreatedAt      time.Time    `json:"created_at"`
+	UpdatedAt      time.Time    `json:"updated_at"`
+	Project        *ProjectView `json:"project,omitempty"`
+}
+
 // PersonView is the API representation of a Person.
 type PersonView struct {
 	ID             uint64     `json:"id"`
@@ -129,6 +157,49 @@ func toKeyMatterViews(items []domain.KeyMatter) []KeyMatterView {
 	views := make([]KeyMatterView, len(items))
 	for i := range items {
 		views[i] = toKeyMatterView(&items[i])
+	}
+	return views
+}
+
+func toProjectRiskView(item *domain.ProjectRisk) ProjectRiskView {
+	view := ProjectRiskView{
+		ID: item.ID, ProjectID: item.ProjectID, Title: item.Title,
+		Probability: item.Probability, Impact: item.Impact, Summary: item.Summary,
+		TriggeredAt: item.TriggeredAt, ClosedAt: item.ClosedAt, LastProgressAt: item.LastProgressAt,
+		CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt,
+	}
+	if item.Project != nil {
+		project := toProjectView(item.Project)
+		view.Project = &project
+	}
+	return view
+}
+
+func toProjectRiskViews(items []domain.ProjectRisk) []ProjectRiskView {
+	views := make([]ProjectRiskView, len(items))
+	for i := range items {
+		views[i] = toProjectRiskView(&items[i])
+	}
+	return views
+}
+
+func toProjectChangeView(item *domain.ProjectChange) ProjectChangeView {
+	view := ProjectChangeView{
+		ID: item.ID, ProjectID: item.ProjectID, Title: item.Title, Summary: item.Summary,
+		ChangedAt: item.ChangedAt, ClosedAt: item.ClosedAt, LastProgressAt: item.LastProgressAt,
+		CreatedAt: item.CreatedAt, UpdatedAt: item.UpdatedAt,
+	}
+	if item.Project != nil {
+		project := toProjectView(item.Project)
+		view.Project = &project
+	}
+	return view
+}
+
+func toProjectChangeViews(items []domain.ProjectChange) []ProjectChangeView {
+	views := make([]ProjectChangeView, len(items))
+	for i := range items {
+		views[i] = toProjectChangeView(&items[i])
 	}
 	return views
 }

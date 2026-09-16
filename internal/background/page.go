@@ -182,7 +182,8 @@ func (s *PageService) ListPagesPage(ctx context.Context, filter ListPagesFilter)
 	filter.Query = strings.TrimSpace(filter.Query)
 	types := []string{
 		PageTypePrincipal, PageTypePerson, PageTypeProject,
-		PageTypeKeyMatter, PageTypeGroup, PageTypeResource,
+		PageTypeKeyMatter, PageTypeProjectRisk, PageTypeProjectChange,
+		PageTypeGroup, PageTypeResource,
 	}
 	if filter.Type != "" {
 		types = []string{filter.Type}
@@ -310,6 +311,14 @@ func (s *PageService) loadPage(ctx context.Context, pageType string, id uint64) 
 		var item domain.KeyMatter
 		err = s.db.WithContext(ctx).Where("id = ?", id).Take(&item).Error
 		row.Name, row.Summary, row.UpdatedAt, row.LastProgressAt = item.Title, item.Summary, item.UpdatedAt, item.LastProgressAt
+	case PageTypeProjectRisk:
+		var item domain.ProjectRisk
+		err = s.db.WithContext(ctx).Where("id = ?", id).Take(&item).Error
+		row.Name, row.Summary, row.UpdatedAt, row.LastProgressAt = item.Title, item.Summary, item.UpdatedAt, item.LastProgressAt
+	case PageTypeProjectChange:
+		var item domain.ProjectChange
+		err = s.db.WithContext(ctx).Where("id = ?", id).Take(&item).Error
+		row.Name, row.Summary, row.UpdatedAt, row.LastProgressAt = item.Title, item.Summary, item.UpdatedAt, item.LastProgressAt
 	case PageTypeGroup:
 		var item domain.Group
 		err = s.db.WithContext(ctx).Where("id = ?", id).Take(&item).Error
@@ -342,6 +351,10 @@ func (s *PageService) writeSummary(ctx context.Context, pageType string, id uint
 		model = &domain.Person{}
 	case PageTypeKeyMatter:
 		model = &domain.KeyMatter{}
+	case PageTypeProjectRisk:
+		model = &domain.ProjectRisk{}
+	case PageTypeProjectChange:
+		model = &domain.ProjectChange{}
 	case PageTypeGroup:
 		model = &domain.Group{}
 	case PageTypeResource:
@@ -378,6 +391,7 @@ func (s *PageService) storedUpdatedAtText(ctx context.Context, pageType string, 
 	table := map[string]string{
 		PageTypeProject: "project", PageTypePerson: "person",
 		PageTypeKeyMatter: "key_matter", PageTypeGroup: "feishu_group",
+		PageTypeProjectRisk: "project_risk", PageTypeProjectChange: "project_change",
 		PageTypeResource: "managed_resource", PageTypePrincipal: "principal_profile",
 	}[pageType]
 	if table == "" {
@@ -444,6 +458,16 @@ func (s *PageService) listType(ctx context.Context, pageType string, filter List
 		if !filter.All {
 			query = query.Where("closed_at IS NULL")
 		}
+	case PageTypeProjectRisk:
+		query = query.Model(&domain.ProjectRisk{})
+		if !filter.All {
+			query = query.Where("closed_at IS NULL")
+		}
+	case PageTypeProjectChange:
+		query = query.Model(&domain.ProjectChange{})
+		if !filter.All {
+			query = query.Where("closed_at IS NULL")
+		}
 	case PageTypeGroup:
 		query = query.Model(&domain.Group{})
 		if !filter.All {
@@ -469,7 +493,7 @@ func (s *PageService) listType(ctx context.Context, pageType string, filter List
 	if filter.Query != "" {
 		like := "%" + filter.Query + "%"
 		switch pageType {
-		case PageTypeKeyMatter, PageTypeResource:
+		case PageTypeKeyMatter, PageTypeProjectRisk, PageTypeProjectChange, PageTypeResource:
 			query = query.Where("title LIKE ? OR summary LIKE ?", like, like)
 		case PageTypeGroup:
 			query = query.Where("name LIKE ? OR chat_id LIKE ? OR summary LIKE ?", like, like, like)
@@ -500,7 +524,7 @@ func (s *PageService) listType(ctx context.Context, pageType string, filter List
 			continue
 		}
 		name := row.Name
-		if pageType == PageTypeKeyMatter {
+		if pageType == PageTypeKeyMatter || pageType == PageTypeProjectRisk || pageType == PageTypeProjectChange {
 			name = row.Title
 		}
 		if pageType == PageTypeGroup && name == "" {
@@ -541,7 +565,7 @@ func parsePageCursor(cursor string, types []string) (string, uint64, error) {
 
 func listSelect(pageType string) string {
 	switch pageType {
-	case PageTypeKeyMatter:
+	case PageTypeKeyMatter, PageTypeProjectRisk, PageTypeProjectChange:
 		return "id, title, summary, last_progress_at"
 	case PageTypeGroup:
 		return "id, name, chat_id, summary, last_progress_at"

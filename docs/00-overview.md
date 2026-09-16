@@ -114,7 +114,7 @@ M5 每轮开始时给可达来源消息添加 `OnIt`，本轮离开 `executing` 
 
 世界状态分为：
 
-- 当前实体：PrincipalProfile、Project、KeyMatter、Person、Group、ManagedResource；
+- 当前实体：PrincipalProfile、Project、KeyMatter、ProjectRisk、ProjectChange、Person、Group、ManagedResource；
 - 原始证据：Message、Resource、ScanRecord、TodoEvent、TaskEvent、ExecutionRun；
 - 行动状态：Todo、Task、ScheduledTask；
 - 长期认知：实体 `summary` 页、Fact、PageRevision；
@@ -125,6 +125,8 @@ M5 每轮开始时给可达来源消息添加 `OnIt`，本轮离开 `executing` 
 实体页回答“现在是什么”，支持整体读写、字符上限和 CAS，并共用一份实体页面内容指导；Fact 是带主体、业务时间及原始材料指针的证据索引；PageRevision 保存旧版认知页。叙述性关系使用 `[名字](person:12)` 等页内引用与 backlinks，明确的可查询映射使用 EntityRelation。WorldProgress 不替代外部系统的正式进展。
 
 KeyMatter 表示需长期回看的事项，不等于 Project 或一次执行动作；`closed_at` 表示闭环，`status` 保持自由文本。需要外部行动时另建普通 Task。
+
+ProjectRisk 与 ProjectChange 是 Project 下独立的一等实体。ProjectRisk 用 `triggered_at` / `closed_at` 表示生命周期，概率和影响是轻量自由文本；触发后由普通 KeyMatter 承接时，用 `project_risk --handled_by--> key_matter` 的 EntityRelation 表达，不给 KeyMatter 增加类型字段。ProjectChange 用 `changed_at` 记录生效时间。两者的条件、方案、变更前后、原因和证据都写入各自 Markdown Page。项目周期进展仍只由 WorldProgress 保存，风险不再重复写进进展 summary。
 
 FactEngine 在主链路外消费 Message、TodoEvent 和 TaskEvent，按独立游标批量提供完整材料，使用同一 Agent 协议维护当前实体、资料、页面、关系和 Fact。材料超出批次预算时减少行数，不截断单条原文；整轮成功才推进游标，失败重放。它不引入第二套世界状态表。
 

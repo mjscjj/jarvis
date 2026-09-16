@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"jarvis/internal/config"
 	"jarvis/internal/domain"
@@ -68,6 +69,8 @@ func TestFindBacklinksHitsWorldEntityTables(t *testing.T) {
 	project := domain.Project{Name: "P", Role: "owner", Status: "active", Priority: 1, Summary: &summary}
 	person := domain.Person{OpenID: "ou_a", Name: "A", Role: "leader", PriorityWeight: 1, IsActive: true, Summary: &summary}
 	matter := domain.KeyMatter{Title: "M", Status: "open", Summary: &summary}
+	risk := domain.ProjectRisk{ProjectID: 1, Title: "Risk", Summary: &summary}
+	change := domain.ProjectChange{ProjectID: 1, Title: "Change", ChangedAt: time.Now().UTC(), Summary: &summary}
 	groupName := "G"
 	group := domain.Group{ChatID: "oc_back", ChatMode: "group", Name: &groupName, Tier: "hot", RelatedGroup: true, Summary: &summary}
 	resource := domain.ManagedResource{Title: "R", ResourceType: "doc", IsActive: true, Summary: &summary}
@@ -80,6 +83,12 @@ func TestFindBacklinksHitsWorldEntityTables(t *testing.T) {
 	}
 	if err := db.Create(&matter).Error; err != nil {
 		t.Fatalf("create key matter: %v", err)
+	}
+	if err := db.Create(&risk).Error; err != nil {
+		t.Fatalf("create project risk: %v", err)
+	}
+	if err := db.Create(&change).Error; err != nil {
+		t.Fatalf("create project change: %v", err)
 	}
 	if err := db.Create(&group).Error; err != nil {
 		t.Fatalf("create group: %v", err)
@@ -102,13 +111,13 @@ func TestFindBacklinksHitsWorldEntityTables(t *testing.T) {
 	for _, link := range links {
 		got[link.Type] = true
 	}
-	for _, want := range []string{"project", "person", "key_matter", "group", "resource", "principal"} {
+	for _, want := range []string{"project", "person", "key_matter", "project_risk", "project_change", "group", "resource", "principal"} {
 		if !got[want] {
 			t.Fatalf("backlinks missing %s: %#v", want, links)
 		}
 	}
-	if len(links) != 6 {
-		t.Fatalf("backlinks = %#v, want 6", links)
+	if len(links) != 8 {
+		t.Fatalf("backlinks = %#v, want 8", links)
 	}
 }
 

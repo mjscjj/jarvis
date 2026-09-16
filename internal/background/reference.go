@@ -12,29 +12,33 @@ import (
 )
 
 const (
-	PageTypePrincipal = "principal"
-	PageTypePerson    = "person"
-	PageTypeProject   = "project"
-	PageTypeKeyMatter = "key_matter"
-	PageTypeGroup     = "group"
-	PageTypeResource  = "resource"
-	RefTypeTask       = "task"
-	RefTypeTodo       = "todo"
-	RefTypeFact       = "fact"
+	PageTypePrincipal     = "principal"
+	PageTypePerson        = "person"
+	PageTypeProject       = "project"
+	PageTypeKeyMatter     = "key_matter"
+	PageTypeProjectRisk   = "project_risk"
+	PageTypeProjectChange = "project_change"
+	PageTypeGroup         = "group"
+	PageTypeResource      = "resource"
+	RefTypeTask           = "task"
+	RefTypeTodo           = "todo"
+	RefTypeFact           = "fact"
 )
 
 var pageTypes = map[string]struct{}{
 	PageTypePrincipal: {}, PageTypePerson: {}, PageTypeProject: {},
-	PageTypeKeyMatter: {}, PageTypeGroup: {}, PageTypeResource: {},
+	PageTypeKeyMatter: {}, PageTypeProjectRisk: {}, PageTypeProjectChange: {},
+	PageTypeGroup: {}, PageTypeResource: {},
 }
 
 var referenceSchemes = map[string]struct{}{
 	PageTypePrincipal: {}, PageTypePerson: {}, PageTypeProject: {},
-	PageTypeKeyMatter: {}, PageTypeGroup: {}, PageTypeResource: {},
+	PageTypeKeyMatter: {}, PageTypeProjectRisk: {}, PageTypeProjectChange: {},
+	PageTypeGroup: {}, PageTypeResource: {},
 	RefTypeTask: {}, RefTypeTodo: {}, RefTypeFact: {},
 }
 
-var referencePattern = regexp.MustCompile(`\[[^\]\n]*\]\((principal|person|project|key_matter|group|resource|task|todo|fact):(\d+)\)`)
+var referencePattern = regexp.MustCompile(`\[[^\]\n]*\]\((principal|person|project|key_matter|project_risk|project_change|group|resource|task|todo|fact):(\d+)\)`)
 
 // Reference is one Markdown entity link extracted from page text.
 type Reference struct {
@@ -140,6 +144,12 @@ func FindBacklinks(ctx context.Context, db *gorm.DB, pageType string, id uint64)
 	if err := scan(PageTypeKeyMatter, "key_matter", "title"); err != nil {
 		return nil, err
 	}
+	if err := scan(PageTypeProjectRisk, "project_risk", "title"); err != nil {
+		return nil, err
+	}
+	if err := scan(PageTypeProjectChange, "project_change", "title"); err != nil {
+		return nil, err
+	}
 	if err := scan(PageTypeGroup, "feishu_group", "COALESCE(name, chat_id)"); err != nil {
 		return nil, err
 	}
@@ -163,6 +173,10 @@ func referenceExists(ctx context.Context, db *gorm.DB, ref Reference) (bool, err
 		model = &domain.Project{}
 	case PageTypeKeyMatter:
 		model = &domain.KeyMatter{}
+	case PageTypeProjectRisk:
+		model = &domain.ProjectRisk{}
+	case PageTypeProjectChange:
+		model = &domain.ProjectChange{}
 	case PageTypeGroup:
 		model = &domain.Group{}
 	case PageTypeResource:

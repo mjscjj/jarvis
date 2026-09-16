@@ -142,6 +142,54 @@ EOF
       ;;
     touch-key-matter) delete_id_help "touch-key-matter" "Mark one open key matter as freshly active without changing its content." ;;
     close-key-matter) delete_id_help "close-key-matter" "Close one key matter; this does not hard-delete it." ;;
+    list-project-risks) cat <<'EOF'
+usage: jarvis-tools list-project-risks [--project-id ID] [--all] [--keyword TEXT] [--page N] [--limit N]
+List open project risks; --all includes closed risks.
+EOF
+      ;;
+    get-project-risk) cat <<'EOF'
+usage: jarvis-tools get-project-risk --id ID
+Get one project risk. Use get-page --type project_risk for its Markdown narrative.
+EOF
+      ;;
+    create-project-risk)
+      world_payload_intro "$1"
+      cat <<'EOF'
+Required: project_id (positive integer), title (nonblank string). Optional:
+probability and impact (free text). A new risk always starts untriggered.
+Use get-page/update-page with type project_risk for its Markdown narrative.
+EOF
+      ;;
+    update-project-risk)
+      world_payload_intro "$1"
+      cat <<'EOF'
+Required: project_id (positive integer), title (nonblank string). Optional:
+probability and impact (free text), and triggered_at (RFC3339 or null). Once set,
+triggered_at cannot be cleared or changed; use close-project-risk to close it.
+Use create-relation with project_risk --handled_by--> key_matter when a triggered
+risk is carried by one or more ordinary key matters.
+EOF
+      ;;
+    close-project-risk) delete_id_help "close-project-risk" "Close one project risk; this does not hard-delete it." ;;
+    list-project-changes) cat <<'EOF'
+usage: jarvis-tools list-project-changes [--project-id ID] [--all] [--keyword TEXT] [--page N] [--limit N]
+List open project changes; --all includes closed changes.
+EOF
+      ;;
+    get-project-change) cat <<'EOF'
+usage: jarvis-tools get-project-change --id ID
+Get one project change. Use get-page --type project_change for change detail.
+EOF
+      ;;
+    create-project-change|update-project-change)
+      world_payload_intro "$1"
+      cat <<'EOF'
+Required: project_id (positive integer), title (nonblank string), changed_at
+(RFC3339 effective time). Change before /
+after state, reason, impact and evidence belong in the Markdown page.
+EOF
+      ;;
+    close-project-change) delete_id_help "close-project-change" "Close one project change; this does not hard-delete it." ;;
     list-groups) cat <<'EOF'
 usage: jarvis-tools list-groups [--chat-id CHAT_ID] [--keyword TEXT] [--page N] [--limit N]
 Search compact Feishu group summaries. Use get-group for full background.
@@ -296,7 +344,7 @@ EOF
     get-page) cat <<'EOF'
 usage: jarvis-tools get-page --type TYPE --id N
 Read one entity's long-term fact page. TYPE is principal, person, project,
-key_matter, group or resource. Returns the full summary, character count and
+key_matter, project_risk, project_change, group or resource. Returns the full summary, character count and
 limit, updated_at for CAS, outbound and back links, and the subject's fact
 count without fact content. Use get-page-guidance before the first page edit in
 an Agent session; use list-facts for history detail.
@@ -313,7 +361,7 @@ EOF
 usage: jarvis-tools update-page --type TYPE --id N --content -|TEXT
                                --if-unchanged-since TS
 Replace one entity's long-term fact page. TYPE is principal, person, project,
-key_matter, group or resource. --content - reads stdin. --if-unchanged-since is
+key_matter, project_risk, project_change, group or resource. --content - reads stdin. --if-unchanged-since is
 the updated_at from get-page; a 409 response returns the current page so the
 caller can re-merge.
 EOF
@@ -322,14 +370,14 @@ EOF
 usage: jarvis-tools list-pages [--type TYPE] [--all] [--stale-days N]
                               [--over-limit]
 List long-term fact page indexes. TYPE is principal, person, project,
-key_matter, group or resource. Default is active entities only; --all includes
+key_matter, project_risk, project_change, group or resource. Default is active entities only; --all includes
 inactive ones. --stale-days and --over-limit are inspection filters.
 EOF
       ;;
     list-backlinks) cat <<'EOF'
 usage: jarvis-tools list-backlinks --type TYPE --id N
 List pages that reference this entity. TYPE is principal, person, project,
-key_matter, group or resource.
+key_matter, project_risk, project_change, group or resource.
 EOF
       ;;
     get-agent-identity) cat <<'EOF'
@@ -393,6 +441,10 @@ world_flags() {
     update-key-matter) printf '%s' '--id --payload' ;;
     touch-key-matter) printf '%s' --id ;;
     close-key-matter) printf '%s' --id ;;
+    list-project-risks|list-project-changes) printf '%s' '--project-id --keyword --limit --page --all' ;;
+    get-project-risk|get-project-change|close-project-risk|close-project-change) printf '%s' --id ;;
+    create-project-risk|create-project-change) printf '%s' --payload ;;
+    update-project-risk|update-project-change) printf '%s' '--id --payload' ;;
     list-groups) printf '%s' '--keyword --limit --page --chat-id' ;;
     get-group) printf '%s' --chat-id ;;
     get-world-overview) printf '%s' '--section --query --offset --limit --id' ;;
@@ -490,6 +542,27 @@ cmd_update_key_matter() { cmd_payload_by_id update-key-matter PUT /api/key-matte
 cmd_touch_key_matter() { cmd_touch_by_id touch-key-matter /api/key-matters; }
 
 cmd_close_key_matter() { cmd_delete_by_id close-key-matter /api/key-matters; }
+
+project_entity_list() {
+  local command_name="$1" path="$2" projection="$3" query body
+  query="$(world_list_query)"
+  [[ -z "$PROJECT_ID" ]] || { [[ "$PROJECT_ID" =~ ^[1-9][0-9]*$ ]] || fail "${command_name} --project-id must be positive"; query="${query}&project_id=${PROJECT_ID}"; }
+  [[ "$ALL" != true ]] || query="${query}&include_closed=true"
+  body="$(api_get "${path}?${query}")"
+  printf '%s' "$body" | json_data --project-items items 'total,page,page_size' "$projection"
+}
+
+cmd_list_project_risks() { project_entity_list list-project-risks /api/project-risks 'id,project_id,title,probability,impact,triggered_at,closed_at,last_progress_at'; }
+cmd_get_project_risk() { [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "get-project-risk requires positive --id"; emit_api_data "/api/project-risks/${ID}"; }
+cmd_create_project_risk() { cmd_payload_create create-project-risk POST /api/project-risks; }
+cmd_update_project_risk() { cmd_payload_by_id update-project-risk PUT /api/project-risks; }
+cmd_close_project_risk() { cmd_delete_by_id close-project-risk /api/project-risks; }
+
+cmd_list_project_changes() { project_entity_list list-project-changes /api/project-changes 'id,project_id,title,changed_at,closed_at,last_progress_at'; }
+cmd_get_project_change() { [[ "$ID" =~ ^[1-9][0-9]*$ ]] || fail "get-project-change requires positive --id"; emit_api_data "/api/project-changes/${ID}"; }
+cmd_create_project_change() { cmd_payload_create create-project-change POST /api/project-changes; }
+cmd_update_project_change() { cmd_payload_by_id update-project-change PUT /api/project-changes; }
+cmd_close_project_change() { cmd_delete_by_id close-project-change /api/project-changes; }
 
 cmd_list_groups() {
   require_limit list-groups "$LIMIT" 100
@@ -679,8 +752,8 @@ cmd_get_agent_identity() { emit_api_data /api/agent-identity; }
 require_page_type() {
   local cmd="$1" value="$2"
   case "$value" in
-    principal|person|project|key_matter|group|resource) ;;
-    *) fail "${cmd} --type must be principal, person, project, key_matter, group or resource" ;;
+    principal|person|project|key_matter|project_risk|project_change|group|resource) ;;
+    *) fail "${cmd} --type must be principal, person, project, key_matter, project_risk, project_change, group or resource" ;;
   esac
 }
 

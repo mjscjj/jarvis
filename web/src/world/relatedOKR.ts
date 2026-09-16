@@ -1,7 +1,7 @@
 import type { EntityRelation } from '../types'
 import type { Objective } from '../okr/emily/types'
 
-export type WorldOKREntityType = 'principal' | 'person' | 'project' | 'key_matter' | 'group' | 'resource'
+export type WorldOKREntityType = 'principal' | 'person' | 'project' | 'key_matter' | 'project_risk' | 'project_change' | 'group' | 'resource'
 
 export interface RelatedOKRRow {
   key: string

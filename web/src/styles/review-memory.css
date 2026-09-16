@@ -853,7 +853,7 @@
   border-right: 1px solid var(--color-border);
 }
 
-.project-overview-block:nth-child(-n + 2) {
+.project-overview-block:not(:nth-last-child(-n + 2)) {
   border-bottom: 1px solid var(--color-border);
 }
 
@@ -889,6 +889,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.project-overview-title-link.ant-btn {
+  width: fit-content;
+  height: auto;
+  padding: 0;
+  text-align: left;
 }
 
 .project-overview-dot {

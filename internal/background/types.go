@@ -1,4 +1,4 @@
-// Package background owns M1: the manually maintained Project / KeyMatter / Person / Group
+// Package background owns M1: the manually maintained Project / KeyMatter / ProjectRisk / ProjectChange / Person / Group
 // backgrounds that give every downstream module (extraction, execution) its
 // context. It is the authoritative writer for Project and Person, and the
 // authoritative writer for the *human-curated* subset of Group columns only —
@@ -102,6 +102,50 @@ type KeyMatterInput struct {
 	Status    string     `json:"status"`
 	ProjectID *uint64    `json:"project_id"`
 	DueAt     *time.Time `json:"due_at"`
+}
+
+// ProjectRiskInput carries only project linkage and lifecycle controls. The
+// risk narrative is maintained through the entity Page API.
+type ProjectRiskInput struct {
+	ProjectID   uint64     `json:"project_id"`
+	Title       string     `json:"title"`
+	Probability string     `json:"probability"`
+	Impact      string     `json:"impact"`
+	TriggeredAt *time.Time `json:"triggered_at"`
+}
+
+func (in *ProjectRiskInput) validate() error {
+	if in.ProjectID == 0 {
+		return fmt.Errorf("project risk project_id must be positive")
+	}
+	if strings.TrimSpace(in.Title) == "" {
+		return fmt.Errorf("project risk title must not be blank")
+	}
+	if in.TriggeredAt != nil && in.TriggeredAt.IsZero() {
+		return fmt.Errorf("project risk triggered_at must not be zero")
+	}
+	return nil
+}
+
+// ProjectChangeInput carries the effective time as a queryable control. Change
+// details and rationale are maintained through the entity Page API.
+type ProjectChangeInput struct {
+	ProjectID uint64    `json:"project_id"`
+	Title     string    `json:"title"`
+	ChangedAt time.Time `json:"changed_at"`
+}
+
+func (in *ProjectChangeInput) validate() error {
+	if in.ProjectID == 0 {
+		return fmt.Errorf("project change project_id must be positive")
+	}
+	if strings.TrimSpace(in.Title) == "" {
+		return fmt.Errorf("project change title must not be blank")
+	}
+	if in.ChangedAt.IsZero() {
+		return fmt.Errorf("project change changed_at is required")
+	}
+	return nil
 }
 
 func (in *KeyMatterInput) validate() error {

@@ -63,6 +63,8 @@ CLI 与已有 CC Connect 配置，随后请求服务重启；不改变 App ID，
 
 - Projects：`GET/POST /api/projects`、`GET/PUT/DELETE /api/projects/:project_id`
 - Key matters：`GET/POST /api/key-matters`、`GET/PUT/DELETE /api/key-matters/:key_matter_id`、`POST .../touch`
+- Project risks：`GET/POST /api/project-risks`、`GET/PUT/DELETE /api/project-risks/:project_risk_id`；列表支持 `project_id` 和 `include_closed`
+- Project changes：`GET/POST /api/project-changes`、`GET/PUT/DELETE /api/project-changes/:project_change_id`；列表支持 `project_id` 和 `include_closed`
 - Persons：`GET/POST /api/persons`、`GET/PUT/DELETE /api/persons/:person_id`
 - Feishu people：`GET /api/people/search?q=` 是全产品统一的飞书人员搜索入口。
 - 人员搜索兼容接口（Deprecated）：`POST /api/persons/resolve` 是旧 World 页面接口，body 为 `{query}`，返回 `data.candidates`；`GET /api/biz-okr/people/search?q=` 是旧 Biz OKR 页面接口，返回 `data.users`。两者只服务已加载或缓存的旧前端，内部均委托给 `/api/people/search` 使用的同一飞书解析服务；新代码不得调用。
@@ -76,7 +78,7 @@ CLI 与已有 CC Connect 配置，随后请求服务重启；不改变 App ID，
 - 世界实体硬清理：`POST /api/world/purge` 只接受带预期名称的显式 Project、KeyMatter、Person 清单；存在保留页面引用、非 OKR 关系、Group/Resource/Task/Todo、WorldProgress 或定时任务依赖时拒绝。它同时删除实体的 Relation、Fact 和 PageRevision，也可精确移除带成对 HTML 标记的生成内容块。
 - 实体长期事实页：`GET /api/pages`、`GET/PUT /api/pages/:type/:id`、`GET /api/pages/:type/:id/backlinks`。`PUT` 需带 `if_unchanged_since` 做 CAS，不匹配返回 409 并回带当前全文。
 
-`DELETE /api/key-matters/:key_matter_id` 的业务语义是闭环，`DELETE /api/projects/:project_id` 的业务语义是归档；都不是物理删除。
+`DELETE /api/key-matters/:key_matter_id`、`DELETE /api/project-risks/:project_risk_id` 和 `DELETE /api/project-changes/:project_change_id` 的业务语义是闭环，`DELETE /api/projects/:project_id` 的业务语义是归档；都不是物理删除。
 
 来源证据使用通用 Message/Clue 查询、Fact 和 Page CAS；核心层不提供 OKR 专用证据队列或合并接口。
 

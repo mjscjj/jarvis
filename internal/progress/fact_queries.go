@@ -262,6 +262,18 @@ func (s *Service) factSubjectLabel(ctx context.Context, key factSubjectKey) (str
 		if err == nil {
 			return row.Title, nil
 		}
+	case "project_risk":
+		var row domain.ProjectRisk
+		err = db.Select("id", "title").First(&row, key.ID).Error
+		if err == nil {
+			return row.Title, nil
+		}
+	case "project_change":
+		var row domain.ProjectChange
+		err = db.Select("id", "title").First(&row, key.ID).Error
+		if err == nil {
+			return row.Title, nil
+		}
 	case "group":
 		var row domain.Group
 		err = db.Select("id", "name", "chat_id").First(&row, key.ID).Error

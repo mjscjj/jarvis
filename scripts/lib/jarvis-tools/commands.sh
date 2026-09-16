@@ -10,6 +10,16 @@ register_command create-key-matter world 'Create a key matter from a JSON payloa
 register_command update-key-matter world 'Replace a key matter'"'"'s control fields' cmd_update_key_matter
 register_command touch-key-matter world 'Mark an open key matter as freshly active' cmd_touch_key_matter
 register_command close-key-matter world 'Close a key matter' cmd_close_key_matter
+register_command list-project-risks world 'List project risks' cmd_list_project_risks
+register_command get-project-risk world 'Get one project risk' cmd_get_project_risk
+register_command create-project-risk world 'Create a project risk from a JSON payload' cmd_create_project_risk
+register_command update-project-risk world 'Replace a project risk control fields' cmd_update_project_risk
+register_command close-project-risk world 'Close a project risk' cmd_close_project_risk
+register_command list-project-changes world 'List project changes' cmd_list_project_changes
+register_command get-project-change world 'Get one project change' cmd_get_project_change
+register_command create-project-change world 'Create a project change from a JSON payload' cmd_create_project_change
+register_command update-project-change world 'Replace project change control fields' cmd_update_project_change
+register_command close-project-change world 'Close a project change' cmd_close_project_change
 register_command list-groups world 'Search Feishu groups' cmd_list_groups
 register_command get-group world 'Get one Feishu group by chat_id' cmd_get_group
 register_command get-context world 'Assemble current principal/project/chat work context' cmd_get_context

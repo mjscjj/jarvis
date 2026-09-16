@@ -20,7 +20,7 @@ func TestJarvisToolsAllHelpIncludesWorldCommands(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"query-captured-resources", "create-project", "list-key-matters", "touch-key-matter", "touch-resource", "get-page", "resolve-world-node", "update-page", "list-pages", "list-page-revisions", "list-backlinks", "list-relations", "create-relation", "purge-world-entities", "get-world-progress", "create-world-progress", "update-world-progress"} {
+	for _, want := range []string{"query-captured-resources", "create-project", "list-key-matters", "list-project-risks", "create-project-change", "touch-key-matter", "touch-resource", "get-page", "resolve-world-node", "update-page", "list-pages", "list-page-revisions", "list-backlinks", "list-relations", "create-relation", "purge-world-entities", "get-world-progress", "create-world-progress", "update-world-progress"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("help missing %q:\n%s", want, out)
 		}
@@ -362,6 +362,12 @@ func TestJarvisToolsWorldModelWritesUseSpecificEndpoints(t *testing.T) {
 		{"update-key-matter", []string{"--id", "12", "--payload", `{"title":"m"}`}, http.MethodPut, "/api/key-matters/12"},
 		{"touch-key-matter", []string{"--id", "12"}, http.MethodPost, "/api/key-matters/12/touch"},
 		{"close-key-matter", []string{"--id", "12"}, http.MethodDelete, "/api/key-matters/12"},
+		{"create-project-risk", []string{"--payload", `{"project_id":7,"title":"risk"}`}, http.MethodPost, "/api/project-risks"},
+		{"update-project-risk", []string{"--id", "14", "--payload", `{"project_id":7,"title":"risk"}`}, http.MethodPut, "/api/project-risks/14"},
+		{"close-project-risk", []string{"--id", "14"}, http.MethodDelete, "/api/project-risks/14"},
+		{"create-project-change", []string{"--payload", `{"project_id":7,"title":"change","changed_at":"2026-09-16T00:00:00Z"}`}, http.MethodPost, "/api/project-changes"},
+		{"update-project-change", []string{"--id", "15", "--payload", `{"project_id":7,"title":"change","changed_at":"2026-09-16T00:00:00Z"}`}, http.MethodPut, "/api/project-changes/15"},
+		{"close-project-change", []string{"--id", "15"}, http.MethodDelete, "/api/project-changes/15"},
 		{"update-group", []string{"--id", "8", "--payload", `{"project_id":null,"related_group":false,"pinned":false,"include_in_memory":false,"is_key_group":false}`}, http.MethodPut, "/api/groups/8"},
 		{"update-principal", []string{"--payload", `{"name":"me"}`}, http.MethodPut, "/api/profile"},
 		{"create-person", []string{"--payload", `{"name":"a"}`}, http.MethodPost, "/api/persons"},

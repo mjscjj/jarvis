@@ -106,6 +106,36 @@ func TestFactSubjectLabelUsesManagedResourceForCanonicalResourceType(t *testing.
 	}
 }
 
+func TestFactSubjectLabelsUseProjectRiskAndChangeTitles(t *testing.T) {
+	service := newFactTestService(t)
+	if err := service.db.AutoMigrate(&domain.ProjectRisk{}, &domain.ProjectChange{}); err != nil {
+		t.Fatal(err)
+	}
+	risk := domain.ProjectRisk{ProjectID: 1, Title: "Capacity shortage"}
+	change := domain.ProjectChange{ProjectID: 1, Title: "Narrow scope", ChangedAt: time.Now().UTC()}
+	if err := service.db.Create(&risk).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := service.db.Create(&change).Error; err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	insertFact(t, service, "project_risk", risk.ID, "risk fact", now, nil)
+	insertFact(t, service, "project_change", change.ID, "change fact", now.Add(time.Minute), nil)
+
+	result, err := service.SearchFacts(context.Background(), FactSearchFilter{Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	labels := map[string]string{}
+	for _, item := range result.Items {
+		labels[item.SubjectType] = item.SubjectLabel
+	}
+	if labels["project_risk"] != risk.Title || labels["project_change"] != change.Title {
+		t.Fatalf("labels = %#v", labels)
+	}
+}
+
 func TestCanonicalResourceQueryIncludesLegacyFacts(t *testing.T) {
 	service := newFactTestService(t)
 	if err := service.db.AutoMigrate(&domain.ManagedResource{}); err != nil {

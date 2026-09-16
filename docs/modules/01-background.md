@@ -11,7 +11,7 @@ M1 维护 principal 的稳定工作背景，供 M3/M5 和日报读取。SQLite �
 
 | M1 负责 | M1 不负责 |
 |---|---|
-| PrincipalProfile、Project、KeyMatter、Person、ManagedResource CRUD | 消息采集、Todo 抽取、M5 执行 |
+| PrincipalProfile、Project、KeyMatter、ProjectRisk、ProjectChange、Person、ManagedResource CRUD | 消息采集、Todo 抽取、M5 执行 |
 | Group 的人工背景与 Project 归属 | Group 发现、活跃度和消息落库 |
 | lark-cli 姓名解析 | 完整飞书读写封装 |
 | 后台背景配置页 | 持续世界建模 |
@@ -35,6 +35,8 @@ Task 是独立执行单元，只保留可选 `project_id`，不直接关联 KeyM
 
 - Project：`code`、`name`、`role(owner|participant)`、`status(planning|active|paused|archived|done)`、`priority` 和 `summary`
 - KeyMatter：项目内持续跟进的重要事项，状态保持自由文本，可选截止时间；闭环后保留历史
+- ProjectRisk：项目级不确定性，保留轻量概率、影响以及触发/关闭时间；详细条件、缓解方案和证据写在 Page
+- ProjectChange：已经作出的项目级目标或范围调整，以 `changed_at` 记录生效时间；变更前后、原因和影响写在 Page
 - Person：Feishu ID、姓名、`role(leader|key|colleague|other)`、权重、P2P chat、`summary` 和启用状态
 - PrincipalProfile：本人身份和 `summary`
 - Group：采集维护会话身份与活跃信息；M1 维护 `project_id`、控制字段和 `summary`。`include_in_memory` 当前只存储/展示，没有 memory sidecar 运行效果
@@ -48,7 +50,7 @@ Task 是独立执行单元，只保留可选 `project_id`，不直接关联 KeyM
 - 所有实体共用 `entity-page-guidance.md` 的内容契约，由模型根据对象与证据组织页面，不维护按实体类型划分的模板。
 - 自然语言关系写成 `[名称](type:id)` 页内引用；写入时校验目标存在，反查使用 backlinks。
 - EntityRelation 保存两个既有实体之间带证据、需要程序查询的跨模块映射，不替代叙述性引用。
-- WorldProgress 保存指定主体在一个周期内的证据化判断；项目进展与 OKR 世界投影使用同一服务，但不替代 OKR 产品的正式 Progress。
+- WorldProgress 保存指定主体在一个周期内的证据化判断；项目进展与 OKR 世界投影使用同一服务，但不替代 OKR 产品的正式 Progress，也不重复承载独立 ProjectRisk。
 - `Fact` 是追加式证据索引，不是第二份知识正文。它保存简短锚点、业务发生时间和原始材料指针；需要判断时沿 `source_kind/source_id` 读取原文。
 - Fact 可以指向 `message`、`todo_event`、`task_event`、`execution_run` 和 `resource`；程序自身的状态变化使用 `source_kind=system`，不携带 `source_id`。FactEngine 当前自动消费的来源只有 Message、TodoEvent 和 TaskEvent。
 - `PageRevision` 保存实体页被改写前的完整正文。它记录“认知笔记怎样变化”，不是“现实发生了什么”，因此不进入 Fact。
@@ -60,7 +62,7 @@ Task 是独立执行单元，只保留可选 `project_id`，不直接关联 KeyM
 
 ## 5. API 与初始化
 
-Projects、Key matters、Persons、Groups、Profile、Managed resources、Facts、EntityRelations 和实体长期事实页的路由见 [HTTP API](../reference/http-api.md)。KeyMatter 的删除接口是闭环，Project 的删除接口是软归档。
+Projects、Key matters、Project risks、Project changes、Persons、Groups、Profile、Managed resources、Facts、EntityRelations 和实体长期事实页的路由见 [HTTP API](../reference/http-api.md)。KeyMatter、ProjectRisk、ProjectChange 的删除接口是闭环，Project 的删除接口是软归档。Risk 触发后的承接使用 `project_risk --handled_by--> key_matter` 通用关系，KeyMatter 不增加类型字段。
 
 首次身份、项目、人物、重点事项和群监听统一由仓库级 `bootstrap-jarvis-world-model` Skill 依据当前用户证据建立。M1 不保留任何特定用户的 seed 数据，也不从关键群机械批量导入人物。
 

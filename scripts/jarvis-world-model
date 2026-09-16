@@ -131,7 +131,7 @@ cmd_scan() {
 cmd_validate() {
   command -v lark-cli >/dev/null 2>&1 || fail "lark-cli is required but not found in PATH"
   API_BASE="$(resolve_api_base)"
-  local auth configured principal projects persons matters resources groups result error_file error_output
+  local auth configured principal projects persons matters risks changes resources groups result error_file error_output
   error_file="$(mktemp "${TMPDIR:-/tmp}/jarvis-world-model-validate.XXXXXX")"
   if ! auth="$(LARKSUITE_CLI_NO_UPDATE_NOTIFIER=1 LARKSUITE_CLI_NO_SKILLS_NOTIFIER=1 lark-cli auth status --json --verify 2>"$error_file")"; then
     error_output="$(<"$error_file")"
@@ -157,17 +157,21 @@ cmd_validate() {
   projects="$(api_call GET '/api/projects?page=1&page_size=1' | jq -c '.data')"
   persons="$(api_call GET '/api/persons?page=1&page_size=1' | jq -c '.data')"
   matters="$(api_call GET '/api/key-matters?page=1&page_size=1' | jq -c '.data')"
+  risks="$(api_call GET '/api/project-risks?page=1&page_size=1' | jq -c '.data')"
+  changes="$(api_call GET '/api/project-changes?page=1&page_size=1' | jq -c '.data')"
   resources="$(api_call GET '/api/resources?page=1&page_size=1' | jq -c '.data')"
   groups="$(api_call GET '/api/groups?related_only=true&page=1&page_size=100' | jq -c '.data')"
-  result="$(printf '%s\n' "$auth" "$configured" "$principal" "$projects" "$persons" "$matters" "$resources" "$groups" | jq -sc '
+  result="$(printf '%s\n' "$auth" "$configured" "$principal" "$projects" "$persons" "$matters" "$risks" "$changes" "$resources" "$groups" | jq -sc '
       .[0] as $auth |
       .[1] as $configured |
       .[2] as $principal |
       .[3] as $projects |
       .[4] as $persons |
       .[5] as $matters |
-      .[6] as $resources |
-      .[7] as $groups |
+      .[6] as $risks |
+      .[7] as $changes |
+      .[8] as $resources |
+      .[9] as $groups |
       ($auth.identities.user // {}) as $user |
       (($auth.verified == true) and ($user.status == "ready") and ($user.verified == true) and ($user.tokenStatus == "valid")) as $auth_ok |
       (($principal.saved == true) and ((($principal.open_id // "") | length) > 0) and ((($principal.name // "") | length) > 0)) as $principal_ok |
@@ -177,7 +181,7 @@ cmd_validate() {
         ready: ($auth_ok and $principal_ok and $identity_ok),
         checks:{lark_user_authenticated:$auth_ok,principal_profile_saved:$principal_ok,principal_identity_matches_login:$identity_ok},
         observations:{manager_known:((($principal.leader_open_id // "") | length) > 0),related_group_configured:(($groups.total // 0) > 0),successful_group_scan:($scans > 0)},
-        counts:{projects:($projects.total // 0),persons:($persons.total // 0),key_matters:($matters.total // 0),resources:($resources.total // 0),active_resources:($resources.active_total // 0),related_groups:($groups.total // 0),successful_scan_checkpoints_in_sample:$scans}
+        counts:{projects:($projects.total // 0),persons:($persons.total // 0),key_matters:($matters.total // 0),project_risks:($risks.total // 0),project_changes:($changes.total // 0),resources:($resources.total // 0),active_resources:($resources.active_total // 0),related_groups:($groups.total // 0),successful_scan_checkpoints_in_sample:$scans}
       }')"
   printf '%s\n' "$result" | jq -c .
   jq -e '.ready == true' >/dev/null <<<"$result"

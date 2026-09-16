@@ -24,6 +24,10 @@ func TestJarvisWorldModelValidateReportsWorldModelWithoutRequiringGroups(t *test
 			fmt.Fprint(w, `{"code":0,"data":{"total":3,"items":[]}}`)
 		case "/api/key-matters":
 			fmt.Fprint(w, `{"code":0,"data":{"total":1,"items":[]}}`)
+		case "/api/project-risks":
+			fmt.Fprint(w, `{"code":0,"data":{"total":5,"items":[]}}`)
+		case "/api/project-changes":
+			fmt.Fprint(w, `{"code":0,"data":{"total":6,"items":[]}}`)
 		case "/api/resources":
 			fmt.Fprint(w, `{"code":0,"data":{"total":4,"active_total":3,"items":[]}}`)
 		case "/api/groups":
@@ -65,14 +69,17 @@ exit 9
 			RelatedGroup bool `json:"related_group_configured"`
 		} `json:"observations"`
 		Counts struct {
-			Projects  int `json:"projects"`
-			Resources int `json:"resources"`
+			Projects       int `json:"projects"`
+			ProjectRisks   int `json:"project_risks"`
+			ProjectChanges int `json:"project_changes"`
+			Resources      int `json:"resources"`
 		} `json:"counts"`
 	}
 	if err := json.Unmarshal([]byte(out), &result); err != nil {
 		t.Fatalf("decode output %q: %v", out, err)
 	}
-	if !result.Ready || result.Observations.RelatedGroup || result.Counts.Projects != 2 || result.Counts.Resources != 4 {
+	if !result.Ready || result.Observations.RelatedGroup || result.Counts.Projects != 2 ||
+		result.Counts.ProjectRisks != 5 || result.Counts.ProjectChanges != 6 || result.Counts.Resources != 4 {
 		t.Fatalf("validation result = %#v", result)
 	}
 }
@@ -84,7 +91,7 @@ func TestJarvisWorldModelValidateDoesNotPassAPIResponsesAsArguments(t *testing.T
 		switch r.URL.Path {
 		case "/api/profile":
 			fmt.Fprintf(w, `{"code":0,"data":{"open_id":"ou_ready","name":"Ready User","saved":true,"large_fact":%q}}`, largeFact)
-		case "/api/projects", "/api/persons", "/api/key-matters", "/api/resources", "/api/groups":
+		case "/api/projects", "/api/persons", "/api/key-matters", "/api/project-risks", "/api/project-changes", "/api/resources", "/api/groups":
 			fmt.Fprint(w, `{"code":0,"data":{"total":0,"items":[]}}`)
 		default:
 			http.NotFound(w, r)

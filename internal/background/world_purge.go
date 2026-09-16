@@ -238,6 +238,10 @@ func (s *WorldPurgeService) loadPurgePage(ctx context.Context, pageType string, 
 		table, nameColumn = "project", "name"
 	case PageTypeKeyMatter:
 		table, nameColumn = "key_matter", "title"
+	case PageTypeProjectRisk:
+		table, nameColumn = "project_risk", "title"
+	case PageTypeProjectChange:
+		table, nameColumn = "project_change", "title"
 	case PageTypePerson:
 		table, nameColumn = "person", "name"
 	case PageTypeGroup:
@@ -361,6 +365,7 @@ func (s *WorldPurgeService) rejectProjectBindings(ctx context.Context, set world
 		table string
 		label string
 	}{
+		{"project_risk", "project risks"}, {"project_change", "project changes"},
 		{"feishu_group", "groups"}, {"managed_resource", "managed resources"},
 		{"todo", "todos"}, {"task", "tasks"},
 	} {

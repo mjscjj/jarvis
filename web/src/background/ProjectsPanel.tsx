@@ -137,7 +137,7 @@ function ProjectProgressEditor({ projectId, autoFocus = false }: { projectId: nu
     <Card
       size="small"
       className="project-progress-card"
-      title={<div><Flex align="center" gap={8}><span>本周进展</span><Tag color="blue">{periodKey}</Tag></Flex><Text type="secondary" className="project-progress-subtitle">每周一份快照，四块分别编辑</Text></div>}
+      title={<div><Flex align="center" gap={8}><span>本周进展</span><Tag color="blue">{periodKey}</Tag></Flex><Text type="secondary" className="project-progress-subtitle">每周一份快照；风险在项目概览中独立维护</Text></div>}
       extra={(
         <Select
           size="small"
@@ -169,15 +169,6 @@ function ProjectProgressEditor({ projectId, autoFocus = false }: { projectId: nu
                 onChange={(event) => { setDraft((current) => ({ ...current, focus: event.target.value })); setSaved(false) }}
                 autoSize={{ minRows: 4, maxRows: 10 }}
                 placeholder={'1. 本周必须完成什么\n2. 本周要验证什么'}
-              />
-            </div>
-            <div className="project-progress-editor">
-              <Flex justify="space-between" align="baseline" gap={8}><Text strong>风险 / 需要支持</Text><Text type="secondary">风险、影响、Owner、支持方</Text></Flex>
-              <Input.TextArea
-                value={draft.risk}
-                onChange={(event) => { setDraft((current) => ({ ...current, risk: event.target.value })); setSaved(false) }}
-                autoSize={{ minRows: 4, maxRows: 10 }}
-                placeholder="没有风险就写暂无；有风险请说明影响和需要谁支持"
               />
             </div>
             <div className="project-progress-editor project-progress-editor-wide">

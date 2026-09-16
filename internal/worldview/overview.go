@@ -81,10 +81,10 @@ func Read(ctx context.Context, db *gorm.DB, f Filter) (*View, error) {
 		}
 		todoID = task.TodoID
 	}
-	names := []string{"project", "key_matter", "task", "recent_task", "todo"}
+	names := []string{"project", "key_matter", "project_risk", "project_change", "task", "recent_task", "todo"}
 	if f.Section != "" {
 		switch f.Section {
-		case "project", "key_matter", "task", "recent_task", "todo", "person", "group", "resource":
+		case "project", "key_matter", "project_risk", "project_change", "task", "recent_task", "todo", "person", "group", "resource":
 			names = []string{f.Section}
 		default:
 			return nil, fmt.Errorf("unknown world section %q", f.Section)
@@ -104,6 +104,14 @@ func Read(ctx context.Context, db *gorm.DB, f Filter) (*View, error) {
 		case "key_matter":
 			q = q.Table("key_matter").Where("closed_at IS NULL")
 			columns = "id,title,summary,due_at,updated_at"
+			title = "title"
+		case "project_risk":
+			q = q.Table("project_risk").Where("closed_at IS NULL")
+			columns = "id,project_id,title,probability,impact,triggered_at,summary,updated_at"
+			title = "title"
+		case "project_change":
+			q = q.Table("project_change").Where("closed_at IS NULL")
+			columns = "id,project_id,title,changed_at,summary,updated_at"
 			title = "title"
 		case "task", "recent_task":
 			q = q.Table("task")
