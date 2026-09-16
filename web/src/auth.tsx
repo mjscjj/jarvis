@@ -19,10 +19,7 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
-// App modules (OKR today) are open to their own visitors and run their own
-// in-module Lark login. The outer ByteDance SSO gate only guards the
-// principal-only surfaces, so on a module route we never start an SSO flow and
-// never block on it — the module decides who gets in.
+// Modules own visitor login; principal authentication must not block their pages.
 function isModuleRouteKey(key: string): boolean {
   return appModuleRegistry.some((module) => module.key === key)
 }
@@ -48,6 +45,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const pendingRef = useRef<AuthView | null>(null)
   const userRef = useRef<AuthUser | null>(null)
   const retryTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const identityRevision = useRef(0)
+  const okrIdentity = useRef<string | undefined>(undefined)
 
   const apply = useCallback((view: AuthView) => {
     if (!mounted.current || signedOut.current) return
@@ -69,20 +68,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // 它：AuthGate 会卸载整棵树，正在流式输出的对话和填写中的表单会一起丢掉。
     // 验证真的失败时下面清 user，届时才回到登录页。
     if (!userRef.current) setLoading(true)
+    const revision = identityRevision.current
     const operation = (async () => {
       try {
         const status = await getAuthStatus()
-        if (signedOut.current || !mounted.current) return
+        if (revision !== identityRevision.current || signedOut.current || !mounted.current) return
         // On an app-module route we never start the SSO device flow: the module
         // is open and runs its own visitor login. Only principal-only surfaces
         // fall through to loginWithByteDance.
         if (!status.enabled || status.user || (!forceLogin && currentRouteIsModule())) {
           apply(status)
         } else {
-          apply(await loginWithByteDance())
+          const view = await loginWithByteDance()
+          if (revision === identityRevision.current) apply(view)
         }
       } catch (cause) {
-        if (mounted.current && !signedOut.current) {
+        if (revision === identityRevision.current && mounted.current && !signedOut.current) {
           userRef.current = null
           setUser(null)
           const message = cause instanceof Error ? cause.message : String(cause)
@@ -93,7 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       } finally {
         inFlight.current = null
-        if (mounted.current) setLoading(false)
+        if (revision === identityRevision.current && mounted.current) setLoading(false)
       }
     })()
     inFlight.current = operation
@@ -105,8 +106,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthRecoveryHandler(recover)
     const expired = () => { void recover() }
     const routeChanged = () => { if (!currentRouteIsModule()) void recover() }
+    const okrChanged = (event: Event) => {
+      const auth = (event as CustomEvent<{ authenticated: boolean; user?: { unionId?: string; openId: string } }>).detail
+      const key = auth?.authenticated ? auth.user?.unionId || auth.user?.openId || '' : ''
+      if (okrIdentity.current === key) return
+      const initialized = okrIdentity.current !== undefined
+      okrIdentity.current = key
+      if (!initialized && inFlight.current) return
+      identityRevision.current++
+      clearTimeout(retryTimer.current)
+      pendingRef.current = null
+      userRef.current = null
+      setPending(null)
+      setUser(null)
+      setLoading(true)
+      if (!key && signedOut.current) {
+        setLoading(false)
+        return
+      }
+      signedOut.current = false
+      const revision = identityRevision.current
+      void (async () => {
+        await inFlight.current
+        if (revision === identityRevision.current && mounted.current) await recover()
+      })()
+    }
     authEvents.addEventListener('expired', expired)
     window.addEventListener('hashchange', routeChanged)
+    window.addEventListener('jarvis:okr-auth-changed', okrChanged)
     void recover()
     return () => {
       mounted.current = false
@@ -114,6 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAuthRecoveryHandler(null)
       authEvents.removeEventListener('expired', expired)
       window.removeEventListener('hashchange', routeChanged)
+      window.removeEventListener('jarvis:okr-auth-changed', okrChanged)
     }
   }, [recover])
 
@@ -175,6 +203,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       userRef.current = null
       setUser(null)
       setError('')
+      window.dispatchEvent(new Event('jarvis:signed-out'))
     } catch (cause) {
       signedOut.current = false
       throw cause

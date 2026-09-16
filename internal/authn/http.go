@@ -2,19 +2,83 @@ package authn
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
 
+	okrAuth "jarvis/internal/okrworkspace/auth"
+
 	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/cloudwego/hertz/pkg/common/hlog"
+	"github.com/cloudwego/hertz/pkg/protocol"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
 )
 
 const CookieName = "jarvis_session"
 
-// BrowserMiddleware requires a Jarvis session for browser and remote API
-// traffic. Only a connection that actually originates from loopback may use
-// the credential-free local CLI path.
+var okrPrincipalAccounts = map[string]User{
+	"on_94b5aa46ca92b7aecd01031e5b2f0dc4": {Username: "chujiejie.1", Email: "chujiejie.1@bytedance.com", IsPrincipal: true},
+	"on_af023f3c29b03b3d90cffedbc703b005": {Username: "lixiaolin", Email: "claire.li@bytedance.com", IsPrincipal: true},
+}
+
+func (s *Service) AuthenticateRequest(ctx context.Context, c *app.RequestContext) (User, bool) {
+	if s.okr != nil && s.okr.Enabled() && len(c.Cookie(okrAuth.CookieName)) > 0 {
+		session, err := s.okr.Current(ctx, string(c.Cookie(okrAuth.CookieName)))
+		if err == nil {
+			if len(c.Cookie(CookieName)) > 0 {
+				if err := s.clearMainSession(c); err != nil {
+					hlog.CtxErrorf(ctx, "clear superseded ByteDance browser session: %v", err)
+					return User{}, false
+				}
+			}
+			// The current OKR account takes precedence over a stale SSO cookie.
+			user, mapped := okrPrincipalAccounts[session.User.UnionID]
+			return user, mapped && s.allows(user)
+		}
+		if !errors.Is(err, okrAuth.ErrUnauthenticated) {
+			hlog.CtxErrorf(ctx, "read OKR browser identity: %v", err)
+		}
+		// An OKR cookie always owns the browser identity, including when it is
+		// invalid or expired. Never revive a previous user's SSO session.
+		return User{}, false
+	}
+	return s.Authenticate(string(c.Cookie(CookieName)))
+}
+
+func (s *Service) RequestStatus(ctx context.Context, c *app.RequestContext) View {
+	if !s.enabled {
+		return View{Enabled: false, Status: StatusUnauthenticated}
+	}
+	user, ok := s.AuthenticateRequest(ctx, c)
+	if !ok {
+		return View{Enabled: true, Status: StatusUnauthenticated}
+	}
+	return View{Enabled: true, Status: StatusAuthenticated, User: &user}
+}
+
+func (s *Service) LogoutRequest(ctx context.Context, c *app.RequestContext) error {
+	if err := s.clearMainSession(c); err != nil {
+		return err
+	}
+	if s.okr != nil {
+		if err := s.okr.Logout(ctx, string(c.Cookie(okrAuth.CookieName))); err != nil {
+			return err
+		}
+		c.SetCookie(okrAuth.CookieName, "", -1, "/", "", protocol.CookieSameSiteLaxMode, s.okr.CookieSecure(), true)
+	}
+	return nil
+}
+
+func (s *Service) clearMainSession(c *app.RequestContext) error {
+	if err := s.Logout(string(c.Cookie(CookieName))); err != nil {
+		return err
+	}
+	c.SetCookie(CookieName, "", -1, "/", "", protocol.CookieSameSiteStrictMode, false, true)
+	return nil
+}
+
+// Only actual loopback CLI connections may skip browser identity verification.
 func BrowserMiddleware(service *Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		path := string(c.Path())
@@ -22,7 +86,7 @@ func BrowserMiddleware(service *Service) app.HandlerFunc {
 			c.Next(ctx)
 			return
 		}
-		if _, ok := service.Authenticate(string(c.Cookie(CookieName))); ok {
+		if _, ok := service.AuthenticateRequest(ctx, c); ok {
 			c.Next(ctx)
 			return
 		}
@@ -41,7 +105,7 @@ func isProtectedBrowserPath(path string) bool {
 	return strings.HasPrefix(path, "/api/")
 }
 
-// isPublicPath lists what a visitor reaches without a ByteDance session.
+// isPublicPath lists what a visitor reaches without a principal identity.
 //
 // App modules are open as a whole: each one runs its own visitor login and its
 // own in-module access list, and the people who already use them are not the

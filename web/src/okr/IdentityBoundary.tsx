@@ -17,16 +17,23 @@ export default function IdentityBoundary({ children }: { children: ReactNode | (
   const loadIdentity = async () => {
     setError('')
     try {
-		const next = await getAuthStatus()
+      const next = await getAuthStatus()
       setAuth(next)
-		window.dispatchEvent(new CustomEvent('jarvis:okr-auth-changed', { detail: next }))
+      window.dispatchEvent(new CustomEvent('jarvis:okr-auth-changed', { detail: next }))
     } catch (reason) {
       setAuth(undefined)
       setError(reason instanceof Error ? reason.message : '无法读取登录状态')
     }
   }
 
-  useEffect(() => { void loadIdentity() }, [])
+  useEffect(() => {
+    const signedOut = () => { void loadIdentity() }
+    window.addEventListener('jarvis:signed-out', signedOut)
+    void loadIdentity()
+    return () => {
+      window.removeEventListener('jarvis:signed-out', signedOut)
+    }
+  }, [])
 
   useEffect(() => {
     if (!auth?.authenticated || !auth.expiresAt) return
@@ -106,8 +113,12 @@ export default function IdentityBoundary({ children }: { children: ReactNode | (
   }
 
   const logoutUser = async () => {
-    await logout()
-    await loadIdentity()
+    try {
+      await logout()
+      await loadIdentity()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '退出登录失败')
+    }
   }
 
   if (!auth) {
@@ -139,7 +150,8 @@ export default function IdentityBoundary({ children }: { children: ReactNode | (
 
   return (
     <div className="relative">
-			{typeof children === 'function' ? children(auth) : children}
+      {error && <div role="alert" className="text-sm text-rose-600">{error}</div>}
+      {typeof children === 'function' ? children(auth) : children}
       {auth.configured && <div className="fixed bottom-5 right-20 z-30 flex items-center gap-2 rounded-full border border-slate-200 bg-white py-1.5 pr-3 pl-1.5 text-[11px] text-slate-500 shadow-md">{auth.user?.avatarUrl ? <img src={auth.user.avatarUrl} alt={auth.user.name} className="size-5 shrink-0 rounded-full object-cover" /> : <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-indigo-400 text-[9px] font-semibold text-white">{auth.user?.name?.slice(0, 1)}</span>}<span>{auth.user?.name}</span><button type="button" onClick={() => void logoutUser()} className="text-slate-400 hover:text-slate-700">退出</button></div>}
     </div>
   )

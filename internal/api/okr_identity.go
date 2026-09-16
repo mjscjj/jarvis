@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"jarvis/internal/authn"
 	"jarvis/internal/okrworkspace"
 	okrAuth "jarvis/internal/okrworkspace/auth"
 
@@ -77,13 +78,21 @@ func PollOKRFeishuDeviceLogin(service *okrAuth.Service) app.HandlerFunc {
 	}
 }
 
-func LogoutOKR(service *okrAuth.Service) app.HandlerFunc {
+func LogoutOKR(service *okrAuth.Service, principal *authn.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
-		if err := service.Logout(ctx, string(c.Cookie(okrAuth.CookieName))); err != nil {
+		var err error
+		if principal != nil {
+			err = principal.LogoutRequest(ctx, c)
+		} else {
+			err = service.Logout(ctx, string(c.Cookie(okrAuth.CookieName)))
+		}
+		if err != nil {
 			writeAPIError(c, consts.StatusInternalServerError, 50082, err)
 			return
 		}
-		c.SetCookie(okrAuth.CookieName, "", -1, "/", "", protocol.CookieSameSiteLaxMode, service.CookieSecure(), true)
+		if principal == nil {
+			c.SetCookie(okrAuth.CookieName, "", -1, "/", "", protocol.CookieSameSiteLaxMode, service.CookieSecure(), true)
+		}
 		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]bool{"logged_out": true}})
 	}
 }

@@ -91,7 +91,7 @@ const pageLabels: Record<string, string> = {
 
 function AppShell() {
   const { name: agentName, rename: renameAgent } = useAgentIdentity()
-  const { enabled: authEnabled, user, pending: principalLogin, error: principalLoginError, login, logout } = useAuth()
+  const { loading: authLoading, enabled: authEnabled, user, logout } = useAuth()
   const { context, navigate } = usePageContext()
   const weeklyShare = context.active_key === 'biz-okr' && isWeeklyShareViewState(context.view_state)
   // A prefixed development page reuses the root OKR conversation and its
@@ -112,11 +112,6 @@ function AppShell() {
   const [moduleEnablement, setModuleEnablement] = useState<Record<string, boolean>>()
   const [okrManagementAccess, setOKRManagementAccess] = useState(false)
   const [okrUser, setOKRUser] = useState<OKRAuthUser>()
-  // Feishu login can omit email; union_id keeps Claire and Chujiejie's
-  // existing sessions recognizable across login apps.
-  const isPrincipalOKRChatUser = ['on_af023f3c29b03b3d90cffedbc703b005', 'on_94b5aa46ca92b7aecd01031e5b2f0dc4'].includes(okrUser?.unionId ?? '') ||
-    ['lixiaolin', 'chujiejie.1'].includes(user?.username ?? '') || [user?.email, okrUser?.email]
-      .some((email) => ['claire.li@bytedance.com', 'chujiejie.1@bytedance.com'].includes(email?.trim().toLowerCase() ?? ''))
   const [moduleLoadError, setModuleLoadError] = useState<string>()
   const [enabledPlugins, setEnabledPlugins] = useState<Array<Pick<Plugin, 'id' | 'name' | 'kind' | 'enabled'>>>([])
   const [agentMenuOpen, setAgentMenuOpen] = useState(false)
@@ -531,7 +526,7 @@ function AppShell() {
                     <span>{user?.email}</span>
                   </div>
                 </div>
-                <Badge status="success" text="已通过字节身份登录" />
+                <Badge status="success" text="已登录当前实例" />
                 <Divider />
                 <Button type="text" block icon={<LogoutOutlined />} onClick={() => void handleLogout()}>退出登录</Button>
               </div>
@@ -565,19 +560,12 @@ function AppShell() {
               {pages[context.active_key]}
             </Suspense>
             <Suspense fallback={null}>
-              {principalDataEnabled && (context.active_key !== 'biz-okr' || (!developmentOKRChatBase && isPrincipalOKRChatUser)) &&
-                <Chat key="principal-chat" compact={context.active_key !== 'chat'} />}
+              {principalDataEnabled && (context.active_key !== 'biz-okr' || !developmentOKRChatBase) &&
+                <Chat key={`principal-chat:${user?.username ?? 'local'}`} compact={context.active_key !== 'chat'} />}
               {developmentOKRChatBase && context.active_key === 'biz-okr' &&
                 <Chat key="development-okr-chat" compact isolated apiBase={developmentOKRChatBase} />}
-              {!developmentOKRChatBase && okrUser && !isPrincipalOKRChatUser &&
-                <Chat key="okr-chat" compact isolated hidden={context.active_key !== 'biz-okr'} />}
-              {!developmentOKRChatBase && context.active_key === 'biz-okr' && isPrincipalOKRChatUser && !principalDataEnabled &&
-                <div>
-                  {principalLogin?.verification_url
-                    ? <Button href={principalLogin.verification_url} target="_blank" rel="noreferrer">打开字节身份授权页</Button>
-                    : <Button onClick={() => void login()}>使用字节身份登录普通对话</Button>}
-                  {principalLoginError && <Alert type="error" title={principalLoginError} />}
-                </div>}
+              {!developmentOKRChatBase && !authLoading && okrUser && !principalDataEnabled &&
+                <Chat key={`okr-chat:${okrUser.unionId || okrUser.openId}`} compact isolated hidden={context.active_key !== 'biz-okr'} />}
             </Suspense>
           </Content>
         </div>

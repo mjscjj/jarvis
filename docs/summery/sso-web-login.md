@@ -9,6 +9,10 @@
 
 2026-09-11 记录的线上状态为 `enabled:false`；截至 2026-09-14，当前实例已启用外层登录与白名单。`internal/authn` 使用独立 bytedcli profile 为网页访客发起授权，OKR 访客仍使用飞书登录。后文个人 JWT SDK 是此前提出、尚未实施的方案，不能当作当前实现。
 
+## 2026-09-16 OKR 登录互通
+
+源码新增两位既有主用户的 OKR 登录识别：服务端验证 `jarvis_okr_session` 后，用稳定 `union_id` 映射主账号并检查现有 `auth.principals`，无需再走字节 SSO，也不签发额外会话。其他协作者仍保持 OKR 隔离；从任一入口退出均清除当前浏览器的两套登录。实现与验证结果见 [本次改动记录](2026-09-16-okr-main-login-identity.md)。
+
 ## 浏览器会话跨重启保留
 
 已完成 SSO 的 Jarvis 会话保存在实例私有运行主库的 `browser_auth_session` 表中，不再使用进程内存。浏览器继续使用原有 `jarvis_session` Cookie；服务重启后，只要 Cookie 和会话未过期，就直接恢复登录，不重复授权。
@@ -110,7 +114,7 @@ https://emily.bytedance.net
 
 - [域名登记工单入口](https://bpm.bytedance.net/apply?cid=3034)
 - 申请用途：Jarvis 内部网站获取当前员工浏览器个人身份，由后端验签并限制指定员工访问。
-- 当前需要放行的身份：`chujiejie.1@bytedance.com`、`claire.li@bytedance.com`。实际名单的唯一配置来源是运行时 `auth.principals`，代码不硬编码这两个人。
+- 当前需要放行的身份：`chujiejie.1@bytedance.com`、`claire.li@bytedance.com`。访问名单的唯一配置来源仍是运行时 `auth.principals`；OKR 与主账号的跨系统对应关系另见上文登录互通记录。
 
 2026-09-11 的探测出现过 HTTP 403、缺少允许跨域响应头，以及请求超时；平台尚未确认原因，不能单凭 403 断言域名未登记。申请工单尚未提交，真实用户 JWT 尚未取得。
 

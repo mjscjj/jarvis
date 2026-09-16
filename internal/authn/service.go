@@ -1,5 +1,4 @@
-// Package authn authenticates the local Jarvis UI with the current ByteDance
-// identity exposed by bytedcli. BytedCLI remains the sole owner of SSO tokens.
+// Package authn resolves verified browser identities for the local Jarvis UI.
 package authn
 
 import (
@@ -15,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	okrAuth "jarvis/internal/okrworkspace/auth"
 
 	"github.com/cloudwego/hertz/pkg/common/hlog"
 	"gorm.io/gorm"
@@ -98,6 +99,11 @@ type Service struct {
 	mu    sync.Mutex
 	flows map[string]flow
 	db    *gorm.DB
+	okr   *okrAuth.Service
+}
+
+func (s *Service) SetOKRIdentity(identity *okrAuth.Service) {
+	s.okr = identity
 }
 
 func NewService(db *gorm.DB, bin string, sessionTTL time.Duration, enabled bool, allowed []string, loginAPIBaseURL string) (*Service, error) {

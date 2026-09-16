@@ -101,7 +101,7 @@ func FinalizeOnboarding(service *onboarding.Service, auth *authn.Service) app.Ha
 			writeAPIError(c, consts.StatusBadRequest, 40041, err)
 			return
 		}
-		user, ok := auth.Authenticate(string(c.Cookie(authn.CookieName)))
+		user, ok := auth.AuthenticateRequest(ctx, c)
 		if !ok {
 			writeAPIError(c, consts.StatusUnauthorized, 40140, errors.New("字节身份登录已失效"))
 			return

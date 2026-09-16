@@ -17,10 +17,10 @@ type completeLoginRequest struct {
 }
 
 func GetAuthStatus(service *authn.Service) app.HandlerFunc {
-	return func(_ context.Context, c *app.RequestContext) {
+	return func(ctx context.Context, c *app.RequestContext) {
 		c.JSON(consts.StatusOK, map[string]any{
 			"code": 0,
-			"data": service.Status(string(c.Cookie(authn.CookieName))),
+			"data": service.RequestStatus(ctx, c),
 		})
 	}
 }
@@ -69,18 +69,23 @@ func CompleteByteDanceLogin(service *authn.Service) app.HandlerFunc {
 			writeAuthError(c, err)
 			return
 		}
+		if result.SessionToken != "" {
+			if err := service.LogoutRequest(ctx, c); err != nil {
+				writeAuthError(c, err)
+				return
+			}
+		}
 		setAuthCookie(c, service, result.SessionToken)
 		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": result.View})
 	}
 }
 
 func LogoutFromJarvis(service *authn.Service) app.HandlerFunc {
-	return func(_ context.Context, c *app.RequestContext) {
-		if err := service.Logout(string(c.Cookie(authn.CookieName))); err != nil {
+	return func(ctx context.Context, c *app.RequestContext) {
+		if err := service.LogoutRequest(ctx, c); err != nil {
 			c.JSON(consts.StatusInternalServerError, map[string]any{"code": 500, "msg": "退出登录失败，请重试"})
 			return
 		}
-		c.SetCookie(authn.CookieName, "", -1, "/", "", protocol.CookieSameSiteStrictMode, false, true)
 		c.JSON(consts.StatusOK, map[string]any{
 			"code": 0,
 			"data": service.Status(""),
