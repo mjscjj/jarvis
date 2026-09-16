@@ -44,6 +44,14 @@ try {
     ])
     assert(allBox && todayBox && Math.abs(allBox.y - todayBox.y) < 2, 'browse buttons must stay beside each other')
     assert(await drawer.locator('header').evaluate(element => element.scrollWidth <= element.clientWidth), 'header overflows')
+
+    // A drawer opened for one concrete comment keeps both browse actions and
+    // starts ordinary review from that comment instead of jumping to the top.
+    await drawer.getByRole('button', { name: '逐条浏览', exact: true }).click()
+    await drawer.locator('#comment-old-only[aria-current="true"]').waitFor()
+    assert.equal(await drawer.getByRole('button', { name: '下一条', exact: true }).isDisabled(), true)
+    await drawer.getByRole('button', { name: '查看全部', exact: true }).click()
+
     await todayButton.click()
     await drawer.getByRole('heading', { name: '今日评论' }).waitFor()
     await drawer.locator('#comment-today-reply[aria-current="true"]').waitFor()
@@ -51,17 +59,18 @@ try {
     await drawer.getByText('今天回复旧讨论', { exact: true }).waitFor()
     await drawer.getByText('昨天发起的讨论', { exact: true }).waitFor()
     assert.equal(await drawer.getByText('只有昨天内容', { exact: true }).count(), 0)
-    await drawer.getByRole('button', { name: '下一个', exact: true }).click()
+    await drawer.getByRole('button', { name: '下一条', exact: true }).click()
     await drawer.locator('#comment-today-resolved[aria-current="true"]').waitFor()
     await drawer.getByText('已浏览完今日新增评论', { exact: true }).waitFor()
-    await drawer.getByRole('button', { name: '上一个', exact: true }).click()
+    assert.equal(await drawer.getByRole('button', { name: '下一条', exact: true }).isDisabled(), true)
+    await drawer.getByRole('button', { name: '上一条', exact: true }).click()
     await drawer.locator('#comment-today-reply[aria-current="true"]').waitFor()
 
     // Ordinary review keeps its existing unresolved-thread behavior.
     await drawer.getByRole('button', { name: '查看全部', exact: true }).click()
     await drawer.getByRole('button', { name: '逐条浏览', exact: true }).click()
     await drawer.locator('#comment-old-thread[aria-current="true"]').waitFor()
-    await drawer.getByRole('button', { name: '下一个', exact: true }).click()
+    await drawer.getByRole('button', { name: '下一条', exact: true }).click()
     await drawer.locator('#comment-old-only[aria-current="true"]').waitFor()
     await drawer.getByRole('button', { name: '查看全部', exact: true }).click()
 

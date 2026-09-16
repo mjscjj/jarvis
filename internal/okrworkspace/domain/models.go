@@ -360,6 +360,22 @@ type PointOwner struct {
 
 func (PointOwner) TableName() string { return "okr_workspace_point_owner" }
 
+// ObjectiveOwner is the persisted owner of one Objective. It completes the
+// same ownership chain used by PointOwner and KROwner so deterministic
+// comment routing can stop at the nearest populated level.
+type ObjectiveOwner struct {
+	ObjectiveID  string `gorm:"primaryKey;size:64"`
+	PersonID     uint64 `gorm:"primaryKey;index:idx_okr_workspace_objective_owner_person_id"`
+	OwnerKey     string `gorm:"not null;default:'';size:64;index:idx_okr_workspace_objective_owner_key"`
+	Email        string `gorm:"not null;default:'';index:idx_okr_workspace_objective_owner_email"`
+	Name         string `gorm:"not null"`
+	SortOrder    int    `gorm:"not null;default:0"`
+	UnionID      string `gorm:"not null;default:''"`
+	LegacyOpenID string `gorm:"column:open_id;not null;default:''" json:"-"`
+}
+
+func (ObjectiveOwner) TableName() string { return "okr_workspace_objective_owner" }
+
 // KROwner is the only persisted owner source. PersonID is a stable local key;
 // Email stays empty until a human or Agent resolves a real Feishu identity.
 type KROwner struct {
@@ -409,8 +425,9 @@ type PageComment struct {
 	Content         string           `gorm:"not null;type:text"`
 	Mentions        []CommentMention `gorm:"serializer:json;type:text"`
 	Images          []ImageRef       `gorm:"serializer:json;type:text"`
-	// Todo promotes a meeting comment into the weekly follow-up summary. It
-	// remains a comment attribute so there is only one source of truth.
+	// Todo is the action marker for a top-level discussion. Weekly meeting views
+	// may project it into their follow-up summary, but the comment remains the
+	// only source of truth across weekly, Plan, and regional alignment scopes.
 	Todo      bool      `gorm:"not null;default:false"`
 	Resolved  bool      `gorm:"not null;default:false"`
 	CreatedAt time.Time `gorm:"not null;index"`
@@ -565,7 +582,7 @@ func Models() []any {
 // CoreModels are owned by the reusable OKR module. Existing table names stay
 // unchanged: splitting module ownership must not copy or rewrite user data.
 func CoreModels() []any {
-	return []any{&Objective{}, &KR{}, &KRMetric{}, &KRPoint{}, &KROwner{}, &PointOwner{}, &WeeklyReportWeek{}, &WeeklyKRCore{}, &KRProgress{}}
+	return []any{&Objective{}, &KR{}, &KRMetric{}, &KRPoint{}, &ObjectiveOwner{}, &KROwner{}, &PointOwner{}, &WeeklyReportWeek{}, &WeeklyKRCore{}, &KRProgress{}}
 }
 
 // IdentityModels are machine-local browser sessions. Pending device grants stay

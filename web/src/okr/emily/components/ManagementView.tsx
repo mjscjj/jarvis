@@ -204,6 +204,7 @@ function ObjectiveEditorHeader({
 	businessCategories,
 	businessCategoryEditable,
 	businessCategoryObjective,
+	peopleOptions,
 	readOnly,
 	reviewEnabled,
 }: {
@@ -220,6 +221,7 @@ function ObjectiveEditorHeader({
 	businessCategories: string[]
 	businessCategoryEditable: boolean
 	businessCategoryObjective?: Objective
+	peopleOptions: KrOwner[]
 	readOnly: boolean
 	reviewEnabled: boolean
 }) {
@@ -287,6 +289,9 @@ function ObjectiveEditorHeader({
 					</svg>
 				</button>
 				<h3 className={`min-w-0 flex-1 ${cardHierarchy ? 'text-[17px] font-semibold leading-6 text-slate-800' : 'truncate text-[12px] font-bold text-slate-800'}`}>{objective.title}</h3>
+				{readOnly
+					? <PeopleInline people={objective.owners ?? []} compact chips empty="" />
+					: <span onClick={(event) => event.stopPropagation()} className="max-w-64"><FeishuPeoplePickerInput small owners={objective.owners ?? []} options={peopleOptions} onChange={(owners) => void updateObjective(objective.id, objective.title, owners)} /></span>}
 				<CommentTargetButton target={{ type: 'objective', id: objective.id, title: objective.title }} />
 				<span className={cardHierarchy ? 'rounded-full border border-slate-200 bg-white px-2.5 py-0.5 text-xs tabular-nums text-slate-400' : 'text-[9px] tabular-nums text-slate-400'}>{visibleKrCount}{visibleKrCount !== totalKrCount ? ` / ${totalKrCount}` : ''}{cardHierarchy ? ' 个 KR' : ' 条'}</span>
 				{reviewEnabled && <PreviewReviewButton target={reviewTarget} label="AI评审" />}
@@ -610,6 +615,7 @@ export function ManagementView({
 					businessCategories={businessCategories}
 					businessCategoryEditable={objectiveBusinessCategoryEditing}
 					businessCategoryObjective={objectives.find((item) => item.id === objective.id)}
+					peopleOptions={peopleOptions}
 					readOnly={readOnly}
 						reviewEnabled={reviewEnabled}
               />

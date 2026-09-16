@@ -296,7 +296,7 @@ function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }:
           </section>
         )}
       </main>
-      {plan && <CommentDrawer open={commentsOpen} reviewEnabled reviewMode={commentReviewMode} quarter={quarter} planId={plan.id} sourceTab="okr-plan" scopeLabel={plan.title} objectives={plan.objectives} target={commentTarget} focusCommentId={initialCommentId} onStartReview={(mode) => { setCommentTarget(undefined); setCommentReviewMode(mode) }} onShowAll={() => { setCommentReviewMode(undefined); setFocusedComment(undefined); setCommentTarget(undefined) }} onClose={() => { setCommentsOpen(false); setCommentReviewMode(undefined); setFocusedComment(undefined) }} onFocusCommentChange={setFocusedComment} onCountChange={setCommentCount} onCountsChange={setCommentCounts} onCommentsChange={setComments} />}
+      {plan && <CommentDrawer open={commentsOpen} reviewEnabled reviewMode={commentReviewMode} quarter={quarter} planId={plan.id} sourceTab="okr-plan" scopeLabel={plan.title} objectives={plan.objectives} target={commentTarget} focusCommentId={initialCommentId} todoEnabled onStartReview={(mode) => { setCommentTarget(undefined); setCommentReviewMode(mode) }} onShowAll={() => { setCommentReviewMode(undefined); setFocusedComment(undefined); setCommentTarget(undefined) }} onClose={() => { setCommentsOpen(false); setCommentReviewMode(undefined); setFocusedComment(undefined) }} onFocusCommentChange={setFocusedComment} onCountChange={setCommentCount} onCountsChange={setCommentCounts} onCommentsChange={setComments} />}
     </>
   )
 }

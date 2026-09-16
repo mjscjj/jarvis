@@ -47,6 +47,7 @@ type PlanObjectiveView struct {
 	Title          string       `json:"title"`
 	Version        int32        `json:"version"`
 	StructureToken string       `json:"structure_token"`
+	Owners         []OwnerView  `json:"owners"`
 	KRs            []PlanKRView `json:"krs"`
 }
 
@@ -348,6 +349,9 @@ func (s *Service) planFromRecord(ctx context.Context, record domain.OKRPlan) (Pl
 
 func withPlanOwnerIdentityNamespaces(objectives []PlanObjectiveView) []PlanObjectiveView {
 	for objectiveIndex := range objectives {
+		for ownerIndex, owner := range objectives[objectiveIndex].Owners {
+			objectives[objectiveIndex].Owners[ownerIndex] = storedOwnerView(owner.Email, owner.Name, owner.UnionID)
+		}
 		for krIndex := range objectives[objectiveIndex].KRs {
 			kr := &objectives[objectiveIndex].KRs[krIndex]
 			for ownerIndex, owner := range kr.Owners {
@@ -369,6 +373,7 @@ func normalizePlanObjectives(input []PlanObjectiveView) ([]PlanObjectiveView, er
 		objective := &input[objectiveIndex]
 		objective.ID = strings.TrimSpace(objective.ID)
 		objective.Title = strings.TrimSpace(objective.Title)
+		objective.Owners = normalizeOwners(objective.Owners)
 		if objective.ID == "" || seen[objective.ID] {
 			return nil, fmt.Errorf("plan objectives require unique ids")
 		}

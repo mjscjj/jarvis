@@ -38,6 +38,8 @@ func validCommentSourceTab(value string) bool {
 // the outbound message disagree with the comment that triggered it.
 type CommentMentionNotification struct {
 	Recipient      CommentMention
+	Reason         string
+	OwnerLevel     string
 	CommentID      string
 	AuthorName     string
 	AuthorEmail    string
@@ -47,6 +49,7 @@ type CommentMentionNotification struct {
 	PlanTitle      string
 	AlignmentID    string
 	RegionCode     string
+	ObjectiveID    string
 	ObjectiveTitle string
 	KRID           string
 	KRTitle        string
@@ -196,15 +199,21 @@ func formatCommentMentionCard(input CommentMentionNotification, link string) (st
 			"behaviors": []any{map[string]string{"type": "open_url", "default_url": link}},
 		})
 	}
+	subtitle := input.AuthorName + " @ 了你"
+	if input.Reason == "owner" {
+		subtitle = fmt.Sprintf("%s 评论了你负责的%s", input.AuthorName, commentOwnerLevelLabel(input.OwnerLevel, input.PointKind))
+	} else if input.Reason == "mention_and_owner" {
+		subtitle = fmt.Sprintf("%s 评论了你负责的%s，并 @ 了你", input.AuthorName, commentOwnerLevelLabel(input.OwnerLevel, input.PointKind))
+	}
 	card := map[string]any{
 		"schema": "2.0",
 		"config": map[string]any{
 			"update_multi": true, "width_mode": "compact",
-			"summary": map[string]string{"content": fmt.Sprintf("%s @ 了你：%s", input.AuthorName, input.Content)},
+			"summary": map[string]string{"content": subtitle + "：" + input.Content},
 		},
 		"header": map[string]any{
 			"title":    map[string]string{"tag": "plain_text", "content": "OKR 评论"},
-			"subtitle": map[string]string{"tag": "plain_text", "content": input.AuthorName + " @ 了你"},
+			"subtitle": map[string]string{"tag": "plain_text", "content": subtitle},
 			"template": "blue",
 			"icon":     map[string]string{"tag": "standard_icon", "token": "lark-logo_colorful"},
 		},
@@ -217,6 +226,19 @@ func formatCommentMentionCard(input CommentMentionNotification, link string) (st
 		return "", err
 	}
 	return string(encoded), nil
+}
+
+func commentOwnerLevelLabel(level string, kind domain.PointKind) string {
+	switch level {
+	case "point":
+		return pointKindLabel(kind)
+	case "kr":
+		return "KR"
+	case "objective":
+		return "O"
+	default:
+		return "OKR"
+	}
 }
 
 func escapeCardMarkdown(value string) string {
@@ -245,6 +267,7 @@ func commentSourceTabLabel(tab string) string {
 }
 
 type commentHierarchy struct {
+	ObjectiveID    string
 	ObjectiveTitle string
 	KRID           string
 	KRTitle        string
@@ -304,11 +327,11 @@ func (service *Service) commentMentionNotification(ctx context.Context, row doma
 	switch row.TargetType {
 	case "objective":
 		query = db.Table("okr_workspace_objective AS objective").
-			Select("objective.title AS objective_title, '' AS kr_id, '' AS kr_title, objective.title AS target_text").
+			Select("objective.id AS objective_id, objective.title AS objective_title, '' AS kr_id, '' AS kr_title, objective.title AS target_text").
 			Where("objective.id = ? AND "+scope, append([]any{row.TargetID}, scopeArgs...)...)
 	case "kr":
 		query = db.Table("okr_workspace_kr AS kr").
-			Select("objective.title AS objective_title, kr.id AS kr_id, kr.title AS kr_title, kr.title AS target_text").
+			Select("objective.id AS objective_id, objective.title AS objective_title, kr.id AS kr_id, kr.title AS kr_title, kr.title AS target_text").
 			Joins("JOIN okr_workspace_objective AS objective ON objective.id = kr.objective_id").
 			Where("kr.id = ? AND "+scope, append([]any{row.TargetID}, scopeArgs...)...)
 	case "metric":
@@ -323,19 +346,19 @@ func (service *Service) commentMentionNotification(ctx context.Context, row doma
 			}
 		}
 		query = db.Table("okr_workspace_metric AS metric").
-			Select("objective.title AS objective_title, kr.id AS kr_id, kr.title AS kr_title, metric.text AS target_text").
+			Select("objective.id AS objective_id, objective.title AS objective_title, kr.id AS kr_id, kr.title AS kr_title, metric.text AS target_text").
 			Joins("JOIN okr_workspace_kr AS kr ON kr.id = metric.kr_id").
 			Joins("JOIN okr_workspace_objective AS objective ON objective.id = kr.objective_id").
 			Where("metric.id = ? AND "+scope, append([]any{row.TargetID}, scopeArgs...)...)
 	case "point":
 		query = db.Table("okr_workspace_point AS point").
-			Select("objective.title AS objective_title, kr.id AS kr_id, kr.title AS kr_title, point.id AS point_id, point.kind AS point_kind, point.title AS point_title, point.title AS target_text").
+			Select("objective.id AS objective_id, objective.title AS objective_title, kr.id AS kr_id, kr.title AS kr_title, point.id AS point_id, point.kind AS point_kind, point.title AS point_title, point.title AS target_text").
 			Joins("JOIN okr_workspace_kr AS kr ON kr.id = point.kr_id").
 			Joins("JOIN okr_workspace_objective AS objective ON objective.id = kr.objective_id").
 			Where("point.id = ? AND "+scope, append([]any{row.TargetID}, scopeArgs...)...)
 	case "entry":
 		query = db.Table("okr_workspace_progress AS progress").
-			Select("objective.title AS objective_title, kr.id AS kr_id, kr.title AS kr_title, point.id AS point_id, point.kind AS point_kind, point.title AS point_title, progress.text AS target_text").
+			Select("objective.id AS objective_id, objective.title AS objective_title, kr.id AS kr_id, kr.title AS kr_title, point.id AS point_id, point.kind AS point_kind, point.title AS point_title, progress.text AS target_text").
 			Joins("JOIN okr_workspace_point AS point ON point.id = progress.point_id").
 			Joins("JOIN okr_workspace_kr AS kr ON kr.id = point.kr_id").
 			Joins("JOIN okr_workspace_objective AS objective ON objective.id = kr.objective_id").
@@ -349,7 +372,7 @@ func (service *Service) commentMentionNotification(ctx context.Context, row doma
 			return CommentMentionNotification{}, fmt.Errorf("resolve comment O/KR context: %w", err)
 		}
 	}
-	result.ObjectiveTitle, result.KRID, result.KRTitle = found.ObjectiveTitle, found.KRID, found.KRTitle
+	result.ObjectiveID, result.ObjectiveTitle, result.KRID, result.KRTitle = found.ObjectiveID, found.ObjectiveTitle, found.KRID, found.KRTitle
 	result.PointID, result.PointKind, result.PointTitle = found.PointID, found.PointKind, found.PointTitle
 	if row.TargetType == "objective" && result.ObjectiveTitle == "" {
 		result.ObjectiveTitle = row.TargetTitle
@@ -387,7 +410,7 @@ func (service *Service) weeklyMetricCommentHierarchy(ctx context.Context, row do
 			}
 			var found commentHierarchy
 			err := service.db.WithContext(ctx).Table("okr_workspace_kr AS kr").
-				Select("objective.title AS objective_title, kr.id AS kr_id, kr.title AS kr_title").
+				Select("objective.id AS objective_id, objective.title AS objective_title, kr.id AS kr_id, kr.title AS kr_title").
 				Joins("JOIN okr_workspace_objective AS objective ON objective.id = kr.objective_id").
 				Where("kr.id = ? AND objective.quarter = ? AND objective.plan_id = ''", core.KRID, row.Quarter).
 				Take(&found).Error

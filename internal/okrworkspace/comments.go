@@ -452,9 +452,6 @@ func (service *Service) UpdateComment(ctx context.Context, id string, input Upda
 			if row.ParentID != "" {
 				return fmt.Errorf("only a top-level comment can be marked as todo")
 			}
-			if row.PlanID != "" {
-				return fmt.Errorf("plan comments cannot be marked as todo")
-			}
 			row.Todo = *input.Todo
 			updates["todo"] = row.Todo
 		}

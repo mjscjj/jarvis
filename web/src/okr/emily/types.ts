@@ -209,6 +209,7 @@ export interface Objective {
   title: string
   version?: number
 	structureToken?: string
+	owners?: KrOwner[]
   krs: Kr[]
 }
 

@@ -5,12 +5,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/common/hlog"
 	"gorm.io/gorm"
 	"jarvis/internal/larkcli"
 	"jarvis/internal/okrworkspace/domain"
+)
+
+const (
+	commentNotificationReasonMention         = "mention"
+	commentNotificationReasonOwner           = "owner"
+	commentNotificationReasonMentionAndOwner = "mention_and_owner"
 )
 
 type CommentDeliveryView struct {
@@ -22,17 +29,55 @@ type CommentDeliveryView struct {
 }
 
 func (s *Service) prepareCommentDeliveries(ctx context.Context, row domain.PageComment, authorEmail, authorUnionID, tab string) error {
-	if len(row.Mentions) == 0 {
-		return nil
-	}
 	input, err := s.commentMentionNotification(ctx, row, tab)
 	if err != nil {
 		return err
 	}
 	input.AuthorEmail = domain.NormalizeEmail(authorEmail)
+	type plannedRecipient struct {
+		person     CommentMention
+		mentioned  bool
+		owner      bool
+		ownerLevel string
+	}
+	planned := make(map[string]plannedRecipient, len(row.Mentions))
 	for _, recipient := range row.Mentions {
+		email := domain.NormalizeEmail(recipient.Email)
+		planned[email] = plannedRecipient{person: recipient, mentioned: true}
+	}
+	owners, ownerLevel, err := s.commentOwnerRecipients(ctx, input)
+	if err != nil {
+		return err
+	}
+	for _, owner := range owners {
+		email := domain.NormalizeEmail(owner.Email)
+		if !domain.ValidEmail(email) {
+			continue
+		}
+		candidate := planned[email]
+		if candidate.person.Email == "" {
+			candidate.person = CommentMention{Email: email, Name: owner.Name, UnionID: owner.UnionID}
+		}
+		candidate.owner, candidate.ownerLevel = true, ownerLevel
+		planned[email] = candidate
+	}
+	emails := make([]string, 0, len(planned))
+	for email := range planned {
+		emails = append(emails, email)
+	}
+	sort.Strings(emails)
+	for _, email := range emails {
+		candidate := planned[email]
+		recipient := candidate.person
 		if recipient.Email == input.AuthorEmail || (authorUnionID != "" && recipient.UnionID == authorUnionID) {
 			continue
+		}
+		input.Reason, input.OwnerLevel = commentNotificationReasonMention, ""
+		if candidate.owner {
+			input.Reason, input.OwnerLevel = commentNotificationReasonOwner, candidate.ownerLevel
+			if candidate.mentioned {
+				input.Reason = commentNotificationReasonMentionAndOwner
+			}
 		}
 		input.Recipient = recipient
 		raw, err := json.Marshal(input)
@@ -49,6 +94,53 @@ func (s *Service) prepareCommentDeliveries(ctx context.Context, row domain.PageC
 		}
 	}
 	return nil
+}
+
+// commentOwnerRecipients applies nearest-owner-wins. An assigned level with
+// unresolved identities still stops fallback; notifying a parent would change
+// accountability rather than repair the missing identity.
+func (s *Service) commentOwnerRecipients(ctx context.Context, input CommentMentionNotification) ([]CommentMention, string, error) {
+	db := s.db.WithContext(ctx)
+	if input.PointID != "" {
+		var rows []domain.PointOwner
+		if err := db.Where("point_id = ?", input.PointID).Order("sort_order, owner_key, person_id").Find(&rows).Error; err != nil {
+			return nil, "", fmt.Errorf("list comment point owners: %w", err)
+		}
+		if len(rows) > 0 {
+			owners := make([]CommentMention, 0, len(rows))
+			for _, row := range rows {
+				owners = append(owners, CommentMention{Email: row.Email, Name: row.Name, UnionID: row.UnionID})
+			}
+			return owners, "point", nil
+		}
+	}
+	if input.KRID != "" {
+		var rows []domain.KROwner
+		if err := db.Where("kr_id = ?", input.KRID).Order("sort_order, owner_key, person_id").Find(&rows).Error; err != nil {
+			return nil, "", fmt.Errorf("list comment KR owners: %w", err)
+		}
+		if len(rows) > 0 {
+			owners := make([]CommentMention, 0, len(rows))
+			for _, row := range rows {
+				owners = append(owners, CommentMention{Email: row.Email, Name: row.Name, UnionID: row.UnionID})
+			}
+			return owners, "kr", nil
+		}
+	}
+	if input.ObjectiveID != "" {
+		var rows []domain.ObjectiveOwner
+		if err := db.Where("objective_id = ?", input.ObjectiveID).Order("sort_order, owner_key, person_id").Find(&rows).Error; err != nil {
+			return nil, "", fmt.Errorf("list comment objective owners: %w", err)
+		}
+		if len(rows) > 0 {
+			owners := make([]CommentMention, 0, len(rows))
+			for _, row := range rows {
+				owners = append(owners, CommentMention{Email: row.Email, Name: row.Name, UnionID: row.UnionID})
+			}
+			return owners, "objective", nil
+		}
+	}
+	return nil, "", nil
 }
 
 func (s *Service) commentDeliveries(ctx context.Context, id string) ([]CommentDeliveryView, error) {

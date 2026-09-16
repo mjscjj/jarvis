@@ -80,6 +80,14 @@ export function addOrResolveOwner(owners: KrOwner[], candidate: KrOwner): KrOwne
 
 export function ownerOptions(objectives: Objective[]): KrOwner[] {
 	const byName = new Map<string, KrOwner>()
+	for (const objective of objectives) {
+		for (const owner of objective.owners ?? []) {
+			const name = owner.name.trim()
+			if (!name) continue
+			const key = owner.email || `unresolved:${name}`
+			byName.set(key, { name, email: owner.email.trim(), unionId: owner.unionId })
+		}
+	}
 	for (const kr of objectives.flatMap((objective) => objective.krs)) {
 		const krOwners: KrOwner[] = kr.owners?.length
 			? kr.owners

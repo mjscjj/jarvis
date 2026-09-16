@@ -619,6 +619,17 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewMode, quarter
     if (result === 'missing') setNavigationNotice('原文已删除，或不在当前页面中')
   }
 
+  const startReview = (mode: CommentReviewMode) => {
+    // Preserve the comment that opened the drawer as the initial review item.
+    // If it is not eligible for the selected mode (for example, an older
+    // comment in today's review), the review-items effect selects the first
+    // eligible item instead.
+    const requestedId = target?.commentId || focusCommentId || ''
+    const requestedThread = comments.find((comment) => comment.id === requestedId || comment.replies.some((reply) => reply.id === requestedId))
+    setReviewItemId(mode === 'all' ? requestedThread?.id ?? requestedId : requestedId)
+    onStartReview(mode)
+  }
+
   const renderThread = (comment: PageComment, showSource: boolean, activeCommentId?: string, markActiveAsToday = false) => (
     <CommentThread
       key={comment.id}
@@ -659,9 +670,9 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewMode, quarter
             {(reviewMode || target) && <button type="button" onClick={onShowAll} className="shrink-0 rounded-md px-2 py-1 text-[11px] text-indigo-600 hover:bg-indigo-50">查看全部</button>}
             <button type="button" onClick={onClose} aria-label="关闭评论" className="flex size-8 shrink-0 items-center justify-center rounded-lg text-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700">×</button>
           </div>
-          {((!reviewMode && !target) || (reviewMode !== 'today' && (resolvedCount > 0 || showHistory))) && <div className="mt-1.5 flex flex-wrap items-center gap-1">
-            {!reviewMode && !target && reviewEnabled && reviewComments.length > 0 && <button type="button" onClick={() => onStartReview('all')} className="shrink-0 rounded-md px-2 py-1 text-[11px] text-indigo-600 hover:bg-indigo-50">逐条浏览</button>}
-            {!reviewMode && !target && reviewEnabled && <button type="button" onClick={() => onStartReview('today')} className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] text-indigo-600 hover:bg-indigo-50">只浏览今日评论 <span className="rounded-full bg-indigo-100 px-1.5 text-[9px] font-semibold text-indigo-700">{todayReviewItems.length}</span></button>}
+          {(!reviewMode || (reviewMode !== 'today' && (resolvedCount > 0 || showHistory))) && <div className="mt-1.5 flex flex-wrap items-center justify-end gap-1">
+            {!reviewMode && reviewEnabled && reviewComments.length > 0 && <button type="button" onClick={() => startReview('all')} className="shrink-0 rounded-md px-2 py-1 text-[11px] text-indigo-600 hover:bg-indigo-50">逐条浏览</button>}
+            {!reviewMode && reviewEnabled && <button type="button" onClick={() => startReview('today')} className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] text-indigo-600 hover:bg-indigo-50">只浏览今日评论 <span className="rounded-full bg-indigo-100 px-1.5 text-[9px] font-semibold text-indigo-700">{todayReviewItems.length}</span></button>}
             {!reviewMode && !target && <button type="button" onClick={() => void load()} className="shrink-0 rounded-md px-2 py-1 text-[11px] text-slate-400 hover:bg-slate-100 hover:text-slate-600">刷新</button>}
             {(resolvedCount > 0 || showHistory) && <button type="button" aria-pressed={showHistory} onClick={() => setShowHistory((value) => !value)} className={`shrink-0 rounded-md px-2 py-1 text-[11px] ${showHistory ? 'bg-slate-100 text-slate-700' : 'text-indigo-600 hover:bg-indigo-50'}`}>{showHistory ? '隐藏历史评论' : `显示历史评论${resolvedCount > 0 ? ` ${resolvedCount}` : ''}`}</button>}
           </div>}
@@ -700,17 +711,11 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewMode, quarter
           ))}
         </div>
         {reviewMode && reviewItem && <footer className="shrink-0 border-t border-slate-200 bg-white p-3">
-          {reviewIndex < reviewItems.length - 1 ? (
-            <div className="grid grid-cols-2 gap-2">
-              <button type="button" disabled={reviewIndex === 0} onClick={() => setReviewItemId(reviewItems[reviewIndex - 1].comment.id)} className="h-10 rounded-lg border border-slate-200 bg-white text-[13px] font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">上一个</button>
-              <button type="button" onClick={() => setReviewItemId(reviewItems[reviewIndex + 1].comment.id)} className="h-10 rounded-lg bg-indigo-600 text-[13px] font-semibold text-white hover:bg-indigo-700">下一个</button>
-            </div>
-          ) : (
-            <div className="rounded-xl bg-emerald-50 p-3 text-center">
-              <div className="text-[13px] font-semibold text-emerald-700">{reviewMode === 'today' ? '已浏览完今日新增评论' : '已浏览完所有讨论串'}</div>
-              <button type="button" disabled={reviewIndex === 0} onClick={() => setReviewItemId(reviewItems[reviewIndex - 1].comment.id)} className="mt-2 h-9 w-full rounded-lg border border-emerald-200 bg-white text-[12px] font-medium text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-40">上一个</button>
-            </div>
-          )}
+          {reviewIndex === reviewItems.length - 1 && <div className="mb-2 rounded-lg bg-emerald-50 px-3 py-2 text-center text-[12px] font-semibold text-emerald-700">{reviewMode === 'today' ? '已浏览完今日新增评论' : '已浏览完所有讨论串'}</div>}
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" disabled={reviewIndex === 0} onClick={() => setReviewItemId(reviewItems[reviewIndex - 1].comment.id)} className="h-10 rounded-lg border border-slate-200 bg-white text-[13px] font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">上一条</button>
+            <button type="button" disabled={reviewIndex === reviewItems.length - 1} onClick={() => setReviewItemId(reviewItems[reviewIndex + 1].comment.id)} className="h-10 rounded-lg bg-indigo-600 text-[13px] font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300">下一条</button>
+          </div>
         </footer>}
       </aside>
     </>

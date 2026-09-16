@@ -82,7 +82,7 @@ if [[ "${JARVIS_CONTAINER_DEPLOY:-}" != 1 ]]; then
 fi
 
 npm --prefix "${REPO_ROOT}/web" ci
-VITE_BASE_PATH="$(jq -er '.web_base_path // "/"' <<<"$INSTANCE")" npm --prefix "${REPO_ROOT}/web" run build
+JARVIS_CONFIG="$CONFIG_PATH" npm --prefix "${REPO_ROOT}/web" run build
 
 deploy_darwin() {
   command -v launchctl >/dev/null 2>&1 || fail "launchctl is required on macOS"
