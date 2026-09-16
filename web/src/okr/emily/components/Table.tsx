@@ -45,7 +45,7 @@ function priorityTone(priority: KrPriority | '') {
   return 'border-slate-200 bg-white text-slate-500'
 }
 
-function EntryRow({ objectiveId, krId, pointId, entry, readOnly }: { objectiveId: string; krId: string; pointId: string; entry: Entry; readOnly: boolean }) {
+function EntryRow({ pointId, entry, readOnly }: { pointId: string; entry: Entry; readOnly: boolean }) {
   const { patchEntry, removeEntry } = useBoard()
 
   return (
@@ -81,7 +81,7 @@ function EntryRow({ objectiveId, krId, pointId, entry, readOnly }: { objectiveId
   )
 }
 
-function EntryList({ objectiveId, krId, point, done, readOnly }: { objectiveId: string; krId: string; point: Point; done?: boolean; readOnly: boolean }) {
+function EntryList({ point, done, readOnly }: { point: Point; done?: boolean; readOnly: boolean }) {
   const { addEntry } = useBoard()
   const [adding, setAdding] = useState(false)
   const [draft, setDraft] = useState('')
@@ -96,7 +96,7 @@ function EntryList({ objectiveId, krId, point, done, readOnly }: { objectiveId: 
 
   return (
     <div className="space-y-1.5">
-      {list.map((entry) => <EntryRow key={entry.id} objectiveId={objectiveId} krId={krId} pointId={point.id} entry={entry} readOnly={readOnly} />)}
+      {list.map((entry) => <EntryRow key={entry.id} pointId={point.id} entry={entry} readOnly={readOnly} />)}
       {list.length === 0 && (
         <div className="rounded-lg border border-dashed border-slate-200 px-3 py-4 text-xs text-slate-400">
           {done === true ? '状态改为「已完成」的条目会自动移到这里' : '暂无进展'}
@@ -425,19 +425,19 @@ function PointBlock({ compactPresentation = false, objectiveId, krId, point, ind
         ? <div className="mt-2 pl-7">
           <section className="rounded-xl border border-slate-200 bg-white p-2.5">
             <h4 className="mb-2 text-xs font-semibold text-slate-500">本周进展</h4>
-            <EntryList objectiveId={objectiveId} krId={krId} point={point} readOnly={progressReadOnly} />
+            <EntryList point={point} readOnly={progressReadOnly} />
             <HistoryPreview point={point} />
           </section>
         </div>
         : <div className="mt-2 grid grid-cols-1 gap-2 pl-7 md:grid-cols-2">
           <section className="rounded-xl border border-slate-200 bg-white p-2.5">
             <h4 className="mb-2 text-xs font-semibold text-slate-500">进展</h4>
-            <EntryList objectiveId={objectiveId} krId={krId} point={point} done={false} readOnly={progressReadOnly} />
+            <EntryList point={point} done={false} readOnly={progressReadOnly} />
             <HistoryPreview point={point} />
           </section>
           <section className="rounded-xl border border-slate-200 bg-white p-2.5">
             <h4 className="mb-2 text-xs font-semibold text-slate-500">已完成</h4>
-            <EntryList objectiveId={objectiveId} krId={krId} point={point} done readOnly={progressReadOnly} />
+            <EntryList point={point} done readOnly={progressReadOnly} />
           </section>
         </div>
       )}

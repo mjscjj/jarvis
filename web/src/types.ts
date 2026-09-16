@@ -622,29 +622,6 @@ export interface ProfileInput {
   leader_name?: string | null
 }
 
-export interface StatusCount {
-  status: string
-  count: number
-}
-
-// Overview is the dashboard aggregation (live counts, no cache).
-export interface Overview {
-  todos: {
-    total: number
-    open: number
-    leader_open: number
-    by_status: StatusCount[]
-  }
-  tasks: {
-    total: number
-    pending: number
-    needs_me: number
-    done: number
-    failed: number
-    by_status: StatusCount[]
-  }
-}
-
 export interface MyDay {
   date: string
   todos_created: number
@@ -835,19 +812,6 @@ export interface FailureEvent {
   count: number
   recovered: boolean
   raw: string
-}
-
-export interface ScanRow {
-  id: number
-  scan_type: string
-  chat_id: string | null
-  status: string
-  fetched_count: number
-  inserted_count: number
-  error_type: string | null
-  error_message: string | null
-  started_at: string
-  duration_ms: number | null
 }
 
 export interface WatermarkRow {

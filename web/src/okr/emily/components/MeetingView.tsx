@@ -201,7 +201,7 @@ function MeetingLane({ entries }: { entries: Entry[] }) {
   )
 }
 
-function MeetingPoint({ objectiveId, krId, point, index, open, onToggle, reviewMode }: { objectiveId: string; krId: string; point: Point; index: number; open: boolean; onToggle: () => void; reviewMode: boolean }) {
+function MeetingPoint({ krId, point, index, open, onToggle, reviewMode }: { krId: string; point: Point; index: number; open: boolean; onToggle: () => void; reviewMode: boolean }) {
   const { setPointScore } = useBoard()
   const doing = point.entries.filter((entry) => !isDone(entry.status))
   const done = point.entries.filter((entry) => isDone(entry.status))
@@ -225,7 +225,7 @@ function MeetingPoint({ objectiveId, krId, point, index, open, onToggle, reviewM
   )
 }
 
-function KindGroup({ objectiveId, krId, kind, points, closed, toggle, reviewMode }: { objectiveId: string; krId: string; kind: PointKind; points: Point[]; closed: Set<string>; toggle: (id: string) => void; reviewMode: boolean }) {
+function KindGroup({ krId, kind, points, closed, toggle, reviewMode }: { krId: string; kind: PointKind; points: Point[]; closed: Set<string>; toggle: (id: string) => void; reviewMode: boolean }) {
   const tone = kind === 'strategy' ? 'border-violet-200 bg-violet-50 text-violet-700' : 'border-teal-200 bg-teal-50 text-teal-700'
   return (
     <section className={`border-l-[3px] pl-2.5 ${kind === 'strategy' ? 'border-violet-500' : 'border-teal-500'}`}>
@@ -234,7 +234,7 @@ function KindGroup({ objectiveId, krId, kind, points, closed, toggle, reviewMode
         <span className="text-[10px] text-slate-400">{points.length} 项</span>
         <span className="h-px flex-1 bg-slate-100" />
       </div>
-	  <div className="space-y-2">{points.map((point, index) => <MeetingPoint key={point.id} objectiveId={objectiveId} krId={krId} point={point} index={index} open={!closed.has(point.id)} onToggle={() => toggle(point.id)} reviewMode={reviewMode} />)}</div>
+	  <div className="space-y-2">{points.map((point, index) => <MeetingPoint key={point.id} krId={krId} point={point} index={index} open={!closed.has(point.id)} onToggle={() => toggle(point.id)} reviewMode={reviewMode} />)}</div>
     </section>
   )
 }
@@ -302,7 +302,7 @@ function MeetingObjectiveSection({ objective, closed, toggle, reviewMode }: { ob
                 )}
                 {KINDS.map((kind) => {
                   const points = kr.points.filter((point) => point.kind === kind)
-				  return points.length > 0 ? <KindGroup key={kind} objectiveId={objective.id} krId={kr.id} kind={kind} points={points} closed={closed} toggle={toggle} reviewMode={reviewMode} /> : null
+				  return points.length > 0 ? <KindGroup key={kind} krId={kr.id} kind={kind} points={points} closed={closed} toggle={toggle} reviewMode={reviewMode} /> : null
                 })}
               </div>}
             </article>

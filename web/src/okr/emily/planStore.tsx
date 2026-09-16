@@ -4,7 +4,7 @@ import { BoardContext, uid, type BoardApi, type SyncState } from './board'
 import { BUSINESS_CATEGORY_TAG, PRIORITY_TAG, replaceSingleTag } from './hierarchy'
 import { swappedOrder, swappedPointsWithinKind } from './ordering'
 import { adoptRemoteVersionsForOverwrite, rebasePendingChanges } from './concurrency'
-import type { EnumValues, Kr, KrOwner, KrPriority, MetricLine, Objective, OKRPlan, OKRPlanSummary, Point, WeekTemplateKey } from './types'
+import type { EnumValues, Kr, KrOwner, Objective, OKRPlan, OKRPlanSummary, Point } from './types'
 import { LIGHTS, STATUSES } from './template'
 import { krConflictLocation } from './saveNotice'
 

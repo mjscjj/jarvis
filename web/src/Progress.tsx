@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Alert, Badge, Card, DatePicker, Empty, Space, Spin, Tabs, Typography } from 'antd'
+import { Alert, Badge, Card, DatePicker, Empty, Space, Spin, Tabs } from 'antd'
 import {
   AppstoreOutlined,
   CalendarOutlined,
@@ -27,8 +27,6 @@ import './styles/review-memory.css'
 const DAILY_DIGEST_POLL_MS = 5000
 const DAILY_DIGEST_RETRY_MS = 10000
 const RECENT_DATE_TABS = 14
-const { Text } = Typography
-
 type ReviewView = 'overview' | 'daily' | 'meetings' | 'groups' | 'docs' | 'code'
 
 function errorText(cause: unknown): string {

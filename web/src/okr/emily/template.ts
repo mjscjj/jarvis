@@ -22,19 +22,6 @@ export const STATUSES: StatusOption[] = [
   { value: 'blocked', label: '阻塞', tone: 'red' },
 ]
 
-/** 存量文档里的旧写法 → 统一枚举，导入历史周报时用 */
-export const LEGACY_STATUS_MAP: Record<string, Status> = {
-  'in progress': 'in_progress',
-  进行中: 'in_progress',
-  done: 'done',
-  已完成: 'done',
-  已上线: 'done',
-  未开始: 'not_started',
-  有风险: 'at_risk',
-  delay: 'delayed',
-  阻塞: 'blocked',
-}
-
 export function statusOf(value: Status) {
   return STATUSES.find((s) => s.value === value)
 }
@@ -72,8 +59,6 @@ export const KIND_LABEL = {
   strategy: '策略具体 KR',
   product: '产品具体 KR',
 } as const
-
-export const METRIC_GROUP_LABEL = '核心数据'
 
 /** 没打分的一律按 0 分算，界面和导出都不再出现「未评分」这个状态。 */
 export const DEFAULT_WEEKLY_SCORE = 0

@@ -1,8 +1,6 @@
 import type { EntityRelation, PageIndexItem } from '../types'
 import type { Objective } from './emily/types'
 
-export const okrRelationTypes = ['okr_objective', 'okr_kr', 'okr_point'] as const
-
 const inverseRelations: Record<string, string> = {
   belongs_to: 'contains',
   contains: 'belongs_to',
