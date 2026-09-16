@@ -11,7 +11,7 @@ Jarvis 是运行在本地可信环境中的个人任务 Agent。它持续接收�
 5. [OKR 模块当前实现](docs/modules/06-okr.md)：通用 OKR、Biz OKR 与世界模型的维护边界
 6. [Emily 完整研发环境](docs/summery/emily-development-environment.md)：开发 worktree、共享 OKR 数据、实例配置与提交规则
 7. [OKR 真实路径测试规范](docs/summery/okr-real-path-testing-standard.md)：本人现有授权、评论与导出验收、部署后回归和证据要求
-8. [OKR 测试覆盖盘点](docs/summery/okr-test-coverage-audit.md)：现有自动测试、真实验收缺口与优先补齐项
+8. [OKR 最新全量验收](docs/summery/2026-09-16-okr-full-acceptance.md)：真实站、隔离浏览器和自动化测试结果
 
 ## 核心链路
 
