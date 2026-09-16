@@ -21,31 +21,33 @@ def output(args):
 def initialize(root, public_url, principal):
     """Fresh local config only. Never import another instance's overrides."""
     paths = [root/'conf'/name for name in (
-        'config.development.yaml', 'config.runtime.yaml', 'okr-module.runtime.yaml')]
+        'config.runtime.yaml', 'okr-module.runtime.yaml')]
     if any(p.exists() for p in paths):
         raise ValueError('local config already exists; back it up before initialization')
     if not principal:
         raise ValueError('--principal is required to initialize the browser login gate')
-    config = yaml.safe_load((root/'conf/config.yaml').read_text())
-    config['server'].update(addr='127.0.0.1:18812', public_base_url=public_url,
-                            development_socket='', development_path='')
-    config['sqlite']['path'] = 'var/development.db'
-    config['auth'].update(enabled=True, principals=[principal],
-                          login_api_base_url='https://cloud.byteintl.net')
+    base = yaml.safe_load((root/'conf/config.yaml').read_text())
+    config = {
+        'identity': {'display_name': 'Emily 开发'},
+        'auth': {
+            'enabled': True,
+            'principals': [principal],
+            'login_api_base_url': 'https://cloud.byteintl.net',
+        },
+        'server': {'addr': '127.0.0.1:18812', 'public_base_url': public_url},
+    }
     for key in ('capture', 'factengine', 'extract', 'execute', 'proactive',
                 'meeting_sweep', 'morning_brief', 'dailydigest', 'scheduled_task', 'card_approval'):
-        config[key]['enabled'] = False
-    config['extract']['principal_open_id'] = ''
-    config['card_approval'].update(principal_open_id='', relay_secret='')
+        config[key] = {'enabled': False}
     for key in ('codex', 'execute', 'factengine', 'proactive', 'meeting_sweep', 'morning_brief'):
-        config[key].update(bin='codex', model=config['chat']['model'])
+        config.setdefault(key, {}).update(bin='codex', model=base['chat']['model'])
     config['execute'].update(repo_root='/opt/jarvis', runs_dir='var/runs')
     module = {
         'chat': {'enabled': True, 'runtime': 'local'},
-        'identity': {'token_dir': 'var/okr/feishu-tokens'},
-        'preview_review': {'bin': 'codex', 'model': config['chat']['model']},
+        'identity': {'token_dir': '/dev-state/tokens'},
+        'preview_review': {'bin': 'codex', 'model': base['chat']['model']},
     }
-    for path, value in zip(paths, (config, {}, module)):
+    for path, value in zip(paths, (config, module)):
         with path.open('x') as file:
             os.chmod(path, 0o600)
             yaml.safe_dump(value, file, allow_unicode=True, sort_keys=False)
@@ -70,7 +72,6 @@ def container_args(root, shared, state, ingress, lark, byted, goroot, env_file=N
                      + (',readonly' if readonly else '')])
 
     mount(root, '/opt/jarvis')
-    mount('/dev/null', '/opt/jarvis/.git', True)
     # Existing worktrees may use an absolute link. Mount its product-only target,
     # never its parent repository. A normal directory needs no host-path alias.
     target = str(shared) if (root/'data/okr').is_symlink() else '/opt/jarvis/data/okr'
@@ -110,7 +111,7 @@ def main():
     checkout = ROOT/'data/okr'
     if checkout.is_symlink() and checkout.resolve() != shared:
         raise ValueError('data/okr link must point to --okr-data')
-    if not (ROOT/'conf/config.development.yaml').is_file():
+    if not (ROOT/'conf/config.runtime.yaml').is_file():
         raise ValueError('initialize local config first')
     if opts.env_file and not opts.env_file.is_file():
         raise ValueError('development env file does not exist')

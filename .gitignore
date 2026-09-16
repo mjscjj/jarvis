@@ -84,4 +84,3 @@ tmp-*.png
 
 # Local OKR instance overrides
 /conf/okr-module.runtime.yaml
-/conf/config.development.yaml
