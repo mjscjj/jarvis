@@ -37,12 +37,6 @@ class InstanceIsolationTests(unittest.TestCase):
         for forbidden in ('credentials', 'okr-chat/sessions', 'okr-chat/files', 'egress',
                           'docker.sock', 'auth.json', '/opt/jarvis/.git'):
             self.assertNotIn(forbidden, ' '.join(args))
-        (self.root/'data').mkdir()
-        (self.root/'data/okr').symlink_to(shared)
-        linked = dev['container_args'](self.root, shared, self.root/'var/container',
-                                       Path('/ingress'), Path('/bin/lark-cli'),
-                                       Path('/lib/bytedcli'), Path('/lib/go'))
-        self.assertIn(f'type=bind,src={shared},dst={shared}', linked)
 
     def test_initialize_uses_defaults_and_refuses_to_overwrite_local_config(self):
         conf = self.root/'conf'

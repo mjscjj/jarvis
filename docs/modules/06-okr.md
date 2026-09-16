@@ -28,7 +28,7 @@ Jarvis 世界模型
 
 ## OKR 独立对话
 
-开发部署使用[独立研发实例](../summery/emily-development-environment.md)：容器运行同一套代码，只有 OKR 业务数据共享，Task、Message、聊天、附件和授权均归各实例所有。前端统一调用当前实例 API，不绕回主站。入口路径仍由实例配置生成。
+开发部署使用[独立研发实例](../summery/emily-development-environment.md)：容器运行同一套代码，主环境的 `data/okr/` 整目录共享；Jarvis 主库、Task、Message、聊天、附件、HOME 和当前 CLI 登录状态仍归各实例所有。前端统一调用当前实例 API，不绕回主站。入口路径仍由实例配置生成。
 
 Biz OKR 页面底部对话按用户身份选择：既有白名单用户保留普通 Chat，其余已完成 Biz OKR 飞书登录的访客使用当前实例的 `/api/okr-chat/*`。该接口在服务端验证飞书会话，在实例的 `var/okr-chat/chat.db` 中按用户归属隔离会话列表、历史、草稿和附件；不按用户分库或建立运行实例。普通 `/api/chat/*` 和 M2/M3/M5 保持原有可信运行方式。
 
@@ -46,13 +46,13 @@ OKR 飞书登录会话已持久化在 Jarvis 私有运行主库的 `okr_workspac
 
 完整研发模式修改的是开发 worktree；容器内用 `./scripts/jarvis-deploy --skip-pull` 构建、重启开发实例，生产前后端仍走宿主正常部署。开发目录不是线上源码副本的自动发布机制；OKR 产品数据是例外，它直接共享并立即影响线上。源码合并、产品数据快照及配置归属见[研发环境文档](../summery/emily-development-environment.md)。
 
-原始单轮容器的 `internal/toolcatalog/okr_chat.go` 以 method/path 清单限制工具请求。完整研发模式在开发容器内使用自己的完整 API，通过文件和进程边界隔离生产 Task、Todo、消息与普通会话；通知机器人和查人能力通过限定出口复用。已授权用户自己上传或写进 OKR 的消息摘录仍是可读材料，不做语义脱敏。
+原始单轮容器的 `internal/toolcatalog/okr_chat.go` 以 method/path 清单限制工具请求。完整研发模式在开发容器内使用自己的完整 API 和独立登录的 CLI，通过文件和进程边界隔离主环境 Task、Todo、消息与普通会话。已授权用户自己上传或写进 OKR 的消息摘录仍是可读材料，不做语义脱敏。
 
-`conf/prompts/okr-chat-system-prompt.md` 定义业务职责与停止边界，经 textstore 注册；不叠加普通 Chat 提示词或共享记忆。`conf/okr-module.yaml` 提供公共默认值；当前实例的 Chat 启用、容器名、模型登录文件以及飞书应用绑定在不入 Git 的 `conf/okr-module.runtime.yaml`。模型只使用所需登录文件，不复制宿主全量配置。
+`conf/prompts/okr-chat-system-prompt.md` 定义业务职责与停止边界，经 textstore 注册；不叠加普通 Chat 提示词或共享记忆。`conf/okr-module.yaml` 提供公共默认值；当前实例的 Chat runtime、模型和飞书应用绑定写在不入 Git 的 `conf/okr-module.runtime.yaml`。
 
-生产主服务部署统一执行 `./scripts/jarvis-deploy --skip-pull`。完整研发模式的首次配置与启动使用 `scripts/emily-dev --activate`；该命令同时构建开发容器、配置路径并按统一脚本部署两个实例。原始单轮模式启用时才构建 `deploy/okr-chat/` 镜像。关闭 OKR Chat 不删除已有独立会话。
+主服务部署统一执行 `./scripts/jarvis-deploy --skip-pull`。开发实例使用 `scripts/emily-dev --deploy --okr-data ... --env-file ...`，只构建和替换开发容器；不修改或重启主服务。原始单轮模式启用时才构建 `deploy/okr-chat/` 镜像。关闭 OKR Chat 不删除已有独立会话。
 
-验证：`go test ./cmd/... ./internal/...`；原始单轮容器使用 `OKR_DOCKER_TEST=1 go test ./internal/okrchat -run TestDockerNetworkAndFilesystem -v`。在生产 worktree 根目录，完整研发模式使用 `EMILY_DEVELOPMENT_CHAT_ROOT=$PWD/var/okr-chat go test ./internal/okrchat -run TestDevelopmentModelCanInspectFullSource -v`。前端 `web/test/okrChat.browser.mjs` 验证独立 API、历史弹窗和附件地址。
+验证：`go test ./cmd/... ./internal/...`；原始单轮容器使用 `OKR_DOCKER_TEST=1 go test ./internal/okrchat -run TestDockerNetworkAndFilesystem -v`。开发容器的配置和挂载由 `deploy/emily-dev/instance_test.py` 验证。前端 `web/test/okrChat.browser.mjs` 验证独立 API、历史弹窗和附件地址。
 
 ## 数据所有权
 
