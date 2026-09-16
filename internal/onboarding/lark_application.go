@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"jarvis/internal/config"
 )
 
 // ApplicationCheck describes an application-side prerequisite, not user OAuth.
@@ -18,7 +20,19 @@ type ApplicationCheck struct {
 }
 
 func (s *Service) botEventChecks(ctx context.Context) []ApplicationCheck {
-	checks := []ApplicationCheck{{Event: "im.message.receive_v1"}, {Event: "card.action.trigger"}}
+	events := []string{"im.message.receive_v1"}
+	// Desktop onboarding enables card approval during finalization, so the
+	// callback must already be available. Source installs only need it when the
+	// feature is explicitly enabled in their local runtime configuration.
+	if s.options.Desktop {
+		events = append(events, "card.action.trigger")
+	} else if cfg, err := config.Load(s.options.ConfigPath); err == nil && cfg.CardApproval.Enabled {
+		events = append(events, "card.action.trigger")
+	}
+	checks := make([]ApplicationCheck, len(events))
+	for i, event := range events {
+		checks[i].Event = event
+	}
 	var workers sync.WaitGroup
 	for i := range checks {
 		workers.Add(1)
