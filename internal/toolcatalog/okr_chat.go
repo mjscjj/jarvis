@@ -87,7 +87,7 @@ JARVIS_API_BASE=http://127.0.0.1:18812，jarvis-tools、okr-module-tools、biz-o
 主库 var/development.db 是开发专用库，可放任务和消息的测试数据；不含生产任务、消息、普通会话或世界模型。
 data/okr/ 是线上 OKR 数据、图片和业务资源的共享目录，允许直接查询、修改和迁移；修改立即影响线上。feishu-tokens 使用开发实例自己的目录。
 Go、Node、npm、SQLite 已安装，可运行完整项目测试。npm 下载和 Go 模块下载走受限网络出口。
-lark-cli 可使用现有通知机器人发送和回读通知，并查询通讯录；不提供 principal 的个人消息和私有文件授权。网页登录用户自己的 OKR 授权由开发实例保存。
+lark-cli 可使用现有通知机器人发送和回读通知、读取该 Bot 可见的群信息与群成员，并查询通讯录；不提供 principal 的个人消息和私有文件授权。网页登录用户自己的 OKR 授权由开发实例保存。
 容器没有宿主 Docker socket、生产主库、生产日志或宿主个人凭证。不要请求宿主 Agent 代跑。开发实例的任务/消息测试与生产私有数据是两回事。
 Git worktree 的正式提交和合并由宿主开发流程处理；尊重目录中已有修改。
 `

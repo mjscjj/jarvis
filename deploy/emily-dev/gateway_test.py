@@ -22,6 +22,20 @@ class GatewayBoundaryTests(unittest.TestCase):
         args = ['--profile', BOT, 'api', 'POST', '/open-apis/im/v1/messages', '--params', '{"receive_id_type":"email"}', '--data', '{"receive_id":"person@example.com","msg_type":"text","content":"{}"}', '--as', 'bot', '--format', 'json']
         self.assertEqual(command(args), args)
 
+    def test_notification_bot_can_read_group_metadata_and_members(self):
+        chat = command(['--profile', BOT, 'im', 'chats', 'get', '--chat-id', 'oc_fixed', '--user-id-type', 'open_id', '--as', 'bot'])
+        self.assertEqual(chat, ['--profile', BOT, 'im', 'chats', 'get', '--chat-id', 'oc_fixed', '--user-id-type', 'open_id', '--as', 'bot', '--format', 'json'])
+        members = command(['--profile', BOT, 'im', '+chat-members-list', '--chat-id', 'oc_fixed', '--member-types', 'bot', '--page-all', '--page-limit', '0', '--as', 'bot'])
+        self.assertEqual(members, ['--profile', BOT, 'im', '+chat-members-list', '--chat-id', 'oc_fixed', '--member-types', 'bot', '--page-all', '--page-limit', '0', '--as', 'bot', '--format', 'json'])
+
+    def test_group_reads_remain_bot_only_and_reject_file_options(self):
+        for args in [
+            ['--profile', BOT, 'im', 'chats', 'get', '--chat-id', 'oc_fixed', '--as', 'user'],
+            ['--profile', BOT, 'im', '+chat-members-list', '--chat-id', 'oc_fixed', '--output', 'members.json', '--as', 'bot'],
+        ]:
+            with self.subTest(args=args), self.assertRaises(ValueError):
+                command(args)
+
 if __name__ == '__main__':
     unittest.main()
 

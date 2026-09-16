@@ -2,7 +2,8 @@
 """Host-owned egress for the development container. Never exposes a host API.
 
 Credentials stay on the host. The CLI bridge permits identity checks, directory
-lookups, and notification-bot operations only; no personal message/file access.
+lookups, notification delivery/readback, and notification-bot group metadata
+reads only; no personal message/file access.
 """
 import argparse
 import http.server
@@ -40,6 +41,7 @@ def command(args):
     if args[-2:] == ['--format', 'json']:
         args = args[:-2]
     flags = {}
+    switches = set()
     if profile == MAIN and args[:2] == ['contact', '+search-user']:
         rest = args[2:]
         allowed = {'--query', '--user-ids', '--as'}
@@ -63,20 +65,48 @@ def command(args):
     elif profile == BOT and args[:2] == ['im', '+messages-mget']:
         rest, allowed = args[2:], {'--message-ids', '--as'}
         prefix = ['--profile', BOT, 'im', '+messages-mget']
+    elif profile == BOT and args[:3] == ['im', 'chats', 'get']:
+        rest, allowed = args[3:], {'--chat-id', '--user-id-type', '--as'}
+        prefix = ['--profile', BOT, 'im', 'chats', 'get']
+    elif profile == BOT and args[:3] == ['im', 'chat.members', 'get']:
+        rest = args[3:]
+        allowed = {'--chat-id', '--member-id-type', '--page-size', '--page-token', '--page-limit', '--page-delay', '--as'}
+        switches = {'--page-all'}
+        prefix = ['--profile', BOT, 'im', 'chat.members', 'get']
+    elif profile == BOT and args[:2] == ['im', '+chat-members-list']:
+        rest = args[2:]
+        allowed = {'--chat-id', '--member-types', '--member-id-type', '--page-size', '--page-token', '--page-limit', '--page-delay', '--as'}
+        switches = {'--page-all'}
+        prefix = ['--profile', BOT, 'im', '+chat-members-list']
     else:
         raise ValueError('personal messages, tasks and arbitrary CLI commands are unavailable')
-    if len(rest) % 2:
-        raise ValueError('expected flag/value pairs')
-    for flag, value in zip(rest[::2], rest[1::2]):
-        if flag not in allowed or flag in flags or not isinstance(value, str) or value.startswith(('@', '-')):
+    i = 0
+    while i < len(rest):
+        flag = rest[i]
+        if flag in switches:
+            if flag in flags:
+                raise ValueError('unsupported CLI option')
+            flags[flag] = None
+            i += 1
+            continue
+        if flag not in allowed or flag in flags or i + 1 >= len(rest):
+            raise ValueError('unsupported CLI option')
+        value = rest[i + 1]
+        if not isinstance(value, str) or value.startswith(('@', '-')):
             raise ValueError('unsupported CLI option')
         if flag in {'--data', '--params'}:
             json.loads(value)
         flags[flag] = value
+        i += 2
     expected = 'user' if profile == MAIN else 'bot'
     if flags.get('--as') != expected:
         raise ValueError('wrong identity')
-    return prefix + [v for pair in flags.items() for v in pair] + ['--format', 'json']
+    rendered = []
+    for flag, value in flags.items():
+        rendered.append(flag)
+        if value is not None:
+            rendered.append(value)
+    return prefix + rendered + ['--format', 'json']
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
