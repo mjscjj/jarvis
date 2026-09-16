@@ -280,11 +280,13 @@ try {
       await app.page.evaluate(user => window.dispatchEvent(new CustomEvent('jarvis:okr-auth-changed', { detail: { authenticated: true, user: { openId: user.open_id, unionId: user.union_id } } })), app.okr.user)
     }
     await dock.fill('上一账号未发送的草稿')
+    const isolatedSession = app.page.waitForResponse(response => response.url().includes('/api/okr-chat/sessions/cs_test'))
     await switchIdentity(undefined)
-    await app.page.waitForResponse(response => response.url().includes('/api/okr-chat/sessions/cs_test'))
+    await isolatedSession
     await app.page.waitForFunction(() => document.querySelector('[aria-label="底部对话输入"]')?.value === '')
+    const principalSession = app.page.waitForResponse(response => response.url().includes('/api/chat/sessions/cs_test'))
     await switchIdentity(username)
-    await app.page.waitForResponse(response => response.url().includes('/api/chat/sessions/cs_test'))
+    await principalSession
     await dock.waitFor()
     if (username === 'chujiejie.1') {
       await app.page.getByRole('button', { name: '退出', exact: true }).click()
@@ -293,6 +295,7 @@ try {
       await app.page.locator('.account-menu button').filter({ hasText: '退出登录' }).click()
     }
     await app.page.getByRole('heading', { name: '登录 OKR' }).waitFor()
+    await dock.waitFor({ state: 'detached' })
     assert.equal(await dock.count(), 0)
     assert(!app.requests.includes('/api/auth/login'))
     await app.page.getByRole('button', { name: '使用飞书登录', exact: true }).waitFor()

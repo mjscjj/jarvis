@@ -735,6 +735,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
       }).catch((error) => setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '读取 Biz OKR Plan 失败。' }))
     },
     createPlan: async (input) => {
+      loadRequest.current += 1
       setSyncState({ kind: 'saving', message: '正在新建 Biz OKR Plan…' })
       try {
         const created = await createOKRPlan({ quarter: input.quarter, title: input.title })
@@ -744,6 +745,7 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
         setAvailableQuarters(list.availableQuarters)
         setPlans(list.plans)
         publishPlan(created)
+        remoteReady.current = true
         persistedObjectiveIDs.current = new Set(created.objectives.map((objective) => objective.id))
         dirtyKRs.current.clear()
         krRevisions.current.clear()

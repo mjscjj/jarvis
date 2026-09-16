@@ -71,4 +71,7 @@ try {
   assert.equal(calls.some(p=>p.includes('ordinary-id')),false)
   assert.deepEqual(errors,[])
   console.log(JSON.stringify({result:'passed',checks:['isolated API','ordinary deep-link ignored','history stays in OKR','draft retained on expansion','isolated attachment URL'],calls:calls.length}))
+} catch (error) {
+  console.error(JSON.stringify({ calls, errors, body: (await page.locator('body').innerText()).slice(-8000) }))
+  throw error
 } finally { await browser.close() }
