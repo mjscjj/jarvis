@@ -14,12 +14,12 @@ const quarter = process.env.OKR_REAL_QUARTER || '2026-Q3'
 const week = process.env.OKR_REAL_WEEK || '2026-W36'
 const weeklyWeek = process.env.OKR_REAL_WEEKLY_WEEK || '2026-W35'
 const planQuarter = process.env.OKR_REAL_PLAN_QUARTER || '2026-Q4'
-const cases = (process.env.OKR_REAL_CASES || 'navigation,people,review-comment,weekly-comment,plan-comment,review-export,weekly-export,self-mention').split(',').map(value => value.trim())
+const cases = (process.env.OKR_REAL_CASES || 'navigation,people,review-comment,weekly-comment,plan-comment,regional-alignment,review-export,weekly-export,self-mention').split(',').map(value => value.trim())
 const runID = `okr-real-${new Date().toISOString().replace(/[:.]/g, '-')}`
 assert(base && /^https?:\/\//.test(base), 'Set OKR_REAL_BASE_URL to the actual deployed OKR origin')
 assert(profile, 'Set OKR_REAL_PROFILE_DIR to a dedicated browser profile')
 assert(expectedOpenID, 'Set OKR_REAL_EXPECTED_OPEN_ID from a verified OKR identity; display name alone is insufficient')
-const validCases = ['navigation', 'people', 'review-comment', 'weekly-comment', 'plan-comment', 'review-export', 'weekly-export', 'self-mention']
+const validCases = ['navigation', 'people', 'review-comment', 'weekly-comment', 'plan-comment', 'regional-alignment', 'review-export', 'weekly-export', 'self-mention']
 assert(cases.length > 0 && cases.every(value => validCases.includes(value)), `OKR_REAL_CASES must use: ${validCases.join(', ')}`)
 
 const browser = await chromium.launchPersistentContext(profile, {
@@ -51,6 +51,7 @@ page.on('response', response => {
   }
 })
 let createdPlanID = ''
+let createdRegionalDemand
 
 async function api(path, options) {
   const result = await page.evaluate(async ({ path, options }) => {
@@ -186,18 +187,21 @@ async function testExport(tab, targetWeek) {
 
 async function testNavigation() {
   for (const [tab, targetWeek] of [
+    ['manage', ''],
+    ['regional-alignment', ''],
+    ['agent-flows', ''],
     ['review-fill', week], ['review-meeting', week],
     ['weekly-fill', weeklyWeek], ['weekly-meeting', weeklyWeek],
     ['okr-plan', ''],
   ]) {
-    const query = tab === 'okr-plan' ? `quarter=${planQuarter}` : `quarter=${quarter}&week=${targetWeek}`
+    const query = ['okr-plan', 'regional-alignment'].includes(tab) ? `quarter=${planQuarter}` : `quarter=${quarter}&week=${targetWeek}`
     await page.goto(`${base}/#/biz-okr?tab=${tab}&${query}`)
     await page.locator('#okr-workspace-root').waitFor()
     const me = await api('/api/biz-okr/me')
     assert.equal(me.body.data?.user?.open_id, expectedOpenID, `Identity changed in ${tab}`)
     assert.equal(await page.getByRole('heading', { name: '登录 OKR' }).count(), 0, `Login gate appeared in ${tab}`)
   }
-  evidence.results.push({ case: 'navigation', status: 'passed', checks: ['review-fill', 'review-meeting', 'weekly-fill', 'weekly-meeting', 'okr-plan', 'identity-on-each-page'] })
+  evidence.results.push({ case: 'navigation', status: 'passed', checks: ['manage', 'okr-plan', 'regional-alignment', 'agent-flows', 'review-fill', 'review-meeting', 'weekly-fill', 'weekly-meeting', 'identity-on-each-page'] })
 }
 
 async function testPeople() {
@@ -236,13 +240,15 @@ async function testPlanComment() {
   await page.getByPlaceholder('填写新 KR 内容').fill('真实验收 KR')
   await page.getByLabel('新 KR 业务分类', { exact: true }).fill('验收')
   await page.getByRole('button', { name: '确定', exact: true }).click()
-  await uiWrite(objectivePath, 'PATCH', () => page.getByRole('button', { name: '创建', exact: true }).click())
-  await uiWrite(objectivePath, 'PATCH', () => page.getByLabel('优先级标签', { exact: true }).selectOption('p0'))
+  const withKR = await uiWrite(objectivePath, 'PATCH', () => page.getByRole('button', { name: '创建', exact: true }).click())
+  const krID = withKR?.objectives?.find(item => item.id === objectiveID)?.krs?.[0]?.id
+  assert(krID, 'Temporary Plan has no KR')
+  await uiWrite(`/api/biz-okr/plans/${createdPlanID}/krs/${krID}`, 'PATCH', () => page.getByLabel('优先级标签', { exact: true }).selectOption('p0'))
   console.error('Plan: choose owner')
   await page.getByRole('button', { name: '管理关联人', exact: true }).first().click()
   await page.getByPlaceholder('输入姓名或邮箱搜索').fill(expectedName)
   const person = await testPeople()
-  await uiWrite(objectivePath, 'PATCH', () => page.getByRole('button', { name: new RegExp(`${expectedName}.*${person.email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) }).click())
+  await uiWrite(`/api/biz-okr/plans/${createdPlanID}/krs/${krID}`, 'PATCH', () => page.getByRole('button', { name: new RegExp(`${expectedName}.*${person.email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) }).click())
   const plan = await api(`/api/biz-okr/plans/${createdPlanID}`)
   assert.equal(plan.status, 200)
   assert.equal(plan.body.data?.objectives?.[0]?.krs?.[0]?.owners?.[0]?.email, person.email)
@@ -265,6 +271,46 @@ async function cleanupPlan() {
   const artifact = evidence.artifacts.find(item => item.kind === 'plan' && item.id === createdPlanID)
   if (artifact) artifact.cleaned_up = true
   createdPlanID = ''
+}
+
+async function cleanupRegionalDemand() {
+  if (!createdRegionalDemand) return
+  const { quarter, region, id } = createdRegionalDemand
+  const board = await api(`/api/biz-okr/regional-alignments/${region}/board?quarter=${quarter}`)
+  assert.equal(board.status, 200, "Could not read this run's regional demand before cleanup")
+  const demand = board.body.data?.demands?.find(item => item.id === id)
+  if (demand) {
+    const result = await api(`/api/biz-okr/regional-alignments/${region}/demands/${id}?quarter=${quarter}`, { method: 'DELETE', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ expected_version: demand.version }) })
+    assert.equal(result.status, 200, `Could not delete this run's regional demand: ${JSON.stringify(result.body)}`)
+  }
+  const artifact = evidence.artifacts.find(item => item.kind === 'regional-demand' && item.id === id)
+  if (artifact) artifact.cleaned_up = true
+  createdRegionalDemand = undefined
+}
+
+async function testRegionalAlignment() {
+  const region = 'eu'
+  const path = `/api/biz-okr/regional-alignments/${region}`
+  await page.goto(`${base}/#/biz-okr?tab=regional-alignment&quarter=${planQuarter}&region=${region}`)
+  await page.getByRole('heading', { name: 'Emily · 区域 OKR 对齐', exact: true }).waitFor()
+  await page.getByRole('button', { name: '新增需求 / Add requirement', exact: true }).click()
+  const created = await uiWrite(`${path}/demands`, 'POST', () => page.getByLabel('区域 OKR / Regional OKR', { exact: true }).last().fill(`[OKR真实验收 ${runID}] 区域目标`), 201)
+  createdRegionalDemand = { quarter: planQuarter, region, id: created.id }
+  evidence.artifacts.push({ kind: 'regional-demand', id: created.id, cleaned_up: false })
+  await uiWrite(`${path}/demands/${created.id}`, 'PUT', () => page.getByLabel('具体需求 / Detailed requirement', { exact: true }).last().fill(`[OKR真实验收 ${runID}] 区域需求`))
+  await page.getByRole('button', { name: '💬 评论 / Comments', exact: true }).click()
+  const drawer = page.locator('aside[aria-hidden="false"]')
+  const content = `[OKR真实验收 ${runID}] 区域对齐评论`
+  await drawer.getByPlaceholder('对当前区域对齐页发表评论，输入 @ 选择提醒人…').fill(content)
+  const comment = await uiWrite(`${path}/comments`, 'POST', () => drawer.getByRole('button', { name: '发布评论', exact: true }).click(), 201)
+  createdComments.push({ id: comment.id, listPath: `${path}/comments?quarter=${planQuarter}` })
+  await drawer.getByText(content, { exact: true }).waitFor()
+  await page.reload()
+  await page.getByRole('button', { name: '💬 评论 / Comments', exact: true }).click()
+  await page.locator('aside[aria-hidden="false"]').getByText(content, { exact: true }).waitFor()
+  await cleanupComment()
+  await cleanupRegionalDemand()
+  evidence.results.push({ case: 'regional-alignment', status: 'passed', checks: ['load', 'create-demand', 'update-demand', 'comment', 'reload', 'cleanup'] })
 }
 
 async function testSelfMention() {
@@ -309,6 +355,7 @@ try {
     'review-comment': () => testComment({ tab: 'review-fill', targetWeek: week }),
     'weekly-comment': () => testComment({ tab: 'weekly-fill', targetWeek: weeklyWeek }),
     'plan-comment': () => testPlanComment(),
+    'regional-alignment': () => testRegionalAlignment(),
     'review-export': () => testExport('review-meeting', week),
     'weekly-export': () => testExport('weekly-meeting', weeklyWeek),
     'self-mention': () => testSelfMention(),
@@ -331,6 +378,10 @@ try {
         evidence.results.push({ case: `${name}-plan-cleanup`, status: 'failed', reason: error instanceof Error ? error.message : String(error) })
         process.exitCode = 1
       }
+      try { await cleanupRegionalDemand() } catch (error) {
+        evidence.results.push({ case: `${name}-regional-cleanup`, status: 'failed', reason: error instanceof Error ? error.message : String(error) })
+        process.exitCode = 1
+      }
     }
   }
 } catch (error) {
@@ -343,6 +394,10 @@ try {
   }
   try { await cleanupPlan() } catch (error) {
     evidence.results.push({ case: 'plan-cleanup', status: 'failed', reason: error instanceof Error ? error.message : String(error) })
+    process.exitCode = 1
+  }
+  try { await cleanupRegionalDemand() } catch (error) {
+    evidence.results.push({ case: 'regional-cleanup', status: 'failed', reason: error instanceof Error ? error.message : String(error) })
     process.exitCode = 1
   }
   if (sessionFile && sessionToken) {

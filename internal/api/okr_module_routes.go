@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"jarvis/internal/authn"
 	"jarvis/internal/background"
 	"jarvis/internal/larkcli"
 	"jarvis/internal/okrreview"
@@ -31,6 +32,7 @@ type BizOKRModuleDependencies struct {
 	Workspace      *okrworkspace.Service
 	Activity       *okrworkspace.ActivityStore
 	Identity       *okrAuth.Service
+	Auth           *authn.Service
 	Documents      MarkdownDocumentCreator
 	DocumentTokens OKRDocumentTokens
 	DocumentAppID  string
@@ -119,7 +121,7 @@ func RegisterBizOKRModuleRoutes(h *server.Hertz, deps BizOKRModuleDependencies) 
 	h.GET("/api/biz-okr/me", requireEnabled, GetOKRCurrentUser(deps.Identity))
 	h.POST("/api/biz-okr/auth/feishu/device", requireEnabled, BeginOKRFeishuDeviceLogin(deps.Identity))
 	h.POST("/api/biz-okr/auth/feishu/device/:login_id/poll", requireEnabled, PollOKRFeishuDeviceLogin(deps.Identity))
-	h.POST("/api/biz-okr/auth/logout", requireEnabled, LogoutOKR(deps.Identity))
+	h.POST("/api/biz-okr/auth/logout", requireEnabled, LogoutOKR(deps.Identity, deps.Auth))
 	// Deprecated browser-cache compatibility route; see SearchWorkspacePeople.
 	h.GET("/api/biz-okr/people/search", requireEnabled, SearchOKRDirectory(deps.Directory))
 	h.GET("/api/biz-okr/people/avatars", requireEnabled, GetOKRDirectoryAvatars(deps.Directory))

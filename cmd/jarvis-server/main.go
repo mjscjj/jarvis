@@ -1193,6 +1193,7 @@ func main() {
 	if err != nil {
 		fatalf("initialize ByteDance SSO service failed: %v", err)
 	}
+	authService.SetOKRIdentity(okrIdentityService)
 	securityAuditService, err := security.NewAuditService(db)
 	if err != nil {
 		fatalf("initialize security audit service failed: %v", err)
@@ -1276,7 +1277,7 @@ func main() {
 			fatalf("initialize OKR preview review service failed: %v", err)
 		}
 		bizOKRModuleDeps = &api.BizOKRModuleDependencies{
-			Workspace: okrWorkspaceService, Activity: okrActivityStore, Identity: okrIdentityService, Documents: larkClient,
+			Workspace: okrWorkspaceService, Activity: okrActivityStore, Identity: okrIdentityService, Auth: authService, Documents: larkClient,
 			DocumentTokens: okrDocumentTokens,
 			DocumentAppID:  okrModuleConfig.Identity.AppID, People: resolveService, Directory: okrDirectory,
 			Enabled:       func(ctx context.Context) (bool, error) { return appModuleService.Enabled(ctx, "biz-okr") },

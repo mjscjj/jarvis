@@ -96,6 +96,7 @@ func (s *AuditService) Middleware(auth *authn.Service) app.HandlerFunc {
 			c.Next(ctx)
 			return
 		}
+		actorKind, actorID := actorForRequest(ctx, c, auth)
 		c.Next(ctx)
 
 		route := normalizedRoute(c)
@@ -109,8 +110,9 @@ func (s *AuditService) Middleware(auth *authn.Service) app.HandlerFunc {
 			StatusCode:    c.Response.StatusCode(),
 			RequestID:     observability.LogID(observability.FromRequestContext(ctx, c)),
 			RemoteAddress: authn.RedactIP(authn.ClientIP(c)),
+			ActorKind:     actorKind,
+			ActorID:       actorID,
 		}
-		event.ActorKind, event.ActorID = actorForRequest(c, auth)
 		if err := s.db.WithContext(context.WithoutCancel(ctx)).Create(&event).Error; err != nil {
 			hlog.CtxErrorf(ctx, "record access audit event failed: %+v", err)
 		}
@@ -169,9 +171,9 @@ func operationForMethod(method string) string {
 	return "write"
 }
 
-func actorForRequest(c *app.RequestContext, auth *authn.Service) (string, string) {
+func actorForRequest(ctx context.Context, c *app.RequestContext, auth *authn.Service) (string, string) {
 	if auth != nil {
-		if user, ok := auth.Authenticate(string(c.Cookie(authn.CookieName))); ok {
+		if user, ok := auth.AuthenticateRequest(ctx, c); ok {
 			if user.IsPrincipal {
 				return "principal", user.Email
 			}

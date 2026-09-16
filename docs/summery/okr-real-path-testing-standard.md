@@ -83,7 +83,7 @@
 - `OKR_BROWSER_EXPORT_ONLY=1` 仅执行导出专项，不能据此报告评论回归通过。
 - 已解决评论的模拟浏览器脚本只证明展示交互；不得直接对生产实例运行未经数据范围核对的写入脚本。
 
-`npm --prefix web run test:okr:real` 是独立的真实验收入口。必须设置 `OKR_REAL_BASE_URL`、`OKR_REAL_PROFILE_DIR` 和经核验的 `OKR_REAL_EXPECTED_OPEN_ID`；它可以使用专用浏览器 profile 中已有的产品登录，也可传入 `OKR_REAL_SESSION_FILE` 使用由本人现有真实授权签发的短时测试会话。后一模式只绕过设备登录步骤；页面、后端、数据库与飞书调用仍走真实路径，并在输出里将 `login_flow_tested` 标为 `false`。默认执行八项：五个页面的登录与导航、真实人员目录、Review 评论、周报评论、临时 Plan 定义与评论、Review 与周报导出、@ 本人。评论项检查作者、保存、刷新、回复、编辑、解决、历史、重开和回读，并清理本轮评论与 Plan。可用 `OKR_REAL_CASES` 选择其中的场景。导出结果只有 UI 和接口创建成功、@ 结果只有发送回执成功时，仍须回读飞书文档归属／正文及本人收件箱后才算完整通过。Review 周次由 `OKR_REAL_WEEK` 指定，普通周报周次由 `OKR_REAL_WEEKLY_WEEK` 指定；临时 Plan 使用 `OKR_REAL_PLAN_QUARTER`。运行时的 JSON 输出只含测试身份标识、评论 ID、通知消息 ID 与文档链接，不输出令牌。
+`npm --prefix web run test:okr:real` 是独立的真实验收入口。必须设置 `OKR_REAL_BASE_URL`、`OKR_REAL_PROFILE_DIR` 和经核验的 `OKR_REAL_EXPECTED_OPEN_ID`；它可以使用专用浏览器 profile 中已有的产品登录，也可传入 `OKR_REAL_SESSION_FILE` 使用由本人现有真实授权签发的短时测试会话。后一模式只绕过设备登录步骤；页面、后端、数据库与飞书调用仍走真实路径，并在输出里将 `login_flow_tested` 标为 `false`。默认执行九项：八个入口的登录与导航、真实人员目录、Review 评论、周报评论、临时 Plan 定义与评论、区域对齐需求与评论、Review 与周报导出、@ 本人。评论项检查作者、保存、刷新、回复、编辑、解决、历史、重开和回读，并清理本轮评论、Plan 与区域需求。可用 `OKR_REAL_CASES` 选择其中的场景。导出结果只有 UI 和接口创建成功、@ 结果只有发送回执成功时，仍须回读飞书文档归属／正文及本人收件箱后才算完整通过。Review 周次由 `OKR_REAL_WEEK` 指定，普通周报周次由 `OKR_REAL_WEEKLY_WEEK` 指定；临时 Plan 与区域对齐使用 `OKR_REAL_PLAN_QUARTER`。运行时的 JSON 输出只含测试身份标识、评论 ID、通知消息 ID 与文档链接，不输出令牌。
 
 普通 Chrome 窗口中的登录不会自动共享给 Playwright。现有有效飞书授权已足够进行业务路径测试，无需用户重复扫码或提供 Cookie。若要单独验收产品设备登录，则在非无头模式（`OKR_REAL_HEADLESS=0`）用专用 profile 完成一次真实登录；不得把短时测试会话的结果报告为设备登录成功。
 

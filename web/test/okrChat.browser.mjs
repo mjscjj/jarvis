@@ -49,8 +49,29 @@ try {
   assert.equal(await page.getByPlaceholder('问一个问题，或告诉我你想推进什么…').inputValue(),'OKR 草稿不会跳到普通会话')
   assert.ok(new URL(page.url()).hash.includes('biz-okr'))
   assert.equal(await page.locator('a[href="/api/okr-chat/attachments/ca_okr/content"]').count(),1)
+  session.messages[0].text = '长回复滚动测试。\n\n'.repeat(300)
+  await page.reload()
+  await page.getByRole('button',{name:'查看最新回复全文'}).click()
+  await page.getByRole('button',{name:'在对话页继续'}).click()
+  await page.locator('.ant-modal-container').waitFor()
+  await page.waitForFunction(() => !document.querySelector('.ant-modal')?.className.includes('ant-zoom'))
+  for (const viewport of [{width:1440,height:900},{width:1280,height:500},{width:390,height:844},{width:390,height:500}]) {
+    await page.setViewportSize(viewport)
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+    const geometry = await page.locator('.ant-modal-container').evaluate(el => {
+      const modal = el.getBoundingClientRect()
+      const composer = el.querySelector('.chat-composer-area').getBoundingClientRect()
+      const list = el.querySelector('.chat-message-list')
+      return {modal:modal.toJSON(),composer:composer.toJSON(),listHeight:list.clientHeight,listScrollHeight:list.scrollHeight}
+    })
+    assert.ok(geometry.composer.bottom <= geometry.modal.bottom && geometry.composer.bottom <= viewport.height, JSON.stringify({viewport,geometry}))
+    assert.ok(geometry.composer.top >= geometry.modal.top && geometry.listHeight > 0 && geometry.listScrollHeight > geometry.listHeight, JSON.stringify({viewport,geometry}))
+  }
   assert.equal(calls.some(p=>p.startsWith('/api/chat/')),false)
   assert.equal(calls.some(p=>p.includes('ordinary-id')),false)
   assert.deepEqual(errors,[])
   console.log(JSON.stringify({result:'passed',checks:['isolated API','ordinary deep-link ignored','history stays in OKR','draft retained on expansion','isolated attachment URL'],calls:calls.length}))
+} catch (error) {
+  console.error(JSON.stringify({ calls, errors, body: (await page.locator('body').innerText()).slice(-8000) }))
+  throw error
 } finally { await browser.close() }

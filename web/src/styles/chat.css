@@ -1,8 +1,8 @@
 .chat-workspace {
   display: grid;
   grid-template-columns: 248px minmax(0, 1fr);
-  height: 100vh;
-  min-height: 560px;
+  height: 100%;
+  min-height: 0;
   background: #fdfefb;
   color: var(--color-text);
 }
@@ -24,10 +24,6 @@
   flex: 1;
   min-height: 0;
   padding: 0;
-}
-.chat-isolated-modal .chat-workspace {
-  height: 100%;
-  min-height: 0;
 }
 .chat-workspace-loading {
   height: 70vh;
@@ -390,6 +386,9 @@
 }
 .chat-composer-card > .ant-input {
   min-height: 58px;
+  max-height: 25dvh !important;
+  overflow-y: auto !important;
+  transition: none;
   padding: 7px 3px;
   border: 0 !important;
   box-shadow: none !important;
@@ -472,8 +471,6 @@
   }
   .chat-workspace {
     display: block;
-    height: calc(100vh - 120px);
-    min-height: 420px;
   }
   .chat-main-pane {
     height: 100%;

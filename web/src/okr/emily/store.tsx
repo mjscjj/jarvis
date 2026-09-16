@@ -176,6 +176,16 @@ export function BoardProvider({
   const pointRevisions = useRef(new Map<string, number>())
   const pointSavesInFlight = useRef(new Set<string>())
   const lastFailedKr = useRef<string | null>(null)
+  const syncStateRef = useRef(syncState)
+  const focusRefreshPending = useRef(false)
+  const focusRefreshInFlight = useRef(false)
+  const loadRequest = useRef(0)
+  syncStateRef.current = syncState
+
+  const hasLocalWork = useCallback(() => (
+    timers.current.size > 0 || pointPatches.current.size > 0 || pointSavesInFlight.current.size > 0 ||
+    syncStateRef.current.kind === 'saving' || syncStateRef.current.kind === 'conflict'
+  ), [])
 
   const publish = useCallback((next: Objective[]) => {
     objectivesRef.current = next
@@ -333,12 +343,22 @@ export function BoardProvider({
     scheduleSaveRef.current = scheduleSave
   }, [scheduleSave])
 
-  const loadRemote = useCallback(async (targetWeek?: string, targetQuarter?: string): Promise<BoardData | undefined> => {
-    remoteReady.current = false
-    setSyncState({ kind: 'loading', message: '正在读取本周进展…' })
+  const loadRemote = useCallback(async (targetWeek?: string, targetQuarter?: string, options?: { background?: boolean }): Promise<BoardData | undefined> => {
+    const background = options?.background === true
+    if (background && (!remoteReady.current || hasLocalWork())) return
+    const request = ++loadRequest.current
+    const startingQuarter = quarterRef.current
+    const startingWeek = weekRef.current
+    const startingObjectives = background ? JSON.stringify(objectivesRef.current) : ''
+    if (!background) {
+      remoteReady.current = false
+      setSyncState({ kind: 'loading', message: '正在读取本周进展…' })
+    }
     try {
-      for (const pointTimer of pointTimers.current.values()) window.clearTimeout(pointTimer)
-      pointTimers.current.clear()
+      if (!background) {
+        for (const pointTimer of pointTimers.current.values()) window.clearTimeout(pointTimer)
+        pointTimers.current.clear()
+      }
       let board: BoardData
       let remoteEnums: EnumValues
       if (surface === 'weekly-report') {
@@ -356,6 +376,11 @@ export function BoardProvider({
           getBoard(targetQuarter ?? quarterRef.current, targetWeek ?? '', surface),
           getEnums(),
         ])
+      }
+      if (request !== loadRequest.current) return
+      if (background && (hasLocalWork() || quarterRef.current !== startingQuarter || weekRef.current !== startingWeek || JSON.stringify(objectivesRef.current) !== startingObjectives)) {
+        focusRefreshPending.current = true
+        return
       }
       publish(board.objectives)
       serverKrs.current = new Map(board.objectives.flatMap((objective) => objective.krs).map((kr) => [kr.id, clone(kr)]))
@@ -378,9 +403,9 @@ export function BoardProvider({
       setSyncState({ kind: 'ready', message: board.week ? '本周进展已加载' : surface === 'weekly-report' ? '当前季度暂无对应周次' : 'OKR 已加载' })
       return board
     } catch (error) {
-      setSyncState({ kind: 'error', title: '读取失败', message: error instanceof Error ? error.message : '加载失败，请稍后重试。', logid: error instanceof APIError ? error.logid : undefined })
+      if (!background && request === loadRequest.current) setSyncState({ kind: 'error', title: '读取失败', message: error instanceof Error ? error.message : '加载失败，请稍后重试。', logid: error instanceof APIError ? error.logid : undefined })
     }
-  }, [onQuarterChange, publish, surface, weekTemplateKey])
+  }, [hasLocalWork, onQuarterChange, publish, surface, weekTemplateKey])
 
   useEffect(() => {
     const activeTimers = timers.current
@@ -402,6 +427,35 @@ export function BoardProvider({
     window.addEventListener('beforeunload', warnBeforeUnload)
     return () => window.removeEventListener('beforeunload', warnBeforeUnload)
   }, [])
+
+  const refreshOnFocus = useCallback(async () => {
+    if (document.visibilityState !== 'visible') return
+    if (focusRefreshInFlight.current) return
+    focusRefreshPending.current = true
+    if (!remoteReady.current || hasLocalWork()) return
+    focusRefreshPending.current = false
+    focusRefreshInFlight.current = true
+    try {
+      await loadRemote(weekRef.current, quarterRef.current, { background: true })
+    } finally {
+      focusRefreshInFlight.current = false
+      if (focusRefreshPending.current && !hasLocalWork()) void refreshOnFocus()
+    }
+  }, [hasLocalWork, loadRemote])
+
+  useEffect(() => {
+    const refresh = () => { void refreshOnFocus() }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [refreshOnFocus])
+
+  useEffect(() => {
+    if (focusRefreshPending.current && !hasLocalWork()) void refreshOnFocus()
+  }, [hasLocalWork, refreshOnFocus, syncState.kind])
 
   useEffect(() => {
     const nextQuarter = initialQuarter.trim()

@@ -11,6 +11,14 @@ page.setDefaultTimeout(12000)
 const errors = [], requests = [], checks = []
 const tasks = new Map(), schedules = new Map()
 let nextID = 1, expectedError = false, avatarRequests = 0
+let heldPlanList
+const holdNextPlanList = () => {
+  let started, release
+  const startedPromise = new Promise(resolve => { started = resolve })
+  const releasePromise = new Promise(resolve => { release = resolve })
+  heldPlanList = { started, releasePromise }
+  return { started: startedPromise, release }
+}
 const promptKeys = ['weekly_reminder', 'progress_sync', 'report_c', 'report_b', 'plan_review', 'progress_review']
 const prompts = promptKeys.map(key => ({ key: `okr_agent_${key}`, stage: 'okr_agent', kind: 'system_prompt', name: key, content: `Test prompt ${key}`, description: `Regression ${key}` }))
 page.on('pageerror', error => errors.push(error.message))
@@ -32,6 +40,12 @@ await context.route('**/api/**', async route => {
     const backendPath = path === '/api/biz-okr/people/search' ? '/api/people/search' : path
     const response = await fetch(backend + backendPath + url.search, { method, headers: { 'content-type': request.headers()['content-type'] || 'application/json' }, body: method === 'GET' ? undefined : request.postDataBuffer() })
     const body = await response.text()
+    if (heldPlanList && method === 'GET' && path === '/api/biz-okr/plans') {
+      const held = heldPlanList
+      heldPlanList = undefined
+      held.started()
+      await held.releasePromise
+    }
     if (!response.ok && !expectedError) errors.push(`${method} ${path}: ${response.status} ${body}`)
     return route.fulfill({ status: response.status, contentType: 'application/json', body })
   }
@@ -39,6 +53,8 @@ await context.route('**/api/**', async route => {
   if (path === '/api/setup/bootstrap') return ok({ machine_configuration_ready: true })
   if (path === '/api/setup/status') return ok({ onboarding_required: false, runtime_id: 'okr-regression', app_ready: true, world_model_ready: true, configuration: { machine_configuration_ready: true, agent_name_configured: true }, lark: { available: true, app_id: 'cli_regression', credential_available: true, application_checks: [], bot: { status: 'ready', verified: true }, user: { status: 'ready', verified: true } }, agent: { available: true, authenticated: true } })
   if (path === '/api/agent-identity') return ok({ display_name: 'Regression' })
+  if (path === '/api/okr-chat/agents') return ok({ items: [] })
+  if (path === '/api/okr-chat/sessions') return ok({ items: [] })
   if (path === '/api/app-modules') return ok({ items: ['okr', 'biz-okr'].map(key => ({ key, is_enabled: true })) })
   if (path === '/api/web-config') return ok({ public_base_url: base })
   if (path === '/api/text-files') return ok({ items: prompts })
@@ -122,12 +138,18 @@ try {
     pass('Review and weekly export return document links; expired grant has readable feedback and allows retry')
   } else {
   const officialBefore = await api('/api/okr/board?quarter=2026-Q3')
-  await go('/biz-okr?tab=okr-plan&quarter=2026-Q4')
+  const stalePlanList = holdNextPlanList()
+  await page.goto(`${base}/#/biz-okr?tab=okr-plan&quarter=2026-Q4`)
+  await stalePlanList.started
   await page.getByRole('button', { name: '新建 Plan', exact: true }).click()
   assert.equal(await page.getByRole('button', { name: '确认新建', exact: true }).isDisabled(), true)
   await page.getByLabel('Plan 名称', { exact: true }).fill('Regression Plan')
   const plan = await write('/api/biz-okr/plans', () => page.getByRole('button', { name: '确认新建', exact: true }).click(), 201)
   planID = plan.id
+  await page.waitForFunction(id => document.querySelector('select[aria-label="选择 Plan"]')?.value === id, planID)
+  stalePlanList.release()
+  await page.waitForTimeout(100)
+  assert.equal(await page.getByLabel('选择 Plan', { exact: true }).inputValue(), planID)
   await page.getByRole('button', { name: '+ 新建 O', exact: true }).click()
   await page.getByLabel('目标名称', { exact: true }).fill('测试增长目标')
   const withObjective = await write(`/api/biz-okr/plans/${planID}/objectives`, () => page.getByRole('button', { name: '创建目标', exact: true }).click(), 201)
@@ -234,6 +256,32 @@ try {
   assert.equal(await page.locator('.app-sider').count(), 0)
   assert.equal(await page.getByLabel('KR 内容', { exact: true }).inputValue(), '提高有效转化率')
   pass('Plan share deep link, AI review route and no changes to official OKR')
+
+  await go('/biz-okr?tab=regional-alignment&quarter=2026-Q4&region=eu')
+  await page.getByRole('heading', { name: 'Emily · 区域 OKR 对齐', exact: true }).waitFor()
+  const menatBoard = page.waitForResponse(response => new URL(response.url()).pathname === '/api/biz-okr/regional-alignments/menat/board')
+  await page.getByRole('button', { name: 'MENAT', exact: true }).click()
+  await menatBoard
+  const euBoard = page.waitForResponse(response => new URL(response.url()).pathname === '/api/biz-okr/regional-alignments/eu/board')
+  await page.getByRole('button', { name: 'EU', exact: true }).click()
+  await euBoard
+  await page.getByRole('button', { name: '新增需求 / Add requirement', exact: true }).click()
+  const demandPath = '/api/biz-okr/regional-alignments/eu/demands'
+  const demand = await write(demandPath, () => page.getByLabel('区域 OKR / Regional OKR', { exact: true }).last().fill('区域回归目标'), 201)
+  await write(`${demandPath}/${demand.id}`, () => page.getByLabel('具体需求 / Detailed requirement', { exact: true }).last().fill('区域回归需求'))
+  await page.getByRole('button', { name: '💬 评论 / Comments', exact: true }).click()
+  const regionalComments = page.locator('aside[aria-hidden="false"]')
+  await regionalComments.getByPlaceholder('对当前区域对齐页发表评论，输入 @ 选择提醒人…').fill('区域对齐回归评论')
+  await write('/api/biz-okr/regional-alignments/eu/comments', () => regionalComments.getByRole('button', { name: '发布评论', exact: true }).click(), 201)
+  await regionalComments.getByText('区域对齐回归评论', { exact: true }).waitFor()
+  await regionalComments.getByRole('button', { name: '关闭评论', exact: true }).click()
+  page.once('dialog', dialog => dialog.accept())
+  await write(`${demandPath}/${demand.id}`, () => page.getByRole('button', { name: '删除 / Delete', exact: true }).last().click())
+  assert(!(await api('/api/biz-okr/regional-alignments/eu/board?quarter=2026-Q4')).demands.some(item => item.id === demand.id))
+  await page.getByRole('button', { name: '分享页面 / Share', exact: true }).click()
+  await page.getByText('区域 OKR 对齐页链接已复制 / Link copied', { exact: true }).waitFor()
+  assert((await page.evaluate(() => navigator.clipboard.readText())).includes('tab=regional-alignment'))
+  pass('Regional alignment region switch, demand create/edit/delete, scoped comment and share link')
 
   await go('/biz-okr?tab=review-fill&quarter=2026-Q3&week=2026-W36')
   await page.getByLabel('周次', { exact: true }).waitFor()
@@ -366,7 +414,7 @@ try {
   assert.equal(tasks.size, 4)
   for (const task of tasks.values()) assert.equal(task.source_payload.module, 'biz-okr')
   await page.getByRole('tab', { name: /Prompt/ }).click()
-  await page.locator('textarea').fill('修改后的评审 Prompt')
+  await page.getByRole('textbox', { name: 'plan_review Prompt' }).fill('修改后的评审 Prompt')
   await page.getByRole('button', { name: '保存并生效', exact: true }).click()
   await page.getByText(/已保存，后续评审/).waitFor()
   assert(prompts.some(prompt => prompt.content === '修改后的评审 Prompt'))

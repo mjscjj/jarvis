@@ -34,8 +34,10 @@ async function openApp(seed = {}, options = {}) {
   const requests = []
   const pending = []
   const controls = { hold: false, authError: false, total: 1 }
+  const okr = { authenticated: true, configured: true, management_access: true, user: { open_id: 'okr-visitor', name: 'OKR visitor' } }
+  const chatSession = { id: 'cs_test', title: '测试对话', agent: 'codex', model: 'test', reasoning_effort: 'medium', sources: [], draft: {}, archived: false, messages: [], pending_attachments: [], created_at: new Date().toISOString(), updated_at: new Date().toISOString() }
   if (!options.realModule) {
-    await page.route(/\/src\/(Chat|Plugins)\.tsx/, route => route.fulfill({ contentType: 'application/javascript', body: 'export default function Page(){return null}' }))
+    await page.route(options.realChat ? /\/src\/Plugins\.tsx/ : /\/src\/(Chat|Plugins)\.tsx/, route => route.fulfill({ contentType: 'application/javascript', body: 'export default function Page(){return null}' }))
     await page.route(/\/src\/okr\/OKRModule\.tsx/, route => route.fulfill({ contentType: 'application/javascript', body: `
       import React from '${reactPath}';
       import IdentityBoundary from '/src/okr/IdentityBoundary.tsx';
@@ -46,6 +48,17 @@ async function openApp(seed = {}, options = {}) {
   await page.route('**/api/**', async route => {
     const path = new URL(route.request().url()).pathname
     requests.push(path)
+    if (['/api/auth/logout', '/api/biz-okr/auth/logout'].includes(path)) {
+      assert.equal(route.request().method(), 'POST')
+      Object.assign(auth, { status: 'unauthenticated', user: undefined })
+      Object.assign(okr, { authenticated: false, user: undefined })
+      await route.fulfill({ json: { code: 0, data: { ...auth, logged_out: true } } })
+      return
+    }
+    if (/^\/api\/(okr-chat|chat)\/sessions\/cs_test$/.test(path) && route.request().method() === 'PATCH') {
+      await route.fulfill({ json: { code: 0, data: { ...chatSession, ...route.request().postDataJSON() } } })
+      return
+    }
     assert.equal(route.request().method(), 'GET', `Unexpected mutation: ${path}`)
     if (['/api/tasks', '/api/debug/failures', '/api/plugin-installations'].includes(path) && auth.enabled && !auth.user) {
       errors.push(`Unexpected guest request: ${path}`)
@@ -68,7 +81,14 @@ async function openApp(seed = {}, options = {}) {
     else if (path === '/api/app-modules') data = { items: ['okr', 'biz-okr'].map(key => ({ key, is_enabled: true })) }
     else if (path === '/api/plugin-installations') {
       data = { items: [{ id: 'product', name: '产品管理', kind: 'collector', enabled: true }] }
-    } else if (path === '/api/biz-okr/me') data = { authenticated: true, configured: true, management_access: true, user: { open_id: 'okr-visitor', name: 'OKR visitor' } }
+    } else if (path === '/api/biz-okr/me') data = { ...okr }
+    else if (/^\/api\/(okr-chat|chat)\//.test(path)) {
+      if (path.endsWith('/agents')) data = { items: [{ id: 'codex', name: 'Test', available: true, default: true }] }
+      else if (path.endsWith('/models')) data = { items: [{ id: 'test', name: 'Test', default: true, reasoning_efforts: ['medium'], default_reasoning_effort: 'medium' }] }
+      else if (path.endsWith('/sessions')) data = { items: [chatSession] }
+      else if (path.endsWith('/sessions/cs_test')) data = chatSession
+      else throw new Error(`Unexpected chat request: ${path}`)
+    }
     else if (path === '/api/biz-okr/plans') data = { quarter: new URL(route.request().url()).searchParams.get('quarter'), available_quarters: ['2026-Q4'], plans: [] }
     else if (path === '/api/okr/enums') data = { statuses: ['on_track'], point_kinds: ['strategy', 'product'], lights: ['green'] }
     else if (path === '/api/tasks') data = { items: [], total: controls.total }
@@ -91,7 +111,7 @@ async function openApp(seed = {}, options = {}) {
     console.error(JSON.stringify({ errors, body: await page.locator('body').innerText() }))
     throw error
   }
-  return { page, context, errors, auth, requests, pending, controls }
+  return { page, context, errors, auth, okr, requests, pending, controls }
 }
 
 function title(page, label) {
@@ -235,7 +255,7 @@ try {
   const resumed = signedIn.page.waitForRequest(request => new URL(request.url()).pathname === '/api/plugin-installations')
   await recover(signedIn.page)
   await resumed
-  await signedIn.page.getByRole('button', { name: 'Jarvis：正在执行 2 个任务，点击查看版本与更新' }).waitFor()
+  await signedIn.page.getByRole('button', { name: /^Jarvis：正在执行 2 个任务，/ }).waitFor()
   await title(signedIn.page, '系统').locator('.ant-badge-status-error').waitFor()
   await signedIn.page.getByText('产品管理', { exact: true }).waitFor()
   signedIn.controls.authError = true
@@ -245,6 +265,49 @@ try {
   assert.equal(await signedIn.page.evaluate(() => window.draftMounts), mounts)
   assert.deepEqual(signedIn.errors, [])
   await signedIn.context.close()
+
+  for (const username of ['chujiejie.1', 'lixiaolin']) {
+    const app = await openApp({}, { realChat: true, auth: { enabled: true, status: 'authenticated', user: { username, email: `${username}@example.test` } } })
+    const dock = app.page.getByRole('textbox', { name: '底部对话输入' })
+    await dock.waitFor()
+    await app.page.waitForFunction(() => !document.querySelector('[aria-label="底部对话输入"]').disabled)
+    assert(app.requests.includes('/api/chat/sessions'))
+    assert(!app.requests.some(path => path.startsWith('/api/okr-chat/')))
+    assert.equal(await app.page.getByText('使用字节身份登录普通对话').count(), 0)
+    const switchIdentity = async (username) => {
+      Object.assign(app.auth, { status: username ? 'authenticated' : 'unauthenticated', user: username ? { username, email: `${username}@example.test` } : undefined })
+      app.okr.user = { open_id: username || 'ordinary', union_id: username || 'ordinary', name: username || '普通用户' }
+      await app.page.evaluate(user => window.dispatchEvent(new CustomEvent('jarvis:okr-auth-changed', { detail: { authenticated: true, user: { openId: user.open_id, unionId: user.union_id } } })), app.okr.user)
+    }
+    await dock.fill('上一账号未发送的草稿')
+    const isolatedSession = app.page.waitForResponse(response => response.url().includes('/api/okr-chat/sessions/cs_test'))
+    await switchIdentity(undefined)
+    await isolatedSession
+    await app.page.waitForFunction(() => document.querySelector('[aria-label="底部对话输入"]')?.value === '')
+    const principalSession = app.page.waitForResponse(response => response.url().includes('/api/chat/sessions/cs_test'))
+    await switchIdentity(username)
+    await principalSession
+    await dock.waitFor()
+    if (username === 'chujiejie.1') {
+      await app.page.getByRole('button', { name: '退出', exact: true }).click()
+    } else {
+      await app.page.getByRole('button', { name: `${username}，打开账号菜单` }).click()
+      await app.page.locator('.account-menu button').filter({ hasText: '退出登录' }).click()
+    }
+    await app.page.getByRole('heading', { name: '登录 OKR' }).waitFor()
+    await dock.waitFor({ state: 'detached' })
+    assert.equal(await dock.count(), 0)
+    assert(!app.requests.includes('/api/auth/login'))
+    await app.page.getByRole('button', { name: '使用飞书登录', exact: true }).waitFor()
+    await switchIdentity(username)
+    app.okr.authenticated = true
+    await app.page.evaluate(() => location.hash = '/chat')
+    await app.page.locator('.chat-workspace').waitFor()
+    assert(!app.requests.includes('/api/auth/login'))
+    assert.deepEqual(app.errors, [])
+    await app.context.close()
+  }
+  console.log('PASS: both principals use ordinary chat; account switches reset drafts; either logout clears both surfaces; OKR re-login restores main access')
 
   const unprotected = await openApp({}, { clock: true })
   await unprotected.page.waitForFunction(() => document.querySelector('.agent-activity-icon')?.dataset.state === 'running')
@@ -257,6 +320,9 @@ try {
   assert.deepEqual(unprotected.errors, [])
   await unprotected.context.close()
   console.log(JSON.stringify({ result: 'passed', checks: ['OKR visitor and shared report skip principal reads', 'no misleading guest activity state', 'principal identity enables background data', 'identity loss cancels reads and timers', 'stale responses ignored', 'identity recovery restarts reads', 'identity failure preserves module draft', 'authentication-disabled installations keep polling'] }))
+} catch (error) {
+  for (const context of browser.contexts()) for (const page of context.pages()) console.error(await page.locator('body').innerText())
+  throw error
 } finally {
   await browser.close()
 }
