@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""Run this checkout as an independent instance; share only OKR product files."""
+"""Run this checkout independently without rearranging the shared OKR directory."""
 import argparse
 import os
 from pathlib import Path
@@ -13,6 +13,12 @@ ROOT = Path(__file__).resolve().parent.parent
 PRODUCT_FILES = {
     'okr.db', 'okr.db-wal', 'okr.db-shm', 'okr.db-journal', 'assets', 'activity',
     'legacy-owner-identities.json', 'translation-glossary.json',
+}
+# Preserve these host entries in place. Only their container view is replaced
+# with private development state; the main service keeps its original paths.
+PRIVATE_ENTRIES = {
+    'feishu-tokens': 'directory', 'backups': 'directory',
+    'agent-session': 'file', 'directory-cache.json.user': 'file',
 }
 
 
@@ -60,10 +66,14 @@ def initialize(root, public_url, principal):
 def validate_product_dir(directory):
     if not (directory/'okr.db').is_file():
         raise ValueError('shared OKR directory must contain the live okr.db')
-    unexpected = {p.name for p in directory.iterdir()} - PRODUCT_FILES
+    unexpected = {p.name for p in directory.iterdir()} - PRODUCT_FILES - PRIVATE_ENTRIES.keys()
     if unexpected:
-        raise ValueError('move private/runtime files out of shared OKR directory first: '
+        raise ValueError('unclassified shared OKR entries; review before mounting: '
                          + ', '.join(sorted(unexpected)))
+    for name, kind in PRIVATE_ENTRIES.items():
+        path = directory/name
+        if path.exists() and ((kind == 'directory') != path.is_dir()):
+            raise ValueError('unexpected private OKR entry type: ' + name)
     if any(p.is_symlink() for p in directory.rglob('*')):
         raise ValueError('shared OKR product files must not link to other directories')
 
@@ -87,6 +97,9 @@ def container_args(root, shared, state, ingress, lark, byted, goroot, env_file=N
     # never its parent repository. A normal directory needs no host-path alias.
     target = str(shared) if (root/'data/okr').is_symlink() else '/opt/jarvis/data/okr'
     mount(shared, target)
+    for name in PRIVATE_ENTRIES:
+        if (shared/name).exists():
+            mount(state/'okr-private'/name, f'{target}/{name}')
     mount(state, '/dev-state')
     mount(ingress, '/run/emily-web')
     mount(goroot, '/opt/go', True)
@@ -101,7 +114,7 @@ def main():
     parser.add_argument('--initialize', action='store_true', help='create fresh instance config, then exit')
     parser.add_argument('--public-url', help='public URL for initialization, e.g. https://example.com/dev/')
     parser.add_argument('--principal', help='development owner email/SSO username for initialization')
-    parser.add_argument('--okr-data', type=Path, help='shared product-only OKR directory')
+    parser.add_argument('--okr-data', type=Path, help='existing shared OKR directory, left intact')
     parser.add_argument('--env-file', type=Path, help='development secrets only; never the main instance environment')
     parser.add_argument('--deploy', action='store_true', help='build/restart this instance after starting the container')
     parser.add_argument('--dry-run', action='store_true', help='validate inputs and print mounts without changing state')
@@ -143,6 +156,18 @@ def main():
         return
     for directory in (state/'home', state/'go-mod', ingress, ROOT/'var/log'):
         directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    private = state/'okr-private'
+    private.mkdir(parents=True, exist_ok=True, mode=0o700)
+    for name, kind in PRIVATE_ENTRIES.items():
+        if not (shared/name).exists():
+            continue
+        path = private/name
+        if kind == 'directory':
+            path.mkdir(exist_ok=True, mode=0o700)
+        elif not path.exists():
+            with path.open('x') as file:
+                os.chmod(path, 0o600)
+                file.write('{}' if name.startswith('directory-cache') else '')
     run(['docker', 'build', '-t', 'emily-development:local', ROOT/'deploy/emily-dev'])
     existing = output(['docker', 'ps', '-aq', '--filter', 'name=^emily-development$'])
     if existing:

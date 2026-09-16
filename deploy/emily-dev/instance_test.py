@@ -17,18 +17,21 @@ class InstanceIsolationTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
 
-    def test_shared_directory_accepts_live_sqlite_sidecars_but_not_private_state(self):
+    def test_shared_directory_preserves_known_private_entries(self):
         (self.root/'okr.db').touch()
         (self.root/'okr.db-wal').touch()
         (self.root/'assets').mkdir()
         dev['validate_product_dir'](self.root)
-        for name in ('feishu-tokens', 'directory-cache.json.user', 'agent-session', 'backups'):
-            with self.subTest(name=name):
-                private = self.root/name
-                private.touch()
-                with self.assertRaisesRegex(ValueError, 'private/runtime'):
-                    dev['validate_product_dir'](self.root)
-                private.unlink()
+        for name, kind in dev['PRIVATE_ENTRIES'].items():
+            path = self.root/name
+            path.mkdir() if kind == 'directory' else path.write_text('private sentinel')
+        dev['validate_product_dir'](self.root)
+        self.assertEqual((self.root/'agent-session').read_text(), 'private sentinel')
+        unknown = self.root/'unknown-private-state'
+        unknown.touch()
+        with self.assertRaisesRegex(ValueError, 'unclassified'):
+            dev['validate_product_dir'](self.root)
+        unknown.unlink()
         (self.root/'assets'/'private-link').symlink_to('/tmp')
         with self.assertRaisesRegex(ValueError, 'must not link'):
             dev['validate_product_dir'](self.root)
@@ -50,6 +53,21 @@ class InstanceIsolationTests(unittest.TestCase):
                                        Path('/ingress'), Path('/bin/lark-cli'),
                                        Path('/lib/bytedcli'), Path('/lib/go'))
         self.assertIn(f'type=bind,src={shared},dst={shared}', linked)
+
+    def test_private_overmounts_do_not_read_or_move_host_state(self):
+        shared = self.root/'shared'
+        shared.mkdir()
+        (shared/'okr.db').touch()
+        for name, kind in dev['PRIVATE_ENTRIES'].items():
+            path = shared/name
+            path.mkdir() if kind == 'directory' else path.write_text('host secret')
+        state = self.root/'var/container'
+        args = dev['container_args'](self.root, shared, state, Path('/ingress'),
+                                     Path('/bin/lark-cli'), Path('/lib/bytedcli'), Path('/lib/go'))
+        for name in dev['PRIVATE_ENTRIES']:
+            self.assertIn(f'type=bind,src={state}/okr-private/{name},dst=/opt/jarvis/data/okr/{name}', args)
+        self.assertEqual((shared/'agent-session').read_text(), 'host secret')
+        self.assertFalse(state.exists())
 
     def test_initialize_uses_defaults_and_refuses_to_overwrite_local_config(self):
         conf = self.root/'conf'

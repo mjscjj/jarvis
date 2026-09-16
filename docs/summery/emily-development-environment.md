@@ -3,8 +3,7 @@
 代码与 OKR-MVP 使用同一套实现。分支只承载尚未合入的功能；环境差异属于
 本机配置、容器 HOME 和数据目录，不维护开发版业务逻辑。
 
-本文描述整理后的代码和切换步骤，不代表当前运行容器已经完成迁移。
-旧容器在完成下述数据整理、独立授权和重新部署之前仍使用原来的挂载。
+本文描述已经运行的开发实例及其可复现切换步骤。2026-09-16 已完成容器迁移。
 
 ## 数据与身份
 
@@ -12,13 +11,20 @@
 |---|---|
 | `data/okr/okr.db`、SQLite sidecar、`assets/`、`activity/`、Owner 映射和术语表 | 唯一共享的业务数据目录，两边读写同一份 |
 | `var/development.db`、普通 Chat、OKR Chat、附件、Task、Message、世界模型、日志 | 各实例私有，不从主环境导入 |
-| Lark、ByteDance、Codex 配置及凭证 | 各实例 HOME 内独立授权，不挂载主环境登录文件 |
-| OKR 网页用户 Token、通讯录缓存 | 各实例 `var/okr/`，不进入共享目录 |
+| Lark、ByteDance 配置及凭证 | 开发实例 HOME 独立授权，不挂载主环境登录文件 |
+| Codex 配置及凭证 | 按用户决定从主环境复制一次，随后在开发 HOME 独立保存，不做运行时挂载 |
+| 开发 OKR 网页用户 Token、通讯录缓存 | 开发实例 `var/okr/`；主环境既有路径不变 |
 | CLI 可执行程序、Go 工具链 | 可只读复用程序文件，不复用身份配置 |
 
 同名 CLI、Profile 和容器内路径不会导致身份共享。开发实例 HOME 是
 `/dev-state/home`，对应当前 checkout 的 `var/container/home`。
 不再使用旧的宿主 `var/emily-development/home`，其中可能遗留复制的模型凭证。
+
+共享 OKR 目录整体保持原样，不拆分、不迁移、不清理；需要备份时完整备份。
+其中遗留的 `feishu-tokens/`、`backups/`、`agent-session`、
+`directory-cache.json.user` 只在开发容器内覆盖为开发自己的空目录/文件
+（持久化于 `var/container/okr-private/`）。这不改动宿主文件，也不改变主服务路径。
+未知目录项仍需先核对，不能把未知私有文件直接暴露给开发容器。
 
 容器使用普通 Docker bridge 网络，不运行出口网关、域名白名单或宿主 CLI 代理。
 镜像直接基于 Node，不继承单轮 OKR Chat 镜像的 HTTP(S) 代理变量。
@@ -69,14 +75,14 @@ server:
 后台采集和自动任务初始关闭，可以按开发需要启用，不作为工具权限限制。
 
 在本机 `okr-module.runtime.yaml` 配置开发 Lark App、Profile、网页身份和
-`identity.app_secret_env`，密钥放在开发专用环境文件中。不得复制主实例的
-App Secret、principal、Profile 配置或用户 Token。开发负责人信息按既有配置
-入口设置，不能沿用主实例的 open_id。
+`identity.app_secret_env`，密钥放在开发专用环境文件中。Lark 用户与 ByteDance
+身份在开发 HOME 独立授权；开发 principal 使用该 Lark 用户的 open_id，不沿用
+主实例 principal。若用户明确选择复用 Codex 授权，只做一次文件复制，不增加主目录挂载。
 
 启动前检查共享目录和挂载：
 
 ```bash
-./scripts/emily-dev --okr-data /absolute/product-only/okr \
+./scripts/emily-dev --okr-data /absolute/existing/okr \
   --env-file /absolute/development.env --dry-run
 ```
 
@@ -95,26 +101,16 @@ HOME、开发数据库、会话和日志均持久化在开发 checkout 的 `var/
 
 ## 从旧环境切换
 
-代码整理与运行迁移分开进行。切换前备份两边本机配置，保留现有功能改动和
-运行数据；不要用 Git checkout/restore 把快照写回共享 SQLite。
+仅操作开发环境。主环境不备份、不改配置、不迁数据、不重启。
 
-1. 主环境保留既有 App/授权。把主环境 OKR 用户 Token、`directory-cache*`、
-   `agent-session` 和备份移入主环境自己的 `var/okr/`，同步实际消费者的路径。
-   将主环境 `identity.token_dir` 改为 `var/okr/feishu-tokens`；通讯录缓存自动
-   随该目录定位。`agent-session` 等无仓库消费者的遗留文件先归档，不删除。
-   迁移 Token 与修改配置需在停写窗口内完成，避免丢失新授权。
-2. 保持业务数据库和资源原地不动。共享目录只允许业务文件及 SQLite sidecar；
-   启动脚本发现 Token、缓存、其他未知文件或资源软链接会拒绝启动。
-   挂载整个业务目录，不能单独 bind SQLite 文件，避免 WAL 和文件替换问题。
-3. 公共代码合入主分支后，主环境解除 `development_container` 绑定，配置 `runtime: docker`，仍使用
-   主环境自己的会话库和原有隔离执行方式。部署主服务统一使用
-   `./scripts/jarvis-deploy --skip-pull`，先确认没有应继续运行的任务/对话。
-4. 备份开发实例原来从主环境生成的三份配置，再初始化独立配置。既有
-   `var/development.db` 保留；检查其中的旧身份设置并按开发身份调整。
-   使用新的 `var/container/home`，不复制旧 HOME 中的凭证。
-5. 完成开发独立授权并重建容器，确认开发页面全部 API 请求走自身前缀。
-   切换后停用旧 `emily-development-gateway.service`；历史文件可以归档，
-   不把主环境的聊天历史搬进开发环境。
+1. OKR 原目录保持不变，开发容器以私有覆盖挂载隐藏上述遗留非业务文件。
+   挂载整个目录，不单独 bind SQLite 文件，避免 WAL 和文件替换问题。
+2. 保留开发 `var/development.db`，只调整开发的本机配置；清除继承的主身份和
+   审批回调绑定。使用新的 `var/container/home`，不复制旧 HOME 或主账号凭证。
+3. 先在临时授权容器中完成独立 Lark、ByteDance 登录及用户选择的 Codex 授权方式，
+   HOME 使用同一份开发 `var/container/home`。授权前保留旧开发服务，不提前造成停机。
+4. 授权后替换开发容器，启用本地 OKR Chat 并通过标准部署脚本重启开发服务。
+   检查网页、聊天、身份、共享 OKR 和主私有文件不可见；不向开发搬主聊天历史。
 
 ## 共享数据与 Git
 
@@ -122,7 +118,7 @@ OKR 业务数据仍从 OKR-MVP worktree 提交一致快照及同批资源，不�
 宿主开发 worktree 如需读取同一份文件，可显式建立链接：
 
 ```bash
-./scripts/emily-share-okr-data --source /absolute/product-only/okr
+./scripts/emily-share-okr-data --source /absolute/existing/okr
 ```
 
 该脚本只管理当前 worktree 的链接与 Git 忽略规则，不移动或恢复源目录的数据。
@@ -133,18 +129,19 @@ OKR 业务数据仍从 OKR-MVP worktree 提交一致快照及同批资源，不�
 ## 验证
 
 - `python3 -m unittest discover -s deploy/emily-dev -p '*_test.py'`：初始化不继承
-  主身份、不覆盖既有配置、共享目录排除私人文件、网络与挂载边界。
+  主身份、不覆盖既有配置、私有覆盖不改宿主文件、网络与挂载边界。
 - `go test ./internal/okrchat ./internal/chat ./internal/okrworkspace/moduleconfig ./cmd/jarvis-config`：
   本地执行、实例间数据分离、会话/附件归属、取消和历史恢复、配置校验。
-- 前端类型检查和业务测试：保留区域分享、评论浏览及提醒功能；浏览器实测在
-  新授权和运行迁移后进行，不能用单元测试替代真实登录验证。
+- 前端类型检查和业务测试：保留区域分享、评论浏览及提醒功能；授权与运行状态
+  通过容器回读验证，不能用单元测试代替。
 
 2026-09-16 代码整理验证：196 项前端测试、类型检查、4 项部署/验收入口测试通过；
 `internal/okrchat`、`internal/chat`、`internal/okrworkspace/moduleconfig`、
 `cmd/jarvis-config` 测试通过，服务入口编译检查通过。工具目录相关测试通过；
 完整工具目录测试中的两项宿主安装集成测试在旧容器中仍受 Git 元数据隐藏、
 systemd/旧 CLI 包装环境限制，不记作全量 Go 测试通过。
-新镜像 `emily-development:isolation-check` 构建成功；临时 bridge 容器可运行
-原生 Lark CLI 1.0.93、ByteDance CLI 0.144.0，且没有主凭证和旧代理变量。
-直连 npm 得到 HTTP 200，飞书站点返回 HTTP 404（仅证明 HTTPS 可达，不代表
-授权或 API 功能通过）。未替换运行中的容器，未改主环境配置或实时 OKR 数据。
+运行容器已切换为 bridge 网络；Lark CLI 1.0.93 用户为储节节且 token 有效，
+ByteDance CLI 0.144.0 的 `i18n-tt` 身份就绪，Codex 登录可用。直连 npm 返回
+HTTP 200，开发服务 health/ready、主站 `/dev/` 代理及本地 OKR Chat 路由均已回读。
+共享 OKR 数据库与主环境为同一 inode；主聊天会话、附件、主凭证和旧出口 socket
+均未挂载。旧开发网关已停用，主服务 PID 未变化。
