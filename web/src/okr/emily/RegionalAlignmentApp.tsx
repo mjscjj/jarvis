@@ -507,6 +507,9 @@ export default function RegionalAlignmentApp({ initialQuarter, initialRegion, in
     }
   }, [quarter, region])
   const copyShare = async () => {
+    // Sharing is independent from any earlier load/save failure. Do not let a
+    // stale workspace error replace the share result while showing its link.
+    setError('')
     setShareNotice('')
     setShareLink('')
     let link: string
@@ -556,7 +559,8 @@ export default function RegionalAlignmentApp({ initialQuarter, initialRegion, in
     <main className={`mx-auto max-w-[1480px] space-y-6 px-4 py-5 sm:px-6 lg:px-8 ${commentsOpen ? 'lg:pr-[420px]' : ''}`}>
       {savedNotice && <div role="status" className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-medium text-emerald-700 shadow-sm">✓ {savedNotice}</div>}
       {refreshNotice && <div role="status" className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-xs font-medium text-blue-700 shadow-sm">↻ {refreshNotice}</div>}
-      {(shareNotice || error) && <div role={error ? 'alert' : 'status'} className={`rounded-xl border px-4 py-3 text-xs ${error ? 'border-red-200 bg-red-50 text-red-700' : 'border-blue-100 bg-blue-50 text-blue-700'}`}>{error || shareNotice}{shareLink && <input aria-label="分享链接 / Share link" readOnly value={shareLink} onFocus={(event) => event.currentTarget.select()} onClick={(event) => event.currentTarget.select()} className="mt-2 h-9 w-full rounded-lg border border-blue-200 bg-white px-3" />}</div>}
+      {error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs text-red-700">{error}</div>}
+      {(shareNotice || shareLink) && <div role="status" className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs text-blue-700">{shareNotice}{shareLink && <input aria-label="分享链接 / Share link" readOnly value={shareLink} onFocus={(event) => event.currentTarget.select()} onClick={(event) => event.currentTarget.select()} className="mt-2 h-9 w-full rounded-lg border border-blue-200 bg-white px-3" />}</div>}
       <nav className="flex min-w-0 gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1 shadow-sm">{REGIONS.map((item) => <button key={item.code} type="button" onClick={() => setRegion(item.code)} className={`min-w-24 flex-1 rounded-lg px-4 py-2.5 text-xs font-semibold transition ${region === item.code ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'}`}>{item.label}</button>)}</nav>
       {loading ? <div className="rounded-2xl border border-slate-200 bg-white py-24 text-center text-sm text-slate-400">正在加载区域对齐数据… / Loading…</div> : board ? <CommentInteractionProvider value={{ enabled: true, triggerMode: 'button', selected: commentTarget, focused: focusedComment, comments, counts: commentCounts, setPendingSelection: () => undefined, select: openComments }}>
         <div className="space-y-6">

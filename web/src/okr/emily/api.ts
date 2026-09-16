@@ -134,8 +134,8 @@ interface APIRegionalDemand {
   docs: Entry['docs']
   images: ImageRef[]
   priority: '' | KrPriority
-  regional_pocs: Array<{ email: string; name: string }>
-  platform_pocs: Array<{ email: string; name: string }>
+  regional_pocs: Array<{ email: string; name: string }> | null
+  platform_pocs: Array<{ email: string; name: string }> | null
   acceptance: 'yes' | 'no' | 'tbd'
   plan_kr_ids: string[]
   deliverable: string
@@ -147,7 +147,7 @@ interface APIRegionalDecision {
   version: number
   onboard: '' | 'yes' | 'no'
   launch_regions: string[]
-  regional_pocs: Array<{ email: string; name: string }>
+  regional_pocs: Array<{ email: string; name: string }> | null
   regional_okr: string
   hidden: boolean
 }
@@ -733,7 +733,7 @@ export async function listOKRPlans(quarter = ''): Promise<OKRPlanList> {
 }
 
 function fromAPIRegionalDemand(value: APIRegionalDemand): RegionalDemand {
-  const owners = (items: Array<{ email: string; name: string }> = []) => items.map((item) => ({ email: item.email, name: item.name }))
+  const owners = (items: Array<{ email: string; name: string }> | null | undefined) => (items ?? []).map((item) => ({ email: item.email, name: item.name }))
   return { id: value.id, version: value.version, regionalOkr: value.regional_okr, item: value.item, requirement: value.requirement, docs: value.docs ?? [], images: value.images ?? [], priority: value.priority, regionalPocs: owners(value.regional_pocs), platformPocs: owners(value.platform_pocs), acceptance: value.acceptance, planKrIds: value.plan_kr_ids ?? [], deliverable: value.deliverable, sortOrder: value.sort_order }
 }
 
