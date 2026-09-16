@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { buildCommentDocumentOrder, buildCommentOKRContextIndex, commentCountsByTarget, commentMatchesTarget, commentOKRContext, commentTargetFromThread, commentTargetKey, findCommentTargetLocation, groupCommentsByTarget, sortCommentsByDocumentOrder } from '../src/okr/emily/comments.ts'
+import { buildCommentDocumentOrder, buildCommentOKRContextIndex, commentCountsByTarget, commentMatchesTarget, commentOKRContext, commentTargetFromThread, commentTargetKey, findCommentTargetLocation, groupCommentsByTarget, sortCommentsByDocumentOrder, todayCommentReviewItems } from '../src/okr/emily/comments.ts'
 import { insertCommentMention, mentionQueryAtCaret, mentionsPresentInContent } from '../src/okr/emily/mentions.ts'
 import type { Objective, PageComment } from '../src/okr/emily/types.ts'
 
@@ -220,6 +220,48 @@ test('comments group by exact source and count every root and reply', () => {
   assert.equal(groups[0].messageCount, 3)
   assert.deepEqual(groups[1].comments.map((value) => value.id), ['selection'])
   assert.equal(groups[1].messageCount, 1)
+})
+
+test('today review includes new roots and replies from older threads in document order', () => {
+  const yesterdayRoot = placedComment('old-root', 'kr', 'kr-1', '2026-09-15T08:00:00')
+  const todayReply = placedComment('today-reply', 'kr', 'kr-1', '2026-09-16T09:30:00')
+  const editedYesterdayRoot = {
+    ...placedComment('edited-old-root', 'objective', 'o-1', '2026-09-15T10:00:00'),
+    updatedAt: '2026-09-16T10:00:00',
+  }
+  const resolvedTodayRoot = {
+    ...placedComment('resolved-today-root', 'objective', 'o-1', '2026-09-16T08:30:00'),
+    resolved: true,
+  }
+  const threadWithNewReply = { ...yesterdayRoot, replies: [todayReply] }
+  const nextMidnight = placedComment('tomorrow-root', 'page', 'page-1', '2026-09-17T00:00:00')
+
+  const items = todayCommentReviewItems(
+    [threadWithNewReply, nextMidnight, editedYesterdayRoot, resolvedTodayRoot],
+    buildCommentDocumentOrder(objectives),
+    new Date('2026-09-16T12:00:00'),
+  )
+
+  assert.deepEqual(items.map((item) => [item.thread.id, item.comment.id]), [
+    ['resolved-today-root', 'resolved-today-root'],
+    ['old-root', 'today-reply'],
+  ])
+})
+
+test('today review uses local calendar boundaries and ignores invalid timestamps', () => {
+  const before = placedComment('before', 'page', 'page-1', '2026-09-15T23:59:59')
+  const start = placedComment('start', 'page', 'page-1', '2026-09-16T00:00:00')
+  const end = placedComment('end', 'page', 'page-1', '2026-09-16T23:59:59')
+  const after = placedComment('after', 'page', 'page-1', '2026-09-17T00:00:00')
+  const invalid = placedComment('invalid', 'page', 'page-1', 'not-a-date')
+
+  const items = todayCommentReviewItems(
+    [after, invalid, end, before, start],
+    buildCommentDocumentOrder(objectives),
+    new Date(2026, 8, 16, 12),
+  )
+
+  assert.deepEqual(items.map((item) => item.comment.id), ['start', 'end'])
 })
 
 test('mention query follows the active at token at the caret', () => {

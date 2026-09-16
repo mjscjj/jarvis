@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useBoard } from './board'
 import { MeetingView } from './components/MeetingView'
 import { KrTable } from './components/Table'
-import { CommentDrawer } from './components/CommentDrawer'
+import { CommentDrawer, type CommentReviewMode } from './components/CommentDrawer'
 import { HelpFab } from './components/HelpFab'
 import { WeeklyFocus } from './components/WeeklyFocus'
 import { WeeklyTools } from './components/WeeklyTools'
@@ -65,7 +65,7 @@ export default function App({
 	const { dataset, view } = workspace
 	const { reset, syncState, objectives, quarter, week, availableWeeks, setWeek, setWeeklyScope, deleteWeeklyScope } = useBoard()
   const [commentsOpen, setCommentsOpen] = useState(Boolean(initialCommentId))
-  const [reviewingComments, setReviewingComments] = useState(false)
+  const [commentReviewMode, setCommentReviewMode] = useState<CommentReviewMode>()
   const [focusedComment, setFocusedComment] = useState<PageComment>()
   const [commentCount, setCommentCount] = useState(0)
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({})
@@ -134,7 +134,7 @@ export default function App({
 
   useEffect(() => {
 		setCommentTarget(undefined)
-		setReviewingComments(false)
+		setCommentReviewMode(undefined)
 		setFocusedComment(undefined)
 		setPendingCommentSelection(undefined)
 	}, [dataset, view])
@@ -179,7 +179,7 @@ export default function App({
   const openComments = (target?: CommentTarget) => {
     setPendingCommentSelection(undefined)
     window.getSelection()?.removeAllRanges()
-    setReviewingComments(false)
+    setCommentReviewMode(undefined)
     setFocusedComment(undefined)
     setCommentTarget(target)
     setCommentsOpen(true)
@@ -188,7 +188,7 @@ export default function App({
   const toggleComments = () => {
     if (commentsOpen) {
       setCommentsOpen(false)
-      setReviewingComments(false)
+      setCommentReviewMode(undefined)
       setFocusedComment(undefined)
       return
     }
@@ -329,7 +329,7 @@ export default function App({
             </div>
 			</> : <section className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center"><div className="text-sm font-semibold text-slate-700">当前季度暂无{lifecycleName}</div><div className="mt-1 text-xs text-slate-400">{managesWeeks ? `点击顶部“新建${lifecycleName}”创建一个空周。` : `请先在“${lifecycleName}填写”中新建一个空周。`}</div></section>}
 		</main>
-			{week && <CommentDrawer open={commentsOpen} reviewEnabled reviewing={reviewingComments} quarter={quarter} week={week} sourceTab={okrTabForWeeklyWorkspace(workspace)} objectives={objectives} followUpOrder={followUpCommentOrder} target={commentTarget} focusCommentId={initialCommentId} todoEnabled={meetingLike} onStartReview={() => { setCommentTarget(undefined); setReviewingComments(true) }} onShowAll={() => { setReviewingComments(false); setFocusedComment(undefined); setCommentTarget(undefined) }} onClose={() => { setCommentsOpen(false); setReviewingComments(false); setFocusedComment(undefined) }} onFocusCommentChange={setFocusedComment} onCountChange={setCommentCount} onCountsChange={setCommentCounts} onCommentsChange={setComments} />}
+			{week && <CommentDrawer open={commentsOpen} reviewEnabled reviewMode={commentReviewMode} quarter={quarter} week={week} sourceTab={okrTabForWeeklyWorkspace(workspace)} objectives={objectives} followUpOrder={followUpCommentOrder} target={commentTarget} focusCommentId={initialCommentId} todoEnabled={meetingLike} onStartReview={(mode) => { setCommentTarget(undefined); setCommentReviewMode(mode) }} onShowAll={() => { setCommentReviewMode(undefined); setFocusedComment(undefined); setCommentTarget(undefined) }} onClose={() => { setCommentsOpen(false); setCommentReviewMode(undefined); setFocusedComment(undefined) }} onFocusCommentChange={setFocusedComment} onCountChange={setCommentCount} onCountsChange={setCommentCounts} onCommentsChange={setComments} />}
 			<HelpFab />
     </div>
   )

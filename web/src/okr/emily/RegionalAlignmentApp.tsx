@@ -13,7 +13,7 @@ import {
   updateRegionalDemand,
 } from './api'
 import { CommentInteractionProvider, commentTargetElementId, scrollToCommentSource } from './commenting'
-import { CommentDrawer } from './components/CommentDrawer'
+import { CommentDrawer, type CommentReviewMode } from './components/CommentDrawer'
 import { FeishuPeoplePickerInput } from './components/FeishuPeoplePicker'
 import { PeopleInline } from './components/PeopleInline'
 import { Images, Links, usePastedImageUpload } from './components/ui'
@@ -417,7 +417,7 @@ export default function RegionalAlignmentApp({ initialQuarter, initialRegion, in
   const [shareNotice, setShareNotice] = useState('')
   const [shareLink, setShareLink] = useState('')
   const [commentsOpen, setCommentsOpen] = useState(Boolean(initialCommentId))
-  const [reviewingComments, setReviewingComments] = useState(false)
+  const [commentReviewMode, setCommentReviewMode] = useState<CommentReviewMode>()
   const [commentCount, setCommentCount] = useState(0)
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({})
   const [comments, setComments] = useState<PageComment[]>([])
@@ -535,7 +535,7 @@ export default function RegionalAlignmentApp({ initialQuarter, initialRegion, in
       setShareNotice(reason instanceof Error ? `自动复制失败：${reason.message}；请复制下方链接` : '自动复制失败，请复制下方链接 / Copy the link below')
     }
   }
-  const openComments = (target?: CommentTarget) => { setCommentTarget(target); setFocusedComment(undefined); setReviewingComments(false); setCommentsOpen(true) }
+  const openComments = (target?: CommentTarget) => { setCommentTarget(target); setFocusedComment(undefined); setCommentReviewMode(undefined); setCommentsOpen(true) }
 
   return <>
     <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur">
@@ -596,6 +596,6 @@ export default function RegionalAlignmentApp({ initialQuarter, initialRegion, in
         </div>
       </CommentInteractionProvider> : <div className="rounded-2xl border border-slate-200 bg-white py-24 text-center text-sm text-slate-400">暂无区域对齐数据 / No regional alignment data</div>}
     </main>
-    {board && <CommentDrawer open={commentsOpen} reviewEnabled reviewing={reviewingComments} quarter={quarter} alignmentId={board.alignment.id} alignmentRegion={region} sourceTab="regional-alignment" scopeLabel={`${REGIONS.find((item) => item.code === region)?.label} · ${quarter}`} objectives={[...board.plan.objectives, ...board.recap.objectives]} target={commentTarget} focusCommentId={initialCommentId} onStartReview={() => { setCommentTarget(undefined); setReviewingComments(true) }} onShowAll={() => { setCommentTarget(undefined); setFocusedComment(undefined); setReviewingComments(false) }} onClose={() => { setCommentsOpen(false); setCommentTarget(undefined); setFocusedComment(undefined); setReviewingComments(false) }} onFocusCommentChange={setFocusedComment} onCountChange={setCommentCount} onCountsChange={setCommentCounts} onCommentsChange={setComments} />}
+    {board && <CommentDrawer open={commentsOpen} reviewEnabled reviewMode={commentReviewMode} quarter={quarter} alignmentId={board.alignment.id} alignmentRegion={region} sourceTab="regional-alignment" scopeLabel={`${REGIONS.find((item) => item.code === region)?.label} · ${quarter}`} objectives={[...board.plan.objectives, ...board.recap.objectives]} target={commentTarget} focusCommentId={initialCommentId} onStartReview={(mode) => { setCommentTarget(undefined); setCommentReviewMode(mode) }} onShowAll={() => { setCommentTarget(undefined); setFocusedComment(undefined); setCommentReviewMode(undefined) }} onClose={() => { setCommentsOpen(false); setCommentTarget(undefined); setFocusedComment(undefined); setCommentReviewMode(undefined) }} onFocusCommentChange={setFocusedComment} onCountChange={setCommentCount} onCountsChange={setCommentCounts} onCommentsChange={setComments} />}
   </>
 }

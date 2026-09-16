@@ -9,7 +9,9 @@
     "preview": "vite preview --host 127.0.0.1",
     "typecheck": "tsc -b --pretty false",
     "test": "node --experimental-strip-types --test test/*.test.ts",
-    "test:okr:real": "node test/okrRealPath.browser.mjs"
+    "test:okr:real": "node test/okrRealPath.browser.mjs",
+    "test:comments:serve": "vite --config test/vite.fixture.config.ts",
+    "test:comments:browser": "node test/okrTodayComments.browser.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "6.3.2",

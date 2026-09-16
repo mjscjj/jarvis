@@ -49,6 +49,11 @@ export function commentCountsByTarget(comments: PageComment[]) {
 
 export type CommentDocumentOrder = ReadonlyMap<string, number>
 
+export interface CommentReviewItem {
+  thread: PageComment
+  comment: PageComment
+}
+
 export interface CommentTargetLocation {
   objective: Objective
   kr?: Kr
@@ -133,6 +138,25 @@ export function sortCommentsByDocumentOrder(comments: readonly PageComment[], or
     }
     return commentCreatedOrder(left, right)
   })
+}
+
+// A today review is message-based rather than thread-based: a reply created
+// today must remain discoverable even when its root thread is older. The
+// browser's local calendar matches the date semantics already used by the
+// comment timestamps in the drawer.
+export function todayCommentReviewItems(comments: readonly PageComment[], order: CommentDocumentOrder, now = new Date()): CommentReviewItem[] {
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).getTime()
+  const isToday = (comment: PageComment) => {
+    const createdAt = new Date(comment.createdAt).getTime()
+    return Number.isFinite(createdAt) && createdAt >= start && createdAt < end
+  }
+
+  return sortCommentsByDocumentOrder(comments, order).flatMap((thread) => (
+    [thread, ...thread.replies]
+      .filter(isToday)
+      .map((comment) => ({ thread, comment }))
+  ))
 }
 
 export function commentMatchesTarget(comment: PageComment, target: CommentTarget) {

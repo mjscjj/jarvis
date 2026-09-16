@@ -5,7 +5,7 @@ import { QuarterSelect } from './components/QuarterSelect'
 import { ManagementView } from './components/ManagementView'
 import { WeeklyShareNav } from './components/WeeklyShareNav'
 import { ActivityLogButton } from './components/ActivityLogButton'
-import { CommentDrawer } from './components/CommentDrawer'
+import { CommentDrawer, type CommentReviewMode } from './components/CommentDrawer'
 import { CommentInteractionProvider, commentTargetElementId, scrollToCommentSource, type PendingCommentSelection } from './commenting'
 import type { CommentTarget, PageComment } from './types'
 import { weeklyShareURLForTab, type WeeklyShareTab } from './share'
@@ -73,7 +73,7 @@ function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }:
   const [creatingPlan, setCreatingPlan] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [commentsOpen, setCommentsOpen] = useState(Boolean(initialCommentId))
-  const [reviewingComments, setReviewingComments] = useState(false)
+  const [commentReviewMode, setCommentReviewMode] = useState<CommentReviewMode>()
   const [focusedComment, setFocusedComment] = useState<PageComment>()
   const [commentCount, setCommentCount] = useState(0)
   const [commentCounts, setCommentCounts] = useState<Record<string, number>>({})
@@ -89,7 +89,7 @@ function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }:
 
   useEffect(() => {
     setCommentTarget(undefined)
-    setReviewingComments(false)
+    setCommentReviewMode(undefined)
     setFocusedComment(undefined)
     setPendingCommentSelection(undefined)
     setComments([])
@@ -120,7 +120,7 @@ function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }:
   const openComments = (target?: CommentTarget) => {
     setPendingCommentSelection(undefined)
     window.getSelection()?.removeAllRanges()
-    setReviewingComments(false)
+    setCommentReviewMode(undefined)
     setFocusedComment(undefined)
     setCommentTarget(target)
     setCommentsOpen(true)
@@ -129,7 +129,7 @@ function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }:
   const toggleComments = () => {
     if (commentsOpen) {
       setCommentsOpen(false)
-      setReviewingComments(false)
+      setCommentReviewMode(undefined)
       setFocusedComment(undefined)
       return
     }
@@ -296,7 +296,7 @@ function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }:
           </section>
         )}
       </main>
-      {plan && <CommentDrawer open={commentsOpen} reviewEnabled reviewing={reviewingComments} quarter={quarter} planId={plan.id} sourceTab="okr-plan" scopeLabel={plan.title} objectives={plan.objectives} target={commentTarget} focusCommentId={initialCommentId} onStartReview={() => { setCommentTarget(undefined); setReviewingComments(true) }} onShowAll={() => { setReviewingComments(false); setFocusedComment(undefined); setCommentTarget(undefined) }} onClose={() => { setCommentsOpen(false); setReviewingComments(false); setFocusedComment(undefined) }} onFocusCommentChange={setFocusedComment} onCountChange={setCommentCount} onCountsChange={setCommentCounts} onCommentsChange={setComments} />}
+      {plan && <CommentDrawer open={commentsOpen} reviewEnabled reviewMode={commentReviewMode} quarter={quarter} planId={plan.id} sourceTab="okr-plan" scopeLabel={plan.title} objectives={plan.objectives} target={commentTarget} focusCommentId={initialCommentId} onStartReview={(mode) => { setCommentTarget(undefined); setCommentReviewMode(mode) }} onShowAll={() => { setCommentReviewMode(undefined); setFocusedComment(undefined); setCommentTarget(undefined) }} onClose={() => { setCommentsOpen(false); setCommentReviewMode(undefined); setFocusedComment(undefined) }} onFocusCommentChange={setFocusedComment} onCountChange={setCommentCount} onCountsChange={setCommentCounts} onCommentsChange={setComments} />}
     </>
   )
 }
