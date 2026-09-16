@@ -53,6 +53,7 @@ class InstanceIsolationTests(unittest.TestCase):
         self.assertEqual(config['auth']['principals'], ['developer@example.test'])
         self.assertFalse(config['capture']['enabled'])
         self.assertNotIn('sqlite', config)
+        self.assertEqual(config['dailydigest']['git_author'], 'Emily development')
         module = yaml.safe_load((conf/'okr-module.runtime.yaml').read_text())
         self.assertEqual(module['chat'], {'enabled': True, 'runtime': 'local'})
         self.assertNotIn('feishu', module)
