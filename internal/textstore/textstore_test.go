@@ -98,9 +98,9 @@ func TestOKRWeeklyReminderUsesBroadcastDelivery(t *testing.T) {
 	for _, want := range []string{
 		"`feishu-broadcast` Skill", "Jarvis通知机器人", "企业邮箱", "不得搜索、复用或创建助手群",
 		"`Platform Team Weekly Catch Up`", "`yield-until`", "前一个自然日的 19:30", "前 4 小时",
-		"2026-W38", "2026-09-16T17:00:00+08:00", "2026-09-16T18:00:00+08:00", "2026-09-15T19:30:00+08:00", "2026-09-16T13:00:00+08:00",
+		"2026-W38", "2026-W36", "2026-09-08T14:00:00+08:00", "2026-09-16T17:00:00+08:00", "2026-09-16T18:00:00+08:00", "2026-09-15T19:30:00+08:00", "2026-09-16T13:00:00+08:00",
 		"`okr_agent_progress_review`", "吴拓、刘洋、耿馨妍、苏穆辰、刘寅、张月仁、刘力华", "数据足以支撑结论、与上周有实质差异且业务价值已经写清", "每个一级 KR 最多输出一句", "以上为AI评审判断，仅供参考",
-		"`[Core Group] Platform Team`", "`feishu-send-message` Skill", "按 O-KR 维度", "请尽快更新：https://emily.bytedance.net/#/weekly-report?quarter=2026-Q3&tab=review-fill",
+		"`[Core Group] Platform Team`", "`feishu-send-message` Skill", "按 O-KR 维度", "请尽快更新：{{fill_url}}",
 		"<at user_id=\"...\">姓名</at>", "mentions[]", "禁止只写普通文本 `@姓名`",
 	} {
 		if !strings.Contains(prompt, want) {
