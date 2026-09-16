@@ -31,6 +31,9 @@ try {
     page.on('pageerror', error => errors.push(error.message))
     await page.route('**/api/**', route => {
       assert.equal(route.request().method(), 'GET', 'UI test must not write data')
+      if (new URL(route.request().url()).pathname === '/api/biz-okr/me') {
+        return route.fulfill({ json: { code: 0, data: { authenticated: false } } })
+      }
       assert.equal(new URL(route.request().url()).pathname, '/api/biz-okr/comments', 'unexpected API request')
       return route.fulfill({ json: { code: 0, data: { quarter: '2026-Q3', week: '2026-W36', count: 4, comments } } })
     })
@@ -45,15 +48,16 @@ try {
     assert(allBox && todayBox && Math.abs(allBox.y - todayBox.y) < 2, 'browse buttons must stay beside each other')
     assert(await drawer.locator('header').evaluate(element => element.scrollWidth <= element.clientWidth), 'header overflows')
 
-    // A drawer opened for one concrete comment keeps both browse actions and
-    // starts ordinary review from that comment instead of jumping to the top.
-    await drawer.getByRole('button', { name: '逐条浏览', exact: true }).click()
-    await drawer.locator('#comment-old-only[aria-current="true"]').waitFor()
-    assert.equal(await drawer.getByRole('button', { name: '下一条', exact: true }).isDisabled(), true)
-    await drawer.getByRole('button', { name: '查看全部', exact: true }).click()
-
+    // Both review modes keep the concrete comment that opened the drawer. An
+    // older anchor remains visible in today's mode before navigation continues
+    // through the actual comments created today.
     await todayButton.click()
     await drawer.getByRole('heading', { name: '今日评论' }).waitFor()
+    await drawer.locator('#comment-old-only[aria-current="true"]').waitFor()
+    assert.match(await drawer.locator('header').innerText(), /当前评论 · 今日新增 2 条/)
+    assert.equal(await drawer.getByText('今日新增', { exact: true }).count(), 0)
+    await drawer.getByRole('button', { name: '下一条', exact: true }).click()
+
     await drawer.locator('#comment-today-reply[aria-current="true"]').waitFor()
     assert.match(await drawer.locator('header').innerText(), /第 1\/2 条今日新增评论/)
     await drawer.getByText('今天回复旧讨论', { exact: true }).waitFor()
@@ -65,6 +69,14 @@ try {
     assert.equal(await drawer.getByRole('button', { name: '下一条', exact: true }).isDisabled(), true)
     await drawer.getByRole('button', { name: '上一条', exact: true }).click()
     await drawer.locator('#comment-today-reply[aria-current="true"]').waitFor()
+
+    await drawer.getByRole('button', { name: '查看全部', exact: true }).click()
+    await drawer.getByRole('button', { name: '关闭评论', exact: true }).click()
+    await page.getByRole('button', { name: '打开评论位置', exact: true }).click()
+    await drawer.getByText('只有昨天内容', { exact: true }).click()
+    await drawer.getByRole('button', { name: '逐条浏览', exact: true }).click()
+    await drawer.locator('#comment-old-only[aria-current="true"]').waitFor()
+    assert.equal(await drawer.getByRole('button', { name: '下一条', exact: true }).isDisabled(), true)
 
     // Ordinary review keeps its existing unresolved-thread behavior.
     await drawer.getByRole('button', { name: '查看全部', exact: true }).click()

@@ -16,6 +16,7 @@ function Fixture() {
   return <div id="okr-workspace-root">
     <button onClick={() => { setTarget(undefined); setOpen(true) }}>打开评论</button>
     <button onClick={() => { setTarget(focusedTarget); setOpen(true) }}>打开具体评论</button>
+    <button onClick={() => { setTarget({ ...focusedTarget, commentId: undefined }); setOpen(true) }}>打开评论位置</button>
     <CommentDrawer open={open} reviewEnabled reviewMode={reviewMode}
       quarter="2026-Q3" week="2026-W36" sourceTab="review-fill" objectives={objectives} target={target}
       onStartReview={(mode) => { setTarget(undefined); setReviewMode(mode) }}

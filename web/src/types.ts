@@ -1214,6 +1214,7 @@ export interface AuthUser {
 }
 
 export interface AuthView {
+  prefer_main_workbench?: boolean
   enabled: boolean
   status: 'authenticated' | 'unauthenticated' | 'pending'
   user?: AuthUser

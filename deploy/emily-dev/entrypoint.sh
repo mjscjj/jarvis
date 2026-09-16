@@ -3,9 +3,5 @@ set -euo pipefail
 umask 077
 mkdir -p "$CODEX_HOME" /opt/jarvis/var/log /run/emily-web
 rm -f /run/emily-web/web.sock
-socat UNIX-LISTEN:/run/emily-web/web.sock,mode=600,fork TCP:127.0.0.1:18812 &
-if [[ -x bin/jarvis-server ]]; then
-  ./bin/jarvis-server -config "${JARVIS_CONFIG_PATH:-conf/config.yaml}" >>var/log/jarvis-server.log 2>>var/log/jarvis-server.error.log &
-  echo "$!" > var/server.pid
-fi
-wait
+rm -f /opt/jarvis/var/server.pid
+exec /usr/bin/supervisord -c /etc/supervisor/supervisord.conf

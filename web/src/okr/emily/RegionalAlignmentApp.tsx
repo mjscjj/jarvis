@@ -14,6 +14,7 @@ import {
 } from './api'
 import { CommentInteractionProvider, commentTargetElementId, scrollToCommentSource } from './commenting'
 import { CommentDrawer, type CommentReviewMode } from './components/CommentDrawer'
+import { ProductFeedbackTrigger } from './components/ProductFeedbackCenter'
 import { FeishuPeoplePickerInput } from './components/FeishuPeoplePicker'
 import { PeopleInline } from './components/PeopleInline'
 import { Images, Links, usePastedImageUpload } from './components/ui'
@@ -553,6 +554,7 @@ export default function RegionalAlignmentApp({ initialQuarter, initialRegion, in
           </div>
           <button type="button" onClick={() => void copyShare()} className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 hover:border-indigo-200 hover:text-indigo-600">分享页面 / Share</button>
           <button type="button" onClick={() => commentsOpen ? setCommentsOpen(false) : openComments()} className={`relative h-9 rounded-lg border px-3 text-xs font-medium ${commentsOpen ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-200'}`}>💬 评论 / Comments{commentCount > 0 && <span className="ml-1 rounded-full bg-indigo-600 px-1.5 py-0.5 text-[9px] text-white">{commentCount}</span>}</button>
+          <ProductFeedbackTrigger className="h-9 text-xs" />
         </div>
       </div>
     </header>

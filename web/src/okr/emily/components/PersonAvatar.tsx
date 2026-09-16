@@ -1,4 +1,4 @@
-import { useEffect, useSyncExternalStore } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { getPeopleAvatars } from '../api'
 
 const avatars = new Map<string, string>()
@@ -51,7 +51,8 @@ export function PersonAvatar({ name, email, ownUrl, size = 'size-3.5 text-[8px]'
  name: string; email?: string; ownUrl?: string; size?: string; tone?: string
 }) {
  const url = usePersonAvatar(name, email, ownUrl)
+ const [failedURL, setFailedURL] = useState('')
  const shape = `inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full ${size}`
- if (url) return <img src={url} alt={name} title={name} loading="lazy" className={`${shape} object-cover`} />
+ if (url && url !== failedURL) return <img src={url} alt={name} title={name} loading="lazy" onError={() => setFailedURL(url)} className={`${shape} object-cover`} />
  return <span className={`${shape} font-semibold text-white ${tone}`}>{name.trim().slice(0, 1) || '?'}</span>
 }

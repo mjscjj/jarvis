@@ -47,18 +47,45 @@ type Config struct {
 // Feishu identities owned by app modules or CLI tools, and app modules stay
 // open to their own audience. Enabled is a pointer so an omitted value can
 // retain the product default: disabled.
+// FeishuAccountBinding is an operator-maintained mapping for verified OKR logins.
+// It identifies the account but does not grant access without auth.principals.
+type FeishuAccountBinding struct {
+	Username string `yaml:"username"`
+	Email    string `yaml:"email"`
+}
+
 type AuthConfig struct {
+	FeishuAccounts map[string]FeishuAccountBinding `yaml:"feishu_accounts"`
+
 	Enabled *bool `yaml:"enabled"`
 	// Principals lists who may open this instance, by ByteDance SSO username
 	// or enterprise email. An empty list with the gate on is a configuration
 	// error rather than "everyone".
 	Principals []string `yaml:"principals"`
+	// CookieName and CookiePath isolate browser SSO sessions when multiple
+	// Jarvis installations share one origin.
+	CookieName string `yaml:"cookie_name"`
+	CookiePath string `yaml:"cookie_path"`
 	// LoginAPIBaseURL only affects the CLI subprocess used for browser SSO.
 	LoginAPIBaseURL string `yaml:"login_api_base_url"`
 }
 
 func (c AuthConfig) IsEnabled() bool {
 	return c.Enabled != nil && *c.Enabled
+}
+
+func (c AuthConfig) BrowserCookieName() string {
+	if name := strings.TrimSpace(c.CookieName); name != "" {
+		return name
+	}
+	return "jarvis_session"
+}
+
+func (c AuthConfig) BrowserCookiePath() string {
+	if path := strings.TrimSpace(c.CookiePath); path != "" {
+		return path
+	}
+	return "/"
 }
 
 // AllowedPrincipals returns the configured identities without blanks.
@@ -80,9 +107,12 @@ type IdentityConfig struct {
 
 // ServerConfig Hertz 监听配置。
 type ServerConfig struct {
-	DevelopmentSocket string `yaml:"development_socket"` // Optional container ingress.
-	DevelopmentPath   string `yaml:"development_path"`   // Empty disables the extra installation route.
-	Addr              string `yaml:"addr"`               // 形如 0.0.0.0:18800
+	MainWorkbenchAccounts []string `yaml:"main_workbench_accounts"` // Verified account names/emails whose non-OKR navigation belongs to the main installation.
+	OKREntryPath          string   `yaml:"okr_entry_path"`          // Optional same-origin installation serving browser OKR routes.
+	MainWorkbenchPath     string   `yaml:"main_workbench_path"`     // Optional main installation for return links and preferred accounts.
+	DevelopmentSocket     string   `yaml:"development_socket"`      // Optional container ingress.
+	DevelopmentPath       string   `yaml:"development_path"`        // Empty disables the extra installation route.
+	Addr                  string   `yaml:"addr"`                    // 形如 0.0.0.0:18800
 	// PublicBaseURL 是这台部署对外可打开的根地址（形如 http://host.example:18800）。
 	// 分享链接和飞书卡片详情链接都优先使用它；留空表示沿用当前地址。
 	PublicBaseURL string   `yaml:"public_base_url"`
@@ -421,6 +451,17 @@ func (c *Config) validate() error {
 	if err := agentidentity.ValidateName(c.Identity.DisplayName); err != nil {
 		return fmt.Errorf("identity.display_name 无效: %w", err)
 	}
+	for unionID, account := range c.Auth.FeishuAccounts {
+		if unionID == "" || strings.TrimSpace(unionID) != unionID || strings.TrimSpace(account.Username) == "" {
+			return fmt.Errorf("auth.feishu_accounts requires nonblank union ID keys and account usernames")
+		}
+	}
+	if strings.ContainsAny(c.Auth.BrowserCookieName(), "()<>@,;:\"/[]?={} \t") {
+		return fmt.Errorf("auth.cookie_name contains invalid cookie characters")
+	}
+	if cookiePath := c.Auth.BrowserCookiePath(); !strings.HasPrefix(cookiePath, "/") || strings.ContainsAny(cookiePath, ";\r\n") {
+		return fmt.Errorf("auth.cookie_path must be an absolute cookie path")
+	}
 	if c.Auth.IsEnabled() && len(c.Auth.AllowedPrincipals()) == 0 {
 		return fmt.Errorf("auth.enabled 为 true 时 auth.principals 不能为空，否则没人进得来")
 	}
@@ -442,6 +483,9 @@ func (c *Config) validate() error {
 		c.Server.PublicBaseURL = raw
 	}
 	if _, err := c.Server.WebBasePath(); err != nil {
+		return err
+	}
+	if err := c.Server.ValidateNavigationPaths(); err != nil {
 		return err
 	}
 	if c.Server.DevelopmentSocket != "" || c.Server.DevelopmentPath != "" {

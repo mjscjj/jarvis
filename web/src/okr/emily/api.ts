@@ -1,7 +1,7 @@
 import { appPath } from '../../appPath.ts'
 import { normalizeKRTitle } from './krTitle'
 import { createPeopleSearchCache } from './peopleSearchCache'
-import type { AuthStatus, CommentDelivery, CommentMention, Entry, EnumValues, FeishuDeviceLogin, FeishuDeviceLoginPoll, FeishuDocumentResult, FollowUpItem, FollowUpList, FollowUpStatus, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, OKRActivityEntry, OKRPlan, OKRPlanList, PageComment, PageCommentList, PersonAvatarItem, PointKind, RegionalAlignmentBoard, RegionalCode, RegionalDemand, RegionalPlanDecisionItem, RegionalRecapOverlay, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
+import type { AuthStatus, CommentDelivery, CommentMention, Entry, EnumValues, FeishuDeviceLogin, FeishuDeviceLoginPoll, FeishuDocumentResult, FollowUpItem, FollowUpList, FollowUpStatus, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, OKRActivityEntry, OKRPlan, OKRPlanList, PageComment, PageCommentList, PersonAvatarItem, PointKind, ProductFeedback, ProductFeedbackList, RegionalAlignmentBoard, RegionalCode, RegionalDemand, RegionalPlanDecisionItem, RegionalRecapOverlay, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
 
 interface Envelope<T> {
   code: number
@@ -288,6 +288,36 @@ interface APIAuthStatus {
     avatar_url?: string
     email?: string
   }
+}
+
+interface APIProductFeedbackPerson {
+  name: string
+  email?: string
+  avatar_url?: string
+}
+
+interface APIProductFeedback {
+  id: string
+  version: number
+  title: string
+  content: string
+  images?: ImageRef[]
+  source_context?: Record<string, unknown>
+  author: APIProductFeedbackPerson
+  resolved: boolean
+  resolved_by?: APIProductFeedbackPerson
+  resolved_at?: string
+  created_at: string
+  updated_at: string
+  replies?: Array<{ id: string; content: string; author: APIProductFeedbackPerson; created_at: string }>
+  plus_ones?: APIProductFeedbackPerson[]
+  my_plus_one: boolean
+  can_resolve: boolean
+}
+
+interface APIProductFeedbackList {
+  total: number
+  items: APIProductFeedback[]
 }
 
 interface APIFeishuDeviceLogin {
@@ -1212,6 +1242,66 @@ export async function createRegionalAlignmentComment(quarter: string, region: Re
   return fromAPIComment(value)
 }
 
+function fromAPIProductFeedbackPerson(value: APIProductFeedbackPerson) {
+  return { name: value.name, email: value.email, avatarUrl: value.avatar_url }
+}
+
+function fromAPIProductFeedback(value: APIProductFeedback): ProductFeedback {
+  return {
+    id: value.id,
+    version: value.version,
+    title: value.title,
+    content: value.content,
+    images: value.images ?? [],
+    sourceContext: value.source_context ?? {},
+    author: fromAPIProductFeedbackPerson(value.author),
+    resolved: value.resolved,
+    resolvedBy: value.resolved_by ? fromAPIProductFeedbackPerson(value.resolved_by) : undefined,
+    resolvedAt: value.resolved_at,
+    createdAt: value.created_at,
+    updatedAt: value.updated_at,
+    replies: (value.replies ?? []).map((reply) => ({ id: reply.id, content: reply.content, author: fromAPIProductFeedbackPerson(reply.author), createdAt: reply.created_at })),
+    plusOnes: (value.plus_ones ?? []).map(fromAPIProductFeedbackPerson),
+    myPlusOne: value.my_plus_one,
+    canResolve: value.can_resolve,
+  }
+}
+
+export async function getProductFeedback(input: { resolved: boolean; sort: 'latest' | 'popular' }): Promise<ProductFeedbackList> {
+  const params = new URLSearchParams({ resolved: String(input.resolved), sort: input.sort })
+  const value = await request<APIProductFeedbackList>(`/api/biz-okr/feedback?${params}`)
+  return { total: value.total, items: value.items.map(fromAPIProductFeedback) }
+}
+
+export async function createProductFeedback(input: { title: string; content: string; images: ImageRef[]; sourceContext: Record<string, unknown> }): Promise<ProductFeedback> {
+  const value = await request<APIProductFeedback>('/api/biz-okr/feedback', {
+    method: 'POST',
+    body: JSON.stringify({ title: input.title, content: input.content, images: input.images, source_context: input.sourceContext }),
+  })
+  return fromAPIProductFeedback(value)
+}
+
+export async function replyProductFeedback(feedbackId: string, content: string): Promise<ProductFeedback> {
+  const value = await request<APIProductFeedback>(`/api/biz-okr/feedback/${encodeURIComponent(feedbackId)}/replies`, {
+    method: 'POST', body: JSON.stringify({ content }),
+  })
+  return fromAPIProductFeedback(value)
+}
+
+export async function setProductFeedbackPlusOne(feedbackId: string, enabled: boolean): Promise<ProductFeedback> {
+  const value = await request<APIProductFeedback>(`/api/biz-okr/feedback/${encodeURIComponent(feedbackId)}/plus-one`, {
+    method: enabled ? 'PUT' : 'DELETE',
+  })
+  return fromAPIProductFeedback(value)
+}
+
+export async function setProductFeedbackResolved(feedback: Pick<ProductFeedback, 'id' | 'version'>, resolved: boolean): Promise<ProductFeedback> {
+  const value = await request<APIProductFeedback>(`/api/biz-okr/feedback/${encodeURIComponent(feedback.id)}/status`, {
+    method: 'PATCH', body: JSON.stringify({ expected_version: feedback.version, resolved }),
+  })
+  return fromAPIProductFeedback(value)
+}
+
 export async function getAuthStatus(): Promise<AuthStatus> {
   const value = await request<APIAuthStatus>('/api/biz-okr/me')
   return {
@@ -1701,6 +1791,6 @@ const cachedOKRPeopleSearch = createPeopleSearchCache<OKRDirectoryCandidate>(asy
 export async function searchOKRPeople(query: string, signal?: AbortSignal): Promise<{ candidates: OKRDirectoryCandidate[]; has_more: boolean }> {
  return cachedOKRPeopleSearch(query, signal)
 }
-export async function retryCommentNotifications(id: string, email: string): Promise<CommentDelivery[]> {
- return request<CommentDelivery[]>(`/api/biz-okr/comments/${encodeURIComponent(id)}/notifications/retry`, { method:'POST', body:JSON.stringify({email}) })
+export async function retryCommentNotifications(id: string, email: string, resendUnknown = false): Promise<CommentDelivery[]> {
+	return request<CommentDelivery[]>(`/api/biz-okr/comments/${encodeURIComponent(id)}/notifications/retry`, { method:'POST', body:JSON.stringify({email, resend_unknown: resendUnknown}) })
 }

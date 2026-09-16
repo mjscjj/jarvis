@@ -868,7 +868,7 @@ func createAndDeliverCommentForTest(service *Service, ctx context.Context, input
 	if err != nil {
 		return view, err
 	}
-	view.Notifications, err = service.deliverComment(ctx, view.ID, "")
+	view.Notifications, err = service.deliverComment(ctx, view.ID, "", false)
 	view.NotificationErrors = deliveryWarnings(view.Notifications)
 	return view, err
 }

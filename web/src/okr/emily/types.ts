@@ -184,6 +184,43 @@ export interface AuthStatus {
   user?: AuthUser
 }
 
+export interface ProductFeedbackPerson {
+  name: string
+  email?: string
+  avatarUrl?: string
+}
+
+export interface ProductFeedbackReply {
+  id: string
+  content: string
+  author: ProductFeedbackPerson
+  createdAt: string
+}
+
+export interface ProductFeedback {
+  id: string
+  version: number
+  title: string
+  content: string
+  images: ImageRef[]
+  sourceContext: Record<string, unknown>
+  author: ProductFeedbackPerson
+  resolved: boolean
+  resolvedBy?: ProductFeedbackPerson
+  resolvedAt?: string
+  createdAt: string
+  updatedAt: string
+  replies: ProductFeedbackReply[]
+  plusOnes: ProductFeedbackPerson[]
+  myPlusOne: boolean
+  canResolve: boolean
+}
+
+export interface ProductFeedbackList {
+  total: number
+  items: ProductFeedback[]
+}
+
 export interface FeishuDeviceLogin {
   loginId: string
   verificationUrl: string
@@ -264,6 +301,8 @@ export interface CommentMention {
 export interface CommentDelivery {
  email: string
  name: string
+ reason?: 'mention' | 'owner' | 'mention_and_owner'
+ owner_level?: 'point' | 'kr' | 'objective'
  status: string
  message_id?: string
  error?: string

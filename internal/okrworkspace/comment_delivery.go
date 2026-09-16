@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"time"
 
@@ -18,17 +19,20 @@ const (
 	commentNotificationReasonMention         = "mention"
 	commentNotificationReasonOwner           = "owner"
 	commentNotificationReasonMentionAndOwner = "mention_and_owner"
+	commentDeliveryClaimTimeout              = 2 * time.Minute
 )
 
 type CommentDeliveryView struct {
-	Email     string `json:"email"`
-	Name      string `json:"name"`
-	Status    string `json:"status"`
-	MessageID string `json:"message_id,omitempty"`
-	Error     string `json:"error,omitempty"`
+	Email      string `json:"email"`
+	Name       string `json:"name"`
+	Reason     string `json:"reason,omitempty"`
+	OwnerLevel string `json:"owner_level,omitempty"`
+	Status     string `json:"status"`
+	MessageID  string `json:"message_id,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
-func (s *Service) prepareCommentDeliveries(ctx context.Context, row domain.PageComment, authorEmail, authorUnionID, tab string) error {
+func (s *Service) prepareCommentDeliveries(ctx context.Context, db *gorm.DB, row domain.PageComment, authorEmail, authorUnionID, tab string) error {
 	input, err := s.commentMentionNotification(ctx, row, tab)
 	if err != nil {
 		return err
@@ -45,7 +49,7 @@ func (s *Service) prepareCommentDeliveries(ctx context.Context, row domain.PageC
 		email := domain.NormalizeEmail(recipient.Email)
 		planned[email] = plannedRecipient{person: recipient, mentioned: true}
 	}
-	owners, ownerLevel, err := s.commentOwnerRecipients(ctx, input)
+	owners, ownerLevel, err := s.commentOwnerRecipients(ctx, db, input)
 	if err != nil {
 		return err
 	}
@@ -89,7 +93,7 @@ func (s *Service) prepareCommentDeliveries(ctx context.Context, row domain.PageC
 			appID = s.commentNotifier.AppID()
 		}
 		record := domain.CommentDelivery{CommentID: row.ID, Email: recipient.Email, Name: recipient.Name, AppID: appID, Payload: string(raw), Status: "pending", UpdatedAt: time.Now().UTC()}
-		if err := s.db.WithContext(ctx).Create(&record).Error; err != nil {
+		if err := db.WithContext(ctx).Create(&record).Error; err != nil {
 			return err
 		}
 	}
@@ -99,8 +103,8 @@ func (s *Service) prepareCommentDeliveries(ctx context.Context, row domain.PageC
 // commentOwnerRecipients applies nearest-owner-wins. An assigned level with
 // unresolved identities still stops fallback; notifying a parent would change
 // accountability rather than repair the missing identity.
-func (s *Service) commentOwnerRecipients(ctx context.Context, input CommentMentionNotification) ([]CommentMention, string, error) {
-	db := s.db.WithContext(ctx)
+func (s *Service) commentOwnerRecipients(ctx context.Context, db *gorm.DB, input CommentMentionNotification) ([]CommentMention, string, error) {
+	db = db.WithContext(ctx)
 	if input.PointID != "" {
 		var rows []domain.PointOwner
 		if err := db.Where("point_id = ?", input.PointID).Order("sort_order, owner_key, person_id").Find(&rows).Error; err != nil {
@@ -144,17 +148,18 @@ func (s *Service) commentOwnerRecipients(ctx context.Context, input CommentMenti
 }
 
 func (s *Service) commentDeliveries(ctx context.Context, id string) ([]CommentDeliveryView, error) {
+	if err := s.recoverStaleCommentDeliveries(ctx); err != nil {
+		return nil, err
+	}
 	var rows []domain.CommentDelivery
 	if err := s.db.WithContext(ctx).Where("comment_id = ?", id).Order("email").Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	result := make([]CommentDeliveryView, 0, len(rows))
 	for _, r := range rows {
-		status := r.Status
-		if status == "sending" && time.Since(r.UpdatedAt) > 2*time.Minute {
-			status = "unknown"
-		}
-		result = append(result, CommentDeliveryView{Email: r.Email, Name: r.Name, Status: status, MessageID: r.MessageID, Error: r.Error})
+		var payload CommentMentionNotification
+		_ = json.Unmarshal([]byte(r.Payload), &payload)
+		result = append(result, CommentDeliveryView{Email: r.Email, Name: r.Name, Reason: payload.Reason, OwnerLevel: payload.OwnerLevel, Status: r.Status, MessageID: r.MessageID, Error: r.Error})
 	}
 	return result, nil
 }
@@ -169,17 +174,17 @@ func deliveryWarnings(items []CommentDeliveryView) []string {
 	return result
 }
 
-func (s *Service) RetryCommentNotifications(ctx context.Context, id, email string) ([]CommentDeliveryView, error) {
+func (s *Service) RetryCommentNotifications(ctx context.Context, id, email string, resendUnknown bool) ([]CommentDeliveryView, error) {
 	var row domain.PageComment
 	if err := s.db.WithContext(ctx).First(&row, "id = ?", id).Error; err != nil {
 		return nil, err
 	}
 	// Only persisted original delivery intents are eligible. Historical comments
 	// without receipts need an explicit, separately audited recovery operation.
-	return s.deliverComment(ctx, id, domain.NormalizeEmail(email))
+	return s.deliverComment(ctx, id, domain.NormalizeEmail(email), resendUnknown)
 }
 
-func (s *Service) deliverComment(ctx context.Context, id, email string) ([]CommentDeliveryView, error) {
+func (s *Service) deliverComment(ctx context.Context, id, email string, resendUnknown bool) ([]CommentDeliveryView, error) {
 	var records []domain.CommentDelivery
 	query := s.db.WithContext(ctx).Where("comment_id = ?", id)
 	if email != "" {
@@ -211,10 +216,14 @@ func (s *Service) deliverComment(ctx context.Context, id, email string) ([]Comme
 			}
 			continue
 		}
-		if record.Status != "pending" && record.Status != "failed" {
+		claimable := []string{"pending", "failed"}
+		if resendUnknown {
+			claimable = append(claimable, "unknown")
+		}
+		if !slices.Contains(claimable, record.Status) {
 			continue
 		}
-		claim := db.Session(&gorm.Session{}).Where("status IN ?", []string{"pending", "failed"}).Updates(map[string]any{"status": "sending", "attempts": gorm.Expr("attempts + 1"), "updated_at": time.Now().UTC()})
+		claim := db.Session(&gorm.Session{}).Where("status IN ?", claimable).Updates(map[string]any{"status": "sending", "attempts": gorm.Expr("attempts + 1"), "updated_at": time.Now().UTC()})
 		if claim.Error != nil {
 			return nil, claim.Error
 		}
@@ -262,6 +271,9 @@ func (s *Service) RunCommentDeliveries(ctx context.Context) {
 	}
 }
 func (s *Service) processPendingCommentDeliveries(ctx context.Context) error {
+	if err := s.recoverStaleCommentDeliveries(ctx); err != nil {
+		return err
+	}
 	var rows []domain.CommentDelivery
 	if err := s.db.WithContext(ctx).Where("status = ?", "pending").Order("updated_at").Limit(20).Find(&rows).Error; err != nil {
 		return err
@@ -271,11 +283,17 @@ func (s *Service) processPendingCommentDeliveries(ctx context.Context) error {
 			return ctx.Err()
 		}
 		callCtx, cancel := context.WithTimeout(ctx, 45*time.Second)
-		_, err := s.deliverComment(callCtx, r.CommentID, r.Email)
+		_, err := s.deliverComment(callCtx, r.CommentID, r.Email, false)
 		cancel()
 		if err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (s *Service) recoverStaleCommentDeliveries(ctx context.Context) error {
+	return s.db.WithContext(ctx).Model(&domain.CommentDelivery{}).
+		Where("status = ? AND updated_at < ?", "sending", time.Now().UTC().Add(-commentDeliveryClaimTimeout)).
+		Updates(map[string]any{"status": "unknown", "error": "发送进程中断，结果待核验", "updated_at": time.Now().UTC()}).Error
 }

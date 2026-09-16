@@ -1193,7 +1193,16 @@ func main() {
 	if err != nil {
 		fatalf("initialize ByteDance SSO service failed: %v", err)
 	}
-	authService.SetOKRIdentity(okrIdentityService)
+	authService.SetBrowserCookie(cfg.Auth.BrowserCookieName(), cfg.Auth.BrowserCookiePath())
+	bindings := make(map[string]authn.User, len(cfg.Auth.FeishuAccounts))
+	for unionID, account := range cfg.Auth.FeishuAccounts {
+		bindings[unionID] = authn.User{Username: account.Username, Email: account.Email}
+	}
+	authService.SetOKRAccountBindings(bindings)
+	if cfg.Server.MainWorkbenchPath != "" {
+		authService.SetOKRIdentity(okrIdentityService)
+	}
+	authService.SetMainWorkbenchAccounts(cfg.Server.MainWorkbenchAccounts)
 	securityAuditService, err := security.NewAuditService(db)
 	if err != nil {
 		fatalf("initialize security audit service failed: %v", err)

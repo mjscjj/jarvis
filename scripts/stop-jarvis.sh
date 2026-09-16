@@ -36,6 +36,12 @@ INSTANCE="$("${SCRIPT_DIR}/jarvis-instance" "$CONFIG_PATH")"
 MAIN_LABEL="$(jq -er '.launchd_label' <<<"$INSTANCE")"
 sleep "$DELAY_SECONDS"
 
+if [[ "${JARVIS_CONTAINER_DEPLOY:-}" == 1 ]]; then
+  # An intentional stop must go through the owner, or it will restart the PID.
+  supervisorctl -c /etc/supervisor/supervisord.conf stop jarvis-server
+  exit 0
+fi
+
 case "$(uname -s)" in
   Darwin)
     UID_VALUE="$(id -u)"

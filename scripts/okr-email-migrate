@@ -6,7 +6,7 @@ in-memory SQLite backup; apply requires all DB writers to have been stopped.
 import argparse, concurrent.futures, datetime, hashlib, json, os, re, sqlite3, subprocess
 from pathlib import Path
 
-OWNERS = {'okr_workspace_kr_owner':'kr_id', 'okr_workspace_point_owner':'point_id'}
+OWNERS = {'okr_workspace_objective_owner':'objective_id', 'okr_workspace_kr_owner':'kr_id', 'okr_workspace_point_owner':'point_id'}
 JSON_COLUMNS = {'okr_workspace_comment':['mentions'], 'okr_workspace_follow_up':['owners'],
                 'okr_workspace_reminder_batch':['recipients_json'],
                 'okr_workspace_regional_demand':['regional_po_cs','platform_po_cs'],

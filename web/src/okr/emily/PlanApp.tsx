@@ -12,6 +12,8 @@ import { weeklyShareURLForTab, type WeeklyShareTab } from './share'
 import { planOptionLabel } from './planTitle'
 import { PreviewReviewButton, PreviewReviewPanel, PreviewReviewProvider } from './aiReviewContext'
 import { SaveToast } from './components/SaveToast'
+import { UsageGuideButton } from './components/UsageGuide'
+import { ProductFeedbackTrigger } from './components/ProductFeedbackCenter'
 
 const PLAN_SCROLL_KEY_PREFIX = 'jarvis-okr-plan-scroll'
 
@@ -220,7 +222,7 @@ function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }:
       <SaveToast scopeLabel={`${quarter} · ${plan?.title || 'OKR Plan'}`} />
       <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/95 backdrop-blur">
         <div className={`mx-auto flex min-h-14 max-w-[1580px] flex-wrap items-center gap-3 px-4 py-2 transition-[padding] sm:px-6 lg:px-8 ${commentsOpen ? 'lg:pr-[420px]' : ''}`}>
-          <span className="flex size-8 items-center justify-center rounded-lg bg-emerald-600 text-xs font-semibold text-white shadow-sm">P</span>
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-xs font-semibold text-white shadow-sm">P</span>
           <div className="leading-tight">
             <h1 className="text-[14px] font-semibold tracking-tight text-slate-900">Emily · Biz OKR Plan</h1>
             <div className="mt-1 text-[10px] text-slate-400">{quarter.replace('-', ' ')} · 计划草稿</div>
@@ -247,6 +249,8 @@ function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }:
             </button>
 			<button type="button" onClick={() => { setConfirmDelete(false); setCreatingPlan((value) => !value) }} className="h-8 rounded-lg bg-emerald-600 px-3 text-[10px] font-medium text-white hover:bg-emerald-700">新建 Plan</button>
 			<button type="button" disabled={!plan || saving} onClick={() => { setCreatingPlan(false); setConfirmDelete(true) }} className="h-8 rounded-lg border border-red-200 bg-red-50 px-3 text-[10px] font-medium text-red-700 hover:bg-red-100 disabled:opacity-40">删除 Plan</button>
+            <UsageGuideButton initialScene="plan" />
+            <ProductFeedbackTrigger />
           </div>
         </div>
       </header>

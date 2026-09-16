@@ -15,6 +15,7 @@
 
 ## 方案与历史材料
 
+- [OKR 入口统一到开发实例：开发方案与问题记录](2026-09-16-okr-development-entry.md)：需求边界、外层切换方案、实施状态、问题台账和验收记录；已部署，真实登录业务验收待补。
 - [Emily 完整研发环境](emily-development-environment.md)：当前研发实例的共享数据、配置、部署和分支维护说明；技术行为仍以代码为准。
 - [原始 OKR 单轮容器设计](okr-chat-isolation-mvp-design.md)：历史模式，当前完整研发模式以上一文档为准。
 - [OKR 与 Jarvis 世界模型整合方案](okr-jarvis-world-model-integration.md)：历史方案，当前边界见 [OKR 模块](../modules/06-okr.md)。

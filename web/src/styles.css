@@ -110,6 +110,24 @@ body {
   border-top: 1px solid var(--color-border);
 }
 
+a.workbench-return-link {
+  display: block;
+  padding: 4px var(--space-2) 6px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+a.workbench-return-link:hover {
+  color: var(--color-text);
+  text-decoration: underline;
+}
+
+.sider-footer.is-collapsed .workbench-return-link {
+  padding-inline: 0;
+  text-align: center;
+}
+
 .developer-document-links {
   display: grid;
   gap: 8px;

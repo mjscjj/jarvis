@@ -48,6 +48,12 @@ for command_name in git go jq curl npm; do
 done
 
 cd "$REPO_ROOT"
+if [[ "${JARVIS_CONTAINER_DEPLOY:-}" == 1 ]]; then
+  # Serialize builds and replacement of the single container server binary.
+  mkdir -p var
+  exec 9>var/deploy.lock
+  flock 9
+fi
 if [[ "$SKIP_PULL" != true ]]; then
   if [[ "$REMOTE_OKR_DB" == true ]] && git ls-files --error-unmatch data/okr/okr.db >/dev/null 2>&1; then
     git checkout-index --force -- data/okr/okr.db
@@ -83,6 +89,11 @@ fi
 
 npm --prefix "${REPO_ROOT}/web" ci
 JARVIS_CONFIG="$CONFIG_PATH" npm --prefix "${REPO_ROOT}/web" run build
+# Keep old content-hashed chunks briefly for pages that were open during a
+# deploy, but prevent the shared dist directory from growing without bound.
+if [[ -d "${REPO_ROOT}/web/dist/assets" ]]; then
+  find "${REPO_ROOT}/web/dist/assets" -type f -mtime +7 -delete
+fi
 
 deploy_darwin() {
   command -v launchctl >/dev/null 2>&1 || fail "launchctl is required on macOS"
@@ -138,24 +149,32 @@ wait_health() {
   fail "$name did not become healthy at $base"
 }
 
+refuse_if_tasks_executing() {
+  local instance_name="$1" response running_tasks tasks_api
+  [[ "$FORCE_INTERRUPT" != true ]] || return 0
+  tasks_api="${API_BASE}/api/tasks?status=executing&page=1&page_size=1"
+  response="$(curl --fail --silent --show-error --max-time 5 "$tasks_api")" ||
+    fail "cannot query executing Tasks at $tasks_api; refusing to restart $instance_name"
+  running_tasks="$(jq -er 'if .code == 0 and (.data.total | type == "number") then .data.total else error("unexpected task-list response") end' <<<"$response")" ||
+    fail "cannot parse executing Task count; refusing to restart $instance_name"
+  if (( running_tasks > 0 )); then
+    fail "refusing to restart $instance_name: $running_tasks Task(s) are executing; wait or use --force-interrupt-running-tasks"
+  fi
+}
+
 deploy_container() {
   [[ -f /run/emily-development ]] || fail "container deployment marker is missing"
+  command -v supervisorctl >/dev/null 2>&1 || fail "recreate the development container with scripts/emily-dev to enable process supervision"
+  [[ "$CONFIG_PATH" == "${JARVIS_CONFIG_PATH:-}" ]] || fail "container --config must match its JARVIS_CONFIG_PATH; recreate the container to change it"
+  supervisorctl -c /etc/supervisor/supervisord.conf pid >/dev/null || fail "development supervisor is not running"
+  if supervisorctl -c /etc/supervisor/supervisord.conf status jarvis-server | grep -q 'RUNNING'; then
+    refuse_if_tasks_executing "development container"
+  fi
   "${SCRIPT_DIR}/check-build-toolchain.sh"
   mkdir -p bin var/log
   go build -o bin/jarvis-server.next ./cmd/jarvis-server
-  if [[ -f var/server.pid ]] && kill -0 "$(cat var/server.pid)" 2>/dev/null; then
-    local previous_pid
-    previous_pid="$(cat var/server.pid)"
-    kill "$previous_pid"
-    for attempt in {1..30}; do
-      kill -0 "$previous_pid" 2>/dev/null || break
-      [[ "$(ps -o stat= -p "$previous_pid" 2>/dev/null)" == Z* ]] && break
-      sleep 1
-    done
-  fi
   mv bin/jarvis-server.next bin/jarvis-server
-  nohup ./bin/jarvis-server -config "$CONFIG_PATH" >>var/log/jarvis-server.log 2>>var/log/jarvis-server.error.log </dev/null &
-  echo "$!" > var/server.pid
+  supervisorctl -c /etc/supervisor/supervisord.conf restart jarvis-server
 }
 
 deploy_linux() {
@@ -167,15 +186,7 @@ deploy_linux() {
   local main_unit main_bin main_next main_stdout main_stderr
   main_unit="$(jq -er '.launchd_label' <<<"$INSTANCE").service"
   if systemctl --user is-active --quiet "$main_unit"; then
-    local response running_tasks tasks_api
-    tasks_api="${API_BASE}/api/tasks?status=executing&page=1&page_size=1"
-    response="$(curl --fail --silent --show-error --max-time 5 "$tasks_api")" ||
-      fail "cannot query executing Tasks at $tasks_api; refusing to restart Jarvis"
-    running_tasks="$(jq -er 'if .code == 0 and (.data.total | type == "number") then .data.total else error("unexpected task-list response") end' <<<"$response")" ||
-      fail "cannot parse executing Task count; refusing to restart Jarvis"
-    if (( running_tasks > 0 )) && [[ "$FORCE_INTERRUPT" != true ]]; then
-      fail "refusing to restart $main_unit: $running_tasks Task(s) are executing; wait or use --force-interrupt-running-tasks"
-    fi
+    refuse_if_tasks_executing "$main_unit"
   fi
   main_bin="${REPO_ROOT}/bin/jarvis-server"
   main_next="${main_bin}.next"

@@ -6,8 +6,10 @@ import { APIRequestError, authEvents, completeByteDanceLogin, getAuthStatus, log
 import type { AuthUser, AuthView } from './types'
 import { routeFromHash } from './pageRoutes'
 import { appModuleRegistry } from './modules/registry'
+import { mainWorkbenchURL, redirectPreferredWorkbench } from './instanceNavigation'
 
 interface AuthContextValue {
+  preferMainWorkbench: boolean
   loading: boolean
   enabled: boolean
   user: AuthUser | null
@@ -33,6 +35,7 @@ function canRetryLogin(cause: unknown): boolean {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const [preferMainWorkbench, setPreferMainWorkbench] = useState(false)
   const [loading, setLoading] = useState(true)
   const [enabled, setEnabled] = useState(true)
   const [user, setUser] = useState<AuthUser | null>(null)
@@ -50,6 +53,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const apply = useCallback((view: AuthView) => {
     if (!mounted.current || signedOut.current) return
+    setPreferMainWorkbench(Boolean(view.prefer_main_workbench && mainWorkbenchURL()))
     setEnabled(view.enabled)
     userRef.current = view.user ?? null
     setUser(view.user ?? null)
@@ -73,6 +77,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const status = await getAuthStatus()
         if (revision !== identityRevision.current || signedOut.current || !mounted.current) return
+        if (redirectPreferredWorkbench(Boolean(status.prefer_main_workbench))) {
+          apply(status)
+          return
+        }
         // On an app-module route we never start the SSO device flow: the module
         // is open and runs its own visitor login. Only principal-only surfaces
         // fall through to loginWithByteDance.
@@ -84,6 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       } catch (cause) {
         if (revision === identityRevision.current && mounted.current && !signedOut.current) {
+          setPreferMainWorkbench(false)
           userRef.current = null
           setUser(null)
           const message = cause instanceof Error ? cause.message : String(cause)
@@ -118,6 +127,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       pendingRef.current = null
       userRef.current = null
       setPending(null)
+      setPreferMainWorkbench(false)
       setUser(null)
       setLoading(true)
       if (!key && signedOut.current) {
@@ -201,6 +211,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await inFlight.current
       await logoutFromJarvis()
       userRef.current = null
+      setPreferMainWorkbench(false)
       setUser(null)
       setError('')
       window.dispatchEvent(new Event('jarvis:signed-out'))
@@ -211,8 +222,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo(() => ({
-    loading, enabled, user, pending, error, login, logout,
-  }), [loading, enabled, user, pending, error, login, logout])
+    preferMainWorkbench, loading, enabled, user, pending, error, login, logout,
+  }), [preferMainWorkbench, loading, enabled, user, pending, error, login, logout])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

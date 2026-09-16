@@ -1,6 +1,7 @@
 import { useBoard } from './board'
 import { AgentFlowCenter } from './components/AgentFlowCenter'
 import { QuarterSelect } from './components/QuarterSelect'
+import { ProductFeedbackTrigger } from './components/ProductFeedbackCenter'
 
 export default function AgentFlowsApp({ weeklyEnabled }: { weeklyEnabled: boolean }) {
   const { quarter, syncState, reset } = useBoard()
@@ -12,7 +13,7 @@ export default function AgentFlowsApp({ weeklyEnabled }: { weeklyEnabled: boolea
           <span className="flex size-8 items-center justify-center rounded-lg bg-cyan-600 text-xs font-semibold text-white shadow-sm">A</span>
 	          <div className="leading-tight"><h1 className="text-[14px] font-semibold tracking-tight text-slate-900">Emily · OKR Agent</h1><div className="mt-1 text-[10px] text-slate-400">{quarter ? quarter.replace('-', ' ') : 'OKR'} · 行动与 Prompt</div></div>
           <span className={`ml-3 hidden text-[10px] sm:inline ${tone}`} aria-live="polite">{syncState.message}</span>
-          <div className="ml-auto flex items-center gap-2"><QuarterSelect /><button type="button" onClick={reset} className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-[10px] text-slate-500 hover:bg-slate-50">重新载入</button></div>
+          <div className="ml-auto flex items-center gap-2"><QuarterSelect /><button type="button" onClick={reset} className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-[10px] text-slate-500 hover:bg-slate-50">重新载入</button><ProductFeedbackTrigger /></div>
         </div>
       </header>
 		<main className="mx-auto max-w-[1580px] px-4 py-3 sm:px-6 sm:py-4 lg:px-8"><AgentFlowCenter weeklyEnabled={weeklyEnabled} quarter={quarter} /></main>

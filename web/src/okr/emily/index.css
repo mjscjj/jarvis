@@ -13,6 +13,135 @@
   -webkit-font-smoothing: antialiased;
 }
 
+.okr-usage-guide-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  padding: 0 10px;
+  color: #64748b;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.okr-usage-guide-trigger:hover {
+  border-color: #c7d2fe;
+  color: #4f46e5;
+}
+
+.okr-guide-layout {
+  display: grid;
+  min-height: 100%;
+  grid-template-columns: 176px minmax(0, 1fr);
+}
+
+.okr-guide-nav {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  min-height: 100%;
+  border-right: 1px solid #e2e8f0;
+  background: #f8fafc;
+  padding: 16px 10px;
+}
+
+.okr-guide-nav > button,
+.okr-guide-scenes button {
+  display: block;
+  width: 100%;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  padding: 8px 10px;
+  color: #475569;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.okr-guide-nav > button {
+  margin-bottom: 4px;
+  font-weight: 650;
+}
+
+.okr-guide-nav button:hover {
+  background: #eef2ff;
+  color: #4338ca;
+}
+
+.okr-guide-nav > button.is-active {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.okr-guide-scenes {
+  margin: -1px 0 8px 8px;
+  border-left: 1px solid #cbd5e1;
+  padding-left: 6px;
+}
+
+.okr-guide-scenes button {
+  padding-top: 6px;
+  padding-bottom: 6px;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.okr-guide-scenes button.is-active {
+  background: #fff;
+  color: #4f46e5;
+  font-weight: 650;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.06);
+}
+
+.okr-guide-content {
+  min-width: 0;
+  padding: 24px 28px 36px;
+}
+
+.okr-guide-markdown > :first-child { margin-top: 0; }
+.okr-guide-markdown h1 { margin: 0 0 18px; color: #0f172a; font-size: 22px; line-height: 1.35; }
+.okr-guide-markdown h2 { margin: 24px 0 10px; color: #1e293b; font-size: 15px; line-height: 1.45; }
+.okr-guide-markdown p,
+.okr-guide-markdown li { color: #475569; font-size: 13px; line-height: 1.75; }
+.okr-guide-markdown p { margin: 8px 0; }
+.okr-guide-markdown ul,
+.okr-guide-markdown ol { margin: 8px 0; padding-left: 22px; }
+.okr-guide-markdown ul { list-style: disc; }
+.okr-guide-markdown ol { list-style: decimal; }
+.okr-guide-markdown li + li { margin-top: 5px; }
+.okr-guide-markdown strong { color: #1e293b; }
+.okr-guide-markdown code { border-radius: 4px; background: #f1f5f9; padding: 1px 5px; color: #4338ca; font-size: 12px; }
+.okr-guide-markdown table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.okr-guide-markdown th,
+.okr-guide-markdown td { border: 1px solid #e2e8f0; padding: 8px 9px; text-align: left; vertical-align: top; }
+.okr-guide-markdown th { background: #f8fafc; color: #334155; }
+
+.okr-guide-support {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 26px;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 12px 14px;
+  color: #64748b;
+  font-size: 11px;
+}
+
+.okr-guide-support strong { color: #334155; }
+
+@media (max-width: 640px) {
+  .okr-guide-layout { display: block; }
+  .okr-guide-nav { position: static; min-height: 0; border-right: 0; border-bottom: 1px solid #e2e8f0; }
+  .okr-guide-content { padding: 20px 18px 30px; }
+}
+
 /* 紧凑输入控件：去掉浏览器默认的高度和描边 */
 #okr-workspace-root input,
 #okr-workspace-root textarea,

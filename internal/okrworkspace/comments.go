@@ -356,9 +356,7 @@ func (service *Service) CreateComment(ctx context.Context, input CreateCommentIn
 		if err := tx.Create(&row).Error; err != nil {
 			return err
 		}
-		txService := *service
-		txService.db = tx
-		return txService.prepareCommentDeliveries(ctx, row, input.AuthorEmail, input.AuthorUnionID, input.SourceTab)
+		return service.prepareCommentDeliveries(ctx, tx, row, input.AuthorEmail, input.AuthorUnionID, input.SourceTab)
 	}); err != nil {
 		return CommentView{}, fmt.Errorf("create page comment: %w", err)
 	}

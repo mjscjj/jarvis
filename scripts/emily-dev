@@ -130,7 +130,8 @@ def main():
     run(['docker', 'build', '-t', 'emily-development:local', ROOT/'deploy/emily-dev'])
     existing = output(['docker', 'ps', '-aq', '--filter', 'name=^emily-development$'])
     if existing:
-        run(['docker', 'rm', '-f', 'emily-development'])
+        run(['docker', 'stop', '--time', '35', 'emily-development'])
+        run(['docker', 'rm', 'emily-development'])
     run(args)
     if opts.deploy:
         run(['docker', 'exec', 'emily-development', './scripts/jarvis-deploy', '--skip-pull'])

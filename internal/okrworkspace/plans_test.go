@@ -25,7 +25,7 @@ func TestPlanLifecycleKeepsOfficialOKRRowsUntouched(t *testing.T) {
 		t.Fatal(err)
 	}
 	created, err = service.CreatePlanObjective(t.Context(), created.ID, PlanObjectiveView{
-		ID: "plan-o-1", Title: "计划目标", KRs: []PlanKRView{{
+		ID: "plan-o-1", Title: "计划目标", Owners: []OwnerView{{Email: "o@example.test", Name: "O 负责人"}}, KRs: []PlanKRView{{
 			ID: "plan-kr-1", Title: "计划 KR", Owners: []OwnerView{{Email: "a@example.test", Name: "甲"}},
 			Tags:    []TagView{{Type: domain.TagTypeBusinessCategory, Value: "增长"}, {Type: domain.TagTypePriority, Value: "p0"}},
 			Metrics: []MetricView{{ID: "plan-m-1", Text: "核心目标 100", Light: domain.LightGreen}},
@@ -35,12 +35,12 @@ func TestPlanLifecycleKeepsOfficialOKRRowsUntouched(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if created.Version != 1 || created.Objectives[0].KRs[0].Owners[0].Name != "甲" {
+	if created.Version != 1 || created.Objectives[0].Owners[0].Name != "O 负责人" || created.Objectives[0].KRs[0].Owners[0].Name != "甲" {
 		t.Fatalf("created plan = %+v", created)
 	}
 	kr := created.Objectives[0].KRs[0]
-	if kr.Owners[0].Email == "" || kr.Points[0].Owners[0].Email == "" {
-		t.Fatalf("plan owner namespaces = kr:%+v point:%+v", kr.Owners, kr.Points[0].Owners)
+	if created.Objectives[0].Owners[0].Email == "" || kr.Owners[0].Email == "" || kr.Points[0].Owners[0].Email == "" {
+		t.Fatalf("plan owner namespaces = objective:%+v kr:%+v point:%+v", created.Objectives[0].Owners, kr.Owners, kr.Points[0].Owners)
 	}
 
 	if err := service.DeletePlan(t.Context(), created.ID, created.DeleteToken); err != nil {

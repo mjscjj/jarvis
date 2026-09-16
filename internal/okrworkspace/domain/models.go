@@ -436,6 +436,61 @@ type PageComment struct {
 
 func (PageComment) TableName() string { return "okr_workspace_comment" }
 
+// ProductFeedback is the Emily-wide product feedback thread. Unlike
+// PageComment it is not owned by an OKR quarter, week or Plan; SourceContext
+// only preserves the page on which the report was created.
+type ProductFeedback struct {
+	ID                  string         `gorm:"primaryKey;size:64"`
+	Version             int32          `gorm:"not null;default:1"`
+	Title               string         `gorm:"not null;size:200"`
+	Content             string         `gorm:"not null;type:text"`
+	Images              []ImageRef     `gorm:"serializer:json;type:text"`
+	SourceContext       datatypes.JSON `gorm:"not null;type:text"`
+	AuthorKey           string         `gorm:"not null;size:256;index"`
+	AuthorOpenID        string         `gorm:"not null;default:'';size:128"`
+	AuthorUnionID       string         `gorm:"not null;default:'';size:128"`
+	AuthorEmail         string         `gorm:"not null;default:'';size:256"`
+	AuthorName          string         `gorm:"not null;size:256"`
+	AuthorAvatarURL     string         `gorm:"not null;default:'';type:text"`
+	Resolved            bool           `gorm:"not null;default:false;index"`
+	ResolvedByKey       string         `gorm:"not null;default:'';size:256"`
+	ResolvedByName      string         `gorm:"not null;default:'';size:256"`
+	ResolvedByAvatarURL string         `gorm:"not null;default:'';type:text"`
+	ResolvedAt          *time.Time     `gorm:"index"`
+	CreatedAt           time.Time      `gorm:"not null;index"`
+	UpdatedAt           time.Time      `gorm:"not null"`
+}
+
+func (ProductFeedback) TableName() string { return "okr_product_feedback" }
+
+type ProductFeedbackReply struct {
+	ID              string    `gorm:"primaryKey;size:64"`
+	FeedbackID      string    `gorm:"not null;size:64;index"`
+	Content         string    `gorm:"not null;type:text"`
+	AuthorKey       string    `gorm:"not null;size:256;index"`
+	AuthorOpenID    string    `gorm:"not null;default:'';size:128"`
+	AuthorUnionID   string    `gorm:"not null;default:'';size:128"`
+	AuthorEmail     string    `gorm:"not null;default:'';size:256"`
+	AuthorName      string    `gorm:"not null;size:256"`
+	AuthorAvatarURL string    `gorm:"not null;default:'';type:text"`
+	CreatedAt       time.Time `gorm:"not null;index"`
+}
+
+func (ProductFeedbackReply) TableName() string { return "okr_product_feedback_reply" }
+
+type ProductFeedbackPlusOne struct {
+	FeedbackID     string    `gorm:"primaryKey;size:64"`
+	ActorKey       string    `gorm:"primaryKey;size:256"`
+	ActorOpenID    string    `gorm:"not null;default:'';size:128"`
+	ActorUnionID   string    `gorm:"not null;default:'';size:128"`
+	ActorEmail     string    `gorm:"not null;default:'';size:256"`
+	ActorName      string    `gorm:"not null;size:256"`
+	ActorAvatarURL string    `gorm:"not null;default:'';type:text"`
+	CreatedAt      time.Time `gorm:"not null;index"`
+}
+
+func (ProductFeedbackPlusOne) TableName() string { return "okr_product_feedback_plus_one" }
+
 // RegionalAlignment is the quarterly collaboration document. It points at one
 // Biz OKR Plan and one recap quarter; both OKR trees remain owned by their
 // original tables and are projected read-only into the alignment page.
@@ -596,5 +651,5 @@ func IdentityModels() []any {
 // domain. Existing table names are intentionally preserved so enabling the
 // split never rewrites or loses historical data.
 func BizModels() []any {
-	return []any{&OKRPlan{}, &KRTag{}, &PointTag{}, &FollowUpItem{}, &WeeklyScore{}, &PageComment{}, &CommentDelivery{}, &RegionalAlignment{}, &RegionalAlignmentRegion{}, &RegionalDemand{}, &RegionalPlanDecision{}, &RegionalRecapOverlay{}, &OKRTranslation{}, &MeegoSyncSnapshot{}, &ReminderBatch{}}
+	return []any{&OKRPlan{}, &KRTag{}, &PointTag{}, &FollowUpItem{}, &WeeklyScore{}, &PageComment{}, &CommentDelivery{}, &ProductFeedback{}, &ProductFeedbackReply{}, &ProductFeedbackPlusOne{}, &RegionalAlignment{}, &RegionalAlignmentRegion{}, &RegionalDemand{}, &RegionalPlanDecision{}, &RegionalRecapOverlay{}, &OKRTranslation{}, &MeegoSyncSnapshot{}, &ReminderBatch{}}
 }

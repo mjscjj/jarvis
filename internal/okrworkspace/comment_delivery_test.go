@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"jarvis/internal/okrworkspace/domain"
 	"testing"
+	"time"
 )
 
 func TestCommentDeliveryRetryVerifiesReceiptWithoutResending(t *testing.T) {
@@ -29,17 +30,46 @@ func TestCommentDeliveryRetryVerifiesReceiptWithoutResending(t *testing.T) {
 		t.Fatalf("receipt=%+v", view.Notifications)
 	}
 	stub.err = nil
-	got, err := svc.RetryCommentNotifications(t.Context(), view.ID, "bob@example.test")
+	got, err := svc.RetryCommentNotifications(t.Context(), view.ID, "bob@example.test", false)
 	if err != nil || got[0].Status != "delivered" {
 		t.Fatalf("retry=%+v %v", got, err)
 	}
-	_, err = svc.RetryCommentNotifications(t.Context(), view.ID, "")
+	_, err = svc.RetryCommentNotifications(t.Context(), view.ID, "", false)
 	if err != nil || len(stub.items) != 1 {
 		t.Fatalf("resent delivered comment: calls=%d err=%v", len(stub.items), err)
 	}
 	var row domain.CommentDelivery
 	if err = db.First(&row).Error; err != nil || row.Attempts != 1 {
 		t.Fatalf("row=%+v err=%v", row, err)
+	}
+}
+
+func TestStaleSendingDeliveryRequiresExplicitResend(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	svc, _ := NewService(db)
+	stub := &commentMentionNotifierStub{}
+	svc.SetCommentMentionNotifier(stub)
+	record := domain.CommentDelivery{
+		CommentID: "comment-stale", Email: "bob@example.test", Name: "Bob", AppID: stub.AppID(),
+		Payload: `{"recipient":{"email":"bob@example.test","name":"Bob"}}`, Status: "sending",
+		UpdatedAt: time.Now().Add(-commentDeliveryClaimTimeout - time.Second),
+	}
+	if err := db.Create(&record).Error; err != nil {
+		t.Fatal(err)
+	}
+	view, err := svc.commentDeliveries(t.Context(), record.CommentID)
+	if err != nil || len(view) != 1 || view[0].Status != "unknown" {
+		t.Fatalf("recovered delivery = %+v, %v", view, err)
+	}
+	if _, err := svc.deliverComment(t.Context(), record.CommentID, record.Email, false); err != nil {
+		t.Fatal(err)
+	}
+	if len(stub.items) != 0 {
+		t.Fatal("unknown delivery resent without confirmation")
+	}
+	view, err = svc.deliverComment(t.Context(), record.CommentID, record.Email, true)
+	if err != nil || len(stub.items) != 1 || view[0].Status != "delivered" {
+		t.Fatalf("explicit resend = %+v calls=%d err=%v", view, len(stub.items), err)
 	}
 }
 

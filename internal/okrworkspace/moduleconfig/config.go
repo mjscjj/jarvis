@@ -89,6 +89,8 @@ type IdentityConfig struct {
 	AppID            string `yaml:"app_id"`
 	AppSecretEnv     string `yaml:"app_secret_env"`
 	SessionTTLHours  int    `yaml:"session_ttl_hours"`
+	CookieName       string `yaml:"cookie_name"`
+	CookiePath       string `yaml:"cookie_path"`
 	CookieSecure     bool   `yaml:"cookie_secure"`
 	FeishuBaseURL    string `yaml:"feishu_base_url"`
 	FeishuAccountURL string `yaml:"feishu_account_url"`
@@ -125,6 +127,20 @@ func (c PreviewReviewConfig) validate() error {
 
 // ScopeParam renders the scopes the way Feishu's OAuth endpoints expect them.
 func (c IdentityConfig) ScopeParam() string { return strings.Join(c.Scopes, " ") }
+
+func (c IdentityConfig) BrowserCookieName() string {
+	if name := strings.TrimSpace(c.CookieName); name != "" {
+		return name
+	}
+	return "jarvis_okr_session"
+}
+
+func (c IdentityConfig) BrowserCookiePath() string {
+	if path := strings.TrimSpace(c.CookiePath); path != "" {
+		return path
+	}
+	return "/"
+}
 
 func (c IdentityConfig) AppSecret() string {
 	return strings.TrimSpace(os.Getenv(strings.TrimSpace(c.AppSecretEnv)))
@@ -267,6 +283,12 @@ func (c Config) validateBiz() error {
 	}
 	if c.Identity.SessionTTLHours <= 0 {
 		return fmt.Errorf("identity.session_ttl_hours must be positive")
+	}
+	if strings.ContainsAny(c.Identity.BrowserCookieName(), "()<>@,;:\"/[]?={} \t") {
+		return fmt.Errorf("identity.cookie_name contains invalid cookie characters")
+	}
+	if path := c.Identity.BrowserCookiePath(); !strings.HasPrefix(path, "/") || strings.ContainsAny(path, ";\r\n") {
+		return fmt.Errorf("identity.cookie_path must be an absolute cookie path")
 	}
 	if strings.TrimSpace(c.Identity.FeishuBaseURL) == "" || strings.TrimSpace(c.Identity.FeishuAccountURL) == "" {
 		return fmt.Errorf("identity Feishu URLs are required when enabled")

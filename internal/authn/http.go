@@ -17,23 +17,18 @@ import (
 
 const CookieName = "jarvis_session"
 
-var okrPrincipalAccounts = map[string]User{
-	"on_94b5aa46ca92b7aecd01031e5b2f0dc4": {Username: "chujiejie.1", Email: "chujiejie.1@bytedance.com", IsPrincipal: true},
-	"on_af023f3c29b03b3d90cffedbc703b005": {Username: "lixiaolin", Email: "claire.li@bytedance.com", IsPrincipal: true},
-}
-
 func (s *Service) AuthenticateRequest(ctx context.Context, c *app.RequestContext) (User, bool) {
-	if s.okr != nil && s.okr.Enabled() && len(c.Cookie(okrAuth.CookieName)) > 0 {
-		session, err := s.okr.Current(ctx, string(c.Cookie(okrAuth.CookieName)))
+	if s.okr != nil && s.okr.Enabled() && len(c.Cookie(s.okr.CookieName())) > 0 {
+		session, err := s.okr.Current(ctx, string(c.Cookie(s.okr.CookieName())))
 		if err == nil {
-			if len(c.Cookie(CookieName)) > 0 {
-				if err := s.clearMainSession(c); err != nil {
-					hlog.CtxErrorf(ctx, "clear superseded ByteDance browser session: %v", err)
+			if len(c.Cookie(s.CookieName())) > 0 {
+				if err := s.clearBrowserSession(c); err != nil {
+					hlog.CtxErrorf(ctx, "clear superseded browser session: %v", err)
 					return User{}, false
 				}
 			}
 			// The current OKR account takes precedence over a stale SSO cookie.
-			user, mapped := okrPrincipalAccounts[session.User.UnionID]
+			user, mapped := s.okrAccountBindings[session.User.UnionID]
 			return user, mapped && s.allows(user)
 		}
 		if !errors.Is(err, okrAuth.ErrUnauthenticated) {
@@ -43,7 +38,7 @@ func (s *Service) AuthenticateRequest(ctx context.Context, c *app.RequestContext
 		// invalid or expired. Never revive a previous user's SSO session.
 		return User{}, false
 	}
-	return s.Authenticate(string(c.Cookie(CookieName)))
+	return s.Authenticate(string(c.Cookie(s.CookieName())))
 }
 
 func (s *Service) RequestStatus(ctx context.Context, c *app.RequestContext) View {
@@ -51,30 +46,35 @@ func (s *Service) RequestStatus(ctx context.Context, c *app.RequestContext) View
 		return View{Enabled: false, Status: StatusUnauthenticated}
 	}
 	user, ok := s.AuthenticateRequest(ctx, c)
-	if !ok {
-		return View{Enabled: true, Status: StatusUnauthenticated}
+	// A verified OKR account may have a main-workbench preference while lacking
+	// principal access here. Never turn that preference into an authenticated User.
+	view := View{Enabled: true, Status: StatusUnauthenticated,
+		PreferMainWorkbench: s.mainWorkbenchAccounts[strings.ToLower(user.Username)] || s.mainWorkbenchAccounts[strings.ToLower(user.Email)],
 	}
-	return View{Enabled: true, Status: StatusAuthenticated, User: &user}
+	if ok {
+		view.Status, view.User = StatusAuthenticated, &user
+	}
+	return view
 }
 
 func (s *Service) LogoutRequest(ctx context.Context, c *app.RequestContext) error {
-	if err := s.clearMainSession(c); err != nil {
+	if err := s.clearBrowserSession(c); err != nil {
 		return err
 	}
 	if s.okr != nil {
-		if err := s.okr.Logout(ctx, string(c.Cookie(okrAuth.CookieName))); err != nil {
+		if err := s.okr.Logout(ctx, string(c.Cookie(s.okr.CookieName()))); err != nil {
 			return err
 		}
-		c.SetCookie(okrAuth.CookieName, "", -1, "/", "", protocol.CookieSameSiteLaxMode, s.okr.CookieSecure(), true)
+		c.SetCookie(s.okr.CookieName(), "", -1, s.okr.CookiePath(), "", protocol.CookieSameSiteLaxMode, s.okr.CookieSecure(), true)
 	}
 	return nil
 }
 
-func (s *Service) clearMainSession(c *app.RequestContext) error {
-	if err := s.Logout(string(c.Cookie(CookieName))); err != nil {
+func (s *Service) clearBrowserSession(c *app.RequestContext) error {
+	if err := s.Logout(string(c.Cookie(s.CookieName()))); err != nil {
 		return err
 	}
-	c.SetCookie(CookieName, "", -1, "/", "", protocol.CookieSameSiteStrictMode, false, true)
+	c.SetCookie(s.CookieName(), "", -1, s.CookiePath(), "", protocol.CookieSameSiteStrictMode, false, true)
 	return nil
 }
 

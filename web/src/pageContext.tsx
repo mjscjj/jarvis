@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from 'react'
 import type { PageContext, PageSelection } from './types'
 import { pageHash, routeFromHash } from './pageRoutes'
+import { redirectOKREntry } from './instanceNavigation'
 
 // PageContextValue exposes the readable PageContext (active_key + selection) plus
 // the setters left/right panels need: pages write `selection`, App drives
@@ -34,6 +35,7 @@ function writePageHash(
   replace = false,
 ) {
   const next = pageHash(key, selection, viewState)
+  if (redirectOKREntry(next)) return true
   if (window.location.hash === next) return
   if (replace) window.history.replaceState(null, '', next)
   else window.location.hash = next.slice(1)
@@ -64,6 +66,7 @@ export function PageContextProvider({
       writePageHash(initialRoute.key, initialRoute.selection, initialRoute.viewState, true)
     }
     const syncFromHash = () => {
+      if (redirectOKREntry()) return
       const route = routeFromHash(window.location.hash, initialKey)
       setActiveKeyState(route.key)
       setSelectionState(route.selection)
@@ -77,17 +80,17 @@ export function PageContextProvider({
   }, [initialKey])
 
   const setActiveKey = useCallback((key: string) => {
+    if (writePageHash(key, null, {})) return
     setActiveKeyState(key)
     setSelectionState(null)
     setViewStateState({})
-    writePageHash(key, null, {})
   }, [])
 
   const setSelection = useCallback((next: PageSelection | null) => {
     const targetKey = next ? pageKeyForSelection(next, activeKey) : activeKey
+    if (writePageHash(targetKey, next, viewState, next === null)) return
     if (targetKey !== activeKey) setActiveKeyState(targetKey)
     setSelectionState(next)
-    writePageHash(targetKey, next, viewState, next === null)
   }, [activeKey, viewState])
 
   const setViewState = useCallback((next: Record<string, string | number | boolean | null | undefined>, replace = true) => {
@@ -96,8 +99,8 @@ export function PageContextProvider({
         .filter(([, value]) => value !== null && value !== undefined && value !== '')
         .map(([key, value]) => [key, String(value)]),
     )
+    if (writePageHash(activeKey, selection, normalized, replace)) return
     setViewStateState(normalized)
-    writePageHash(activeKey, selection, normalized, replace)
   }, [activeKey, selection])
 
   const navigate = useCallback((key: string, nextViewState: Record<string, string | number | boolean | null | undefined> = {}) => {
@@ -106,10 +109,10 @@ export function PageContextProvider({
         .filter(([, value]) => value !== null && value !== undefined && value !== '')
         .map(([viewKey, value]) => [viewKey, String(value)]),
     )
+    if (writePageHash(key, null, normalized)) return
     setActiveKeyState(key)
     setSelectionState(null)
     setViewStateState(normalized)
-    writePageHash(key, null, normalized)
   }, [])
 
   const value = useMemo<PageContextValue>(
