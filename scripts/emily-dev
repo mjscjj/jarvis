@@ -73,10 +73,7 @@ def container_args(root, shared, state, ingress, lark, byted, goroot, env_file=N
                      + (',readonly' if readonly else '')])
 
     mount(root, '/opt/jarvis')
-    # Existing worktrees may use an absolute link. Mount its product-only target,
-    # never its parent repository. A normal directory needs no host-path alias.
-    target = str(shared) if (root/'data/okr').is_symlink() else '/opt/jarvis/data/okr'
-    mount(shared, target)
+    mount(shared, '/opt/jarvis/data/okr')
     mount(state, '/dev-state')
     mount(ingress, '/run/emily-web')
     mount(goroot, '/opt/go', True)
@@ -109,9 +106,6 @@ def main():
         parser.error('--okr-data is required')
     shared = opts.okr_data.resolve()
     validate_okr_dir(shared)
-    checkout = ROOT/'data/okr'
-    if checkout.is_symlink() and checkout.resolve() != shared:
-        raise ValueError('data/okr link must point to --okr-data')
     if not (ROOT/'conf/config.runtime.yaml').is_file():
         raise ValueError('initialize local config first')
     if opts.env_file and not opts.env_file.is_file():
