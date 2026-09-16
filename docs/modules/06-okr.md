@@ -28,9 +28,9 @@ Jarvis 世界模型
 
 ## OKR 独立对话
 
-当前 Emily 实例启用了[完整源码研发模式](../summery/emily-development-environment.md)：`chat.development_container` 指向常驻开发容器，容器可修改整个系统代码，直接读写同一份线上 `data/okr/`，Task、Message 等使用独立开发主库。入口路径由实例配置生成，不增加第二套业务路由。开发页面的对话框调用主站已有的 `/api/okr-chat/*`，复用同一会话库与飞书登录状态；模型执行仍进入研发容器。
+开发部署使用[独立研发实例](../summery/emily-development-environment.md)：容器运行同一套代码，只有 OKR 业务数据共享，Task、Message、聊天、附件和授权均归各实例所有。前端统一调用当前实例 API，不绕回主站。入口路径仍由实例配置生成。
 
-Biz OKR 页面底部对话按用户身份选择：既有白名单用户保留普通 Chat，其余已完成 Biz OKR 飞书登录的访客使用受限 `/api/okr-chat/*`。该接口在服务端验证飞书会话，所有访客共用一份 Chat 服务和 `var/okr-chat/chat.db`，共享会话列表、历史、草稿与附件；不按用户分库或建立运行实例。普通 `/api/chat/*` 和 M2/M3/M5 保持原有可信运行方式。
+Biz OKR 页面底部对话按用户身份选择：既有白名单用户保留普通 Chat，其余已完成 Biz OKR 飞书登录的访客使用当前实例的 `/api/okr-chat/*`。该接口在服务端验证飞书会话，在实例的 `var/okr-chat/chat.db` 中按用户归属隔离会话列表、历史、草稿和附件；不按用户分库或建立运行实例。普通 `/api/chat/*` 和 M2/M3/M5 保持原有可信运行方式。
 
 OKR 飞书登录会话已持久化在 Jarvis 私有运行主库的 `okr_workspace_auth_session` 表，浏览器通过 HttpOnly 的 `jarvis_okr_session` Cookie 恢复身份；服务重启不需要再次授权。`conf/okr-module.yaml` 的 `identity.session_ttl_hours` 设为 `8760`（365 天），同时决定新会话与 Cookie 的有效期。已签发的旧会话保留原到期时间，下一次正常登录使用一年有效期；主动退出立即删除对应会话。此设置只延长网页登录，不改变飞书 API access/refresh token 自身的期限。
 
@@ -40,7 +40,7 @@ OKR 飞书登录会话已持久化在 Jarvis 私有运行主库的 `okr_workspac
 
 “正在验证字节身份”长时间不结束时，先按 [网页登录授权域名与超时排查](../summery/sso-web-login.md#当前-cli-授权域名与超时排查2026-09-14) 核对实际 API 地址。2026-09-14 已实测 CN 上游握手频繁超时、i18n BD 地址创建授权约 0.8 秒；具体数据、`auth.login_api_base_url` 部署配置与验证范围统一记录在该文档，不把延长等待当作域名问题的修复。
 
-`internal/okrchat/` 拥有容器执行和共享 OKR 聊天库装配；`internal/chat/` 复用会话、附件及流式协议。配置了 `chat.development_container` 时，对话进入常驻开发容器，完整源码可写，线上 `data/okr/` 可读写，开发实例拥有自己的 API 和空主库。没有配置该字段时，使用原始单轮容器：挂载 OKR 附件、会话状态和可写前端目录，通过受限工具出口调用 OKR 接口。两种模式均不挂载生产主库、普通 Chat、私人资料或 Docker socket，也没有直接网络。
+`internal/okrchat/` 装配实例自己的 OKR 聊天库；`internal/chat/` 复用会话、附件及流式协议。`chat.runtime: local` 在当前实例使用普通 runner 和本机 CLI 授权，供独立开发容器使用，无需 Docker 嵌套。默认 `docker` 保留主环境的单轮隔离容器与受限 OKR 接口，不暴露主环境私人数据。两种模式不共享跨实例聊天数据，也不再通过开发容器名互相调用。
 
 网页会话 ID 和历史以共享 Chat 库为准，Codex thread ID 只是可替换的底层状态。升级或更换授权后若 Codex 明确返回旧 thread 不存在，服务记录实际 stderr、清除旧 ID，并在同一轮用已保存的可见历史自动新建底层 thread；成功后写回新 ID，不要求用户新开网页会话。只重试一次；授权、网络等其他错误保留原始原因，待环境恢复后下一轮仍可继续。
 

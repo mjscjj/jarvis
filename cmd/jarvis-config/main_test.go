@@ -76,6 +76,8 @@ func TestOKRChatImageDeploymentConfig(t *testing.T) {
 		fail       bool
 	}{
 		{"chat:\n  enabled: false\n", "", false},
+		{"chat:\n  enabled: true\n  runtime: local\n  model: test\n  reasoning_effort: medium\n  timeout_seconds: 10\n", "", false},
+		{"chat:\n  enabled: true\n  runtime: unknown\n  model: test\n  reasoning_effort: medium\n  timeout_seconds: 10\n", "", true},
 		{"chat:\n  enabled: true\n", "", true},
 		{"chat:\n  enabled: true\n  image: okr:test\n  model: test\n  reasoning_effort: medium\n  timeout_seconds: 10\n  auth_file: /login/auth.json\n  model_hosts: [api.openai.com:443]\n", "okr:test\n", false},
 	} {

@@ -96,7 +96,7 @@ Jarvis 同时承担三件性质不同的事，由两个飞书应用按受众和 
 | 会话与 token 存储 | `internal/okrworkspace/auth/service.go`、`tokenstore.go` |
 | 登录接口与中间件 | `internal/api/okr_identity.go` |
 
-用户 access/refresh token 不落库，按 `open_id` 写到 `identity.token_dir`（`data/okr/feishu-tokens/<open_id>.json`），同一人再登录即覆盖。该目录被 `.gitignore` 排除，不入库。
+用户 access/refresh token 不落库，按 `open_id` 写到 `identity.token_dir`（默认 `var/okr/feishu-tokens/<open_id>.json`），同一人再登录即覆盖。该目录属于实例私有运行状态，不进入共享 OKR 业务目录或 Git。
 
 换应用时 `open_id` 命名空间随之改变，旧应用的 token 文件会变成孤立凭证，应当直接删除而不是留着。
 

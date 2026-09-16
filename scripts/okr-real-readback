@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Verify OKR live-browser artifacts with Feishu, without printing credentials."""
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -8,9 +9,8 @@ import sys
 import urllib.request
 
 
-ROOT = Path(__file__).resolve().parent.parent
-OPEN_ID = "ou_0f7d5f75fe23c57c1cf98c5123404f63"
-TOKEN_PATH = ROOT / "data/okr/feishu-tokens" / f"{OPEN_ID}.json"
+OPEN_ID = os.environ.get("OKR_REAL_EXPECTED_OPEN_ID", "")
+TOKEN_PATH = Path(os.environ.get("OKR_REAL_TOKEN_FILE", ""))
 API = "https://open.feishu.cn/open-apis"
 
 
@@ -28,8 +28,11 @@ def feishu(token, path, body=None):
 
 
 def cli(*args):
+    profile = os.environ.get("OKR_REAL_NOTIFICATION_PROFILE", "")
+    if not profile:
+        raise RuntimeError("Set OKR_REAL_NOTIFICATION_PROFILE for the tested instance")
     proc = subprocess.run(
-        ["lark-cli", "--profile", "jarvis-notify-audit", "im", *args, "--as", "bot", "--format", "json"],
+        ["lark-cli", "--profile", profile, "im", *args, "--as", "bot", "--format", "json"],
         capture_output=True, text=True, timeout=25,
     )
     if proc.returncode:
@@ -41,6 +44,8 @@ def cli(*args):
 
 
 def main():
+    if not OPEN_ID or not TOKEN_PATH.is_file():
+        raise RuntimeError("Set OKR_REAL_EXPECTED_OPEN_ID and OKR_REAL_TOKEN_FILE for the tested instance")
     if len(sys.argv) != 2:
         raise RuntimeError("usage: scripts/okr-real-readback <browser-evidence.json>")
     evidence = json.loads(Path(sys.argv[1]).read_text())
@@ -74,7 +79,10 @@ def main():
             raise RuntimeError("Self-mention message not found in notification bot chat")
         members = cli("chat.members", "get", "--chat-id", message["chat_id"], "--member-id-type", "open_id")
         recipient = any(member.get("member_id") == OPEN_ID for member in members.get("items", []))
-        sender = message.get("sender", {}).get("id") == "cli_a96a2422f03bdbd7"
+        expected_app = os.environ.get("OKR_REAL_NOTIFICATION_APP_ID", "")
+        if not expected_app:
+            raise RuntimeError("Set OKR_REAL_NOTIFICATION_APP_ID for notification readback")
+        sender = message.get("sender", {}).get("id") == expected_app
         content = str(message.get("content") or "")
         links = re.findall(r"https://[^)\s]+", content)
         target = next((link for link in links if "comment_id=" in link), "")

@@ -9,7 +9,7 @@ max_image_bytes: 10485760
 # Build deploy/okr-chat first, then set enabled and the existing Codex login file.
 # MVP supports the standard Codex ChatGPT connection; no host CLI config is mounted.
 chat:
-  development_container: ""
+  runtime: "docker" # local runs in this instance, which may itself be a container.
   enabled: false
   image: "jarvis-okr-chat:0.154.0"
   model: "gpt-5.6-sol"
@@ -45,5 +45,5 @@ identity:
   cookie_secure: false
   feishu_base_url: "https://open.feishu.cn"
   feishu_account_url: "https://accounts.feishu.cn"
-  token_dir: "data/okr/feishu-tokens"
+  token_dir: "var/okr/feishu-tokens"
   scopes_file: "okr-feishu-scopes.txt"

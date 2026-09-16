@@ -36,7 +36,6 @@ import type { AuthUser as OKRAuthUser } from './okr/emily/types'
 import { useExecutingTaskCount } from './hooks/useExecutingTaskCount'
 import type { Plugin } from './types'
 import { AgentActivityIcon } from './components/AgentActivityIcon'
-import { appPath } from './appPath.ts'
 
 const { Sider, Content } = Layout
 const { Title } = Typography
@@ -94,9 +93,6 @@ function AppShell() {
   const { loading: authLoading, enabled: authEnabled, user, logout } = useAuth()
   const { context, navigate } = usePageContext()
   const weeklyShare = context.active_key === 'biz-okr' && isWeeklyShareViewState(context.view_state)
-  // A prefixed development page reuses the root OKR conversation and its
-  // existing Docker runtime. The prefix itself remains deployment config.
-  const developmentOKRChatBase = appPath('/') !== '/' ? new URL('/api/okr-chat', window.location.origin).href : undefined
   const principalDataEnabled = !authEnabled || user !== null
   const runtimeFailures = useRuntimeFailureCount(principalDataEnabled)
   const executingTasks = useExecutingTaskCount(principalDataEnabled)
@@ -560,11 +556,9 @@ function AppShell() {
               {pages[context.active_key]}
             </Suspense>
             <Suspense fallback={null}>
-              {principalDataEnabled && (context.active_key !== 'biz-okr' || !developmentOKRChatBase) &&
+              {principalDataEnabled &&
                 <Chat key={`principal-chat:${user?.username ?? 'local'}`} compact={context.active_key !== 'chat'} />}
-              {developmentOKRChatBase && context.active_key === 'biz-okr' &&
-                <Chat key="development-okr-chat" compact isolated apiBase={developmentOKRChatBase} />}
-              {!developmentOKRChatBase && !authLoading && okrUser && !principalDataEnabled &&
+              {!authLoading && okrUser && !principalDataEnabled &&
                 <Chat key={`okr-chat:${okrUser.unionId || okrUser.openId}`} compact isolated hidden={context.active_key !== 'biz-okr'} />}
             </Suspense>
           </Content>

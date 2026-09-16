@@ -3,12 +3,15 @@
 set -uo pipefail
 okr_repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$okr_repo_root" || exit 1
+: "${OKR_REAL_BASE_URL:?Set the tested instance URL}"
+: "${OKR_REAL_EXPECTED_OPEN_ID:?Set the verified tester open_id}"
+: "${OKR_REAL_EXPECTED_NAME:?Set the verified tester name}"
+: "${OKR_REAL_TOKEN_FILE:?Set the tested instance token file}"
+: "${OKR_REAL_IDENTITY_DB:?Set the tested instance session database}"
+mkdir -p "$okr_repo_root/var"
 okr_run_dir="$(mktemp -d "$okr_repo_root/var/okr-real-run.XXXXXXXX")"
 chmod 700 "$okr_run_dir"
-okr_base_url="${OKR_REAL_BASE_URL:-https://emily.bytedance.net}"
-export OKR_REAL_BASE_URL="$okr_base_url"
 export OKR_REAL_PROFILE_DIR="${OKR_REAL_PROFILE_DIR:-$okr_repo_root/var/okr-real-browser-profile}"
-export OKR_REAL_EXPECTED_OPEN_ID="${OKR_REAL_EXPECTED_OPEN_ID:-ou_0f7d5f75fe23c57c1cf98c5123404f63}"
 mkdir -p "$OKR_REAL_PROFILE_DIR"
 chmod 700 "$OKR_REAL_PROFILE_DIR"
 if ! scripts/okr-real-test-session > "$okr_run_dir/session-path"; then

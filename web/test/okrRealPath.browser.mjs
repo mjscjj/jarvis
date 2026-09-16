@@ -9,7 +9,7 @@ const base = process.env.OKR_REAL_BASE_URL?.replace(/\/$/, '')
 const profile = process.env.OKR_REAL_PROFILE_DIR
 const sessionFile = process.env.OKR_REAL_SESSION_FILE
 const expectedOpenID = process.env.OKR_REAL_EXPECTED_OPEN_ID
-const expectedName = process.env.OKR_REAL_EXPECTED_NAME || '储节节'
+const expectedName = process.env.OKR_REAL_EXPECTED_NAME
 const quarter = process.env.OKR_REAL_QUARTER || '2026-Q3'
 const week = process.env.OKR_REAL_WEEK || '2026-W36'
 const weeklyWeek = process.env.OKR_REAL_WEEKLY_WEEK || '2026-W35'
@@ -19,6 +19,8 @@ const runID = `okr-real-${new Date().toISOString().replace(/[:.]/g, '-')}`
 assert(base && /^https?:\/\//.test(base), 'Set OKR_REAL_BASE_URL to the actual deployed OKR origin')
 assert(profile, 'Set OKR_REAL_PROFILE_DIR to a dedicated browser profile')
 assert(expectedOpenID, 'Set OKR_REAL_EXPECTED_OPEN_ID from a verified OKR identity; display name alone is insufficient')
+assert(expectedName, 'Set OKR_REAL_EXPECTED_NAME from the verified tester identity')
+const apiPath = path => `${new URL(base).pathname.replace(/\/$/, '')}${path}`
 const validCases = ['navigation', 'people', 'review-comment', 'weekly-comment', 'plan-comment', 'regional-alignment', 'review-export', 'weekly-export', 'self-mention']
 assert(cases.length > 0 && cases.every(value => validCases.includes(value)), `OKR_REAL_CASES must use: ${validCases.join(', ')}`)
 
@@ -35,7 +37,7 @@ if (sessionFile) {
   sessionToken = session.cookie
   assert(sessionToken, 'Test session file has no cookie')
   await browser.addCookies([{
-    name: 'jarvis_okr_session', value: sessionToken,
+    name: session.cookie_name || 'jarvis_okr_session', value: sessionToken,
     url: base, httpOnly: true, sameSite: 'Lax',
   }])
 }
@@ -46,7 +48,7 @@ const createdComments = []
 const browserErrors = []
 page.on('pageerror', error => browserErrors.push(error.message))
 page.on('response', response => {
-  if (process.env.OKR_REAL_TRACE_PLAN === '1' && new URL(response.url()).pathname.startsWith('/api/biz-okr/plans')) {
+  if (process.env.OKR_REAL_TRACE_PLAN === '1' && new URL(response.url()).pathname.startsWith(apiPath('/api/biz-okr/plans'))) {
     console.error('Plan HTTP:', response.request().method(), new URL(response.url()).pathname, response.status())
   }
 })
@@ -57,12 +59,12 @@ async function api(path, options) {
   const result = await page.evaluate(async ({ path, options }) => {
     const response = await fetch(path, { credentials: 'same-origin', ...options })
     return { status: response.status, body: await response.json() }
-  }, { path, options })
+  }, { path: apiPath(path), options })
   return result
 }
 
 async function uiWrite(path, method, action, expectedStatus = 200) {
-  const response = page.waitForResponse(value => value.request().method() === method && new URL(value.url()).pathname === path)
+  const response = page.waitForResponse(value => value.request().method() === method && new URL(value.url()).pathname === apiPath(path))
   await action()
   const saved = await response
   const body = await saved.json()
@@ -123,7 +125,7 @@ async function testComment({ tab, targetWeek, planID = '' }) {
   const drawer = await openCommentDrawer(plan)
   const content = `[OKR真实验收 ${runID}] 储节节本人评论读写检查`
   await drawer.getByPlaceholder(plan ? '对当前 Plan 发表评论，输入 @ 选择提醒人…' : '对本周页面发表评论，输入 @ 选择提醒人…').fill(content)
-  const response = page.waitForResponse(value => value.request().method() === 'POST' && new URL(value.url()).pathname === path)
+  const response = page.waitForResponse(value => value.request().method() === 'POST' && new URL(value.url()).pathname === apiPath(path))
   await drawer.getByRole('button', { name: '发布评论', exact: true }).click()
   const saved = await response
   const result = await saved.json()
@@ -141,7 +143,7 @@ async function testComment({ tab, targetWeek, planID = '' }) {
   const replyText = `[OKR真实验收 ${runID}] 回复`
   await thread.getByRole('button', { name: /^回复/ }).first().click()
   await thread.getByPlaceholder(new RegExp(`回复 ${expectedName}`)).fill(replyText)
-  const replyResponse = page.waitForResponse(value => value.request().method() === 'POST' && new URL(value.url()).pathname === path)
+  const replyResponse = page.waitForResponse(value => value.request().method() === 'POST' && new URL(value.url()).pathname === apiPath(path))
   await thread.getByRole('button', { name: '回复', exact: true }).last().click()
   const reply = await replyResponse
   const replyBody = await reply.json()
@@ -151,7 +153,7 @@ async function testComment({ tab, targetWeek, planID = '' }) {
   await thread.getByRole('button', { name: '编辑', exact: true }).first().click()
   const editedContent = `${content}（已编辑）`
   await thread.getByPlaceholder('修改评论…').fill(editedContent)
-  const editResponse = page.waitForResponse(value => value.request().method() === 'PUT' && new URL(value.url()).pathname === `/api/biz-okr/comments/${id}`)
+  const editResponse = page.waitForResponse(value => value.request().method() === 'PUT' && new URL(value.url()).pathname === apiPath(`/api/biz-okr/comments/${id}`))
   await thread.getByRole('button', { name: '保存', exact: true }).click()
   assert.equal((await editResponse).status(), 200)
   await thread.getByText(editedContent).waitFor()
@@ -174,7 +176,7 @@ async function testExport(tab, targetWeek) {
   await page.goto(`${base}/#/biz-okr?tab=${tab}&quarter=${quarter}&week=${targetWeek}`)
   const exportButton = page.getByRole('button', { name: tab === 'review-meeting' ? '导出 OKR Review' : '导出全部 OKR', exact: true })
   await exportButton.waitFor()
-  const response = page.waitForResponse(value => value.request().method() === 'POST' && new URL(value.url()).pathname === '/api/biz-okr/feishu-documents')
+  const response = page.waitForResponse(value => value.request().method() === 'POST' && new URL(value.url()).pathname === apiPath('/api/biz-okr/feishu-documents'))
   await exportButton.click()
   const saved = await response
   const result = await saved.json()
@@ -324,7 +326,7 @@ async function testSelfMention() {
   await choice.click()
   const content = await editor.inputValue()
   assert(content.includes(`@${expectedName}`), 'Self mention was not inserted into comment text')
-  const response = page.waitForResponse(value => value.request().method() === 'POST' && new URL(value.url()).pathname === '/api/biz-okr/comments')
+  const response = page.waitForResponse(value => value.request().method() === 'POST' && new URL(value.url()).pathname === apiPath('/api/biz-okr/comments'))
   await drawer.getByRole('button', { name: '发布评论', exact: true }).click()
   const saved = await response
   const body = await saved.json()

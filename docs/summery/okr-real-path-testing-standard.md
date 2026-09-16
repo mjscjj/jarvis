@@ -87,7 +87,9 @@
 
 普通 Chrome 窗口中的登录不会自动共享给 Playwright。现有有效飞书授权已足够进行业务路径测试，无需用户重复扫码或提供 Cookie。若要单独验收产品设备登录，则在非无头模式（`OKR_REAL_HEADLESS=0`）用专用 profile 完成一次真实登录；不得把短时测试会话的结果报告为设备登录成功。
 
-本机一键运行入口是 `scripts/okr-real-acceptance`。它先用 `scripts/okr-real-test-session` 对本人现有飞书授权实时核身，短时会话只写入目标服务读取的会话库；然后执行 `web/test/okrRealPath.browser.mjs`，最后用 `scripts/okr-real-readback` 回读飞书文档元数据、正文、通知消息及收件会话成员。浏览器异常退出也会撤销本轮短时会话。`OKR_REAL_CASES` 可选择单项；例如 `OKR_REAL_CASES=navigation,people scripts/okr-real-acceptance`。运行前需按所在机器设置 `PLAYWRIGHT_MODULE` 和 `CHROME_EXECUTABLE`；`OKR_REAL_BASE_URL` 默认是主站，验证开发实例时必须显式指定，并检查该实例使用的会话库，必要时设置 `OKR_REAL_IDENTITY_DB`。证据文件写入忽略 Git 的 `var/okr-real-run.*`，Cookie 和令牌不在测试结果中输出。真实外部读回或卡片跳转有一项失败，整轮即返回非零。
+本机一键运行入口是 `scripts/okr-real-acceptance`。它先用 `scripts/okr-real-test-session` 对本人现有飞书授权实时核身，短时会话只写入目标服务读取的会话库；然后执行 `web/test/okrRealPath.browser.mjs`，最后用 `scripts/okr-real-readback` 回读飞书文档元数据、正文、通知消息及收件会话成员。浏览器异常退出也会撤销本轮短时会话。`OKR_REAL_CASES` 可选择单项；例如 `OKR_REAL_CASES=navigation,people scripts/okr-real-acceptance`。运行前需按所在机器设置 `PLAYWRIGHT_MODULE` 和 `CHROME_EXECUTABLE`。
+
+真实测试不再默认使用主站或固定个人身份。必须显式设置 `OKR_REAL_BASE_URL`、`OKR_REAL_EXPECTED_OPEN_ID`、`OKR_REAL_EXPECTED_NAME`、`OKR_REAL_TOKEN_FILE` 和 `OKR_REAL_IDENTITY_DB`；文件路径应指向被测实例自己的 Token 和会话库。测试带前缀的实例时，另外设置 `OKR_REAL_COOKIE_NAME` 为该实例实际使用的 Cookie 名；浏览器请求和回读均保留 URL 前缀。通知读回使用显式的 `OKR_REAL_NOTIFICATION_PROFILE` 和 `OKR_REAL_NOTIFICATION_APP_ID`，不默认调用主环境机器人。证据文件写入忽略 Git 的 `var/okr-real-run.*`，Cookie 和令牌不在测试结果中输出。真实外部读回或卡片跳转有一项失败，整轮即返回非零。
 
 测试入口应明确区分模拟与真实运行。真实运行缺浏览器、账号、服务或权限等前提时，必须报告“未验证”及原因，不能静默跳过后出具全通过报告。新增或调整发布检查时应落实此规则；本规范本身不代表自动门禁已实现。
 

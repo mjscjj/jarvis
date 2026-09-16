@@ -27,13 +27,14 @@ def git_path(worktree, *args):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--worktree', type=Path, default=ROOT.parent / 'emily-development')
+    parser.add_argument('--worktree', type=Path, default=ROOT)
+    parser.add_argument('--source', type=Path, required=True, help='shared OKR product directory')
     args = parser.parse_args()
     dev = args.worktree.resolve()
-    live = ROOT / 'data/okr'
-    if dev == ROOT or not (live / 'okr.db').is_file():
-        raise SystemExit('expected separate development worktree and live data/okr/okr.db')
-    if git_path(dev, 'rev-parse', '--git-common-dir') != (ROOT / '.git').resolve():
+    live = args.source.resolve()
+    if not (live / 'okr.db').is_file() or live == dev / 'data/okr':
+        raise SystemExit('expected a separate shared product directory containing okr.db')
+    if git_path(dev, 'rev-parse', '--git-common-dir') != git_path(ROOT, 'rev-parse', '--git-common-dir'):
         raise SystemExit('development directory is not a worktree of this repository')
 
     checkout = dev / 'data/okr'

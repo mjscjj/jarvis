@@ -1,6 +1,6 @@
 # OKR 对话：原始单轮容器设计记录
 
-> 状态：历史设计。本文记录 `chat.development_container` 未配置时的单轮容器方案，不作为当前 Emily 研发环境的操作说明。当前实例使用[完整源码研发模式](emily-development-environment.md)：一个常驻开发容器、完整开发 worktree、同一份线上 `data/okr/` 和独立空主库；容器内运行开发服务，入口路径可配置。源码与 OKR 数据如何提交、哪些配置进入 main，均以新文档为准。
+> 状态：历史设计。本文记录单轮隔离容器方案，现对应默认 `chat.runtime: docker`。独立开发容器使用 `chat.runtime: local`；两个实例只共享 OKR 业务数据，不共享授权和聊天。代码整理与旧部署迁移步骤见[开发实例文档](emily-development-environment.md)。
 
 > 当时状态：已实施；OKR 访客共用一份会话库，仅与普通 Jarvis 隔离。后来改为在同一会话库中按飞书用户隔离会话；当前行为以[模块文档](../modules/06-okr.md)为准。
 > 更新日期：2026-09-14。

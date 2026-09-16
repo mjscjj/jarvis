@@ -47,7 +47,7 @@ func run(args []string, stdout io.Writer) error {
 		if err := cfg.Chat.Validate(); err != nil {
 			return err
 		}
-		if cfg.Chat.Enabled && cfg.Chat.DevelopmentContainer == "" {
+		if cfg.Chat.Enabled && cfg.Chat.Runtime != "local" {
 			_, err = fmt.Fprintln(stdout, cfg.Chat.Image)
 		}
 		return err

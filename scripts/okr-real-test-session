@@ -15,16 +15,28 @@ import sqlite3
 import sys
 import tempfile
 import urllib.request
+from urllib.parse import urlsplit
 
 
-ROOT = Path(__file__).resolve().parent.parent
-OPEN_ID = "ou_0f7d5f75fe23c57c1cf98c5123404f63"
-NAME = "储节节"
-TOKEN_PATH = ROOT / "data/okr/feishu-tokens" / f"{OPEN_ID}.json"
-DB_PATH = Path(os.environ.get("OKR_REAL_IDENTITY_DB", str(ROOT / "var/jarvis-lixiaolin.db")))
+OPEN_ID = os.environ.get("OKR_REAL_EXPECTED_OPEN_ID", "")
+NAME = os.environ.get("OKR_REAL_EXPECTED_NAME", "")
+TOKEN_PATH = Path(os.environ.get("OKR_REAL_TOKEN_FILE", ""))
+DB_PATH = Path(os.environ.get("OKR_REAL_IDENTITY_DB", ""))
+COOKIE_NAME = os.environ.get("OKR_REAL_COOKIE_NAME", "jarvis_okr_session")
+
+
+def validate_target():
+    if not OPEN_ID or not NAME or not TOKEN_PATH.is_file() or not DB_PATH.is_file():
+        raise RuntimeError("Set OKR_REAL_EXPECTED_OPEN_ID, OKR_REAL_EXPECTED_NAME, OKR_REAL_TOKEN_FILE and OKR_REAL_IDENTITY_DB for the tested instance")
+    target = urlsplit(os.environ.get("OKR_REAL_BASE_URL", ""))
+    if target.scheme not in ("http", "https") or not target.netloc:
+        raise RuntimeError("Set OKR_REAL_BASE_URL to the tested instance")
+    if target.path.strip("/") and not os.environ.get("OKR_REAL_COOKIE_NAME"):
+        raise RuntimeError("Set OKR_REAL_COOKIE_NAME to the prefixed instance's actual cookie name")
 
 
 def main():
+    validate_target()
     grant = json.loads(TOKEN_PATH.read_text())
     if grant.get("open_id") != OPEN_ID or grant.get("name") != NAME:
         raise RuntimeError("Saved grant is not the expected tester")
@@ -60,12 +72,12 @@ def main():
     try:
         os.fchmod(fd, 0o600)
         with os.fdopen(fd, "w") as handle:
-            json.dump({"cookie": cookie, "token_hash": token_hash, "open_id": OPEN_ID, "expires_at": expires.isoformat()}, handle)
+            json.dump({"cookie": cookie, "cookie_name": COOKIE_NAME, "token_hash": token_hash, "open_id": OPEN_ID, "expires_at": expires.isoformat()}, handle)
         base_url = os.environ.get("OKR_REAL_BASE_URL", "").rstrip("/")
         if base_url:
             request = urllib.request.Request(
                 base_url + "/api/biz-okr/me",
-                headers={"Cookie": "jarvis_okr_session=" + cookie},
+                headers={"Cookie": COOKIE_NAME + "=" + cookie},
             )
             with urllib.request.urlopen(request, timeout=10) as response:
                 current = json.load(response)
@@ -80,6 +92,7 @@ def main():
 
 
 def revoke(path):
+    validate_target()
     session_path = Path(path)
     if not session_path.exists():
         return

@@ -36,8 +36,8 @@ func Open(ctx context.Context, cfg moduleconfig.ChatConfig, root, repo, upstream
 	if err := cfg.Validate(); err != nil {
 		return nil, nil, err
 	}
-	if cfg.DevelopmentContainer != "" {
-		return openDevelopment(ctx, cfg, root, name, prompts)
+	if cfg.Runtime == "local" {
+		return openLocal(ctx, cfg, root, name, prompts)
 	}
 	docker, err := exec.LookPath("docker")
 	if err != nil {

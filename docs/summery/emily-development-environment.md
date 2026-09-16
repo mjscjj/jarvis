@@ -1,22 +1,46 @@
-# Emily 完整研发环境
+# Emily 开发实例
 
-> Status: current · 本文是完整研发模式的操作与维护真源；原始单轮 OKR 容器方案见 [历史设计](okr-chat-isolation-mvp-design.md)。
+代码与 OKR-MVP 使用同一套实现。分支只承载尚未合入的功能；环境差异属于
+本机配置、容器 HOME 和数据目录，不维护开发版业务逻辑。
 
-## 范围
+本文描述整理后的代码和切换步骤，不代表当前运行容器已经完成迁移。
+旧容器在完成下述数据整理、独立授权和重新部署之前仍使用原来的挂载。
 
-- 完整源码使用独立 worktree，由常驻 Docker 容器执行、构建和运行前后端。
-- 直接把线上 `data/okr/` 挂入开发容器，OKR 数据库、图片和业务资源是同一份物理文件，允许修改数据和表结构。
-- 任务、消息、普通会话等使用开发实例自己的 `var/development.db`，不复制生产主库、日志或私人资料。
-- 网页沿用现有登录实现，开发会话单独保存。通知机器人和通讯录查询经宿主凭证出口复用；不向容器提供 principal 的个人消息/私有文档授权。
-- 容器没有直接网络和 Docker 控制 socket；模型、登录及依赖下载走明确的 HTTPS 目标出口。容器的 `jarvis-tools` 访问自己的完整 API。
-- 生产主服务代码更新仍走现有部署流程；开发实例构建不会更新生产前后端。
+## 数据与身份
 
-## 可配置的访问路径
+| 内容 | 归属 |
+|---|---|
+| `data/okr/okr.db`、SQLite sidecar、`assets/`、`activity/`、Owner 映射和术语表 | 唯一共享的业务数据目录，两边读写同一份 |
+| `var/development.db`、普通 Chat、OKR Chat、附件、Task、Message、世界模型、日志 | 各实例私有，不从主环境导入 |
+| Lark、ByteDance、Codex 配置及凭证 | 各实例 HOME 内独立授权，不挂载主环境登录文件 |
+| OKR 网页用户 Token、通讯录缓存 | 各实例 `var/okr/`，不进入共享目录 |
+| CLI 可执行程序、Go 工具链 | 可只读复用程序文件，不复用身份配置 |
 
-用户已明确接受同域开发页面可能使用生产浏览器登录态，不要求子域名隔离。
-路径只用于区分实例，不声明它是浏览器安全边界。
+同名 CLI、Profile 和容器内路径不会导致身份共享。开发实例 HOME 是
+`/dev-state/home`，对应当前 checkout 的 `var/container/home`。
+不再使用旧的宿主 `var/emily-development/home`，其中可能遗留复制的模型凭证。
 
-生产入口的本机配置示例（仅启用开发入口的实例填写）：
+容器使用普通 Docker bridge 网络，不运行出口网关、域名白名单或宿主 CLI 代理。
+镜像直接基于 Node，不继承单轮 OKR Chat 镜像的 HTTP(S) 代理变量。
+没有宿主 Docker socket，不使用 host 网络。
+
+## 对话与入口
+
+前端 API、静态文件和附件统一使用当前实例的路径前缀；开发页面不再绕回根路径
+`/api/okr-chat`。已有通用路径代理、Cookie 路径处理和前端 `appPath` 保留。
+
+`okr-module.runtime.yaml` 的 `chat.runtime` 只有两种执行方式：
+
+- `docker`（公共默认）：保留主环境原有的单轮隔离容器及受限 OKR API。
+- `local`：在当前实例运行已安装的 CLI，复用普通 Chat runner、工具目录、
+  取消执行和原生 thread 恢复。适用于整个实例都可供开发 Agent 使用的容器。
+
+两者使用各自实例的 `var/okr-chat/chat.db` 和附件目录，并保留按 OKR 用户的
+会话归属检查。`local` 不是浏览器用户之间的进程沙箱；该实例的数据和能力属于
+开发用途。敏感主环境保持 `docker`，不把它切换为 `local`。
+旧的 `chat.development_container` 已删除；不再由主服务跨容器运行开发对话。
+
+开发入口仍可使用主服务现有的路径代理，例如：
 
 ```yaml
 server:
@@ -24,105 +48,103 @@ server:
   development_socket: /tmp/emily-development-1001/ingress/web.sock
 ```
 
-开发实例生成配置的关键字段示例：
-
-```yaml
-server:
-  addr: 127.0.0.1:18812
-  public_base_url: https://emily.bytedance.net/dev/
-sqlite:
-  path: var/development.db
-capture:
-  enabled: false
-```
-
-`public_base_url` 是开发实例公开地址的真源。`jarvis-instance` 派生 `web_base_path`；
-标准部署脚本将该值交给 Vite 构建，前端从生成 HTML 的 meta 中读取统一前缀，
-用于 API、静态资源和附件。不要在业务组件里增加 `/dev/api/...` 分支。
-代理统一去掉配置前缀，后端始终使用原来的 `/api/...` 路由。
-Cookie 的名称空间和 Path、相对重定向也随代理前缀变化。
-不配置代理时生产实例没有额外开发入口；公开地址没有路径时前端仍从 `/` 构建。
-
-`/dev/` 可以替换成 `/sandbox/emily/` 等规范路径，通过下文的 `--path` 重新生成配置并构建即可，不需要改业务代码。
-不能只修改代理路径而保留旧的前端构建产物。
+这是 HTTP 入口，不共享数据库、登录 Token 或模型会话。路径不声明为浏览器安全边界。
+入口由主实例管理员维护；开发启动脚本不再修改或重启主实例。
 
 ## 初始化与部署
 
-主机使用 `/usr/bin/python3`（需要 PyYAML）、Docker、Go、npm、已配置的 lark-cli：
+从开发 checkout 运行。宿主只需 Docker、Python/PyYAML、Go 和已安装的原生
+`lark-cli`、`bytedcli` 程序。后两者以只读程序文件挂载进容器；宿主是否登录无关。
+
+首次生成配置：
 
 ```bash
-./scripts/emily-dev --path /dev/ --secret-file /path/to/existing-okr-app.env \
-  --directory-profile YOUR_DIRECTORY_PROFILE \
-  --notification-profile YOUR_NOTIFICATION_PROFILE --activate
+./scripts/emily-dev --initialize --public-url https://example.com/dev/ \
+  --principal developer@example.com
 ```
 
-初始化脚本从现有公开域名和 `--path` 生成开发实例的 `public_base_url`，
-`--activate` 同步生成生产代理配置并调用标准部署脚本启动开发与生产服务。
-更换前缀时仍使用这一条命令，不需要分别手改两处配置。主机重启后可重跑该命令恢复临时 socket。
-不修改公司的域名网关。源码位于旁边的 `emily-development` worktree，分支 `codex/emily-development`。
-入口通过生产服务中的可选代理连接容器 Unix socket；生产网关原有根路径转发即可覆盖它。
+该命令只从仓库公共默认值生成当前实例的 `config.development.yaml`、
+`config.runtime.yaml` 和 `okr-module.runtime.yaml`，遇到既有配置会拒绝覆盖。
+`sqlite.path` 仍属于基础配置；其余本机调整沿用 runtime overlay。
+后台采集和自动任务初始关闭，可以按开发需要启用，不作为工具权限限制。
 
-生产实例的 `conf/okr-module.runtime.yaml` 设置 `chat.development_container: emily-development`，将 OKR 对话的执行环境切到该容器；
-对话数据仍保存在同一份 `var/okr-chat/chat.db`，新会话按 OKR 飞书用户的 `union_id` 隔离列表和历史，不按人拆库或容器。既有无归属的共享会话保留在库中，不自动认领；新会话使用完整研发工具说明。
+在本机 `okr-module.runtime.yaml` 配置开发 Lark App、Profile、网页身份和
+`identity.app_secret_env`，密钥放在开发专用环境文件中。不得复制主实例的
+App Secret、principal、Profile 配置或用户 Token。开发负责人信息按既有配置
+入口设置，不能沿用主实例的 open_id。
 
-Codex 原生 thread 丢失时，主站自动以同一网页会话中已保存的历史重建底层 thread，并记录原始 CLI 错误；不会删除共享历史或要求手动新开会话。授权及网络错误不会被当作 thread 丢失，恢复后可再次发送消息。真实容器回归可运行 `EMILY_DEVELOPMENT_CHAT_ROOT=$PWD/var/okr-chat go test ./internal/okrchat -run TestDevelopmentServiceRecoversUnavailableNativeThread -v`，测试会使用临时会话并清理。
+启动前检查共享目录和挂载：
 
-开发页面的 Biz OKR 对话框直接调用同域主站的 `/api/okr-chat/*`，复用同一会话库和主站已有的 OKR 飞书登录状态；主站按当前用户限制会话访问，执行仍进入同一个研发容器。开发实例自己的 OKR Chat 服务保持关闭，避免在容器里递归启动 Docker。普通开发页面 API 继续走配置前缀，只有这一个已存在的 OKR 对话接口使用根路径。
+```bash
+./scripts/emily-dev --okr-data /absolute/product-only/okr \
+  --env-file /absolute/development.env --dry-run
+```
 
-容器内重新构建使用 `./scripts/jarvis-deploy --skip-pull`。没有 systemd 或宿主部署能力，
-它只管理开发实例 PID。Git worktree 的正式提交与合并由宿主开发流程完成。
+去掉 `--dry-run` 可启动容器。在容器内独立配置/登录 Lark、ByteDance 和模型 CLI；
+ByteDance 使用本站适用的 `--site i18n-tt`。新 Profile 可以继续使用默认名称。
+未完成应用配置和授权时，Biz OKR 的现有启动检查会报错，不回退到主环境身份。
 
-## 凭证与数据细节
+授权后只部署开发实例：
 
-- 整个 `data/okr/` 共享，以保持 SQLite 和资源路径一致；其中 `feishu-tokens/` 用开发 token 目录覆盖，既有网页登录用户的 token 不进入容器。
-- 模型只挂载登录文件，不挂宿主 Codex 配置、MCP、普通会话或记忆。
-- 开发环境保留通知应用的网页登录 secret，宿主 lark-cli 出口仅接受身份检查、通讯录查询、固定通知机器人发送/回读，以及该 Bot 可见的群信息和群成员只读查询；不开放个人消息、任意命令或本地文件参数。
-- `capture.enabled` 省略时保持现有行为；显式 `false` 时不注册自动发现/采集作业。该开关本身不是数据安全边界。
-- 开发实例不启动生产 CC Connect 长连接；本地回调使用新生成的 relay secret。
+```bash
+docker exec emily-development ./scripts/jarvis-deploy --skip-pull
+```
 
-## 共享 OKR 数据的提交方式
+后续重建容器可给 `scripts/emily-dev` 加 `--deploy`，同样调用标准部署入口。
+HOME、开发数据库、会话和日志均持久化在开发 checkout 的 `var/` 等实例目录中。
 
-开发容器运行时挂载 OKR MVP worktree 的 `data/okr/`。Dev worktree 的 `data/okr` 也由 `scripts/emily-share-okr-data` 配成指向它的本机符号链接，因此宿主两个目录和容器读写的是同一份实时数据库与图片。初始化脚本会自动配置该链接；重建 Dev worktree 后也可单独运行 `./scripts/emily-share-okr-data --worktree ../emily-development`。它会把 Dev 原有检出副本移到被 Git 忽略的 `var/okr-checkout-before-share-*`，不会用旧副本覆盖线上数据。开发实例的 Task、Message、网页登录会话和模型会话仍保存在各自运行库里。
+## 从旧环境切换
 
-**`codex/jarvis-okr-mvp` 是 OKR 产品数据的唯一提交分支。** Dev worktree 只通过链接修改实时数据；本机 Git 索引对 `data/okr` 使用 `skip-worktree`，并忽略这个链接，避免 Dev 的 `git add -A` 把旧快照或链接提交进去。产品改动提交时，从 OKR MVP worktree 的实时库做一次 SQLite backup 快照，把同批新增或修改的资源一起提交到该分支。Dev 分支只提交代码；无需再把数据库和图片镜像提交一遍。合入 main 时以 OKR MVP 的产品数据提交为来源，main 保留其版本历史；部署不会创建第二套 OKR 库。
+代码整理与运行迁移分开进行。切换前备份两边本机配置，保留现有功能改动和
+运行数据；不要用 Git checkout/restore 把快照写回共享 SQLite。
 
-`git commit` 只记录快照，不会改动线上文件。`git checkout`、`git restore`、`git reset --hard`、带 `--remote-okr-db` 的部署以及可能替换数据库文件的合并/切换，才可能把旧 Git 版本写回正在使用的线上目录；操作前确认目标路径不是共享库。不要在 Dev worktree 对 `data/okr` 执行 Git 恢复、切换或强制添加。审核 PR 时确认数据库快照和图片属于同一批产品改动。Git 分支的历史仍然独立；“实时共享”指本机这两个目录和开发容器读取同一物理文件，不表示 Dev 分支的旧 Git blob 会自动更新。
+1. 主环境保留既有 App/授权。把主环境 OKR 用户 Token、`directory-cache*`、
+   `agent-session` 和备份移入主环境自己的 `var/okr/`，同步实际消费者的路径。
+   将主环境 `identity.token_dir` 改为 `var/okr/feishu-tokens`；通讯录缓存自动
+   随该目录定位。`agent-session` 等无仓库消费者的遗留文件先归档，不删除。
+   迁移 Token 与修改配置需在停写窗口内完成，避免丢失新授权。
+2. 保持业务数据库和资源原地不动。共享目录只允许业务文件及 SQLite sidecar；
+   启动脚本发现 Token、缓存、其他未知文件或资源软链接会拒绝启动。
+   挂载整个业务目录，不能单独 bind SQLite 文件，避免 WAL 和文件替换问题。
+3. 公共代码合入主分支后，主环境解除 `development_container` 绑定，配置 `runtime: docker`，仍使用
+   主环境自己的会话库和原有隔离执行方式。部署主服务统一使用
+   `./scripts/jarvis-deploy --skip-pull`，先确认没有应继续运行的任务/对话。
+4. 备份开发实例原来从主环境生成的三份配置，再初始化独立配置。既有
+   `var/development.db` 保留；检查其中的旧身份设置并按开发身份调整。
+   使用新的 `var/container/home`，不复制旧 HOME 中的凭证。
+5. 完成开发独立授权并重建容器，确认开发页面全部 API 请求走自身前缀。
+   切换后停用旧 `emily-development-gateway.service`；历史文件可以归档，
+   不把主环境的聊天历史搬进开发环境。
 
-这个规则也适用于只改 OKR 产品数据、没有改代码的提交。私有主库、登录 token 和运行日志不进入 Git。
+## 共享数据与 Git
+
+OKR 业务数据仍从 OKR-MVP worktree 提交一致快照及同批资源，不在开发分支复制库。
+宿主开发 worktree 如需读取同一份文件，可显式建立链接：
+
+```bash
+./scripts/emily-share-okr-data --source /absolute/product-only/okr
+```
+
+该脚本只管理当前 worktree 的链接与 Git 忽略规则，不移动或恢复源目录的数据。
+旧检出副本会保存在开发 `var/okr-checkout-before-share-*`。
+容器支持该链接，也支持把业务目录直接挂在正常的 `data/okr` 目录上。
+合并代码时保留共享链接，不让 Git 写回实时库。
 
 ## 验证
 
-已加入任意前缀（根路径、`/dev/`、嵌套路径）的前端路径测试，
-代理请求、Cookie 和重定向测试，以及凭证出口拒绝个人消息和参数注入的测试。
-2026-09-14 已部署到 `https://emily.bytedance.net/dev/#/biz-okr?tab=okr-plan`：
+- `python3 -m unittest discover -s deploy/emily-dev -p '*_test.py'`：初始化不继承
+  主身份、不覆盖既有配置、共享目录排除私人文件、网络与挂载边界。
+- `go test ./internal/okrchat ./internal/chat ./internal/okrworkspace/moduleconfig ./cmd/jarvis-config`：
+  本地执行、实例间数据分离、会话/附件归属、取消和历史恢复、配置校验。
+- 前端类型检查和业务测试：保留区域分享、评论浏览及提醒功能；浏览器实测在
+  新授权和运行迁移后进行，不能用单元测试替代真实登录验证。
 
-- 全量 Go 测试、181 项前端测试、类型检查通过。
-- 真实模型通过 Docker 读取完整源码与共享 OKR 库；开发 Task、Message 表均为 0 条。
-- 容器不能读取生产主库、Docker socket，也不能直接连接生产 API。
-- 浏览器显示飞书登录入口，无页面异常；全部开发 API 请求均携带 `/dev/` 前缀。
-- 生产和开发健康检查均通过；真实用户完成授权后的登录尚未端到端实测。
-
-## 代码、实例配置与 main 的归属
-
-| 内容 | 真源与维护方式 | 是否进入 main |
-|---|---|---|
-| Docker、路径代理、配置加载、对话适配器、部署脚本和测试 | 当前仓库源代码；功能分支评审合入 | 是，作为可选公共能力 |
-| 模块公共默认值 | `conf/okr-module.yaml`；Chat 和应用登录默认关闭，容器名、应用 ID、个人登录文件为空 | 是 |
-| 生产路径前缀、socket、公开地址 | 本机 `conf/config.runtime.yaml` | 否，已忽略 |
-| 当前 Chat 启用、容器名、Codex 登录文件、飞书应用绑定 | 本机 `conf/okr-module.runtime.yaml`，覆盖公共默认值后执行同一套严格校验 | 否，已忽略 |
-| 开发实例端口、空主库、后台开关、token 目录 | 开发 worktree 的 `config.development.yaml` 与两个 `*.runtime.yaml`，由初始化脚本生成；SQLite 路径仍由专用基础配置负责 | 否，不再改写公共 YAML |
-| 通讯录与通知 Bot profile | 初始化参数，生成到本机 systemd unit | 否；公共代码不内置当前 profile |
-| secret、用户 token、缓存、运行日志 | 系统环境文件或 `var/` 等本机状态目录 | 否 |
-| 架构、操作方法、维护约定 | 本文；模块文档只链接本文 | 是，随代码同一提交维护 |
-| 当前 Emily 地址、实测结果 | 本文交付记录，明确是实例示例 | 可进入说明文档，不作为默认配置 |
-| `data/okr/okr.db` 和产品图片 | OKR MVP worktree 的实时目录是唯一真源；Dev 目录链接到它，只从 OKR MVP 分支提交一致快照 | 是，有数据改动就从 OKR MVP 提交，并合入 main |
-
-合入 main 时以完整开发环境能力为独立 PR，不直接合并整个 OKR MVP 分支的历史。
-PR 纳入本表的公共能力、测试、文档，以及共享 OKR 产品数据库和资源；
-排除个人凭证、私有运行数据库、实例配置和其他无关业务修改。
-共享 OKR 数据仍按当前实例约定直接修改。现阶段 OKR 数据提交在 OKR MVP 分支，尚未合入 main；Dev 分支中此前留下的相同数据快照只是历史记录，不能作为新的提交来源。
-
-今后修改公开行为，同一提交更新本文和相应测试；更换本机路径、授权或容器绑定，
-只修改运行时配置并重新部署。`--activate` 写实例覆盖文件，不再污染公共默认配置。
-
-开发和线上运行时没有两套 OKR 库；Dev 的 `data/okr` 路径现在也指向这份库。Git 提交只从 OKR MVP 分支进行。
+2026-09-16 代码整理验证：196 项前端测试、类型检查、4 项部署/验收入口测试通过；
+`internal/okrchat`、`internal/chat`、`internal/okrworkspace/moduleconfig`、
+`cmd/jarvis-config` 测试通过，服务入口编译检查通过。工具目录相关测试通过；
+完整工具目录测试中的两项宿主安装集成测试在旧容器中仍受 Git 元数据隐藏、
+systemd/旧 CLI 包装环境限制，不记作全量 Go 测试通过。
+新镜像 `emily-development:isolation-check` 构建成功；临时 bridge 容器可运行
+原生 Lark CLI 1.0.93、ByteDance CLI 0.144.0，且没有主凭证和旧代理变量。
+直连 npm 得到 HTTP 200，飞书站点返回 HTTP 404（仅证明 HTTPS 可达，不代表
+授权或 API 功能通过）。未替换运行中的容器，未改主环境配置或实时 OKR 数据。

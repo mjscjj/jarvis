@@ -167,14 +167,14 @@ func TestInstanceOverlayPreservesDefaultsAndValidatesOverrides(t *testing.T) {
 		t.Fatal(err)
 	}
 	overlay := filepath.Join(dir, "okr-module.runtime.yaml")
-	if err := os.WriteFile(overlay, []byte("chat:\n  development_container: local-container\n  enabled: false\n"), 0600); err != nil {
+	if err := os.WriteFile(overlay, []byte("chat:\n  runtime: local\n  enabled: false\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := LoadCore(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Chat.Model != "shared-model" || cfg.Chat.DevelopmentContainer != "local-container" || cfg.Chat.Enabled || cfg.DatabasePath != "data/okr/okr.db" {
+	if cfg.Chat.Model != "shared-model" || cfg.Chat.Runtime != "local" || cfg.Chat.Enabled || cfg.DatabasePath != "data/okr/okr.db" {
 		t.Fatalf("unexpected merged config: %+v", cfg)
 	}
 	if err := os.WriteFile(overlay, []byte("chat:\n  typo: wrong\n"), 0600); err != nil {

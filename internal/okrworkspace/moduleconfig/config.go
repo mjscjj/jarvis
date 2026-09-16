@@ -27,21 +27,27 @@ type Config struct {
 
 // ChatConfig belongs only to the isolated OKR conversation surface.
 type ChatConfig struct {
-	DevelopmentContainer string   `yaml:"development_container"`
-	Enabled              bool     `yaml:"enabled"`
-	Image                string   `yaml:"image"`
-	Model                string   `yaml:"model"`
-	ReasoningEffort      string   `yaml:"reasoning_effort"`
-	TimeoutSeconds       int      `yaml:"timeout_seconds"`
-	AuthFile             string   `yaml:"auth_file"`
-	ModelHosts           []string `yaml:"model_hosts"`
+	Runtime         string   `yaml:"runtime"` // docker (default) or local, in this instance.
+	Enabled         bool     `yaml:"enabled"`
+	Image           string   `yaml:"image"`
+	Model           string   `yaml:"model"`
+	ReasoningEffort string   `yaml:"reasoning_effort"`
+	TimeoutSeconds  int      `yaml:"timeout_seconds"`
+	AuthFile        string   `yaml:"auth_file"`
+	ModelHosts      []string `yaml:"model_hosts"`
 }
 
 func (c ChatConfig) Validate() error {
 	if !c.Enabled {
 		return nil
 	}
-	if c.Image == "" || c.Model == "" || c.ReasoningEffort == "" || c.TimeoutSeconds <= 0 || c.AuthFile == "" || len(c.ModelHosts) == 0 {
+	if c.Runtime != "" && c.Runtime != "docker" && c.Runtime != "local" {
+		return fmt.Errorf("chat.runtime must be docker or local")
+	}
+	if c.Model == "" || c.ReasoningEffort == "" || c.TimeoutSeconds <= 0 {
+		return fmt.Errorf("enabled OKR chat requires model, reasoning_effort and timeout_seconds")
+	}
+	if c.Runtime != "local" && (c.Image == "" || c.AuthFile == "" || len(c.ModelHosts) == 0) {
 		return fmt.Errorf("enabled OKR chat requires image, model, reasoning_effort, timeout_seconds, auth_file and model_hosts")
 	}
 	return nil
