@@ -14,9 +14,9 @@
 
 独立实例代码已完成：普通 Docker bridge 网络、原生 CLI、实例自己的配置与
 HOME、本地 Chat runner、统一前端 API 前缀。删除旧出口网关、宿主 Lark 转发、
-跨实例 Chat 执行和主站聊天入口覆盖。按用户后续明确的范围，共享 OKR 目录完整
-保留，遗留私有文件只在开发容器内由开发私有文件覆盖，主目录不迁移、不清理。
-开发用户 Token 和目录缓存默认存入 `var/okr/`。真实验收脚本不再默认使用主站/固定个人身份。
+跨实例 Chat 执行和主站聊天入口覆盖。按用户最终确认的简单边界，`data/okr`
+整个目录只做一次完整挂载，不分类、不迁移、不清理，也不对子目录做覆盖。
+真实验收脚本不再默认使用主站/固定个人身份。
 
 **运行迁移已完成。** 开发容器已使用普通 bridge 网络和新的
 `var/container/home`；Lark 用户授权为储节节，ByteDance CLI 为
@@ -38,8 +38,8 @@ HOME、本地 Chat runner、统一前端 API 前缀。删除旧出口网关、�
   另外单独回读了运行容器的 Lark、ByteDance 与 Codex 登录状态。
 - `internal/okrchat`、`internal/chat`、`internal/okrworkspace/moduleconfig`、
   `cmd/jarvis-config`、`internal/textstore` 及 5 项部署/验收入口测试通过。
-- 新容器验证了两个原生 CLI、Codex、直连网络、共享 OKR 数据库及私有覆盖挂载；
-  `/credentials/auth.json`、主聊天附件/会话和旧出口 socket 均不可见。
+- 新容器验证了两个原生 CLI、Codex、直连网络及整个共享 OKR 目录；
+  OKR 目录以外的主凭证、主聊天附件/会话和旧出口 socket 均不可见。
   两项依赖宿主 Git/systemd/既有 CLI 的安装集成测试在旧容器中未通过，
   不宣称全量 Go 测试通过；与本轮相关的工具目录测试已通过。
 

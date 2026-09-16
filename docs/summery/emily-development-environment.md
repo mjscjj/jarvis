@@ -9,11 +9,10 @@
 
 | 内容 | 归属 |
 |---|---|
-| `data/okr/okr.db`、SQLite sidecar、`assets/`、`activity/`、Owner 映射和术语表 | 唯一共享的业务数据目录，两边读写同一份 |
+| `data/okr/` 整个目录及其现有内容 | 唯一完整共享目录，两边读写同一份，不对子目录做例外处理 |
 | `var/development.db`、普通 Chat、OKR Chat、附件、Task、Message、世界模型、日志 | 各实例私有，不从主环境导入 |
 | Lark、ByteDance 配置及凭证 | 开发实例 HOME 独立授权，不挂载主环境登录文件 |
 | Codex 配置及凭证 | 按用户决定从主环境复制一次，随后在开发 HOME 独立保存，不做运行时挂载 |
-| 开发 OKR 网页用户 Token、通讯录缓存 | 开发实例 `var/okr/`；主环境既有路径不变 |
 | CLI 可执行程序、Go 工具链 | 可只读复用程序文件，不复用身份配置 |
 
 同名 CLI、Profile 和容器内路径不会导致身份共享。开发实例 HOME 是
@@ -21,10 +20,8 @@
 不再使用旧的宿主 `var/emily-development/home`，其中可能遗留复制的模型凭证。
 
 共享 OKR 目录整体保持原样，不拆分、不迁移、不清理；需要备份时完整备份。
-其中遗留的 `feishu-tokens/`、`backups/`、`agent-session`、
-`directory-cache.json.user` 只在开发容器内覆盖为开发自己的空目录/文件
-（持久化于 `var/container/okr-private/`）。这不改动宿主文件，也不改变主服务路径。
-未知目录项仍需先核对，不能把未知私有文件直接暴露给开发容器。
+开发容器完整看到该目录当前及以后新增的全部内容。隔离边界是“`data/okr/`
+整目录共享，其余主环境数据不共享”，不再维护目录内容白名单或嵌套覆盖挂载。
 
 容器使用普通 Docker bridge 网络，不运行出口网关、域名白名单或宿主 CLI 代理。
 镜像直接基于 Node，不继承单轮 OKR Chat 镜像的 HTTP(S) 代理变量。
@@ -103,8 +100,8 @@ HOME、开发数据库、会话和日志均持久化在开发 checkout 的 `var/
 
 仅操作开发环境。主环境不备份、不改配置、不迁数据、不重启。
 
-1. OKR 原目录保持不变，开发容器以私有覆盖挂载隐藏上述遗留非业务文件。
-   挂载整个目录，不单独 bind SQLite 文件，避免 WAL 和文件替换问题。
+1. OKR 原目录保持不变，只挂载整个目录一次；不单独 bind SQLite 文件，
+   避免 WAL 和文件替换问题。
 2. 保留开发 `var/development.db`，只调整开发的本机配置；清除继承的主身份和
    审批回调绑定。使用新的 `var/container/home`，不复制旧 HOME 或主账号凭证。
 3. 先在临时授权容器中完成独立 Lark、ByteDance 登录及用户选择的 Codex 授权方式，
@@ -129,7 +126,7 @@ OKR 业务数据仍从 OKR-MVP worktree 提交一致快照及同批资源，不�
 ## 验证
 
 - `python3 -m unittest discover -s deploy/emily-dev -p '*_test.py'`：初始化不继承
-  主身份、不覆盖既有配置、私有覆盖不改宿主文件、网络与挂载边界。
+  主身份、不覆盖既有配置、完整 OKR 单挂载以及网络与其它挂载边界。
 - `go test ./internal/okrchat ./internal/chat ./internal/okrworkspace/moduleconfig ./cmd/jarvis-config`：
   本地执行、实例间数据分离、会话/附件归属、取消和历史恢复、配置校验。
 - 前端类型检查和业务测试：保留区域分享、评论浏览及提醒功能；授权与运行状态
@@ -143,5 +140,6 @@ systemd/旧 CLI 包装环境限制，不记作全量 Go 测试通过。
 运行容器已切换为 bridge 网络；Lark CLI 1.0.93 用户为储节节且 token 有效，
 ByteDance CLI 0.144.0 的 `i18n-tt` 身份就绪，Codex 登录可用。直连 npm 返回
 HTTP 200，开发服务 health/ready、主站 `/dev/` 代理及本地 OKR Chat 路由均已回读。
-共享 OKR 数据库与主环境为同一 inode；主聊天会话、附件、主凭证和旧出口 socket
-均未挂载。旧开发网关已停用，主服务 PID 未变化。
+共享 OKR 数据库与主环境为同一 inode，且整个目录只有一个挂载；OKR 目录之外的
+主聊天会话、附件、主凭证和旧出口 socket 均未挂载。旧开发网关已停用，主服务
+PID 未变化。
