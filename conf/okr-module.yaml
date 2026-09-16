@@ -42,6 +42,8 @@ identity:
   # Configure the selected login application in the instance override.
   app_secret_env: "JARVIS_OKR_APP_SECRET"
   session_ttl_hours: 8760 # 365 天；网页登录状态存于私有运行数据库
+  cookie_name: "jarvis_okr_session"
+  cookie_path: "/"
   cookie_secure: false
   feishu_base_url: "https://open.feishu.cn"
   feishu_account_url: "https://accounts.feishu.cn"

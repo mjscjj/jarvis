@@ -36,6 +36,8 @@ import type { AuthUser as OKRAuthUser } from './okr/emily/types'
 import { useExecutingTaskCount } from './hooks/useExecutingTaskCount'
 import type { Plugin } from './types'
 import { AgentActivityIcon } from './components/AgentActivityIcon'
+import { mainWorkbenchURL, redirectPreferredWorkbench } from './instanceNavigation'
+import { pageHash } from './pageRoutes'
 
 const { Sider, Content } = Layout
 const { Title } = Typography
@@ -90,12 +92,13 @@ const pageLabels: Record<string, string> = {
 
 function AppShell() {
   const { name: agentName, rename: renameAgent } = useAgentIdentity()
-  const { loading: authLoading, enabled: authEnabled, user, logout } = useAuth()
+  const { loading: authLoading, enabled: authEnabled, user, logout, preferMainWorkbench } = useAuth()
   const { context, navigate } = usePageContext()
   const weeklyShare = context.active_key === 'biz-okr' && isWeeklyShareViewState(context.view_state)
   const principalDataEnabled = !authEnabled || user !== null
-  const runtimeFailures = useRuntimeFailureCount(principalDataEnabled)
-  const executingTasks = useExecutingTaskCount(principalDataEnabled)
+  const mainWorkbench = mainWorkbenchURL()
+  const runtimeFailures = useRuntimeFailureCount(principalDataEnabled && !preferMainWorkbench)
+  const executingTasks = useExecutingTaskCount(principalDataEnabled && !preferMainWorkbench)
   const [siderCollapsed, setSiderCollapsed] = useLocalStorage('jarvis.siderCollapsed', false)
   const siderWidth = siderCollapsed ? SIDER_COLLAPSED_WIDTH : SIDER_WIDTH
   // Preserve an existing main-branch plugin choice when initializing the
@@ -150,7 +153,7 @@ function AppShell() {
   useEffect(() => {
     setEnabledPlugins([])
     setPluginsLoaded(false)
-    if (!principalDataEnabled) return
+    if (!principalDataEnabled || preferMainWorkbench) return
     let request: AbortController | undefined
     const refreshPlugins = async () => {
       request?.abort()
@@ -175,7 +178,7 @@ function AppShell() {
       request?.abort()
       window.removeEventListener('jarvis:plugins-changed', onChanged)
     }
-  }, [principalDataEnabled, setOpenMenuKeys])
+  }, [principalDataEnabled, preferMainWorkbench, setOpenMenuKeys])
 
   const enabledPluginPages = [
     ...(moduleEnablement?.okr ? [{ id: 'okr', name: 'OKR 插件' }] : []),
@@ -314,9 +317,13 @@ function AppShell() {
     setMobileModuleKey(undefined)
     const target = moduleNavigationTargets.find((item) => item.menuKey === key)
     if (target) {
+	  if (redirectPreferredWorkbench(preferMainWorkbench, pageHash(target.module.key, null, target.child.viewState), false)) return
       navigate(target.module.key, target.child.viewState)
       return
     }
+    const mainKey = key.startsWith('plugin:') ? 'plugins' : key
+    const mainState: Record<string, string> = key.startsWith('plugin:') ? { plugin: key.slice('plugin:'.length) } : {}
+    if (redirectPreferredWorkbench(preferMainWorkbench, pageHash(mainKey, null, mainState), false)) return
     if (key.startsWith('plugin:')) {
       navigate('plugins', { plugin: key.slice('plugin:'.length) })
       return
@@ -434,8 +441,9 @@ function AppShell() {
           <Popover
             trigger="click"
             placement="bottomLeft"
-            open={agentMenuOpen}
+            open={!preferMainWorkbench && agentMenuOpen}
             onOpenChange={(open) => {
+              if (preferMainWorkbench) return
               setAgentMenuOpen(open)
               if (!open) cancelNameEdit()
             }}
@@ -484,11 +492,11 @@ function AppShell() {
               </div>
             )}
           >
-            <AgentActivityIcon name={agentName} enabled={principalDataEnabled} {...executingTasks} tooltipDisabled={agentMenuOpen} />
+            <AgentActivityIcon name={preferMainWorkbench ? '工作台' : agentName} enabled={principalDataEnabled && !preferMainWorkbench} {...executingTasks} tooltipDisabled={agentMenuOpen} />
           </Popover>
           {!siderCollapsed && (
             <div className="sider-brand-copy">
-              <div className="sider-name-row"><Title level={4}>{agentName}</Title></div>
+              <div className="sider-name-row"><Title level={4}>{preferMainWorkbench ? '工作台' : agentName}</Title></div>
               <div className="sider-agent-caption">你的主动式 Agent</div>
             </div>
           )}
@@ -508,6 +516,7 @@ function AppShell() {
           className="app-menu"
         />
         <div className={`sider-footer ${siderCollapsed ? 'is-collapsed' : ''}`}>
+          {mainWorkbench && !preferMainWorkbench && <a className="workbench-return-link" href={mainWorkbench}>返回主工作台</a>}
           {authEnabled && user && <Popover
             trigger="click"
             placement="topLeft"
@@ -557,7 +566,7 @@ function AppShell() {
             </Suspense>
             <Suspense fallback={null}>
               {principalDataEnabled &&
-                <Chat key={`principal-chat:${user?.username ?? 'local'}`} compact={context.active_key !== 'chat'} />}
+                <Chat key={`principal-chat:${user?.username ?? 'local'}`} compact={context.active_key !== 'chat'} expandInPlace={preferMainWorkbench} />}
               {!authLoading && okrUser && !principalDataEnabled &&
                 <Chat key={`okr-chat:${okrUser.unionId || okrUser.openId}`} compact isolated hidden={context.active_key !== 'biz-okr'} />}
             </Suspense>
@@ -604,6 +613,7 @@ function AppShell() {
         onClose={() => setMobileSystemOpen(false)}
       >
         <div className="mobile-system-links">
+          {mainWorkbench && !preferMainWorkbench && <a className="workbench-return-link" href={mainWorkbench}>返回主工作台</a>}
           {authEnabled && user && <div className="mobile-account">
             <Avatar size={32}>{accountInitial}</Avatar>
             <div>

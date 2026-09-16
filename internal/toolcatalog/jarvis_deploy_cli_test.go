@@ -38,6 +38,9 @@ func TestJarvisDeployIsOneCrossPlatformEntry(t *testing.T) {
 		`go build -o "$main_next" ./cmd/jarvis-server`,
 		`service_path="${HOME}/.local/bin:`,
 		`$API_BASE/readyz`,
+		`refuse_if_tasks_executing "development container"`,
+		`refuse_if_tasks_executing "$main_unit"`,
+		`find "${REPO_ROOT}/web/dist/assets" -type f -mtime +7 -delete`,
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("deploy entry missing %q", want)

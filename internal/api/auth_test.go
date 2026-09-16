@@ -167,6 +167,7 @@ func TestByteDancePendingApprovalCanCompleteAndSetSessionCookie(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	service.SetBrowserCookie("jarvis_dev_session", "/dev/")
 	begin, err := service.Login(t.Context())
 	if err != nil {
 		t.Fatal(err)
@@ -185,10 +186,10 @@ func TestByteDancePendingApprovalCanCompleteAndSetSessionCookie(t *testing.T) {
 		}
 		cookie := string(response.Header.Peek("Set-Cookie"))
 		if ready {
-			if !strings.HasPrefix(cookie, authn.CookieName+"=") {
-				t.Fatal("verified login did not issue cookie")
+			if !strings.HasPrefix(cookie, service.CookieName()+"=") || !strings.Contains(strings.ToLower(cookie), "path=/dev/") {
+				t.Fatalf("verified login did not issue configured cookie: %q", cookie)
 			}
-			token := strings.SplitN(strings.TrimPrefix(cookie, authn.CookieName+"="), ";", 2)[0]
+			token := strings.SplitN(strings.TrimPrefix(cookie, service.CookieName()+"="), ";", 2)[0]
 			if user, ok := service.Authenticate(token); !ok || user.Username != "alice" {
 				t.Fatalf("cookie does not authenticate: %#v %v", user, ok)
 			}
@@ -199,8 +200,9 @@ func TestByteDancePendingApprovalCanCompleteAndSetSessionCookie(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			restarted.SetBrowserCookie(service.CookieName(), service.CookiePath())
 			request := authRequestContext("127.0.0.1", "10.20.30.40")
-			request.Request.Header.SetCookie(authn.CookieName, token)
+			request.Request.Header.SetCookie(service.CookieName(), token)
 			GetAuthStatus(restarted)(t.Context(), request)
 			if request.Response.StatusCode() != consts.StatusOK || !bytes.Contains(request.Response.Body(), []byte(`"status":"authenticated"`)) {
 				t.Fatalf("original cookie after restart: %s", request.Response.Body())

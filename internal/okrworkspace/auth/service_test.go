@@ -214,6 +214,23 @@ func TestServiceDisabledHasNoSessionOrLogin(t *testing.T) {
 	}
 }
 
+func TestServiceOwnsInstanceCookieSettings(t *testing.T) {
+	service, err := NewService(authTestDB(t), moduleconfig.IdentityConfig{CookieName: "jarvis_okr_dev_session", CookiePath: "/dev/"}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if service.CookieName() != "jarvis_okr_dev_session" || service.CookiePath() != "/dev/" {
+		t.Fatalf("cookie = %s %s", service.CookieName(), service.CookiePath())
+	}
+	defaults, err := NewService(authTestDB(t), moduleconfig.IdentityConfig{}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if defaults.CookieName() != CookieName || defaults.CookiePath() != "/" {
+		t.Fatalf("default cookie = %s %s", defaults.CookieName(), defaults.CookiePath())
+	}
+}
+
 func TestYearLongSessionSurvivesDatabaseReopen(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "runtime.db")
 	now := time.Date(2026, 9, 14, 8, 0, 0, 0, time.UTC)

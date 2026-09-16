@@ -15,11 +15,13 @@ import (
 // Instance is the local process identity used by launchd and development tools.
 // The label is stable when the port changes and distinct for each config file.
 type Instance struct {
-	WebBasePath  string   `json:"web_base_path"`
-	ConfigPath   string   `json:"config_path"`
-	APIBase      string   `json:"api_base"`
-	LaunchdLabel string   `json:"launchd_label"`
-	LogFiles     []string `json:"log_files"`
+	OKREntryPath      string   `json:"okr_entry_path"`
+	MainWorkbenchPath string   `json:"main_workbench_path"`
+	WebBasePath       string   `json:"web_base_path"`
+	ConfigPath        string   `json:"config_path"`
+	APIBase           string   `json:"api_base"`
+	LaunchdLabel      string   `json:"launchd_label"`
+	LogFiles          []string `json:"log_files"`
 }
 
 func (s ServerConfig) APIBase() (string, error) {
@@ -61,11 +63,28 @@ func InspectInstance(configPath string) (*Instance, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := cfg.Server.ValidateNavigationPaths(); err != nil {
+		return nil, err
+	}
 	digest := sha256.Sum256([]byte(absolute))
 	label := fmt.Sprintf("com.bytedance.jarvis.server.%x", digest[:8])
 	return &Instance{
+		OKREntryPath: cfg.Server.OKREntryPath, MainWorkbenchPath: cfg.Server.MainWorkbenchPath,
 		WebBasePath: basePath, ConfigPath: absolute, APIBase: apiBase, LogFiles: cfg.Server.LogFiles, LaunchdLabel: label,
 	}, nil
+}
+
+// Navigation targets are installation paths on this origin, not arbitrary URLs.
+func (s ServerConfig) ValidateNavigationPaths() error {
+	for name, value := range map[string]string{"okr_entry_path": s.OKREntryPath, "main_workbench_path": s.MainWorkbenchPath} {
+		if value == "" || value == "/" {
+			continue
+		}
+		if !strings.HasPrefix(value, "/") || !strings.HasSuffix(value, "/") || path.Clean(value) != strings.TrimSuffix(value, "/") || strings.ContainsAny(value, "%\\?#\"<> \t\r\n") {
+			return fmt.Errorf("server.%s requires a canonical installation path ending in /", name)
+		}
+	}
+	return nil
 }
 
 // ExportToolEnvironment runs once, before any server workers start. Child

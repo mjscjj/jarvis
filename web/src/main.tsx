@@ -5,11 +5,13 @@ import zhCN from 'antd/locale/zh_CN'
 import App from './App'
 import { installExternalLinkHandler } from './externalLinks'
 import './styles.css'
+import { redirectOKREntry } from './instanceNavigation'
 
 const removeExternalLinkHandler = installExternalLinkHandler()
 if (import.meta.hot) import.meta.hot.dispose(removeExternalLinkHandler)
 
-createRoot(document.getElementById('root')!).render(
+// Old public OKR links leave before mounting authentication or either chat.
+if (!redirectOKREntry()) createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ConfigProvider
       locale={zhCN}

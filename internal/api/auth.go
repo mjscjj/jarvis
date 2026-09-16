@@ -97,7 +97,7 @@ func setAuthCookie(c *app.RequestContext, service *authn.Service, token string) 
 	if token == "" {
 		return
 	}
-	c.SetCookie(authn.CookieName, token, service.SessionMaxAge(), "/", "", protocol.CookieSameSiteStrictMode, false, true)
+	c.SetCookie(service.CookieName(), token, service.SessionMaxAge(), service.CookiePath(), "", protocol.CookieSameSiteStrictMode, false, true)
 }
 
 func writeAuthError(c *app.RequestContext, err error) {

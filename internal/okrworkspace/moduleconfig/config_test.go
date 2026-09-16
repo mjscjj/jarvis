@@ -29,6 +29,8 @@ identity:
   app_id: cli_test
   app_secret_env: TEST_OKR_SECRET
   session_ttl_hours: 24
+  cookie_name: jarvis_okr_dev_session
+  cookie_path: /dev/
   feishu_base_url: https://open.feishu.cn
   feishu_account_url: https://accounts.feishu.cn
   token_dir: data/okr/feishu-tokens
@@ -46,6 +48,9 @@ identity:
 	}
 	if cfg.Identity.TokenDir != "data/okr/feishu-tokens" {
 		t.Fatalf("Load() identity = %+v", cfg.Identity)
+	}
+	if cfg.Identity.BrowserCookieName() != "jarvis_okr_dev_session" || cfg.Identity.BrowserCookiePath() != "/dev/" {
+		t.Fatalf("Load() identity cookie = %s %s", cfg.Identity.BrowserCookieName(), cfg.Identity.BrowserCookiePath())
 	}
 	// Comments and blank lines are dropped, duplicates collapse, and the
 	// scopes reach Feishu space-separated.

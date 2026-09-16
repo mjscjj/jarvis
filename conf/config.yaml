@@ -13,6 +13,9 @@ identity:
 auth:
   enabled: false
   principals: []
+  feishu_accounts: {}                    # union ID → {username, email}；真实人员绑定放本机 runtime 配置，不代表授权
+  cookie_name: "jarvis_session"
+  cookie_path: "/"
   login_api_base_url: ""                  # 只用于网页登录的 CLI 授权；当前服务器使用 https://cloud.byteintl.net
 
 server:

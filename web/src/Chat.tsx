@@ -72,13 +72,13 @@ function isMissingChatSession(cause: unknown): boolean {
 
 const ChatAPIContext = createContext('/api/chat')
 
-export default function Chat({ compact = false, hidden = false, isolated = false }: { compact?: boolean; hidden?: boolean; isolated?: boolean }) {
+export default function Chat({ compact = false, hidden = false, isolated = false, expandInPlace = false }: { compact?: boolean; hidden?: boolean; isolated?: boolean; expandInPlace?: boolean }) {
   return <ChatAPIContext.Provider value={isolated ? '/api/okr-chat' : '/api/chat'}>
-    <ChatInner compact={compact} hidden={hidden} isolated={isolated} />
+    <ChatInner compact={compact} hidden={hidden} isolated={isolated} expandInPlace={expandInPlace} />
   </ChatAPIContext.Provider>
 }
 
-function ChatInner({ compact, hidden, isolated }: { compact: boolean; hidden: boolean; isolated: boolean }) {
+function ChatInner({ compact, hidden, isolated, expandInPlace }: { compact: boolean; hidden: boolean; isolated: boolean; expandInPlace: boolean }) {
   const [expanded, setExpanded] = useState(false)
   const apiBase = useContext(ChatAPIContext)
   const { name: agentName, shortName } = useAgentIdentity()
@@ -641,7 +641,7 @@ function ChatInner({ compact, hidden, isolated }: { compact: boolean; hidden: bo
       onSend={() => void attempt(send())} onStop={() => void attempt(stop())}
       onNew={() => void attempt(createSession())}
       onOpenSession={(id) => void attempt(openSession(id))}
-      onOpenHistory={() => isolated ? setExpanded(true) : navigate('chat', active ? { session: active.id } : {})}
+      onOpenHistory={() => (isolated || expandInPlace) ? setExpanded(true) : navigate('chat', active ? { session: active.id } : {})}
       onRefreshSessions={() => { setArchived(false); setQuery(''); void attempt(loadSessions(false, '')) }}
       onAgent={(value) => void attempt(changeAgent(value))}
       onModel={(value) => void attempt(changeModel(value))}
@@ -913,7 +913,7 @@ function ChatInner({ compact, hidden, isolated }: { compact: boolean; hidden: bo
       </Drawer>
     </section>
   )
-  return isolated && compact ? <Modal className="chat-isolated-modal" open width="95vw" footer={null} title="OKR 独立会话" onCancel={() => setExpanded(false)}>{workspace}</Modal> : workspace
+  return (isolated || expandInPlace) && compact ? <Modal className="chat-isolated-modal" open width="95vw" footer={null} title="OKR 对话" onCancel={() => setExpanded(false)}>{workspace}</Modal> : workspace
 }
 
 function ChatMessageCard({ message, agentName, shortName, typing = false }: { message: ChatHistoryMessage; agentName: string; shortName: string; typing?: boolean }) {

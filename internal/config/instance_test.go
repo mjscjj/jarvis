@@ -71,3 +71,25 @@ func TestInstanceDerivesBrowserPrefixWithoutChangingLocalAPI(t *testing.T) {
 		}
 	}
 }
+
+func TestInstanceNavigationUsesSelectedRuntimeConfig(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(file, []byte("server:\n  addr: 127.0.0.1:18802\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(RuntimeOverridePath(file), []byte("server:\n  okr_entry_path: /dev/\n  main_workbench_path: /\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	instance, err := InspectInstance(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if instance.OKREntryPath != "/dev/" || instance.MainWorkbenchPath != "/" {
+		t.Fatalf("unexpected navigation: %+v", instance)
+	}
+	for _, value := range []string{"https://example.com/", "//example.com/", "/dev", "/../dev/", "/dev/?q=1", "/dev/#x", "/%64ev/"} {
+		if err := (ServerConfig{OKREntryPath: value}).ValidateNavigationPaths(); err == nil {
+			t.Fatalf("accepted invalid installation path %q", value)
+		}
+	}
+}

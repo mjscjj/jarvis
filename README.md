@@ -75,6 +75,7 @@ Jarvis 本体只服务 principal；OKR 页面登录使用独立低敏应用。**
 - 插件：`internal/plugin/`, `conf/skills.yaml`, 对应 Skill
 - OKR：`internal/okrworkspace/`, `internal/okrreview/`, `web/src/okr/`；生命周期由 `internal/appmodule/` 管理
 - 运行配置：后台“系统设置”或 `conf/config.runtime.yaml`
+- 网页身份与导航：`auth.feishu_accounts` 将已核验的飞书 union ID 绑定到企业账号；`auth.principals` 单独决定本实例私有页面准入；`server.main_workbench_accounts` 只决定导航偏好。真实人员配置写本机 runtime，不写入代码或基线；账号绑定缺省为空，没有内置人员回退。维护步骤见 [OKR 入口方案第 14 节](docs/summery/2026-09-16-okr-development-entry.md#14-人员配置与分支维护)。
 - Web：`web/src/`
 
 各模块的稳定契约见 [docs/modules](docs/README.md#当前实现)。

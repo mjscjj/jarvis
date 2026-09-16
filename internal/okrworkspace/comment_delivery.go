@@ -21,7 +21,7 @@ type CommentDeliveryView struct {
 	Error     string `json:"error,omitempty"`
 }
 
-func (s *Service) prepareCommentDeliveries(ctx context.Context, row domain.PageComment, authorEmail, authorUnionID, tab string) error {
+func (s *Service) prepareCommentDeliveries(ctx context.Context, db *gorm.DB, row domain.PageComment, authorEmail, authorUnionID, tab string) error {
 	if len(row.Mentions) == 0 {
 		return nil
 	}
@@ -44,7 +44,7 @@ func (s *Service) prepareCommentDeliveries(ctx context.Context, row domain.PageC
 			appID = s.commentNotifier.AppID()
 		}
 		record := domain.CommentDelivery{CommentID: row.ID, Email: recipient.Email, Name: recipient.Name, AppID: appID, Payload: string(raw), Status: "pending", UpdatedAt: time.Now().UTC()}
-		if err := s.db.WithContext(ctx).Create(&record).Error; err != nil {
+		if err := db.WithContext(ctx).Create(&record).Error; err != nil {
 			return err
 		}
 	}

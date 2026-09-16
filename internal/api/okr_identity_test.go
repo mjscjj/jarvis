@@ -108,6 +108,11 @@ func TestOKRPrincipalBrowserIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	service.SetOKRIdentity(identity)
+	service.SetBrowserCookie("jarvis_dev_session", "/dev/")
+	service.SetOKRAccountBindings(map[string]authn.User{
+		"on_94b5aa46ca92b7aecd01031e5b2f0dc4": {Username: "chujiejie.1", Email: "chujiejie.1@bytedance.com"},
+		"on_af023f3c29b03b3d90cffedbc703b005": {Username: "lixiaolin", Email: "claire.li@bytedance.com"},
+	})
 	addOKRIdentitySession(t, db, "chu", "on_94b5aa46ca92b7aecd01031e5b2f0dc4", "")
 	addOKRIdentitySession(t, db, "li", "on_af023f3c29b03b3d90cffedbc703b005", "")
 	addOKRIdentitySession(t, db, "other", "on_outsider", "chujiejie.1@bytedance.com")
@@ -126,7 +131,7 @@ func TestOKRPrincipalBrowserIdentity(t *testing.T) {
 	h.Use(audit.Middleware(service), authn.BrowserMiddleware(service))
 	h.GET("/api/auth/status", GetAuthStatus(service))
 	h.POST("/api/auth/logout", LogoutFromJarvis(service))
-	h.POST("/api/biz-okr/auth/logout", LogoutOKR(identity, service))
+	h.POST("/api/biz-okr/auth/logout", LogoutOKR(identity))
 	h.GET("/api/biz-okr/me", GetOKRCurrentUser(identity))
 	h.GET("/api/chat/sessions", func(_ context.Context, c *app.RequestContext) { c.JSON(200, map[string]any{"items": []any{}}) })
 	request := func(method, path, cookies string) *protocol.Response {
@@ -135,12 +140,12 @@ func TestOKRPrincipalBrowserIdentity(t *testing.T) {
 	for _, tc := range []struct{ name, cookies, username string }{
 		{"first principal", "jarvis_okr_session=chu", "chujiejie.1"},
 		{"second principal", "jarvis_okr_session=li", "lixiaolin"},
-		{"SSO alone", "jarvis_session=sso", "lixiaolin"},
+		{"SSO alone", "jarvis_dev_session=sso", "lixiaolin"},
 		{"ordinary with principal email", "jarvis_okr_session=other", ""},
 		{"unknown cookie", "jarvis_okr_session=unknown", ""},
 		{"expired cookie", "jarvis_okr_session=expired", ""},
-		{"ordinary masks old SSO", "jarvis_okr_session=other; jarvis_session=sso", ""},
-		{"OKR wins account conflict", "jarvis_okr_session=chu; jarvis_session=sso", "chujiejie.1"},
+		{"ordinary masks local SSO", "jarvis_okr_session=other; jarvis_dev_session=sso", ""},
+		{"OKR wins account conflict", "jarvis_okr_session=chu; jarvis_dev_session=sso", "chujiejie.1"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			response := request("GET", "/api/auth/status", tc.cookies)
@@ -167,7 +172,7 @@ func TestOKRPrincipalBrowserIdentity(t *testing.T) {
 		})
 	}
 	if got := request("GET", "/api/chat/sessions", "jarvis_session=sso").StatusCode(); got != 401 {
-		t.Fatalf("superseded SSO status = %d, want 401", got)
+		t.Fatalf("parent SSO status = %d, want 401", got)
 	}
 	items, err := audit.List(t.Context(), security.AuditFilter{ActorKind: "principal"})
 	if err != nil {
@@ -185,14 +190,17 @@ func TestOKRPrincipalBrowserIdentity(t *testing.T) {
 		if err := db.Exec("INSERT OR REPLACE INTO browser_auth_session (token_hash, username, email, expires_at) VALUES (?, ?, ?, ?)", fmt.Sprintf("%x", sha256.Sum256([]byte("sso"))), "lixiaolin", "claire.li@bytedance.com", time.Now().Add(time.Hour)).Error; err != nil {
 			t.Fatal(err)
 		}
-		response := request("POST", path, "jarvis_okr_session=logout; jarvis_session=sso")
+		response := request("POST", path, "jarvis_okr_session=logout; jarvis_dev_session=sso; jarvis_session=parent")
 		if response.StatusCode() != 200 {
 			t.Fatalf("logout: %s", response.Body())
 		}
-		for _, cookie := range []string{"jarvis_okr_session=logout", "jarvis_session=sso"} {
-			if request("GET", "/api/chat/sessions", cookie).StatusCode() != 401 {
-				t.Fatal("logout left valid credentials")
-			}
+		if request("GET", "/api/chat/sessions", "jarvis_okr_session=logout").StatusCode() != 401 {
+			t.Fatal("logout left valid OKR credentials")
+		}
+		// A local SSO session is superseded when an OKR identity becomes active.
+		// The parent installation's differently named cookie is never read or cleared.
+		if got := request("GET", "/api/chat/sessions", "jarvis_dev_session=sso").StatusCode(); got != 401 {
+			t.Fatalf("superseded local SSO status after %s = %d, want 401", path, got)
 		}
 		if path == "/api/biz-okr/auth/logout" && !strings.Contains(string(response.Body()), `"logged_out":true`) {
 			t.Fatal("OKR logout response changed")

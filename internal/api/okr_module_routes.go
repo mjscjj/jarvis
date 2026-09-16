@@ -121,7 +121,7 @@ func RegisterBizOKRModuleRoutes(h *server.Hertz, deps BizOKRModuleDependencies) 
 	h.GET("/api/biz-okr/me", requireEnabled, GetOKRCurrentUser(deps.Identity))
 	h.POST("/api/biz-okr/auth/feishu/device", requireEnabled, BeginOKRFeishuDeviceLogin(deps.Identity))
 	h.POST("/api/biz-okr/auth/feishu/device/:login_id/poll", requireEnabled, PollOKRFeishuDeviceLogin(deps.Identity))
-	h.POST("/api/biz-okr/auth/logout", requireEnabled, LogoutOKR(deps.Identity, deps.Auth))
+	h.POST("/api/biz-okr/auth/logout", requireEnabled, LogoutOKR(deps.Identity))
 	// Deprecated browser-cache compatibility route; see SearchWorkspacePeople.
 	h.GET("/api/biz-okr/people/search", requireEnabled, SearchOKRDirectory(deps.Directory))
 	h.GET("/api/biz-okr/people/avatars", requireEnabled, GetOKRDirectoryAvatars(deps.Directory))

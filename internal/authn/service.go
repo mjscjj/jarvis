@@ -42,12 +42,13 @@ type User struct {
 }
 
 type View struct {
-	Enabled         bool    `json:"enabled"`
-	Status          string  `json:"status"`
-	User            *User   `json:"user,omitempty"`
-	VerificationURL *string `json:"verification_url,omitempty"`
-	UserCode        *string `json:"user_code,omitempty"`
-	FlowID          *string `json:"flow_id,omitempty"`
+	PreferMainWorkbench bool    `json:"prefer_main_workbench,omitempty"`
+	Enabled             bool    `json:"enabled"`
+	Status              string  `json:"status"`
+	User                *User   `json:"user,omitempty"`
+	VerificationURL     *string `json:"verification_url,omitempty"`
+	UserCode            *string `json:"user_code,omitempty"`
+	FlowID              *string `json:"flow_id,omitempty"`
 }
 
 type LoginResult struct {
@@ -89,17 +90,64 @@ type session struct {
 func (session) TableName() string { return "browser_auth_session" }
 
 type Service struct {
-	enabled    bool
-	bin        string
-	runner     CommandRunner
-	sessionTTL time.Duration
-	allowed    map[string]bool
-	now        func() time.Time
+	enabled               bool
+	bin                   string
+	runner                CommandRunner
+	sessionTTL            time.Duration
+	okrAccountBindings    map[string]User
+	mainWorkbenchAccounts map[string]bool
+	cookieName            string
+	cookiePath            string
+	allowed               map[string]bool
+	now                   func() time.Time
 
 	mu    sync.Mutex
 	flows map[string]flow
 	db    *gorm.DB
 	okr   *okrAuth.Service
+}
+
+func (s *Service) SetBrowserCookie(name, path string) {
+	s.cookieName = strings.TrimSpace(name)
+	s.cookiePath = strings.TrimSpace(path)
+}
+
+func (s *Service) CookieName() string {
+	if s.cookieName != "" {
+		return s.cookieName
+	}
+	return CookieName
+}
+
+func (s *Service) CookiePath() string {
+	if s.cookiePath != "" {
+		return s.cookiePath
+	}
+	return "/"
+}
+
+// SetMainWorkbenchAccounts configures navigation only, never access to this instance.
+// Call during startup before serving requests.
+func (s *Service) SetMainWorkbenchAccounts(accounts []string) {
+	s.mainWorkbenchAccounts = make(map[string]bool, len(accounts))
+	for _, account := range accounts {
+		if key := strings.ToLower(strings.TrimSpace(account)); key != "" {
+			s.mainWorkbenchAccounts[key] = true
+		}
+	}
+}
+
+// SetOKRAccountBindings links verified Feishu union IDs to canonical enterprise
+// accounts. Instance configuration owns the bindings; the allow list still
+// decides principal access. Configure once before serving requests.
+func (s *Service) SetOKRAccountBindings(accounts map[string]User) {
+	s.okrAccountBindings = make(map[string]User, len(accounts))
+	for unionID, account := range accounts {
+		account.Username = strings.TrimSpace(account.Username)
+		account.Email = strings.TrimSpace(account.Email)
+		account.IsPrincipal = true
+		s.okrAccountBindings[unionID] = account
+	}
 }
 
 func (s *Service) SetOKRIdentity(identity *okrAuth.Service) {

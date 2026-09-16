@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"jarvis/internal/authn"
 	"jarvis/internal/okrworkspace"
 	okrAuth "jarvis/internal/okrworkspace/auth"
 
@@ -36,7 +35,7 @@ func GetOKRCurrentUser(service *okrAuth.Service) app.HandlerFunc {
 			c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": okrCurrentUserResponse{Authenticated: true, Configured: false, ManagementAccess: true, RegionalAutoMatchAccess: true, User: &user}})
 			return
 		}
-		session, err := service.Current(ctx, string(c.Cookie(okrAuth.CookieName)))
+		session, err := service.Current(ctx, string(c.Cookie(service.CookieName())))
 		if errors.Is(err, okrAuth.ErrUnauthenticated) {
 			c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": okrCurrentUserResponse{Configured: true}})
 			return
@@ -72,27 +71,20 @@ func PollOKRFeishuDeviceLogin(service *okrAuth.Service) app.HandlerFunc {
 			return
 		}
 		if poll.Status == okrAuth.DeviceLoginCompleted {
-			c.SetCookie(okrAuth.CookieName, token, service.SessionMaxAge(), "/", "", protocol.CookieSameSiteLaxMode, service.CookieSecure(), true)
+			c.SetCookie(service.CookieName(), token, service.SessionMaxAge(), service.CookiePath(), "", protocol.CookieSameSiteLaxMode, service.CookieSecure(), true)
 		}
 		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": poll})
 	}
 }
 
-func LogoutOKR(service *okrAuth.Service, principal *authn.Service) app.HandlerFunc {
+func LogoutOKR(service *okrAuth.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
-		var err error
-		if principal != nil {
-			err = principal.LogoutRequest(ctx, c)
-		} else {
-			err = service.Logout(ctx, string(c.Cookie(okrAuth.CookieName)))
-		}
+		err := service.Logout(ctx, string(c.Cookie(service.CookieName())))
 		if err != nil {
 			writeAPIError(c, consts.StatusInternalServerError, 50082, err)
 			return
 		}
-		if principal == nil {
-			c.SetCookie(okrAuth.CookieName, "", -1, "/", "", protocol.CookieSameSiteLaxMode, service.CookieSecure(), true)
-		}
+		c.SetCookie(service.CookieName(), "", -1, service.CookiePath(), "", protocol.CookieSameSiteLaxMode, service.CookieSecure(), true)
 		c.JSON(consts.StatusOK, map[string]any{"code": 0, "data": map[string]bool{"logged_out": true}})
 	}
 }
@@ -101,7 +93,7 @@ func RequireOKRIdentity(service *okrAuth.Service) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		user := jarvisOKRUser
 		if service.Enabled() {
-			session, err := service.Current(ctx, string(c.Cookie(okrAuth.CookieName)))
+			session, err := service.Current(ctx, string(c.Cookie(service.CookieName())))
 			if errors.Is(err, okrAuth.ErrUnauthenticated) {
 				writeAPIError(c, consts.StatusUnauthorized, 40180, fmt.Errorf("请先使用飞书登录"))
 				c.Abort()

@@ -424,3 +424,68 @@ func TestAuthRejectsRelativeLoginAPIBaseURL(t *testing.T) {
 		t.Fatalf("expected invalid login API URL error, got %v", err)
 	}
 }
+
+func TestFeishuAccountBindingsComeFromRuntimeConfiguration(t *testing.T) {
+	configPath := writeRuntimeSettingsTestConfig(t)
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Auth.FeishuAccounts) != 0 {
+		t.Fatal("unexpected built-in account bindings")
+	}
+	runtime := "auth:\n  feishu_accounts:\n    on_fixture:\n      username: developer\n      email: developer@example.test\n"
+	if err := os.WriteFile(RuntimeOverridePath(configPath), []byte(runtime), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Auth.FeishuAccounts["on_fixture"].Username != "developer" {
+		t.Fatal("runtime binding was not loaded")
+	}
+	for _, invalid := range []string{
+		"auth:\n  feishu_accounts:\n    on_fixture: {email: developer@example.test}\n",
+		"auth:\n  feishu_accounts:\n    ' ': {username: developer}\n",
+	} {
+		if err := os.WriteFile(RuntimeOverridePath(configPath), []byte(invalid), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(configPath); err == nil || !strings.Contains(err.Error(), "auth.feishu_accounts") {
+			t.Fatalf("invalid binding accepted: %v", err)
+		}
+	}
+}
+
+func TestAuthBrowserCookieDefaultsAndValidatesInstanceOverride(t *testing.T) {
+	configPath := writeRuntimeSettingsTestConfig(t)
+	cfg, err := Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Auth.BrowserCookieName() != "jarvis_session" || cfg.Auth.BrowserCookiePath() != "/" {
+		t.Fatalf("default cookie = %s %s", cfg.Auth.BrowserCookieName(), cfg.Auth.BrowserCookiePath())
+	}
+	if err := os.WriteFile(RuntimeOverridePath(configPath), []byte("auth:\n  cookie_name: jarvis_dev_session\n  cookie_path: /dev/\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = Load(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Auth.BrowserCookieName() != "jarvis_dev_session" || cfg.Auth.BrowserCookiePath() != "/dev/" {
+		t.Fatalf("configured cookie = %s %s", cfg.Auth.BrowserCookieName(), cfg.Auth.BrowserCookiePath())
+	}
+	for _, invalid := range []string{
+		"auth:\n  cookie_name: 'bad/name'\n",
+		"auth:\n  cookie_path: relative\n",
+	} {
+		if err := os.WriteFile(RuntimeOverridePath(configPath), []byte(invalid), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(configPath); err == nil {
+			t.Fatalf("accepted invalid browser cookie configuration: %q", invalid)
+		}
+	}
+}

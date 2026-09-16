@@ -85,6 +85,8 @@ func NewService(db *gorm.DB, cfg moduleconfig.IdentityConfig, provider Provider,
 
 func (s *Service) Enabled() bool      { return s.cfg.Enabled }
 func (s *Service) CookieSecure() bool { return s.cfg.CookieSecure }
+func (s *Service) CookieName() string { return s.cfg.BrowserCookieName() }
+func (s *Service) CookiePath() string { return s.cfg.BrowserCookiePath() }
 func (s *Service) SessionMaxAge() int {
 	if s.cfg.SessionTTLHours <= 0 {
 		return 0
