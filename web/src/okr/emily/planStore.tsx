@@ -114,6 +114,17 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
   const schedulePointSaveRef = useRef<(pointId: string) => void>(() => undefined)
   const remoteReady = useRef(false)
   const persistedObjectiveIDs = useRef(new Set<string>())
+  const syncStateRef = useRef(syncState)
+  const focusRefreshPending = useRef(false)
+  const focusRefreshInFlight = useRef(false)
+  const loadRequest = useRef(0)
+  syncStateRef.current = syncState
+
+  const hasLocalWork = useCallback(() => (
+    saveInFlight.current || dirtyKRs.current.size > 0 || dirtyObjectives.current.size > 0 ||
+    objectiveOrderDirty.current || pointPatches.current.size > 0 || pointSavesInFlight.current.size > 0 ||
+    syncStateRef.current.kind === 'saving' || syncStateRef.current.kind === 'conflict'
+  ), [])
 
   const publishPlan = useCallback((next?: OKRPlan) => {
     planRef.current = next
@@ -123,16 +134,30 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
     setObjectives(nextObjectives)
   }, [])
 
-  const loadRemote = useCallback(async (targetQuarter?: string, targetPlanId?: string) => {
-    remoteReady.current = false
-    setSyncState({ kind: 'loading', message: '正在读取 Biz OKR Plan…' })
+  const loadRemote = useCallback(async (targetQuarter?: string, targetPlanId?: string, options?: { background?: boolean }) => {
+    const background = options?.background === true
+    if (background && (!remoteReady.current || hasLocalWork())) return
+    const request = ++loadRequest.current
+    const startingPlanID = planRef.current?.id
+    const startingObjectives = background ? JSON.stringify(objectivesRef.current) : ''
+    if (!background) {
+      remoteReady.current = false
+      setSyncState({ kind: 'loading', message: '正在读取 Biz OKR Plan…' })
+    }
     try {
-      for (const pointTimer of pointTimers.current.values()) window.clearTimeout(pointTimer)
-      pointTimers.current.clear()
+      if (!background) {
+        for (const pointTimer of pointTimers.current.values()) window.clearTimeout(pointTimer)
+        pointTimers.current.clear()
+      }
       const list = await listOKRPlans(targetQuarter ?? quarterRef.current)
       const remoteEnums = await getEnums()
       const selected = targetPlanId ? list.plans.find((item) => item.id === targetPlanId) : list.plans[0]
       const loadedPlan = selected ? await getOKRPlan(selected.id) : undefined
+      if (request !== loadRequest.current) return
+      if (background && (hasLocalWork() || planRef.current?.id !== startingPlanID || JSON.stringify(objectivesRef.current) !== startingObjectives)) {
+        focusRefreshPending.current = true
+        return
+      }
       quarterRef.current = list.quarter
       setQuarterState(list.quarter)
       onQuarterChange?.(list.quarter)
@@ -154,9 +179,9 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
       setSyncState({ kind: 'ready', message: loadedPlan ? 'Biz OKR Plan 已加载' : '当前季度暂无 Biz OKR Plan' })
       return { list, plan: loadedPlan }
     } catch (error) {
-      setSyncState({ kind: 'error', title: '读取失败', message: error instanceof Error ? error.message : '加载 Biz OKR Plan 失败。', logid: error instanceof APIError ? error.logid : undefined })
+      if (!background && request === loadRequest.current) setSyncState({ kind: 'error', title: '读取失败', message: error instanceof Error ? error.message : '加载 Biz OKR Plan 失败。', logid: error instanceof APIError ? error.logid : undefined })
     }
-  }, [onQuarterChange, publishPlan])
+  }, [hasLocalWork, onQuarterChange, publishPlan])
 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadRemote(initialQuarter, initialPlanId), 0)
@@ -186,6 +211,35 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
     window.addEventListener('beforeunload', warnBeforeUnload)
     return () => window.removeEventListener('beforeunload', warnBeforeUnload)
   }, [])
+
+  const refreshOnFocus = useCallback(async () => {
+    if (document.visibilityState !== 'visible') return
+    if (focusRefreshInFlight.current) return
+    focusRefreshPending.current = true
+    if (!remoteReady.current || hasLocalWork()) return
+    focusRefreshPending.current = false
+    focusRefreshInFlight.current = true
+    try {
+      await loadRemote(quarterRef.current, planRef.current?.id, { background: true })
+    } finally {
+      focusRefreshInFlight.current = false
+      if (focusRefreshPending.current && !hasLocalWork()) void refreshOnFocus()
+    }
+  }, [hasLocalWork, loadRemote])
+
+  useEffect(() => {
+    const refresh = () => { void refreshOnFocus() }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+    }
+  }, [refreshOnFocus])
+
+  useEffect(() => {
+    if (focusRefreshPending.current && !hasLocalWork()) void refreshOnFocus()
+  }, [hasLocalWork, refreshOnFocus, syncState.kind])
 
   useEffect(() => {
     const nextQuarter = initialQuarter.trim()
