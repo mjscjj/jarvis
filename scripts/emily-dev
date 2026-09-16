@@ -42,6 +42,7 @@ def initialize(root, public_url, principal):
     for key in ('codex', 'execute', 'factengine', 'proactive', 'meeting_sweep', 'morning_brief'):
         config.setdefault(key, {}).update(bin='codex', model=base['chat']['model'])
     config['execute'].update(repo_root='/opt/jarvis', runs_dir='var/runs')
+    config['dailydigest']['git_author'] = 'Emily development'
     module = {
         'chat': {'enabled': True, 'runtime': 'local'},
         'identity': {'token_dir': '/dev-state/tokens'},
