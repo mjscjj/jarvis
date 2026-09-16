@@ -1,4 +1,4 @@
-import { isWeeklyWorkspaceTab, OKR_TAB_DEFINITIONS, okrTabForWeeklyWorkspace, type OKRTab, type WeeklyWorkspace, type WeeklyWorkspaceTab } from '../navigation.ts'
+import { isWeeklyWorkspaceTab, OKR_TAB_DEFINITIONS, okrTabForWeeklyWorkspace, type WeeklyWorkspace, type WeeklyWorkspaceTab } from '../navigation.ts'
 
 export const WEEKLY_SHARE_SCOPE = 'weekly'
 
@@ -13,10 +13,6 @@ export const WEEKLY_SHARE_NAV = WEEKLY_SHARE_TABS.map((key) => {
 
 export function isWeeklyShareViewState(viewState: Record<string, unknown>): boolean {
   return viewState.share === WEEKLY_SHARE_SCOPE
-}
-
-export function isWeeklyShareTab(tab: OKRTab): tab is WeeklyShareTab {
-  return WEEKLY_SHARE_TABS.includes(tab as WeeklyShareTab)
 }
 
 export function weeklyShareTab(requested: unknown): WeeklyShareTab {

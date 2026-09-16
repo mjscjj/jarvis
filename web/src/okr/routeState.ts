@@ -3,12 +3,6 @@ export function quarterFromViewState(viewState: Readonly<Record<string, unknown>
   return typeof value === 'string' ? value.trim() : ''
 }
 
-export function quarterForDate(date: Date): string {
-  const year = date.getFullYear()
-  const quarter = Math.floor(date.getMonth() / 3) + 1
-  return `${year}-Q${quarter}`
-}
-
 export function okrPlanDefaultQuarter(date = new Date()): string {
   const month = date.getMonth()
   const quarter = Math.floor(month / 3) + 1

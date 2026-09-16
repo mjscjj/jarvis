@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { Button, Space, Tag, Typography } from 'antd'
+import { Button, Tag, Typography } from 'antd'
 import { ApiOutlined, CalendarOutlined, FileTextOutlined, LinkOutlined, MessageOutlined, PaperClipOutlined, PullRequestOutlined, SafetyOutlined, UndoOutlined } from '@ant-design/icons'
 import type { Effect } from '../types'
 import { formatTime, printableValue } from './taskValues'

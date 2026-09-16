@@ -70,6 +70,10 @@ lark-auth-*.png
 tmp-*.png
 # Screenshots agents drop at the repo root while investigating.
 /.*.png
+/diagrams/
+/claire-qa-preview.pdf
+/prd-whiteboard.jpg
+/tmp-*.jpg
 /conf/config.runtime.yaml
 
 # LoopX local control plane

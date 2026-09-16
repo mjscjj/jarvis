@@ -8,10 +8,6 @@ export function joinOwnerNames(values: string[]) {
   return [...new Set(values.map((item) => item.trim()).filter(Boolean))].join('、')
 }
 
-export function hasOwner(value: string | undefined, owner: string) {
-  return splitOwnerNames(value).includes(owner)
-}
-
 export function ownerIdentityKey(owner: KrOwner) {
 	return owner.email ? `email:${owner.email}` : `name:${owner.name}`
 }

@@ -16,22 +16,12 @@ import {
   Typography,
 } from 'antd'
 import {
-  ApiOutlined,
-  BulbOutlined,
-  CalendarOutlined,
   CheckCircleOutlined,
   CloseOutlined,
   CommentOutlined,
   ExclamationCircleOutlined,
   FileTextOutlined,
   HistoryOutlined,
-  LinkOutlined,
-  MessageOutlined,
-  PaperClipOutlined,
-  PullRequestOutlined,
-  SafetyOutlined,
-  ToolOutlined,
-  UndoOutlined,
 } from '@ant-design/icons'
 import type { ExecutionRun, Task, TaskEvent } from '../types'
 import { getTaskRun } from '../api'
@@ -49,7 +39,6 @@ import {
   isAgentClosure,
   modelCloseReason,
   objectField,
-  questionOf,
   questionText,
   strField,
   taskHandlerMeta,
@@ -57,7 +46,7 @@ import {
   taskSourceName,
 } from './taskPresentation'
 
-const { Link, Paragraph, Text, Title } = Typography
+const { Paragraph, Text, Title } = Typography
 
 const taskEventLabels: Record<string, string> = {
   created: '任务已创建',
@@ -229,14 +218,6 @@ function RunContent({ run, recall }: { run: ExecutionRun; recall: EffectRecall }
       )}
     </div>
   )
-}
-
-function InlineCodeText({ text }: { text: string }) {
-  return <>{text.split(/(`[^`]+`)/g).filter(Boolean).map((part, index) => (
-    part.startsWith('`') && part.endsWith('`')
-      ? <code key={index}>{part.slice(1, -1)}</code>
-      : <span key={index}>{part}</span>
-  ))}</>
 }
 
 function ResultContent({ task, actions }: { task: Task; actions: ReactNode }) {

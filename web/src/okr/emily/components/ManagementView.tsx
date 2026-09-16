@@ -9,7 +9,6 @@ import { FeishuPeoplePicker, FeishuPeoplePickerInput } from './FeishuPeoplePicke
 import { HierarchyNav } from './HierarchyNav'
 import { OwnerFilterPicker } from './OwnerFilterPicker'
 import { PeopleInline } from './PeopleInline'
-import { PersonAvatar } from './PersonAvatar'
 import { KrDefinitionDetails } from './Table'
 import { TagEditor } from './TagEditor'
 import { CommentSurfaceHint, CommentTargetButton, commentTargetElementId, scrollToCommentSource, useCommentInteraction, useCommentSurface } from '../commenting'
