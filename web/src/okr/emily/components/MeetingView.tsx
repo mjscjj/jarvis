@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent, ReactNode } from 'react'
-import { createFeishuDocument } from '../api'
 import { useBoard } from '../board'
 import { commentTargetFromThread, commentTargetKey, findCommentTargetLocation } from '../comments'
 import { commentSelectionElementId, commentTargetElementId, scrollToCommentSource, useCommentInteraction } from '../commenting'
@@ -12,6 +11,7 @@ import { KIND_LABEL, isDone } from '../template'
 import { isReviewTemplate } from '../weekCatalog'
 import type { CommentTarget, Entry, KrPriority, Objective, Point, PointKind, TextSelection } from '../types'
 import { HierarchyNav } from './HierarchyNav'
+import { FeishuDocumentExportButton } from './FeishuDocumentExportButton'
 import { OwnerFilterPicker } from './OwnerFilterPicker'
 import { PersonAvatar } from './PersonAvatar'
 import { Images, Links, StatusSelect } from './ui'
@@ -258,6 +258,7 @@ function MeetingObjectiveSection({ objective, closed, toggle, reviewMode }: { ob
 			const krTarget: CommentTarget = { type: 'kr', id: kr.id, title: kr.title }
 			const krOpen = !closed.has(kr.id)
 			const priority = priorityOf(kr)
+			const visibleKinds = KINDS.filter((kind) => kr.points.some((point) => point.kind === kind))
 			return (
 				<article key={kr.id} className={`border-b border-l-[3px] border-b-slate-100 bg-white last:border-b-0 ${priorityRail(priority)}`}>
               <header className="flex items-start pl-1.5">
@@ -300,10 +301,9 @@ function MeetingObjectiveSection({ objective, closed, toggle, reviewMode }: { ob
                     </div>
                   </section>
                 )}
-                {KINDS.map((kind) => {
-                  const points = kr.points.filter((point) => point.kind === kind)
-				  return points.length > 0 ? <KindGroup key={kind} krId={kr.id} kind={kind} points={points} closed={closed} toggle={toggle} reviewMode={reviewMode} /> : null
-                })}
+				<div className={`grid grid-cols-1 gap-3 ${visibleKinds.length > 1 ? 'md:grid-cols-2' : ''}`}>
+				  {visibleKinds.map((kind) => <KindGroup key={kind} krId={kr.id} kind={kind} points={kr.points.filter((point) => point.kind === kind)} closed={closed} toggle={toggle} reviewMode={reviewMode} />)}
+				</div>
               </div>}
             </article>
           )
@@ -324,8 +324,6 @@ export function MeetingView() {
   const [activeBusinessValue, setActiveBusinessValue] = useState<string>()
   const [activePriorityValue, setActivePriorityValue] = useState<string>()
   const [activeObjectiveId, setActiveObjectiveId] = useState('')
-  const [exporting, setExporting] = useState(false)
-  const [exportResult, setExportResult] = useState<{ url?: string; message?: string }>({})
   const owners = useMemo(() => krOwnerOptions(objectives), [objectives])
   const ownersByKey = useMemo(() => new Map(owners.map((owner) => [ownerIdentityKey(owner), owner])), [owners])
   const selectedOwners = useMemo(() => ownerFilters.flatMap((key) => {
@@ -380,21 +378,6 @@ export function MeetingView() {
     return next
   })
   const collapseAll = () => setClosed(collapseAllIds(visible))
-  const exportToFeishu = async () => {
-    if (objectives.length === 0 || exporting) return
-    setExporting(true)
-    setExportResult({})
-    try {
-	  const output = buildFullMeetingMarkdown(objectives, quarter, week, templateKey)
-      const result = await createFeishuDocument(output.title, output.content)
-      setExportResult({ url: result.url, message: result.warnings.length > 0 ? `飞书文档已生成，另有 ${result.warnings.length} 条转换提示。` : '飞书文档已生成。' })
-    } catch (error) {
-      setExportResult({ message: error instanceof Error ? error.message : '飞书文档生成失败。' })
-    } finally {
-      setExporting(false)
-    }
-  }
-
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -416,9 +399,13 @@ export function MeetingView() {
           }}
         />
         <span className="h-4 w-px bg-slate-200" />
-		<button type="button" disabled={exporting || objectives.length === 0} onClick={() => void exportToFeishu()} className="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40">{exporting ? '导出中…' : reviewMode ? '导出 OKR Review' : '导出全部 OKR'}</button>
-        {exportResult.url && <a href={exportResult.url} target="_blank" rel="noreferrer" className="text-[11px] font-medium text-blue-600 hover:text-blue-700 hover:underline">打开文档</a>}
-        {exportResult.message && <span className={`max-w-sm whitespace-normal text-[10px] ${exportResult.url ? 'text-emerald-600' : 'text-red-500'}`} title={exportResult.message}>{exportResult.message}</span>}
+		<FeishuDocumentExportButton
+			label={reviewMode ? '导出 OKR Review' : '导出全部 OKR'}
+			document={() => buildFullMeetingMarkdown(objectives, quarter, week, templateKey)}
+			disabled={objectives.length === 0}
+			resetKey={`${quarter}:${week}:${templateKey}`}
+			className="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+		/>
       </div>
 
       <HierarchyNav

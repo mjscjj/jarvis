@@ -14,6 +14,8 @@ import { PreviewReviewButton, PreviewReviewPanel, PreviewReviewProvider } from '
 import { SaveToast } from './components/SaveToast'
 import { UsageGuideButton } from './components/UsageGuide'
 import { ProductFeedbackTrigger } from './components/ProductFeedbackCenter'
+import { FeishuDocumentExportButton } from './components/FeishuDocumentExportButton'
+import { buildPlanMarkdown } from './meetingMarkdown'
 
 const PLAN_SCROLL_KEY_PREFIX = 'jarvis-okr-plan-scroll'
 
@@ -267,10 +269,19 @@ function PlanCanvas({ initialCommentId = '', shared = false, onShareTabChange }:
             <button type="button" onClick={() => setConfirmDelete(false)} disabled={saving} className="h-9 px-2 text-xs text-slate-500 disabled:opacity-40">取消</button>
           </section>
         )}
-        {plan ? (
+	        {plan ? (
 	          <PreviewReviewProvider reviewType="plan" planId={plan.id}>
 	            <div className="mb-3">
-	              <div className="flex justify-end"><PreviewReviewButton target={{ kind: 'all', title: plan.title }} label="AI评审" className="px-3" /></div>
+	              <div className="flex flex-wrap items-center justify-end gap-2">
+	                <PreviewReviewButton target={{ kind: 'all', title: plan.title }} label="AI评审" className="px-3" />
+	                <FeishuDocumentExportButton
+	                  label="导出OKR Plan"
+	                  document={() => buildPlanMarkdown(plan)}
+	                  disabled={saving || plan.objectives.length === 0}
+	                  resetKey={plan.id}
+	                  className="inline-flex h-6 items-center rounded-md bg-blue-600 px-3 text-[10px] font-semibold leading-none text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-45"
+	                />
+	              </div>
 	              <PreviewReviewPanel target={{ kind: 'all', title: plan.title }} className="mt-2" />
 	            </div>
 	            <CommentInteractionProvider value={{ enabled: true, triggerMode: 'surface', selected: commentTarget, focused: focusedComment, comments, counts: commentCounts, pendingSelection: pendingCommentSelection, setPendingSelection: setPendingCommentSelection, select: openComments }}>

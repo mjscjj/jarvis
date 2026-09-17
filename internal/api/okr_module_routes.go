@@ -22,7 +22,9 @@ type OKRModuleDependencies struct {
 	Workspace *okrworkspace.Service
 	Images    *okrworkspace.ImageStore
 	Activity  *okrworkspace.ActivityStore
-	Enabled   func(context.Context) (bool, error)
+	// Identity is shared with Biz OKR when enabled; standalone Core has none.
+	Identity *okrAuth.Service
+	Enabled  func(context.Context) (bool, error)
 }
 
 // BizOKRModuleDependencies keeps organization-specific product behavior
@@ -50,6 +52,7 @@ func RegisterOKRModuleRoutes(h *server.Hertz, deps OKRModuleDependencies) error 
 	if deps.Enabled == nil {
 		return fmt.Errorf("register OKR module routes: enablement gate is nil")
 	}
+	requireWriteIdentity := requireOKRWriteIdentity(deps.Identity)
 	requireEnabled := func(ctx context.Context, c *app.RequestContext) {
 		enabled, err := deps.Enabled(ctx)
 		if err != nil {
@@ -62,7 +65,7 @@ func RegisterOKRModuleRoutes(h *server.Hertz, deps OKRModuleDependencies) error 
 			c.Abort()
 			return
 		}
-		c.Next(ctx)
+		requireWriteIdentity(ctx, c)
 	}
 	h.GET("/api/okr/enums", requireEnabled, Enums())
 	h.GET("/api/okr/scope", requireEnabled, GetOKRWorkspaceScope(deps.Workspace))
@@ -103,6 +106,7 @@ func RegisterBizOKRModuleRoutes(h *server.Hertz, deps BizOKRModuleDependencies) 
 	if deps.Enabled == nil {
 		return fmt.Errorf("register Biz OKR module routes: enablement gate is nil")
 	}
+	requireWriteIdentity := requireOKRWriteIdentity(deps.Identity)
 	requireEnabled := func(ctx context.Context, c *app.RequestContext) {
 		enabled, err := deps.Enabled(ctx)
 		if err != nil {
@@ -115,7 +119,7 @@ func RegisterBizOKRModuleRoutes(h *server.Hertz, deps BizOKRModuleDependencies) 
 			c.Abort()
 			return
 		}
-		c.Next(ctx)
+		requireWriteIdentity(ctx, c)
 	}
 	requireIdentity := RequireOKRIdentity(deps.Identity)
 	h.GET("/api/biz-okr/me", requireEnabled, GetOKRCurrentUser(deps.Identity))

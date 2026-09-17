@@ -70,8 +70,23 @@ func TestOKRBrowserWorkflow(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, quarter := range []string{"2026-Q3", "2026-Q4"} {
-		if _, err := workspace.CreatePlan(t.Context(), okrworkspace.CreatePlanInput{Quarter: quarter, Title: quarter + " seeded Plan"}); err != nil {
+		plan, err := workspace.CreatePlan(t.Context(), okrworkspace.CreatePlanInput{Quarter: quarter, Title: quarter + " seeded Plan"})
+		if err != nil {
 			t.Fatal(err)
+		}
+		if quarter == "2026-Q4" {
+			if _, err := workspace.CreatePlanObjective(t.Context(), plan.ID, okrworkspace.PlanObjectiveView{
+				ID: "export-plan-o", Title: "导出目标", KRs: []okrworkspace.PlanKRView{
+					{ID: "export-plan-kr-1", Title: "导出增长 KR", Tags: []okrworkspace.TagView{{Type: domain.TagTypeBusinessCategory, Value: "增长"}, {Type: domain.TagTypePriority, Value: "p0"}}, Points: []okrworkspace.PlanPointView{
+						{ID: "export-plan-strategy-1", Kind: domain.PointKindStrategy, Title: "导出策略一"},
+						{ID: "export-plan-strategy-2", Kind: domain.PointKindStrategy, Title: "导出策略二"},
+						{ID: "export-plan-product-1", Kind: domain.PointKindProduct, Title: "导出产品一"},
+					}},
+					{ID: "export-plan-kr-2", Title: "导出第二 KR", Tags: []okrworkspace.TagView{{Type: domain.TagTypeBusinessCategory, Value: "增长"}, {Type: domain.TagTypePriority, Value: "p1"}}},
+				},
+			}, "browser-test"); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	for week, template := range map[string]domain.WeekTemplateKey{"2026-W34": domain.WeekTemplateClassic, "2026-W35": domain.WeekTemplateClassic, "2026-W36": domain.WeekTemplateOKRPreview} {
@@ -107,7 +122,7 @@ func TestOKRBrowserWorkflow(t *testing.T) {
 	people := newTestOKRPeopleResolver(t, &stubOKRPeopleSearcher{users: []larkcli.UserCandidate{{OpenID: "ou_regression", LocalizedName: "Regression Owner", EnterpriseEmail: "owner@example.test"}}})
 	h := server.New(server.WithDisablePrintRoute(true))
 	enabled := func(context.Context) (bool, error) { return true, nil }
-	if err := RegisterOKRModuleRoutes(h, OKRModuleDependencies{Workspace: workspace, Images: images, Activity: activity, Enabled: enabled}); err != nil {
+	if err := RegisterOKRModuleRoutes(h, OKRModuleDependencies{Workspace: workspace, Images: images, Activity: activity, Identity: identity, Enabled: enabled}); err != nil {
 		t.Fatal(err)
 	}
 	if err := RegisterBizOKRModuleRoutes(h, BizOKRModuleDependencies{Workspace: workspace, Identity: identity, Activity: activity, Documents: browserDocumentStub{}, DocumentTokens: exportTokenStub{token: okrAuth.StoredToken{OpenID: "ou_Jarvis", AccessToken: "browser-test-token"}}, DocumentAppID: "cli_browser", People: people, PreviewReview: review, Enabled: enabled}); err != nil {

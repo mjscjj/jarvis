@@ -62,6 +62,10 @@ func TestKRTagsRouteUsesNarrowContractAndModuleGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := db.AutoMigrate(&domain.AuthSession{}); err != nil {
+		t.Fatal(err)
+	}
+	addOKRIdentitySession(t, db, "writer", "on_writer", "writer@example.test")
 	enabled := true
 	h := server.New()
 	if err := RegisterBizOKRModuleRoutes(h, BizOKRModuleDependencies{
@@ -84,7 +88,7 @@ func TestKRTagsRouteUsesNarrowContractAndModuleGate(t *testing.T) {
 		{"kr-1", `{"expected_version":0,"tags":[]}`, 409},
 		{"missing", `{"expected_version":0,"tags":[]}`, 404},
 	} {
-		response := ut.PerformRequest(h.Engine, "PUT", "/api/biz-okr/krs/"+test.id+"/tags", &ut.Body{Body: strings.NewReader(test.body), Len: len(test.body)}).Result()
+		response := ut.PerformRequest(h.Engine, "PUT", "/api/biz-okr/krs/"+test.id+"/tags", &ut.Body{Body: strings.NewReader(test.body), Len: len(test.body)}, ut.Header{Key: "Cookie", Value: identity.CookieName() + "=writer"}).Result()
 		if response.StatusCode() != test.status {
 			t.Fatalf("request %s: status=%d body=%s", test.body, response.StatusCode(), response.Body())
 		}
@@ -104,7 +108,7 @@ func TestKRTagsRouteUsesNarrowContractAndModuleGate(t *testing.T) {
 	if err := db.First(&stored, "id = ?", "kr-1").Error; err != nil {
 		t.Fatal(err)
 	}
-	if stored.UpdatedBy != "jarvis" {
+	if stored.UpdatedBy != "ou_writer" {
 		t.Fatalf("editor must come from identity: %+v", stored)
 	}
 	enabled = false

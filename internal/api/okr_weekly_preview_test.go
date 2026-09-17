@@ -78,13 +78,17 @@ func TestWeeklyPreviewRoutesRequireTemplateAndExposeVersionedScores(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
+	if err := db.AutoMigrate(&domain.AuthSession{}); err != nil {
+		t.Fatal(err)
+	}
+	addOKRIdentitySession(t, db, "writer", "on_writer", "writer@example.test")
 	images, err := okrworkspace.NewImageStore(t.TempDir(), 1024)
 	if err != nil {
 		t.Fatal(err)
 	}
 	h := server.New()
 	if err := RegisterOKRModuleRoutes(h, OKRModuleDependencies{
-		Workspace: workspace, Images: images,
+		Workspace: workspace, Images: images, Identity: identity,
 		Enabled: func(context.Context) (bool, error) { return true, nil },
 	}); err != nil {
 		t.Fatal(err)
@@ -100,12 +104,12 @@ func TestWeeklyPreviewRoutesRequireTemplateAndExposeVersionedScores(t *testing.T
 
 	request := func(method, path, body string) *protocol.Response {
 		t.Helper()
-		return ut.PerformRequest(h.Engine, method, path, &ut.Body{Body: strings.NewReader(body), Len: len(body)}).Result()
+		return ut.PerformRequest(h.Engine, method, path, &ut.Body{Body: strings.NewReader(body), Len: len(body)}, ut.Header{Key: "Cookie", Value: identity.CookieName() + "=writer"}).Result()
 	}
 	if response := request("POST", "/api/okr/weeks", `{"quarter":"2026-Q3","week":"2026-W37"}`); response.StatusCode() != 400 {
 		t.Fatalf("missing template status=%d body=%s", response.StatusCode(), response.Body())
 	}
-	if response := request("POST", "/api/biz-okr/comments", `{}`); response.StatusCode() != 401 {
+	if response := ut.PerformRequest(h.Engine, "POST", "/api/biz-okr/comments", nil).Result(); response.StatusCode() != 401 {
 		t.Fatalf("anonymous comment status=%d body=%s", response.StatusCode(), response.Body())
 	}
 	previewBody := `{"quarter":"2026-Q3","week":"2026-W37","template_key":"okr_weekly_preview_v1"}`

@@ -1256,7 +1256,8 @@ func main() {
 	if okrModuleEnabled {
 		okrModuleDeps = &api.OKRModuleDependencies{
 			Workspace: okrWorkspaceService, Images: okrImageStore, Activity: okrActivityStore,
-			Enabled: func(ctx context.Context) (bool, error) { return appModuleService.Enabled(ctx, "okr") },
+			Identity: okrIdentityService,
+			Enabled:  func(ctx context.Context) (bool, error) { return appModuleService.Enabled(ctx, "okr") },
 		}
 	}
 	if bizOKRModuleEnabled {

@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict'
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright')
-const base = process.env.OKR_BROWSER_URL
+const base = process.env.OKR_BROWSER_URL?.replace(/\/?$/, '/')
 const backend = process.env.OKR_TEST_API
 assert(base && backend, 'Run through TestOKRBrowserWorkflow with OKR_BROWSER_URL set')
+const basePath = new URL(base).pathname.replace(/\/$/, '')
+const apiPath = value => {
+  const path = new URL(value).pathname
+  return basePath && path.startsWith(basePath + '/') ? path.slice(basePath.length) : path
+}
 const browser = await chromium.launch({ executablePath: process.env.CHROME_EXECUTABLE, headless: true, args: ['--no-sandbox'] })
 const context = await browser.newContext({ viewport: { width: 1500, height: 1100 }, permissions: ['clipboard-read', 'clipboard-write'] })
 const page = await context.newPage()
@@ -23,12 +28,16 @@ const promptKeys = ['weekly_reminder', 'progress_sync', 'report_c', 'report_b', 
 const prompts = promptKeys.map(key => ({ key: `okr_agent_${key}`, stage: 'okr_agent', kind: 'system_prompt', name: key, content: `Test prompt ${key}`, description: `Regression ${key}` }))
 page.on('pageerror', error => errors.push(error.message))
 await context.route('https://example.test/**', route => route.fulfill({ body: 'Isolated external destination' }))
+await context.route('https://example.test/avatar.png', route => route.fulfill({
+  contentType: 'image/png',
+  body: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jzWQAAAAASUVORK5CYII=', 'base64'),
+}))
 await context.route('**/okr-assets/**', async route => {
-  const response = await fetch(backend + new URL(route.request().url()).pathname)
+  const response = await fetch(backend + apiPath(route.request().url()))
   await route.fulfill({ status: response.status, contentType: response.headers.get('content-type'), body: Buffer.from(await response.arrayBuffer()) })
 })
 await context.route('**/api/**', async route => {
-  const request = route.request(), url = new URL(request.url()), path = url.pathname, method = request.method()
+  const request = route.request(), url = new URL(request.url()), path = apiPath(request.url()), method = request.method()
   requests.push({ method, path })
   const ok = data => route.fulfill({ json: { code: 0, data } })
   if (path === '/api/biz-okr/people/avatars') {
@@ -98,7 +107,7 @@ const api = async (path, method = 'GET', body) => {
   return data.data
 }
 const write = async (path, action, status = 200) => {
-  const waiting = page.waitForResponse(response => new URL(response.url()).pathname === path && response.request().method() !== 'GET')
+  const waiting = page.waitForResponse(response => apiPath(response.url()) === path && response.request().method() !== 'GET')
   await action()
   const response = await waiting
   const body = await response.json()
@@ -106,7 +115,7 @@ const write = async (path, action, status = 200) => {
   return body.data
 }
 const go = async hash => {
-  await page.goto(`${base}/#${hash}`)
+  await page.goto(`${base}#${hash}`)
   await page.reload()
   await page.locator('#okr-workspace-root h1').waitFor()
 }
@@ -123,6 +132,21 @@ const board = (week = '2026-W36') => api(`/api/biz-okr/board?quarter=2026-Q3&wee
 let planID, objectiveID
 try {
   if (process.env.OKR_BROWSER_EXPORT_ONLY === '1') {
+    await go('/biz-okr?tab=okr-plan&quarter=2026-Q4')
+    const planRequest = page.waitForRequest(request => request.method() === 'POST' && apiPath(request.url()) === '/api/biz-okr/feishu-documents')
+    const planResult = await write('/api/biz-okr/feishu-documents', () => page.getByRole('button', { name: '导出OKR Plan', exact: true }).click(), 201)
+    const planPayload = (await planRequest).postDataJSON()
+    assert.equal(planResult.document_id, 'regression-document')
+    assert.match(planPayload.content, /## 增长/)
+    assert.match(planPayload.content, /<th background-color="light-gray"><p>O<\/p><\/th><th background-color="light-gray"><p>KR<\/p><\/th><th background-color="light-gray"><p>优先级<\/p><\/th><th background-color="light-gray"><p>策略具体KR<\/p><\/th><th background-color="light-gray"><p>产品具体KR<\/p><\/th>/)
+    assert.match(planPayload.content, /<td rowspan="3" vertical-align="top"><p>导出目标<\/p><\/td>/)
+    assert.match(planPayload.content, /<td rowspan="2" vertical-align="top"><p>导出增长 KR<\/p><\/td>/)
+    assert.match(planPayload.content, /<td rowspan="2" vertical-align="top"><p>Focus item<\/p><\/td>/)
+    assert.match(planPayload.content, /<td vertical-align="top"><p>P1<\/p><\/td>/)
+    assert.doesNotMatch(planPayload.content, /负责人|核心数据|评分|本周进展/)
+    assert.equal(await page.getByRole('link', { name: '打开文档', exact: true }).getAttribute('href'), planResult.url)
+    await page.getByText('飞书文档已生成。', { exact: true }).waitFor()
+
     for (const [tab, week, button] of [['review-meeting', '2026-W36', '导出 OKR Review'], ['weekly-meeting', '2026-W35', '导出全部 OKR']]) {
       await go(`/biz-okr?tab=${tab}&quarter=2026-Q3&week=${week}`)
       const result = await write('/api/biz-okr/feishu-documents', () => page.getByRole('button', { name: button, exact: true }).click(), 201)
@@ -135,12 +159,15 @@ try {
     await page.getByText('飞书授权已失效，请退出并重新登录后再导出', { exact: true }).waitFor()
     assert.equal(await page.getByRole('link', { name: '打开文档', exact: true }).count(), 0)
     assert.equal(await page.getByRole('button', { name: '导出全部 OKR', exact: true }).isEnabled(), true)
-    pass('Review and weekly export return document links; expired grant has readable feedback and allows retry')
+    pass('Plan, Review and weekly export return document links; Plan uses merged business tables; expired grant has readable feedback and allows retry')
   } else {
   const officialBefore = await api('/api/okr/board?quarter=2026-Q3')
   const stalePlanList = holdNextPlanList()
-  await page.goto(`${base}/#/biz-okr?tab=okr-plan&quarter=2026-Q4`)
-  await stalePlanList.started
+  await page.goto(`${base}#/biz-okr?tab=okr-plan&quarter=2026-Q4`)
+  await Promise.race([stalePlanList.started, new Promise((_, reject) => {
+    const timer = setTimeout(() => reject(new Error('Plan list request did not start within 12s')), 12000)
+    timer.unref()
+  })])
   await page.getByRole('button', { name: '新建 Plan', exact: true }).click()
   assert.equal(await page.getByRole('button', { name: '确认新建', exact: true }).isDisabled(), true)
   await page.getByLabel('Plan 名称', { exact: true }).fill('Regression Plan')
@@ -177,7 +204,7 @@ try {
   assert.equal(await page.locator('select[aria-label="业务分类"], input[aria-label="业务分类"]').count(), 0)
   pass('Plan create, O/KR create, title/priority/tag autosave, reload persistence')
 
-  await page.getByRole('button', { name: '管理关联人', exact: true }).first().click()
+  await page.locator(`[id="comment-target-${encodeURIComponent(`kr:${planKRID}`)}"]`).getByRole('button', { name: '管理关联人', exact: true }).click()
   await page.getByPlaceholder('输入姓名或邮箱搜索').fill('Regression')
   await write(planKRPath, () => page.getByRole('button', { name: /Regression Owner.*owner@example.test/ }).click())
   await write(planKRPath, () => page.getByRole('button', { name: '例：Q3 累计自然入驻 1,253 家，线索到入驻转化率 16.51%', exact: true }).click())
@@ -259,10 +286,10 @@ try {
 
   await go('/biz-okr?tab=regional-alignment&quarter=2026-Q4&region=eu')
   await page.getByRole('heading', { name: 'Emily · 区域 OKR 对齐', exact: true }).waitFor()
-  const menatBoard = page.waitForResponse(response => new URL(response.url()).pathname === '/api/biz-okr/regional-alignments/menat/board')
+  const menatBoard = page.waitForResponse(response => apiPath(response.url()) === '/api/biz-okr/regional-alignments/menat/board')
   await page.getByRole('button', { name: 'MENAT', exact: true }).click()
   await menatBoard
-  const euBoard = page.waitForResponse(response => new URL(response.url()).pathname === '/api/biz-okr/regional-alignments/eu/board')
+  const euBoard = page.waitForResponse(response => apiPath(response.url()) === '/api/biz-okr/regional-alignments/eu/board')
   await page.getByRole('button', { name: 'EU', exact: true }).click()
   await euBoard
   await page.getByRole('button', { name: '新增需求 / Add requirement', exact: true }).click()
@@ -331,6 +358,11 @@ try {
   assert.equal((await api(followUpPath)).update, '验收进展已记录')
   await go('/biz-okr?tab=review-meeting&quarter=2026-Q3&week=2026-W36')
   await page.getByText('跟进量化验收', { exact: true }).waitFor()
+  const strategyGroup = page.getByText('策略具体 KR', { exact: true }).locator('xpath=ancestor::section[1]')
+  const productGroup = page.getByText('产品具体 KR', { exact: true }).locator('xpath=ancestor::section[1]')
+  const [strategyBox, productBox] = await Promise.all([strategyGroup.boundingBox(), productGroup.boundingBox()])
+  assert(strategyBox && productBox)
+  assert(Math.abs(strategyBox.y - productBox.y) < 2 && strategyBox.x < productBox.x, 'meeting view should place strategy left of product')
   await exerciseOwnerFilter('Regression Owner')
   const followSelect = page.locator('tr').filter({ hasText: '跟进量化验收' }).locator('select')
   await write(followUpPath, () => followSelect.selectOption('done'))
@@ -339,7 +371,7 @@ try {
   await write('/api/biz-okr/scores/kr/official-kr', () => page.getByLabel('一级 KR 评分', { exact: true }).selectOption('0.9'))
   assert.equal((await board()).objectives[0].krs[0].score.value, 0.9)
   await write('/api/biz-okr/feishu-documents', () => page.getByRole('button', { name: '导出 OKR Review', exact: true }).click(), 201)
-  pass('Review meeting preserves read-only content while allowing score/follow-up updates and export')
+  pass('Review meeting places strategy/product side by side and preserves read-only content while allowing score/follow-up updates and export')
 
   await go('/biz-okr?tab=weekly-fill&quarter=2026-Q3&week=2026-W35')
   await page.getByLabel('周次', { exact: true }).waitFor()

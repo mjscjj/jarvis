@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"jarvis/internal/authn"
 	"jarvis/internal/okrworkspace"
 	okrAuth "jarvis/internal/okrworkspace/auth"
 
@@ -108,6 +109,27 @@ func RequireOKRIdentity(service *okrAuth.Service) app.HandlerFunc {
 		}
 		c.Set(okrIdentityContextKey, user)
 		c.Next(ctx)
+	}
+}
+
+// requireOKRWriteIdentity applies the module identity to every business write.
+// Standalone Core has no Biz identity. Trusted local CLI calls retain the
+// Jarvis actor; an explicit browser session must never fall back to that actor.
+func requireOKRWriteIdentity(service *okrAuth.Service) app.HandlerFunc {
+	return func(ctx context.Context, c *app.RequestContext) {
+		method, path := string(c.Method()), string(c.Path())
+		if service == nil || method == consts.MethodGet || method == consts.MethodHead || method == consts.MethodOptions || strings.HasPrefix(path, "/api/biz-okr/auth/") {
+			c.Next(ctx)
+			return
+		}
+		if len(c.Cookie(service.CookieName())) == 0 &&
+			len(c.Request.Header.Peek("Sec-Fetch-Mode")) == 0 &&
+			len(c.Request.Header.Peek("Origin")) == 0 && authn.IsLoopbackRequest(c) {
+			c.Set(okrIdentityContextKey, jarvisOKRUser)
+			c.Next(ctx)
+			return
+		}
+		RequireOKRIdentity(service)(ctx, c)
 	}
 }
 
