@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"testing"
+	"time"
 
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/common/ut"
@@ -203,6 +204,94 @@ func TestReadinessSeparatesOutageFromDegradation(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestReadinessRequiresEnabledOKRDatabaseQuery(t *testing.T) {
+	healthyIdentity := stubLarkIdentity{user: &larkcli.UserIdentity{
+		Status: "ready", Available: true, Verified: true,
+		TokenStatus: "valid", UserName: "储节节", OpenID: "ou_principal",
+	}}
+	for _, testCase := range []struct {
+		name       string
+		closeOKRDB bool
+		wantStatus int
+		wantState  string
+	}{
+		{name: "query succeeds", wantStatus: consts.StatusOK, wantState: "ok"},
+		{name: "query fails", closeOKRDB: true, wantStatus: consts.StatusServiceUnavailable, wantState: "error"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			okrDB := openReadinessDB(t)
+			if err := okrDB.Exec("CREATE TABLE readiness_probe (id INTEGER PRIMARY KEY)").Error; err != nil {
+				t.Fatal(err)
+			}
+			if testCase.closeOKRDB {
+				sqlDB, err := okrDB.DB()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := sqlDB.Close(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			h := server.New()
+			h.Use(observability.Middleware())
+			h.GET("/readyz", Readiness(openReadinessDB(t), ReadinessTargets{
+				OKRDatabase: okrDB,
+				VectorIndex: stubVectorIndex{version: "1.18.2"},
+				LarkCLIBin:  "sh", BytedCLIBin: "sh", AgentCLIBin: "sh",
+				LarkIdentity: healthyIdentity,
+			}))
+
+			response := ut.PerformRequest(h.Engine, "GET", "/readyz", nil).Result()
+			if response.StatusCode() != testCase.wantStatus {
+				t.Fatalf("status = %d, want %d, body=%s", response.StatusCode(), testCase.wantStatus, response.Body())
+			}
+			var payload struct {
+				Dependencies map[string]struct {
+					Status string `json:"status"`
+					Error  string `json:"error"`
+				} `json:"dependencies"`
+			}
+			if err := json.Unmarshal(response.Body(), &payload); err != nil {
+				t.Fatalf("decode readiness response: %v", err)
+			}
+			state := payload.Dependencies["okr_database"]
+			if state.Status != testCase.wantState {
+				t.Fatalf("OKR database status = %q, want %q, body=%s", state.Status, testCase.wantState, response.Body())
+			}
+			if testCase.wantState == "error" && state.Error == "" {
+				t.Fatalf("OKR database failure has no reason: %s", response.Body())
+			}
+		})
+	}
+}
+
+func TestOKRDatabaseProbeDetectsBlockedSingleConnection(t *testing.T) {
+	db := openReadinessDB(t)
+	if err := db.Exec("CREATE TABLE readiness_probe (id INTEGER PRIMARY KEY)").Error; err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	tx, err := sqlDB.Begin()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	state := probeOptionalDatabase(ctx, db)
+	if state["status"] != "error" {
+		t.Fatalf("blocked OKR database status = %v, want error", state)
+	}
+	if !regexp.MustCompile(`deadline|canceled`).MatchString(fmt.Sprint(state["error"])) {
+		t.Fatalf("blocked OKR database error = %v", state["error"])
 	}
 }
 

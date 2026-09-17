@@ -25,18 +25,34 @@ class InstanceIsolationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'contain okr.db'):
             dev['validate_okr_dir'](self.root)
 
-    def test_mounts_only_product_data_programs_and_instance_state(self):
+    def test_mounts_product_data_instance_state_and_authoritative_git(self):
         shared = self.root/'shared'
+        git_common = Path('/repo/main/.git')
         args = dev['container_args'](self.root, shared, self.root/'var/container',
                                      Path('/ingress'), Path('/bin/lark-cli'),
-                                     Path('/lib/bytedcli'), Path('/lib/go'))
+                                     Path('/lib/bytedcli'), Path('/lib/go'),
+                                     git_common=git_common)
         self.assertEqual(args[args.index('--network') + 1], 'bridge')
         mounts = [args[i + 1] for i, a in enumerate(args) if a == '--mount']
         self.assertIn(f'type=bind,src={shared},dst=/opt/jarvis/data/okr', mounts)
+        self.assertIn(f'type=bind,src={git_common},dst={git_common}', mounts)
         self.assertIn('type=bind,src=/bin/lark-cli,dst=/usr/local/bin/lark-cli,readonly', mounts)
         for forbidden in ('credentials', 'okr-chat/sessions', 'okr-chat/files', 'egress',
                           'docker.sock', 'auth.json', '/opt/jarvis/.git'):
             self.assertNotIn(forbidden, ' '.join(args))
+
+    def test_resolves_real_linked_worktree_common_git_directory(self):
+        repo = self.root/'repo'
+        worktree = self.root/'worktree'
+        subprocess.run(['git', 'init', '-q', repo], check=True)
+        subprocess.run(['git', '-C', repo, 'config', 'user.email', 'test@example.test'], check=True)
+        subprocess.run(['git', '-C', repo, 'config', 'user.name', 'Test'], check=True)
+        (repo/'README.md').write_text('test\n')
+        subprocess.run(['git', '-C', repo, 'add', 'README.md'], check=True)
+        subprocess.run(['git', '-C', repo, 'commit', '-qm', 'initial'], check=True)
+        subprocess.run(['git', '-C', repo, 'worktree', 'add', '-qb', 'development', worktree], check=True)
+
+        self.assertEqual(dev['resolve_git_common_dir'](worktree), (repo/'.git').resolve())
 
     def test_initialize_uses_defaults_and_refuses_to_overwrite_local_config(self):
         conf = self.root/'conf'
