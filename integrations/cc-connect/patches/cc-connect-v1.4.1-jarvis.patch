@@ -1,5 +1,111 @@
+diff --git a/agent/codex/codex.go b/agent/codex/codex.go
+index 83fe4a89..ce807dea 100644
+--- a/agent/codex/codex.go
++++ b/agent/codex/codex.go
+@@ -311,7 +311,6 @@ func readCodexCachedModels() []core.ModelOption {
+ 	return parseCodexModelsJSON(b)
+ }
+ 
+-
+ // parseCodexModelsJSON parses a Codex models JSON file (model_catalog.json
+ // or models_cache.json) into a deduplicated, filtered slice of ModelOption.
+ // It is shared by readCodexCachedModels and readCodexModelCatalog.
+@@ -357,7 +356,6 @@ func parseCodexModelsJSON(data []byte) []core.ModelOption {
+ 	return models
+ }
+ 
+-
+ // readCodexModelCatalog reads $CODEX_HOME/config.toml to find the
+ // model_catalog_json setting, then reads and parses that JSON file.
+ // This is the authoritative source of model metadata for Codex CLI,
+@@ -419,6 +417,32 @@ func (a *Agent) SetSessionEnv(env []string) {
+ 	a.sessionEnv = env
+ }
+ 
++// ValidateSessionID lets the engine discard Codex session IDs whose active
++// transcript is no longer available. Codex moves archived transcripts out of
++// sessions/ into archived_sessions/, so a missing active transcript means a
++// resume would fail and the current user message should start a fresh session.
++//
++// The app-server backend owns its session store (which may be remote) and
++// already reports resume failures synchronously from StartSession, where the
++// engine applies the same fresh-session fallback.
++func (a *Agent) ValidateSessionID(_ context.Context, sessionID string) bool {
++	if strings.TrimSpace(sessionID) == "" {
++		return false
++	}
++
++	a.mu.RLock()
++	backend := a.backend
++	codexHome := a.codexHome
++	a.mu.RUnlock()
++	if backend == "app_server" {
++		return true
++	}
++
++	return findSessionFile(sessionID, codexHome) != ""
++}
++
++var _ core.SessionIDValidator = (*Agent)(nil)
++
+ func (a *Agent) StartSession(ctx context.Context, sessionID string) (core.AgentSession, error) {
+ 	a.mu.Lock()
+ 	mode := a.mode
+diff --git a/agent/codex/session_validation_test.go b/agent/codex/session_validation_test.go
+new file mode 100644
+index 00000000..e615f1d5
+--- /dev/null
++++ b/agent/codex/session_validation_test.go
+@@ -0,0 +1,47 @@
++package codex
++
++import (
++	"context"
++	"os"
++	"path/filepath"
++	"testing"
++)
++
++func TestAgentValidateSessionIDExecRequiresActiveTranscript(t *testing.T) {
++	codexHome := t.TempDir()
++	agent := &Agent{backend: "exec", codexHome: codexHome}
++	sessionID := "01a08f48-5c43-7df1-bb51-92432bd2b96f"
++
++	if agent.ValidateSessionID(context.Background(), sessionID) {
++		t.Fatal("missing session should start fresh")
++	}
++
++	archived := filepath.Join(codexHome, "archived_sessions", "rollout-"+sessionID+".jsonl")
++	if err := os.MkdirAll(filepath.Dir(archived), 0o755); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.WriteFile(archived, []byte("{}\n"), 0o600); err != nil {
++		t.Fatal(err)
++	}
++	if agent.ValidateSessionID(context.Background(), sessionID) {
++		t.Fatal("archived session should start fresh")
++	}
++
++	active := filepath.Join(codexHome, "sessions", "2026", "09", "17", "rollout-"+sessionID+".jsonl")
++	if err := os.MkdirAll(filepath.Dir(active), 0o755); err != nil {
++		t.Fatal(err)
++	}
++	if err := os.WriteFile(active, []byte("{}\n"), 0o600); err != nil {
++		t.Fatal(err)
++	}
++	if !agent.ValidateSessionID(context.Background(), sessionID) {
++		t.Fatal("active session should resume")
++	}
++}
++
++func TestAgentValidateSessionIDAppServerDefersToResume(t *testing.T) {
++	agent := &Agent{backend: "app_server", codexHome: t.TempDir()}
++	if !agent.ValidateSessionID(context.Background(), "remote-session") {
++		t.Fatal("app-server session validity must be decided by the server")
++	}
++}
 diff --git a/agent/cursor/session.go b/agent/cursor/session.go
-index e6f65a9..aa56517 100644
+index e6f65a94..aa565172 100644
 --- a/agent/cursor/session.go
 +++ b/agent/cursor/session.go
 @@ -77,7 +77,25 @@ func newCursorSession(ctx context.Context, cmd string, extraArgs []string, workD
@@ -31,7 +137,7 @@ index e6f65a9..aa56517 100644
  		filePaths := core.SaveFilesToDisk(cs.workDir, files)
 diff --git a/agent/cursor/session_image_test.go b/agent/cursor/session_image_test.go
 new file mode 100644
-index 0000000..c4f459c
+index 00000000..c4f459c9
 --- /dev/null
 +++ b/agent/cursor/session_image_test.go
 @@ -0,0 +1,55 @@
@@ -91,7 +197,7 @@ index 0000000..c4f459c
 +	}
 +}
 diff --git a/config.example.toml b/config.example.toml
-index cc57caf..a5e346a 100644
+index cc57caf0..a5e346a1 100644
 --- a/config.example.toml
 +++ b/config.example.toml
 @@ -1005,6 +1005,34 @@ app_secret = "your-feishu-app-secret"
@@ -130,7 +236,7 @@ index cc57caf..a5e346a 100644
  #                           # 默认 true：用「回复消息」API（引用用户消息）。设为 false 则在会话里发普通消息、不引用触发消息。
  # progress_style = "legacy" # Progress rendering style: legacy | compact | card
 diff --git a/core/message.go b/core/message.go
-index b852d9b..12e005d 100644
+index b852d9b5..12e005df 100644
 --- a/core/message.go
 +++ b/core/message.go
 @@ -147,6 +147,38 @@ func AppendFileRefs(prompt string, filePaths []string) string {
@@ -173,7 +279,7 @@ index b852d9b..12e005d 100644
  type AudioAttachment struct {
  	MimeType string // e.g. "audio/amr", "audio/ogg", "audio/mp4"
 diff --git a/docs/feishu.md b/docs/feishu.md
-index b9e871b..500b591 100644
+index b9e871ba..500b5912 100644
 --- a/docs/feishu.md
 +++ b/docs/feishu.md
 @@ -110,13 +110,27 @@ app_secret = "QhkMpxxxxxxxxxxxxxxxxxxxx"
@@ -248,7 +354,7 @@ index b9e871b..500b591 100644
  ## 第六步：启动 cc-connect
 diff --git a/platform/feishu/comment.go b/platform/feishu/comment.go
 new file mode 100644
-index 0000000..cf37b6a
+index 00000000..cf37b6a0
 --- /dev/null
 +++ b/platform/feishu/comment.go
 @@ -0,0 +1,634 @@
@@ -888,7 +994,7 @@ index 0000000..cf37b6a
 +}
 diff --git a/platform/feishu/comment_test.go b/platform/feishu/comment_test.go
 new file mode 100644
-index 0000000..be492ed
+index 00000000..be492ed8
 --- /dev/null
 +++ b/platform/feishu/comment_test.go
 @@ -0,0 +1,401 @@
@@ -1294,7 +1400,7 @@ index 0000000..be492ed
 +	}
 +}
 diff --git a/platform/feishu/feishu.go b/platform/feishu/feishu.go
-index bafedee..6b12c67 100644
+index bafedee0..6b12c67c 100644
 --- a/platform/feishu/feishu.go
 +++ b/platform/feishu/feishu.go
 @@ -107,11 +107,18 @@ func init() {
@@ -2118,7 +2224,7 @@ index bafedee..6b12c67 100644
  		}
  	}
 diff --git a/platform/feishu/feishu_test.go b/platform/feishu/feishu_test.go
-index 8c0eae9..56776d1 100644
+index 8c0eae91..56776d18 100644
 --- a/platform/feishu/feishu_test.go
 +++ b/platform/feishu/feishu_test.go
 @@ -303,6 +303,181 @@ func TestDispatchMessageKeepsMentionOnlyQuotedText(t *testing.T) {
@@ -2455,7 +2561,7 @@ index 8c0eae9..56776d1 100644
  
 diff --git a/platform/feishu/live_context.go b/platform/feishu/live_context.go
 new file mode 100644
-index 0000000..fca547f
+index 00000000..fca547f3
 --- /dev/null
 +++ b/platform/feishu/live_context.go
 @@ -0,0 +1,296 @@
@@ -2757,7 +2863,7 @@ index 0000000..fca547f
 +}
 diff --git a/platform/feishu/live_context_test.go b/platform/feishu/live_context_test.go
 new file mode 100644
-index 0000000..9081517
+index 00000000..90815172
 --- /dev/null
 +++ b/platform/feishu/live_context_test.go
 @@ -0,0 +1,141 @@
@@ -2903,7 +3009,7 @@ index 0000000..9081517
 +	}
 +}
 diff --git a/platform/feishu/platform_test.go b/platform/feishu/platform_test.go
-index 0695550..9f2db82 100644
+index 06955503..9f2db82f 100644
 --- a/platform/feishu/platform_test.go
 +++ b/platform/feishu/platform_test.go
 @@ -5,8 +5,12 @@ import (
@@ -3414,7 +3520,7 @@ index 0695550..9f2db82 100644
 +	}
 +}
 diff --git a/platform/feishu/ws_shared.go b/platform/feishu/ws_shared.go
-index 3c0bf13..877fb82 100644
+index 3c0bf136..877fb822 100644
 --- a/platform/feishu/ws_shared.go
 +++ b/platform/feishu/ws_shared.go
 @@ -1,6 +1,7 @@
@@ -3457,7 +3563,7 @@ index 3c0bf13..877fb82 100644
  
  // unregisterSharedWS removes a platform from its shared group.
 diff --git a/platform/feishu/ws_shared_test.go b/platform/feishu/ws_shared_test.go
-index 9ecf357..5d13670 100644
+index 9ecf357c..5d136706 100644
 --- a/platform/feishu/ws_shared_test.go
 +++ b/platform/feishu/ws_shared_test.go
 @@ -20,7 +20,10 @@ func TestSharedWSGroup_RegisterAndAllPlatforms(t *testing.T) {

@@ -210,6 +210,7 @@ func TestJarvisInstallPinsPatchedCCConnectWithoutStartingIt(t *testing.T) {
 		`npm install --no-audit --no-fund`,
 		`npm run build`,
 		`go test ./platform/feishu`,
+		`./agent/codex`,
 		`TARGET_BIN="${REPO_ROOT}/bin/cc-connect-jarvis"`,
 		`source "${REPO_ROOT}/packaging/macos/runtime-manifest.sh"`,
 		`export MACOSX_DEPLOYMENT_TARGET="$JARVIS_MACOS_MIN_VERSION"`,

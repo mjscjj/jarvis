@@ -67,7 +67,7 @@ git -C "$source_dir" apply "$PATCH_PATH"
     npm install --no-audit --no-fund
     npm run build
   )
-  go test ./platform/feishu ./agent/cursor >&2
+  go test ./platform/feishu ./agent/cursor ./agent/codex >&2
   build_time="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
   go build -trimpath -tags goolm \
     -ldflags "-s -w -X main.version=${CC_CONNECT_VERSION} -X main.commit=${CC_CONNECT_PATCH_COMMIT} -X main.buildTime=${build_time}" \
