@@ -54,6 +54,10 @@ class InstanceIsolationTests(unittest.TestCase):
 
         self.assertEqual(dev['resolve_git_common_dir'](worktree), (repo/'.git').resolve())
 
+    def test_image_does_not_disable_vcs_build_metadata(self):
+        dockerfile = (ROOT/'deploy/emily-dev/Dockerfile').read_text()
+        self.assertNotIn('buildvcs=false', dockerfile)
+
     def test_initialize_uses_defaults_and_refuses_to_overwrite_local_config(self):
         conf = self.root/'conf'
         conf.mkdir()
