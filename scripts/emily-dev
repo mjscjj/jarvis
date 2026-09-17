@@ -18,6 +18,15 @@ def output(args):
     return subprocess.check_output([str(x) for x in args], text=True).strip()
 
 
+def resolve_git_common_dir(root):
+    common = Path(output(['git', '-C', root, 'rev-parse', '--git-common-dir']))
+    if not common.is_absolute():
+        common = (root/common).resolve()
+    if not common.is_dir():
+        raise ValueError(f'git common directory does not exist: {common}')
+    return common
+
+
 def initialize(root, public_url, principal):
     """Fresh local config only. Never import another instance's overrides."""
     paths = [root/'conf'/name for name in (
@@ -59,7 +68,8 @@ def validate_okr_dir(directory):
         raise ValueError('shared OKR directory must contain okr.db')
 
 
-def container_args(root, shared, state, ingress, lark, byted, goroot, env_file=None):
+def container_args(root, shared, state, ingress, lark, byted, goroot,
+                   env_file=None, git_common=None):
     args = ['docker', 'run', '-d', '--init', '--restart', 'unless-stopped',
             '--name', 'emily-development', '--network', 'bridge',
             '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
@@ -73,6 +83,15 @@ def container_args(root, shared, state, ingress, lark, byted, goroot, env_file=N
                      + (',readonly' if readonly else '')])
 
     mount(root, '/opt/jarvis')
+    if git_common is not None:
+        git_common = Path(git_common).resolve()
+        try:
+            git_common.relative_to(Path(root).resolve())
+        except ValueError:
+            # Linked worktrees keep their authoritative metadata in the common
+            # repository. Mount it at the original absolute path so the
+            # existing .git pointer and Git locking semantics remain valid.
+            mount(git_common, git_common)
     mount(shared, '/opt/jarvis/data/okr')
     mount(state, '/dev-state')
     mount(ingress, '/run/emily-web')
@@ -119,9 +138,11 @@ def main():
         raise ValueError('bytedcli must resolve to its installed dist/bytedcli.js')
     state = ROOT/'var/container'
     ingress = Path('/tmp')/f'emily-development-{os.getuid()}'/'ingress'
+    git_common = resolve_git_common_dir(ROOT)
     args = container_args(ROOT, shared, state, ingress, lark, byted,
                           Path(output(['go', 'env', 'GOROOT'])),
-                          opts.env_file.resolve() if opts.env_file else None)
+                          env_file=opts.env_file.resolve() if opts.env_file else None,
+                          git_common=git_common)
     if opts.dry_run:
         print('\n'.join(str(arg) for arg in args))
         return

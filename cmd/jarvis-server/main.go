@@ -1240,6 +1240,7 @@ func main() {
 		fatalf("initialize system control service failed: %v", err)
 	}
 	readinessTargets := api.ReadinessTargets{
+		OKRDatabase:  okrDB,
 		LarkCLIBin:   cfg.LarkCLI.Bin,
 		BytedCLIBin:  "bytedcli",
 		AgentCLIBin:  cfg.Execute.Bin,

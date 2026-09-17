@@ -68,6 +68,10 @@ type LarkIdentityProbe interface {
 // stall that poll past its own timeout and report a failed restart of a server
 // that is in fact running.
 type ReadinessTargets struct {
+	// OKRDatabase is the separately opened tracked OKR database. A nil value
+	// means the module is disabled; an enabled module must execute a real query
+	// so a blocked single-connection pool cannot report ready.
+	OKRDatabase *gorm.DB
 	// VectorIndex is nil when semantic dedup is switched off, which reports
 	// "disabled" rather than an error.
 	VectorIndex VectorIndexProbe
@@ -83,8 +87,8 @@ type ReadinessTargets struct {
 
 // Readiness reports every dependency Jarvis needs to do useful work, so a fresh
 // install can tell a missing CLI from a stopped vector store without reading
-// logs. Only the database decides the status code, because it is the sole
-// dependency the process cannot serve any request without.
+// logs. Both local databases are critical: external tools may degrade, but an
+// enabled OKR module whose database cannot execute SQL is not ready.
 func Readiness(db *gorm.DB, targets ReadinessTargets) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
 		ctx = observability.FromRequestContext(ctx, c)
@@ -92,8 +96,10 @@ func Readiness(db *gorm.DB, targets ReadinessTargets) app.HandlerFunc {
 		defer cancel()
 
 		databaseState := probeDatabase(probeCtx, db)
+		okrDatabaseState := probeOptionalDatabase(probeCtx, targets.OKRDatabase)
 		dependencies := map[string]any{
 			"database":     databaseState,
+			"okr_database": okrDatabaseState,
 			"vector_index": probeVectorIndex(probeCtx, targets.VectorIndex),
 			"lark_cli":     probeLarkCLI(probeCtx, targets.LarkCLIBin, targets.LarkIdentity),
 			"bytedcli":     probeBinary(targets.BytedCLIBin),
@@ -102,7 +108,7 @@ func Readiness(db *gorm.DB, targets ReadinessTargets) app.HandlerFunc {
 
 		status := consts.StatusOK
 		overall := "ok"
-		if databaseState["status"] != "ok" {
+		if databaseState["status"] != "ok" || okrDatabaseState["status"] == "error" {
 			overall = "error"
 			status = consts.StatusServiceUnavailable
 		} else {
@@ -124,6 +130,20 @@ func Readiness(db *gorm.DB, targets ReadinessTargets) app.HandlerFunc {
 			"time":         time.Now().Format(time.RFC3339),
 		})
 	}
+}
+
+func probeOptionalDatabase(ctx context.Context, db *gorm.DB) map[string]any {
+	if db == nil {
+		return map[string]any{"status": "disabled"}
+	}
+	var schemaObjects int64
+	if err := db.WithContext(ctx).Raw("SELECT COUNT(*) FROM sqlite_master").Scan(&schemaObjects).Error; err != nil {
+		return probeFailure(fmt.Errorf("query OKR database: %w", err))
+	}
+	if schemaObjects == 0 {
+		return probeFailure(fmt.Errorf("query OKR database: schema is empty"))
+	}
+	return map[string]any{"status": "ok"}
 }
 
 func probeDatabase(ctx context.Context, db *gorm.DB) map[string]any {
