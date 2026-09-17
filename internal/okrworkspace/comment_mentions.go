@@ -287,7 +287,9 @@ func pointKindLabel(kind domain.PointKind) string {
 	return "具体 KR"
 }
 
-func (service *Service) commentMentionNotification(ctx context.Context, row domain.PageComment, sourceTab string) (CommentMentionNotification, error) {
+// Use the caller's connection: comment creation already holds the write transaction.
+func commentMentionNotification(ctx context.Context, db *gorm.DB, row domain.PageComment, sourceTab string) (CommentMentionNotification, error) {
+	db = db.WithContext(ctx)
 	result := CommentMentionNotification{
 		CommentID: row.ID, AuthorName: row.AuthorName, Quarter: row.Quarter,
 		Week: row.Week, PlanID: row.PlanID, AlignmentID: row.AlignmentID, RegionCode: row.RegionCode, Content: row.Content,
@@ -302,13 +304,13 @@ func (service *Service) commentMentionNotification(ctx context.Context, row doma
 			result.Tab = commentSourceTabOKRPlan
 		}
 		var plan domain.OKRPlan
-		if err := service.db.WithContext(ctx).First(&plan, "id = ?", row.PlanID).Error; err != nil {
+		if err := db.First(&plan, "id = ?", row.PlanID).Error; err != nil {
 			return CommentMentionNotification{}, fmt.Errorf("read comment Plan %s: %w", row.PlanID, err)
 		}
 		result.PlanTitle = plan.Title
 	} else {
 		var week domain.WeeklyReportWeek
-		if err := service.db.WithContext(ctx).First(&week, "quarter = ? AND week = ?", row.Quarter, row.Week).Error; err != nil {
+		if err := db.First(&week, "quarter = ? AND week = ?", row.Quarter, row.Week).Error; err != nil {
 			return CommentMentionNotification{}, fmt.Errorf("read comment week %s/%s: %w", row.Quarter, row.Week, err)
 		}
 		if result.Tab == "" {
@@ -320,7 +322,6 @@ func (service *Service) commentMentionNotification(ctx context.Context, row doma
 	}
 
 	var found commentHierarchy
-	db := service.db.WithContext(ctx)
 	scope := "objective.quarter = ? AND objective.plan_id = ?"
 	scopeArgs := []any{row.Quarter, row.PlanID}
 	var query *gorm.DB
@@ -336,7 +337,7 @@ func (service *Service) commentMentionNotification(ctx context.Context, row doma
 			Where("kr.id = ? AND "+scope, append([]any{row.TargetID}, scopeArgs...)...)
 	case "metric":
 		if row.PlanID == "" {
-			weekly, ok, err := service.weeklyMetricCommentHierarchy(ctx, row)
+			weekly, ok, err := weeklyMetricCommentHierarchy(db, row)
 			if err != nil {
 				return CommentMentionNotification{}, err
 			}
@@ -398,9 +399,9 @@ func (service *Service) commentMentionNotification(ctx context.Context, row doma
 // Weekly core metrics can be seeded for a single week without creating a
 // stable KRMetric row, and existing metric IDs can carry week-specific text.
 // Resolve that visible source before falling back to the definition table.
-func (service *Service) weeklyMetricCommentHierarchy(ctx context.Context, row domain.PageComment) (commentHierarchy, bool, error) {
+func weeklyMetricCommentHierarchy(db *gorm.DB, row domain.PageComment) (commentHierarchy, bool, error) {
 	var cores []domain.WeeklyKRCore
-	if err := service.db.WithContext(ctx).Where("week = ?", row.Week).Find(&cores).Error; err != nil {
+	if err := db.Where("week = ?", row.Week).Find(&cores).Error; err != nil {
 		return commentHierarchy{}, false, fmt.Errorf("list weekly metrics for comment: %w", err)
 	}
 	for _, core := range cores {
@@ -409,7 +410,7 @@ func (service *Service) weeklyMetricCommentHierarchy(ctx context.Context, row do
 				continue
 			}
 			var found commentHierarchy
-			err := service.db.WithContext(ctx).Table("okr_workspace_kr AS kr").
+			err := db.Table("okr_workspace_kr AS kr").
 				Select("objective.id AS objective_id, objective.title AS objective_title, kr.id AS kr_id, kr.title AS kr_title").
 				Joins("JOIN okr_workspace_objective AS objective ON objective.id = kr.objective_id").
 				Where("kr.id = ? AND objective.quarter = ? AND objective.plan_id = ''", core.KRID, row.Quarter).

@@ -33,7 +33,7 @@ type CommentDeliveryView struct {
 }
 
 func (s *Service) prepareCommentDeliveries(ctx context.Context, db *gorm.DB, row domain.PageComment, authorEmail, authorUnionID, tab string) error {
-	input, err := s.commentMentionNotification(ctx, row, tab)
+	input, err := commentMentionNotification(ctx, db, row, tab)
 	if err != nil {
 		return err
 	}

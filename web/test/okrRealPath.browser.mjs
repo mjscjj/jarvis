@@ -247,7 +247,7 @@ async function testPlanComment() {
   assert(krID, 'Temporary Plan has no KR')
   await uiWrite(`/api/biz-okr/plans/${createdPlanID}/krs/${krID}`, 'PATCH', () => page.getByLabel('优先级标签', { exact: true }).selectOption('p0'))
   console.error('Plan: choose owner')
-  await page.getByRole('button', { name: '管理关联人', exact: true }).first().click()
+  await page.locator('article').filter({ has: page.getByLabel('KR 内容', { exact: true }) }).getByRole('button', { name: '管理关联人', exact: true }).click()
   await page.getByPlaceholder('输入姓名或邮箱搜索').fill(expectedName)
   const person = await testPeople()
   await uiWrite(`/api/biz-okr/plans/${createdPlanID}/krs/${krID}`, 'PATCH', () => page.getByRole('button', { name: new RegExp(`${expectedName}.*${person.email.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`) }).click())
