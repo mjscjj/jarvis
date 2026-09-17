@@ -414,6 +414,7 @@ printf '%s' '{"code":0,"msg":"ok","tenant_access_token":"tenant-ready"}'
 	legacyText := strings.Replace(text, "inject_sender = true", "inject_sender = false", 1)
 	legacyText = strings.Replace(legacyText, "get-context --chat-id", "get-context", 1)
 	legacyText = strings.Replace(legacyText, `allow_from = "ou_ready"`, `allow_from = "*"`, 1)
+	legacyText = strings.Replace(legacyText, `cmd = "codex"`, `cmd = "traex"`, 1)
 	for _, legacyRelayLine := range []string{
 		`jarvis_event_relay_url = "http://127.0.0.1:18800/internal/meeting-sweep/wake"` + "\n",
 		`jarvis_event_relay_secret = "` + relaySecret + `"` + "\n",
@@ -448,6 +449,9 @@ printf '%s' '{"code":0,"msg":"ok","tenant_access_token":"tenant-ready"}'
 	}
 	if !strings.Contains(migratedText, "scripts/jarvis-tools get-shared-memory") {
 		t.Fatalf("legacy CC config did not migrate shared memory injection:\n%s", migratedText)
+	}
+	if !strings.Contains(migratedText, `cmd = "traex"`) {
+		t.Fatalf("rebind did not preserve the compatible TraeX CLI:\n%s", migratedText)
 	}
 	if strings.Count(migratedText, `allow_from = "ou_ready"`) != 1 || strings.Contains(migratedText, `allow_from = "*"`) {
 		t.Fatalf("legacy CC config did not migrate allow_from to principal-only exactly once:\n%s", migratedText)

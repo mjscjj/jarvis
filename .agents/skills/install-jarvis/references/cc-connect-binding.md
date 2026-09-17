@@ -31,6 +31,7 @@
 4. 绑定的硬字段包括：
 
    - `projects.agent.type = "codex"`
+   - `projects.agent.options.cmd` 使用兼容 Codex exec 协议的 `codex` 或 `traex`；已有选择在重新绑定身份时保留
    - `projects.agent.options.work_dir = <当前 Jarvis checkout>`
    - `append_system_prompt` 要求每个飞书用户 turn 先运行当前 checkout 的 `scripts/jarvis-tools get-context`，并以返回的 `agent_identity.display_name` 作为当前机器人名称，覆盖旧 Session 记忆
    - Feishu `app_id` 来自 lark-cli 当前默认身份

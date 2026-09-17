@@ -490,7 +490,11 @@ write_cc_app_credentials() {
       printf '%s\n' 'mode = "yolo"' >>"$temp_path"
       ((mode_count += 1)); continue
     elif [[ "$in_agent_options" == "true" && "$line" =~ ^[[:space:]]*cmd[[:space:]]*= ]]; then
-      printf '%s\n' 'cmd = "codex"' >>"$temp_path"
+      if [[ "$line" =~ ^[[:space:]]*cmd[[:space:]]*=[[:space:]]*\"(codex|traex)\"[[:space:]]*(#.*)?$ ]]; then
+        printf '%s\n' "$line" >>"$temp_path"
+      else
+        printf '%s\n' 'cmd = "codex"' >>"$temp_path"
+      fi
       ((cmd_count += 1)); continue
     elif [[ "$in_agent_options" == "true" && "$line" =~ ^[[:space:]]*append_system_prompt[[:space:]]*= ]]; then
       printf 'append_system_prompt = "%s"\n' "$(toml_escape "$prompt")" >>"$temp_path"
@@ -606,7 +610,7 @@ validation_result() {
        ($bootstrap_prompt | contains("create-task")) and
        ($bootstrap_prompt | contains("source_type=manual")) and
        ($bootstrap_prompt | contains("delivery_required"))) as $context_contract_ok |
-      (($agent_mode == "yolo") and ($agent_cmd == "codex")) as $context_runtime_ok |
+      (($agent_mode == "yolo") and (($agent_cmd == "codex") or ($agent_cmd == "traex"))) as $context_runtime_ok |
       (($agent_api_base == $connection.api_base) and ($agent_timezone == $connection.timezone)) as $connection_ok |
       (($card_callback.ok == true) and ($card_callback.data.decision.status == "ready")) as $card_callback_ok |
       (($principal_open_id != "") and ($allow_from == $principal_open_id)) as $feishu_access_ok |
