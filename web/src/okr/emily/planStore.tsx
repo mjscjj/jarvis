@@ -794,12 +794,15 @@ export function PlanBoardProvider({ children, initialQuarter = '', initialPlanId
     setKrBusinessCategory: (krId, category) => mutateKR(krId, (kr) => { kr.tags = replaceSingleTag(kr.tags, BUSINESS_CATEGORY_TAG, category) }),
     setKrPriority: (krId, priority) => mutateKR(krId, (kr) => { kr.tags = replaceSingleTag(kr.tags, PRIORITY_TAG, priority) }),
     createObjective: async (input) => {
-      mutateObjective((draft) => draft.push({ id: uid('plan-o'), title: input.title.trim(), krs: [] }))
+	  mutateObjective((draft) => draft.push({ id: uid('plan-o'), title: input.title.trim(), owners: input.owners ?? [], krs: [] }))
     },
-    updateObjective: async (id, title) => {
+	updateObjective: async (id, title, owners) => {
       mutateObjective((draft) => {
         const objective = draft.find((item) => item.id === id)
-        if (objective) objective.title = title.trim()
+		if (objective) {
+			objective.title = title.trim()
+			if (owners) objective.owners = owners
+		}
       })
     },
     deleteObjective: async (id) => {

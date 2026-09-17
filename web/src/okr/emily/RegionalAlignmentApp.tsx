@@ -14,6 +14,7 @@ import {
 } from './api'
 import { CommentInteractionProvider, commentTargetElementId, scrollToCommentSource } from './commenting'
 import { CommentDrawer, type CommentReviewMode } from './components/CommentDrawer'
+import { ProductFeedbackTrigger } from './components/ProductFeedbackCenter'
 import { FeishuPeoplePickerInput } from './components/FeishuPeoplePicker'
 import { PeopleInline } from './components/PeopleInline'
 import { Images, Links, usePastedImageUpload } from './components/ui'
@@ -553,6 +554,7 @@ export default function RegionalAlignmentApp({ initialQuarter, initialRegion, in
           </div>
           <button type="button" onClick={() => void copyShare()} className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-medium text-slate-600 hover:border-indigo-200 hover:text-indigo-600">分享页面 / Share</button>
           <button type="button" onClick={() => commentsOpen ? setCommentsOpen(false) : openComments()} className={`relative h-9 rounded-lg border px-3 text-xs font-medium ${commentsOpen ? 'border-indigo-200 bg-indigo-50 text-indigo-700' : 'border-slate-200 bg-white text-slate-600 hover:border-indigo-200'}`}>💬 评论 / Comments{commentCount > 0 && <span className="ml-1 rounded-full bg-indigo-600 px-1.5 py-0.5 text-[9px] text-white">{commentCount}</span>}</button>
+          <ProductFeedbackTrigger className="h-9 text-xs" />
         </div>
       </div>
     </header>
@@ -596,6 +598,6 @@ export default function RegionalAlignmentApp({ initialQuarter, initialRegion, in
         </div>
       </CommentInteractionProvider> : <div className="rounded-2xl border border-slate-200 bg-white py-24 text-center text-sm text-slate-400">暂无区域对齐数据 / No regional alignment data</div>}
     </main>
-    {board && <CommentDrawer open={commentsOpen} reviewEnabled reviewMode={commentReviewMode} quarter={quarter} alignmentId={board.alignment.id} alignmentRegion={region} sourceTab="regional-alignment" scopeLabel={`${REGIONS.find((item) => item.code === region)?.label} · ${quarter}`} objectives={[...board.plan.objectives, ...board.recap.objectives]} target={commentTarget} focusCommentId={initialCommentId} onStartReview={(mode) => { setCommentTarget(undefined); setCommentReviewMode(mode) }} onShowAll={() => { setCommentTarget(undefined); setFocusedComment(undefined); setCommentReviewMode(undefined) }} onClose={() => { setCommentsOpen(false); setCommentTarget(undefined); setFocusedComment(undefined); setCommentReviewMode(undefined) }} onFocusCommentChange={setFocusedComment} onCountChange={setCommentCount} onCountsChange={setCommentCounts} onCommentsChange={setComments} />}
+    {board && <CommentDrawer open={commentsOpen} reviewEnabled reviewMode={commentReviewMode} quarter={quarter} alignmentId={board.alignment.id} alignmentRegion={region} sourceTab="regional-alignment" scopeLabel={`${REGIONS.find((item) => item.code === region)?.label} · ${quarter}`} objectives={[...board.plan.objectives, ...board.recap.objectives]} target={commentTarget} focusCommentId={initialCommentId} todoEnabled onStartReview={(mode) => { setCommentTarget(undefined); setCommentReviewMode(mode) }} onShowAll={() => { setCommentTarget(undefined); setFocusedComment(undefined); setCommentReviewMode(undefined) }} onClose={() => { setCommentsOpen(false); setCommentTarget(undefined); setFocusedComment(undefined); setCommentReviewMode(undefined) }} onFocusCommentChange={setFocusedComment} onCountChange={setCommentCount} onCountsChange={setCommentCounts} onCommentsChange={setComments} />}
   </>
 }

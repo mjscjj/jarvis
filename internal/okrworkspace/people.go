@@ -41,6 +41,9 @@ func (s *Service) verifyPeople(ctx context.Context, people []domain.PersonRef) e
 
 func (s *Service) verifyPlanPeople(ctx context.Context, objectives []PlanObjectiveView) error {
 	for _, o := range objectives {
+		if err := s.verifyPeople(ctx, o.Owners); err != nil {
+			return err
+		}
 		for _, kr := range o.KRs {
 			if err := s.verifyPeople(ctx, kr.Owners); err != nil {
 				return err
@@ -57,7 +60,7 @@ func (s *Service) verifyPlanPeople(ctx context.Context, objectives []PlanObjecti
 
 // ValidatePersonIdentityMigration refuses to serve old IDs as empty emails.
 func ValidatePersonIdentityMigration(db *gorm.DB) error {
-	for _, table := range []string{"okr_workspace_kr_owner", "okr_workspace_point_owner"} {
+	for _, table := range []string{"okr_workspace_objective_owner", "okr_workspace_kr_owner", "okr_workspace_point_owner"} {
 		if !db.Migrator().HasTable(table) {
 			continue
 		}

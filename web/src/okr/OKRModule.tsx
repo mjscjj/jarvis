@@ -10,6 +10,7 @@ import { useBoard } from './emily/board'
 import { BoardProvider } from './emily/store'
 import { PreviewReviewProvider } from './emily/aiReviewContext'
 import IdentityBoundary from './IdentityBoundary'
+import { ProductFeedbackProvider } from './emily/components/ProductFeedbackCenter'
 import { isWeeklyWorkspaceTab, okrTabForWeeklyWorkspace, resolveOKRTab, weeklyWorkspace, type OKRTab } from './navigation'
 import { withOKRScope } from './pageScope'
 import { isWeeklyShareViewState, weeklyShareTab, weeklyShareWorkspaceTab, type WeeklyShareTab } from './emily/share'
@@ -149,7 +150,7 @@ function Workspace({ moduleEnablement, auth }: {
 export default function BizOKRModule({ moduleEnablement }: AppModulePageProps) {
 	return (
 		<IdentityBoundary>
-			{(auth) => <Workspace moduleEnablement={moduleEnablement} auth={auth} />}
+			{(auth) => <ProductFeedbackProvider key={auth.user?.unionId || auth.user?.openId || 'anonymous'}><Workspace moduleEnablement={moduleEnablement} auth={auth} /></ProductFeedbackProvider>}
 		</IdentityBoundary>
 	)
 }

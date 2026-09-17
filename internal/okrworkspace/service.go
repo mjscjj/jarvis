@@ -241,10 +241,11 @@ type ReminderKR struct {
 }
 
 type ObjectiveView struct {
-	ID      string   `json:"id"`
-	Title   string   `json:"title"`
-	Version int32    `json:"version"`
-	KRs     []KRView `json:"krs"`
+	ID      string      `json:"id"`
+	Title   string      `json:"title"`
+	Version int32       `json:"version"`
+	Owners  []OwnerView `json:"owners"`
+	KRs     []KRView    `json:"krs"`
 }
 
 type KRView struct {
@@ -454,13 +455,15 @@ type CreateBizKRInput struct {
 }
 
 type CreateObjectiveInput struct {
-	Quarter string `json:"quarter"`
-	Title   string `json:"title"`
+	Quarter string      `json:"quarter"`
+	Title   string      `json:"title"`
+	Owners  []OwnerView `json:"owners"`
 }
 
 type UpdateObjectiveInput struct {
-	ExpectedVersion int32  `json:"expected_version"`
-	Title           string `json:"title"`
+	ExpectedVersion int32        `json:"expected_version"`
+	Title           string       `json:"title"`
+	Owners          *[]OwnerView `json:"owners"`
 }
 
 type DeleteObjectiveInput struct {
@@ -514,7 +517,11 @@ func (s *Service) weeklyBoard(ctx context.Context, quarter, week string, include
 		if err := s.db.WithContext(ctx).Where("objective_id = ?", objective.ID).Order("sort_order, id").Find(&records).Error; err != nil {
 			return Board{}, fmt.Errorf("list krs: %w", err)
 		}
-		view := ObjectiveView{ID: objective.ID, Title: objective.Title, Version: objective.Version, KRs: make([]KRView, 0, len(records))}
+		objectiveOwners, err := s.objectiveOwners(ctx, objective.ID)
+		if err != nil {
+			return Board{}, err
+		}
+		view := ObjectiveView{ID: objective.ID, Title: objective.Title, Version: objective.Version, Owners: objectiveOwners, KRs: make([]KRView, 0, len(records))}
 		for _, record := range records {
 			krView, err := s.loadKR(ctx, record, quarter, week, previousWeek, includeBiz)
 			if err != nil {
@@ -571,7 +578,11 @@ func (s *Service) coreBoard(ctx context.Context, quarter string, includeBiz bool
 		if err := s.db.WithContext(ctx).Where("objective_id = ?", objective.ID).Order("sort_order, id").Find(&records).Error; err != nil {
 			return Board{}, fmt.Errorf("list krs: %w", err)
 		}
-		view := ObjectiveView{ID: objective.ID, Title: objective.Title, Version: objective.Version, KRs: make([]KRView, 0, len(records))}
+		objectiveOwners, err := s.objectiveOwners(ctx, objective.ID)
+		if err != nil {
+			return Board{}, err
+		}
+		view := ObjectiveView{ID: objective.ID, Title: objective.Title, Version: objective.Version, Owners: objectiveOwners, KRs: make([]KRView, 0, len(records))}
 		for _, record := range records {
 			krView, err := s.loadKRDefinition(ctx, record, includeBiz)
 			if err != nil {
@@ -1230,6 +1241,33 @@ func replaceKROwners(tx *gorm.DB, id string, owners []OwnerView) error {
 	return nil
 }
 
+func replaceObjectiveOwners(tx *gorm.DB, objectiveID string, owners []OwnerView) error {
+	if err := tx.Where("objective_id = ?", objectiveID).Delete(&domain.ObjectiveOwner{}).Error; err != nil {
+		return fmt.Errorf("replace objective owners: %w", err)
+	}
+	for index, owner := range owners {
+		if owner.Email != "" && !domain.ValidEmail(owner.Email) {
+			return fmt.Errorf("负责人邮箱无效，请刷新后重新选人")
+		}
+		if err := tx.Create(&domain.ObjectiveOwner{ObjectiveID: objectiveID, PersonID: ownerPersonID(owner), OwnerKey: ownerKey(owner), Email: domain.NormalizeEmail(owner.Email), UnionID: owner.UnionID, Name: owner.Name, SortOrder: index}).Error; err != nil {
+			return fmt.Errorf("create objective owner: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *Service) objectiveOwners(ctx context.Context, objectiveID string) ([]OwnerView, error) {
+	var rows []domain.ObjectiveOwner
+	if err := s.db.WithContext(ctx).Where("objective_id = ?", objectiveID).Order("sort_order, owner_key, person_id").Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("list objective owners: %w", err)
+	}
+	owners := make([]OwnerView, 0, len(rows))
+	for _, row := range rows {
+		owners = append(owners, storedOwnerView(row.Email, row.Name, row.UnionID))
+	}
+	return owners, nil
+}
+
 func replacePointOwners(tx *gorm.DB, pointID string, owners []OwnerView) error {
 	if err := tx.Where("point_id = ?", pointID).Delete(&domain.PointOwner{}).Error; err != nil {
 		return fmt.Errorf("replace point owners: %w", err)
@@ -1357,17 +1395,27 @@ func (s *Service) CreateObjective(ctx context.Context, input CreateObjectiveInpu
 	if input.Title == "" {
 		return ObjectiveView{}, fmt.Errorf("objective title is required")
 	}
-	var maxSort int
-	if err := s.db.WithContext(ctx).Model(&domain.Objective{}).Where("quarter = ? AND plan_id = ''", input.Quarter).Select("COALESCE(MAX(sort_order), -1)").Scan(&maxSort).Error; err != nil {
-		return ObjectiveView{}, fmt.Errorf("get objective sort order: %w", err)
+	if err := s.verifyPeople(ctx, input.Owners); err != nil {
+		return ObjectiveView{}, err
 	}
+	input.Owners = normalizeOwners(input.Owners)
 	now := time.Now().UTC()
 	digest := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%d", input.Quarter, input.Title, now.UnixNano())))
-	record := domain.Objective{ID: fmt.Sprintf("objective-%x", digest[:10]), Quarter: input.Quarter, Title: input.Title, SortOrder: maxSort + 1}
-	if err := s.db.WithContext(ctx).Create(&record).Error; err != nil {
-		return ObjectiveView{}, fmt.Errorf("create objective: %w", err)
+	record := domain.Objective{ID: fmt.Sprintf("objective-%x", digest[:10]), Quarter: input.Quarter, Title: input.Title}
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var maxSort int
+		if err := tx.Model(&domain.Objective{}).Where("quarter = ? AND plan_id = ''", input.Quarter).Select("COALESCE(MAX(sort_order), -1)").Scan(&maxSort).Error; err != nil {
+			return fmt.Errorf("get objective sort order: %w", err)
+		}
+		record.SortOrder = maxSort + 1
+		if err := tx.Create(&record).Error; err != nil {
+			return fmt.Errorf("create objective: %w", err)
+		}
+		return replaceObjectiveOwners(tx, record.ID, input.Owners)
+	}); err != nil {
+		return ObjectiveView{}, err
 	}
-	return ObjectiveView{ID: record.ID, Title: record.Title, Version: record.Version, KRs: []KRView{}}, nil
+	return ObjectiveView{ID: record.ID, Title: record.Title, Version: record.Version, Owners: input.Owners, KRs: []KRView{}}, nil
 }
 
 func (s *Service) UpdateObjective(ctx context.Context, id string, input UpdateObjectiveInput) (ObjectiveView, error) {
@@ -1376,11 +1424,31 @@ func (s *Service) UpdateObjective(ctx context.Context, id string, input UpdateOb
 	if id == "" || input.Title == "" {
 		return ObjectiveView{}, fmt.Errorf("objective id and title are required")
 	}
-	result := s.db.WithContext(ctx).Model(&domain.Objective{}).
-		Where("id = ? AND plan_id = '' AND version = ?", id, input.ExpectedVersion).
-		Updates(map[string]any{"title": input.Title, "version": gorm.Expr("version + 1")})
-	if result.Error != nil {
-		return ObjectiveView{}, fmt.Errorf("update objective: %w", result.Error)
+	if input.Owners != nil {
+		if err := s.verifyPeople(ctx, *input.Owners); err != nil {
+			return ObjectiveView{}, err
+		}
+		normalized := normalizeOwners(*input.Owners)
+		input.Owners = &normalized
+	}
+	var rowsAffected int64
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&domain.Objective{}).
+			Where("id = ? AND plan_id = '' AND version = ?", id, input.ExpectedVersion).
+			Updates(map[string]any{"title": input.Title, "version": gorm.Expr("version + 1")})
+		if result.Error != nil {
+			return fmt.Errorf("update objective: %w", result.Error)
+		}
+		rowsAffected = result.RowsAffected
+		if rowsAffected != 1 {
+			return nil
+		}
+		if input.Owners != nil {
+			return replaceObjectiveOwners(tx, id, *input.Owners)
+		}
+		return nil
+	}); err != nil {
+		return ObjectiveView{}, err
 	}
 	var record domain.Objective
 	if err := s.db.WithContext(ctx).First(&record, "id = ? AND plan_id = ''", id).Error; err != nil {
@@ -1389,8 +1457,12 @@ func (s *Service) UpdateObjective(ctx context.Context, id string, input UpdateOb
 		}
 		return ObjectiveView{}, fmt.Errorf("read updated objective: %w", err)
 	}
-	view := ObjectiveView{ID: record.ID, Title: record.Title, Version: record.Version, KRs: []KRView{}}
-	if result.RowsAffected != 1 {
+	owners, err := s.objectiveOwners(ctx, record.ID)
+	if err != nil {
+		return ObjectiveView{}, err
+	}
+	view := ObjectiveView{ID: record.ID, Title: record.Title, Version: record.Version, Owners: owners, KRs: []KRView{}}
+	if rowsAffected != 1 {
 		return view, ErrConflict
 	}
 	return view, nil
@@ -1401,28 +1473,33 @@ func (s *Service) DeleteObjective(ctx context.Context, id string, input DeleteOb
 	if id == "" {
 		return fmt.Errorf("objective id is required")
 	}
-	var record domain.Objective
-	if err := s.db.WithContext(ctx).First(&record, "id = ? AND plan_id = ''", id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrNotFound
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var record domain.Objective
+		if err := tx.First(&record, "id = ? AND plan_id = ''", id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrNotFound
+			}
+			return fmt.Errorf("get objective for delete: %w", err)
 		}
-		return fmt.Errorf("get objective for delete: %w", err)
-	}
-	var krCount int64
-	if err := s.db.WithContext(ctx).Model(&domain.KR{}).Where("objective_id = ?", id).Count(&krCount).Error; err != nil {
-		return fmt.Errorf("count objective KRs: %w", err)
-	}
-	if krCount > 0 {
-		return fmt.Errorf("objective %s still has %d KRs and cannot be deleted", id, krCount)
-	}
-	result := s.db.WithContext(ctx).Where("id = ? AND version = ?", id, input.ExpectedVersion).Delete(&domain.Objective{})
-	if result.Error != nil {
-		return fmt.Errorf("delete objective: %w", result.Error)
-	}
-	if result.RowsAffected != 1 {
-		return ErrConflict
-	}
-	return nil
+		var krCount int64
+		if err := tx.Model(&domain.KR{}).Where("objective_id = ?", id).Count(&krCount).Error; err != nil {
+			return fmt.Errorf("count objective KRs: %w", err)
+		}
+		if krCount > 0 {
+			return fmt.Errorf("objective %s still has %d KRs and cannot be deleted", id, krCount)
+		}
+		result := tx.Where("id = ? AND version = ?", id, input.ExpectedVersion).Delete(&domain.Objective{})
+		if result.Error != nil {
+			return fmt.Errorf("delete objective: %w", result.Error)
+		}
+		if result.RowsAffected != 1 {
+			return ErrConflict
+		}
+		if err := tx.Where("objective_id = ?", id).Delete(&domain.ObjectiveOwner{}).Error; err != nil {
+			return fmt.Errorf("delete objective owners: %w", err)
+		}
+		return nil
+	})
 }
 
 func (s *Service) DeleteKR(ctx context.Context, id string, input DeleteKRInput) error {

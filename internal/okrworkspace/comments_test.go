@@ -392,8 +392,19 @@ func TestPlanCommentsAreScopedValidatedAndDeletedWithPlan(t *testing.T) {
 		t.Fatalf("other plan leaked comments: %#v", empty)
 	}
 	todo := true
-	if _, err := service.UpdateComment(t.Context(), root.ID, UpdateCommentInput{ExpectedVersion: root.Version, Todo: &todo}); err == nil {
-		t.Fatal("plan comment unexpectedly accepted todo")
+	updated, err := service.UpdateComment(t.Context(), root.ID, UpdateCommentInput{ExpectedVersion: root.Version, Todo: &todo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !updated.Todo || updated.PlanID != root.PlanID {
+		t.Fatalf("plan comment todo = %#v", updated)
+	}
+	list, err = service.PlanComments(t.Context(), "plan-comment-a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Comments) != 1 || !list.Comments[0].Todo {
+		t.Fatalf("plan comment todo did not persist: %#v", list)
 	}
 
 	planBeforeDelete, err := service.GetPlan(t.Context(), "plan-comment-a")
@@ -409,6 +420,37 @@ func TestPlanCommentsAreScopedValidatedAndDeletedWithPlan(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("deleted plan retained %d comments", count)
+	}
+}
+
+func TestRegionalAlignmentCommentAcceptsTodo(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	if err := db.Create(&domain.OKRPlan{ID: "regional-comment-plan", Quarter: "2026-Q4", Title: "Regional Plan"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	root, err := service.CreateAlignmentComment(t.Context(), "2026-Q4", "eu", CreateCommentInput{Content: "确认区域上线范围"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	todo := true
+	updated, err := service.UpdateComment(t.Context(), root.ID, UpdateCommentInput{ExpectedVersion: root.Version, Todo: &todo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !updated.Todo || updated.AlignmentID == "" || updated.RegionCode != "eu" {
+		t.Fatalf("regional alignment comment todo = %#v", updated)
+	}
+	list, err := service.AlignmentComments(t.Context(), "2026-Q4", "eu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list.Comments) != 1 || !list.Comments[0].Todo {
+		t.Fatalf("regional alignment comment todo did not persist: %#v", list)
 	}
 }
 
@@ -520,7 +562,7 @@ func TestCommentMentionRequiresSelectedTokenAndEditsDoNotNotify(t *testing.T) {
 	}
 }
 
-func TestReviewMeetingPointCommentOnlyNotifiesExplicitMention(t *testing.T) {
+func TestReviewMeetingPointCommentNotifiesKROwnersAndDeduplicatesExplicitMention(t *testing.T) {
 	db := openWorkspaceTestDB(t)
 	week := domain.WeeklyReportWeek{Quarter: "2026-Q3", Week: "2026-W35", TemplateKey: domain.WeekTemplateOKRPreview, OpenedBy: "test"}
 	objective := domain.Objective{ID: "owner-o", Quarter: week.Quarter, Title: "提升经营效率"}
@@ -553,11 +595,18 @@ func TestReviewMeetingPointCommentOnlyNotifiesExplicitMention(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(created.NotificationErrors) != 0 || len(stub.items) != 1 {
+	if len(created.NotificationErrors) != 0 || len(stub.items) != 2 {
 		t.Fatalf("created = %#v, notifications = %#v", created, stub.items)
 	}
-	notification := stub.items[0]
-	if notification.Recipient.Email != "owner_b@example.test" || notification.Tab != commentSourceTabReviewMeeting || notification.KRID != kr.ID || notification.KRTitle != kr.Title || notification.ObjectiveTitle != objective.Title || notification.OriginalText != "AM 助手" {
+	byEmail := map[string]CommentMentionNotification{}
+	for _, notification := range stub.items {
+		byEmail[notification.Recipient.Email] = notification
+	}
+	if byEmail["owner_a@example.test"].Reason != commentNotificationReasonOwner || byEmail["owner_b@example.test"].Reason != commentNotificationReasonMentionAndOwner {
+		t.Fatalf("notification reasons = %#v", byEmail)
+	}
+	notification := byEmail["owner_b@example.test"]
+	if notification.OwnerLevel != "kr" || notification.Tab != commentSourceTabReviewMeeting || notification.KRID != kr.ID || notification.KRTitle != kr.Title || notification.ObjectiveTitle != objective.Title || notification.OriginalText != "AM 助手" {
 		t.Fatalf("notification context = %#v", notification)
 	}
 }
@@ -596,7 +645,7 @@ func TestReviewMeetingCommentResolvesWeekSeededMetricToItsKR(t *testing.T) {
 	}
 }
 
-func TestPlanPointCommentWithoutMentionDoesNotNotifyOwners(t *testing.T) {
+func TestPlanPointCommentWithoutMentionNotifiesNearestPointOwners(t *testing.T) {
 	db := openWorkspaceTestDB(t)
 	plan := domain.OKRPlan{ID: "point-owner-plan", Quarter: "2026-Q4", Title: "2026 Q4 Biz OKR Plan"}
 	objective := domain.Objective{ID: "point-owner-o", PlanID: plan.ID, Quarter: plan.Quarter, Title: "扩大业务增长"}
@@ -627,8 +676,91 @@ func TestPlanPointCommentWithoutMentionDoesNotNotifyOwners(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(created.NotificationErrors) != 0 || len(stub.items) != 0 {
+	if err := service.processPendingCommentDeliveries(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(created.NotificationErrors) != 0 || len(stub.items) != 2 {
 		t.Fatalf("created = %#v, notifications = %#v", created, stub.items)
+	}
+	for _, notification := range stub.items {
+		if notification.OwnerLevel != "point" || notification.Reason != commentNotificationReasonOwner || notification.Recipient.Email == krOwner.Email {
+			t.Fatalf("point owner notification = %#v", notification)
+		}
+	}
+}
+
+func TestPointOwnerAndExplicitMentionAreUnionedWithoutNotifyingParentOwner(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	plan := domain.OKRPlan{ID: "union-plan", Quarter: "2026-Q4", Title: "2026 Q4 Plan"}
+	objective := domain.Objective{ID: "union-o", PlanID: plan.ID, Quarter: plan.Quarter, Title: "增长"}
+	kr := domain.KR{ID: "union-kr", ObjectiveID: objective.ID, Title: "提升收益"}
+	point := domain.KRPoint{ID: "union-point", KRID: kr.ID, Kind: domain.PointKindProduct, Title: "交付商业化方案"}
+	pointOwner := domain.PointOwner{PointID: point.ID, PersonID: 1, OwnerKey: "point", Email: "point@example.test", Name: "具体负责人"}
+	krOwner := domain.KROwner{KRID: kr.ID, PersonID: 2, OwnerKey: "kr", Email: "kr@example.test", Name: "KR 负责人"}
+	for _, row := range []any{&plan, &objective, &kr, &point, &pointOwner, &krOwner} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stub := &commentMentionNotifierStub{}
+	if err := service.SetCommentMentionNotifier(stub); err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.CreatePlanComment(t.Context(), plan.ID, CreateCommentInput{
+		TargetType: "point", TargetID: point.ID, AuthorName: "Alice",
+		Content: "@审阅人 请一起核对", Mentions: []CommentMention{{Email: "reviewer@example.test", Name: "审阅人"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.processPendingCommentDeliveries(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(stub.items) != 2 {
+		t.Fatalf("notifications = %#v", stub.items)
+	}
+	byEmail := map[string]CommentMentionNotification{}
+	for _, notification := range stub.items {
+		byEmail[notification.Recipient.Email] = notification
+	}
+	if byEmail[pointOwner.Email].Reason != commentNotificationReasonOwner || byEmail["reviewer@example.test"].Reason != commentNotificationReasonMention || byEmail[krOwner.Email].Recipient.Email != "" {
+		t.Fatalf("union notifications = %#v", byEmail)
+	}
+}
+
+func TestCommentFallsBackFromPointAndKRToObjectiveOwner(t *testing.T) {
+	db := openWorkspaceTestDB(t)
+	week := domain.WeeklyReportWeek{Quarter: "2026-Q3", Week: "2026-W35", OpenedBy: "test"}
+	objective := domain.Objective{ID: "fallback-o", Quarter: week.Quarter, Title: "提升效率"}
+	kr := domain.KR{ID: "fallback-kr", ObjectiveID: objective.ID, Title: "完成升级"}
+	point := domain.KRPoint{ID: "fallback-point", KRID: kr.ID, Kind: domain.PointKindStrategy, Title: "制定策略"}
+	owner := domain.ObjectiveOwner{ObjectiveID: objective.ID, PersonID: 1, OwnerKey: "objective", Email: "objective@example.test", Name: "O 负责人"}
+	for _, row := range []any{&week, &objective, &kr, &point, &owner} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	service, err := NewService(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stub := &commentMentionNotifierStub{}
+	if err := service.SetCommentMentionNotifier(stub); err != nil {
+		t.Fatal(err)
+	}
+	created, err := createAndDeliverCommentForTest(service, t.Context(), CreateCommentInput{
+		Quarter: week.Quarter, Week: week.Week, TargetType: "point", TargetID: point.ID,
+		AuthorName: "Alice", Content: "请补充验收口径",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(created.Notifications) != 1 || len(stub.items) != 1 || stub.items[0].Recipient.Email != owner.Email || stub.items[0].OwnerLevel != "objective" || stub.items[0].Reason != commentNotificationReasonOwner {
+		t.Fatalf("fallback notification = %#v / %#v", created, stub.items)
 	}
 }
 
@@ -667,7 +799,7 @@ func TestPlanCommentNotifiesExplicitMentionWithCanonicalTargetText(t *testing.T)
 		t.Fatalf("created = %#v, notifications = %#v", created, stub.items)
 	}
 	got := stub.items[0]
-	if got.Recipient.Email != owner.Email || got.Tab != commentSourceTabOKRPlan || got.PlanTitle != plan.Title || got.KRID != kr.ID || got.OriginalText != metric.Text {
+	if got.Recipient.Email != owner.Email || got.Reason != commentNotificationReasonMentionAndOwner || got.OwnerLevel != "kr" || got.Tab != commentSourceTabOKRPlan || got.PlanTitle != plan.Title || got.KRID != kr.ID || got.OriginalText != metric.Text {
 		t.Fatalf("plan owner notification = %#v", got)
 	}
 }
@@ -736,7 +868,7 @@ func createAndDeliverCommentForTest(service *Service, ctx context.Context, input
 	if err != nil {
 		return view, err
 	}
-	view.Notifications, err = service.deliverComment(ctx, view.ID, "")
+	view.Notifications, err = service.deliverComment(ctx, view.ID, "", false)
 	view.NotificationErrors = deliveryWarnings(view.Notifications)
 	return view, err
 }

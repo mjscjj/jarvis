@@ -24,7 +24,11 @@ func (s *Service) planObjectives(ctx context.Context, planID string) ([]PlanObje
 		if err := s.db.WithContext(ctx).Where("objective_id = ?", objective.ID).Order("sort_order, id").Find(&krs).Error; err != nil {
 			return nil, fmt.Errorf("list plan KRs for %s: %w", objective.ID, err)
 		}
-		view := PlanObjectiveView{ID: objective.ID, Title: objective.Title, Version: objective.Version, KRs: make([]PlanKRView, 0, len(krs))}
+		owners, err := s.objectiveOwners(ctx, objective.ID)
+		if err != nil {
+			return nil, err
+		}
+		view := PlanObjectiveView{ID: objective.ID, Title: objective.Title, Version: objective.Version, Owners: owners, KRs: make([]PlanKRView, 0, len(krs))}
 		for _, kr := range krs {
 			definition, err := s.loadKRDefinition(ctx, kr, true)
 			if err != nil {
@@ -61,6 +65,9 @@ func planKRFromDefinition(value KRView) PlanKRView {
 
 func (s *Service) writePlanObjectiveChildren(ctx context.Context, objective PlanObjectiveView, actor string, now time.Time) error {
 	db := s.db.WithContext(ctx)
+	if err := replaceObjectiveOwners(db, objective.ID, normalizeOwners(objective.Owners)); err != nil {
+		return err
+	}
 	for krIndex, kr := range objective.KRs {
 		row := domain.KR{ID: kr.ID, ObjectiveID: objective.ID, Title: kr.Title, MetricNote: kr.MetricNote, SortOrder: krIndex, Version: kr.Version, CreatedBy: actor, UpdatedBy: actor, CreatedAt: now, UpdatedAt: now}
 		if err := db.Create(&row).Error; err != nil {
@@ -104,6 +111,11 @@ func (s *Service) writePlanObjectiveChildren(ctx context.Context, objective Plan
 // browser snapshot cannot overwrite a collaborator's point edit.
 func (s *Service) updatePlanObjectiveChildren(ctx context.Context, currentObjective, objective PlanObjectiveView, actor string, now time.Time) error {
 	db := s.db.WithContext(ctx)
+	if !reflect.DeepEqual(currentObjective.Owners, objective.Owners) {
+		if err := replaceObjectiveOwners(db, objective.ID, normalizeOwners(objective.Owners)); err != nil {
+			return err
+		}
+	}
 	var existingKRs []domain.KR
 	if err := db.Where("objective_id = ?", objective.ID).Find(&existingKRs).Error; err != nil {
 		return fmt.Errorf("list existing plan KRs: %w", err)
@@ -193,6 +205,9 @@ func samePlanKRDefinition(current, incoming PlanKRView) bool {
 
 func (s *Service) deletePlanObjectiveChildren(ctx context.Context, objectiveID string) error {
 	db := s.db.WithContext(ctx)
+	if err := db.Where("objective_id = ?", objectiveID).Delete(&domain.ObjectiveOwner{}).Error; err != nil {
+		return fmt.Errorf("delete plan objective owners: %w", err)
+	}
 	var krIDs []string
 	if err := db.Model(&domain.KR{}).Where("objective_id = ?", objectiveID).Pluck("id", &krIDs).Error; err != nil {
 		return fmt.Errorf("list plan objective KRs for delete: %w", err)
@@ -234,6 +249,9 @@ func (s *Service) deletePlanDefinitionRows(ctx context.Context, planID string) e
 	}
 	if len(objectiveIDs) == 0 {
 		return nil
+	}
+	if err := db.Where("objective_id IN ?", objectiveIDs).Delete(&domain.ObjectiveOwner{}).Error; err != nil {
+		return fmt.Errorf("delete plan objective owners: %w", err)
 	}
 	var krIDs []string
 	if err := db.Model(&domain.KR{}).Where("objective_id IN ?", objectiveIDs).Pluck("id", &krIDs).Error; err != nil {

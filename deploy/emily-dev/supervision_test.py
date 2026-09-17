@@ -83,6 +83,14 @@ http.server.ThreadingHTTPServer(('127.0.0.1', 18812), http.server.SimpleHTTPRequ
             'exec', self.name, 'curl', '--fail', '--silent', '--max-time', '1',
             '--unix-socket', '/run/emily-web/web.sock', 'http://localhost/'))
 
+    def test_server_is_not_running_until_startup_stabilizes(self):
+        old_pid = self.ctl('pid', 'jarvis-server')
+        self.docker('exec', self.name, 'kill', '-KILL', old_pid)
+        self.wait_for(lambda: self.ctl('pid', 'jarvis-server') not in ('0', old_pid))
+        status = self.ctl('status', 'jarvis-server')
+        self.assertIn('STARTING', status)
+        self.wait_for(lambda: 'RUNNING' in self.ctl('status', 'jarvis-server'))
+
 
 if __name__ == '__main__':
     unittest.main()

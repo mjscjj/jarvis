@@ -634,15 +634,15 @@ export function BoardProvider({
       }
     },
 
-    updateObjective: async (id, title) => {
+	updateObjective: async (id, title, owners) => {
       const clean = title.trim()
       if (!clean) throw new Error('目标名称不能为空。')
 			const current = objectivesRef.current.find((objective) => objective.id === id)
 			if (!current) throw new Error('目标不存在，请重新载入。')
       setSyncState({ kind: 'saving', message: '正在更新目标…' })
       try {
-        const saved = await updateObjectiveRequest(current, clean)
-				publish(objectivesRef.current.map((objective) => objective.id === id ? { ...objective, title: saved.title, version: saved.version } : objective))
+		const saved = await updateObjectiveRequest(current, clean, owners)
+				publish(objectivesRef.current.map((objective) => objective.id === id ? { ...objective, title: saved.title, version: saved.version, owners: saved.owners } : objective))
         setSyncState({ kind: 'saved', message: '目标已更新' })
       } catch (error) {
         setSyncState({ kind: 'error', message: error instanceof Error ? error.message : '更新目标失败。' })

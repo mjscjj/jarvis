@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode, RefObject } from 'react'
-import { createComment, createPlanComment, createRegionalAlignmentComment, deleteComment, getComments, getPlanComments, getRegionalAlignmentComments, updateComment } from '../api'
+import { createComment, createPlanComment, createRegionalAlignmentComment, deleteComment, getAuthStatus, getComments, getPlanComments, getRegionalAlignmentComments, updateComment } from '../api'
 import { scrollToCommentSource, scrollToCommentTarget } from '../commenting'
-import { buildCommentDocumentOrder, buildCommentOKRContextIndex, commentCountsByTarget, commentMatchesTarget, commentMessageCount, commentOKRContext, commentTargetKey, groupCommentsByTarget, sortCommentsByDocumentOrder, todayCommentReviewItems } from '../comments'
+import { anchorCommentReviewItems, buildCommentDocumentOrder, buildCommentOKRContextIndex, commentCountsByTarget, commentMatchesTarget, commentMessageCount, commentOKRContext, commentTargetKey, commentThreadRelatedToUser, groupCommentsByTarget, sortCommentsByDocumentOrder, todayCommentReviewItems } from '../comments'
 import type { CommentOKRContext } from '../comments'
-import type { CommentMention, CommentTarget, ImageRef, Objective, PageComment, RegionalCode } from '../types'
+import type { AuthUser, CommentMention, CommentTarget, ImageRef, Objective, PageComment, RegionalCode } from '../types'
 import { CommentContent, CommentMentionInput } from './CommentMentionInput'
 import type { CommentDraft } from './CommentMentionInput'
 import { CommentDeliveryStatus } from './CommentDeliveryStatus'
@@ -225,7 +225,7 @@ function ReplyComposer({ comment, objectives, createReply, onCreated, onCancel }
   )
 }
 
-function CommentThread({ comment, objectives, createReply, showSource, okrContext, todoEnabled, focusCommentId, markFocusAsToday = false, onNavigateToSource, onReply, onEdit, onPatch, onDelete }: {
+function CommentThread({ comment, objectives, createReply, showSource, okrContext, todoEnabled, focusCommentId, markFocusAsToday = false, onSelect, onNavigateToSource, onReply, onEdit, onPatch, onDelete }: {
   comment: PageComment
   objectives: Objective[]
   createReply: (parentId: string, content: string, mentions: CommentMention[], images: ImageRef[]) => Promise<PageComment>
@@ -234,6 +234,7 @@ function CommentThread({ comment, objectives, createReply, showSource, okrContex
   todoEnabled: boolean
   focusCommentId?: string
   markFocusAsToday?: boolean
+  onSelect: (commentId: string) => void
   onNavigateToSource: (comment: PageComment) => void
   onReply: (rootId: string, reply: PageComment) => void
   onEdit: (id: string, content: string, mentions: CommentMention[], images: ImageRef[]) => Promise<void>
@@ -257,7 +258,7 @@ function CommentThread({ comment, objectives, createReply, showSource, okrContex
   }
   const rootFocused = focusCommentId === comment.id
   return (
-    <article id={`comment-${comment.id}`} aria-current={rootFocused ? 'true' : undefined} className={`border-b border-slate-100 px-4 py-3.5 last:border-b-0 ${comment.resolved ? 'bg-slate-50/60' : ''} ${rootFocused ? 'bg-indigo-50/70 ring-2 ring-inset ring-indigo-300' : ''}`}>
+    <article id={`comment-${comment.id}`} aria-current={rootFocused ? 'true' : undefined} onClick={() => onSelect(comment.id)} className={`border-b border-slate-100 px-4 py-3.5 last:border-b-0 ${comment.resolved ? 'bg-slate-50/60' : ''} ${rootFocused ? 'bg-indigo-50/70 ring-2 ring-inset ring-indigo-300' : ''}`}>
       {showSource && <div className="mb-2.5"><CommentSourceCard source={comment} context={okrContext} onNavigate={() => onNavigateToSource(comment)} /></div>}
       <div className="flex items-start gap-2.5">
         <Avatar name={comment.authorName} />
@@ -267,10 +268,10 @@ function CommentThread({ comment, objectives, createReply, showSource, okrContex
             <time className="text-[10px] text-slate-400">{displayTime(comment.createdAt)}</time>
             {wasEdited(comment) && <span className="text-[9px] text-slate-300">已编辑</span>}
             {rootFocused && markFocusAsToday && <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[9px] font-semibold text-indigo-700">今日新增</span>}
-            {comment.todo && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">To do</span>}
+            {comment.todo && <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700">Todo</span>}
             {comment.resolved && <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-600">已解决</span>}
             <div className="ml-auto flex shrink-0 items-center gap-1 whitespace-nowrap text-[10px] font-medium leading-[14px]">
-              {todoEnabled && <button type="button" disabled={actionSaving} aria-pressed={comment.todo} onClick={() => void patch({ todo: !comment.todo })} className={`rounded-md border px-1.5 py-0.5 disabled:opacity-50 ${comment.todo ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-400 hover:border-amber-200 hover:text-amber-700'}`}>{comment.todo ? '取消 To do' : '标记 To do'}</button>}
+              {todoEnabled && <button type="button" disabled={actionSaving} aria-pressed={comment.todo} onClick={() => void patch({ todo: !comment.todo })} className={`rounded-md border px-1.5 py-0.5 disabled:opacity-50 ${comment.todo ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-slate-200 text-slate-400 hover:border-amber-200 hover:text-amber-700'}`}>{comment.todo ? '取消 Todo' : '标记 Todo'}</button>}
               <button type="button" disabled={actionSaving} onClick={() => void patch({ resolved: !comment.resolved })} className={`rounded-md border px-1.5 py-0.5 disabled:opacity-50 ${comment.resolved ? 'border-slate-200 text-slate-500' : 'border-indigo-200 bg-indigo-50 text-indigo-600'}`}>{comment.resolved ? '重新打开' : '标记解决'}</button>
             </div>
           </div>
@@ -280,7 +281,7 @@ function CommentThread({ comment, objectives, createReply, showSource, okrContex
           {comment.replies.length > 0 && (
             <div className="mt-2 space-y-2.5 border-l-2 border-slate-100 pl-3">
               {comment.replies.map((reply) => (
-                <div id={`comment-${reply.id}`} key={reply.id} aria-current={focusCommentId === reply.id ? 'true' : undefined} className={`flex items-start gap-2 rounded-lg ${focusCommentId === reply.id ? 'bg-indigo-50 px-2 py-1.5 ring-2 ring-indigo-300' : ''}`}>
+                <div id={`comment-${reply.id}`} key={reply.id} aria-current={focusCommentId === reply.id ? 'true' : undefined} onClick={(event) => { event.stopPropagation(); onSelect(reply.id) }} className={`flex items-start gap-2 rounded-lg ${focusCommentId === reply.id ? 'bg-indigo-50 px-2 py-1.5 ring-2 ring-indigo-300' : ''}`}>
                   <Avatar name={reply.authorName} small />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2"><span className="text-[11px] font-semibold text-slate-600">{reply.authorName}</span><time className="text-[10px] text-slate-400">{displayTime(reply.createdAt)}</time>{wasEdited(reply) && <span className="text-[9px] text-slate-300">已编辑</span>}{focusCommentId === reply.id && markFocusAsToday && <span className="rounded-full bg-indigo-100 px-1.5 py-0.5 text-[9px] font-semibold text-indigo-700">今日新增</span>}</div>
@@ -333,7 +334,12 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewMode, quarter
   const [error, setError] = useState('')
   const [navigationNotice, setNavigationNotice] = useState('')
   const [reviewItemId, setReviewItemId] = useState('')
+  const [reviewAnchorId, setReviewAnchorId] = useState('')
+  const [selectedCommentId, setSelectedCommentId] = useState('')
   const [showHistory, setShowHistory] = useState(false)
+  const [relatedOnly, setRelatedOnly] = useState(false)
+  const [currentUser, setCurrentUser] = useState<AuthUser>()
+  const [authLoaded, setAuthLoaded] = useState(false)
   const [reviewDate, setReviewDate] = useState(() => new Date())
   const revealedFocusId = useRef('')
   const loadVersion = useRef(0)
@@ -399,8 +405,23 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewMode, quarter
   }, [target?.id, target?.selection?.end, target?.selection?.start, target?.selection?.text, target?.type])
   useEffect(() => {
     setShowHistory(false)
+    setRelatedOnly(false)
     revealedFocusId.current = ''
   }, [scopeKey])
+
+  useEffect(() => {
+    if (!open || authLoaded) return
+    let active = true
+    void getAuthStatus()
+      .then((status) => { if (active) setCurrentUser(status.authenticated ? status.user : undefined) })
+      .catch(() => { if (active) setCurrentUser(undefined) })
+      .finally(() => { if (active) setAuthLoaded(true) })
+    return () => { active = false }
+  }, [authLoaded, open])
+
+  useEffect(() => {
+    if (reviewMode || target) setRelatedOnly(false)
+  }, [reviewMode, target])
 
   useEffect(() => {
     if (!open) return
@@ -427,6 +448,7 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewMode, quarter
   useEffect(() => {
     if (!open) {
       setShowHistory(false)
+      setSelectedCommentId('')
       revealedFocusId.current = ''
       return
     }
@@ -437,6 +459,11 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewMode, quarter
     revealedFocusId.current = requestedId
     if (thread.resolved) setShowHistory(true)
   }, [comments, focusCommentId, open, target?.commentId])
+
+  useEffect(() => {
+    if (!open || reviewMode) return
+    setSelectedCommentId(target?.commentId || focusCommentId || '')
+  }, [focusCommentId, open, reviewMode, target?.commentId, target?.id, target?.selection?.end, target?.selection?.start, target?.selection?.text, target?.type])
 
   useEffect(() => {
     if (!open || loading || !focusCommentId) return
@@ -473,11 +500,14 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewMode, quarter
 
   const documentOrder = useMemo(() => buildCommentDocumentOrder(objectives, followUpOrder), [followUpOrder, objectives])
   const scopedComments = useMemo(() => target ? comments.filter((comment) => commentMatchesTarget(comment, target)) : comments, [comments, target])
-  const resolvedCount = scopedComments.filter((comment) => comment.resolved).length
+  const filteredComments = useMemo(() => relatedOnly && currentUser
+    ? scopedComments.filter((comment) => commentThreadRelatedToUser(comment, currentUser))
+    : scopedComments, [currentUser, relatedOnly, scopedComments])
+  const resolvedCount = filteredComments.filter((comment) => comment.resolved).length
   const visibleComments = useMemo(() => sortCommentsByDocumentOrder(
-    showHistory ? scopedComments : scopedComments.filter((comment) => !comment.resolved),
+    showHistory ? filteredComments : filteredComments.filter((comment) => !comment.resolved),
     documentOrder,
-  ), [documentOrder, scopedComments, showHistory])
+  ), [documentOrder, filteredComments, showHistory])
   const visibleCount = commentMessageCount(visibleComments)
   const okrContextIndex = useMemo(() => buildCommentOKRContextIndex(objectives), [objectives])
   const visibleGroups = useMemo(() => groupCommentsByTarget(visibleComments), [visibleComments])
@@ -487,14 +517,28 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewMode, quarter
   ), [comments, documentOrder, showHistory])
   const allReviewItems = useMemo(() => reviewComments.map((comment) => ({ thread: comment, comment })), [reviewComments])
   const todayReviewItems = useMemo(() => todayCommentReviewItems(comments, documentOrder, reviewDate), [comments, documentOrder, reviewDate])
-  const reviewItems = reviewMode === 'today' ? todayReviewItems : allReviewItems
+  const reviewItems = useMemo(() => anchorCommentReviewItems(
+    reviewMode === 'today' ? todayReviewItems : allReviewItems,
+    comments,
+    reviewAnchorId,
+    reviewMode ?? 'all',
+  ), [allReviewItems, comments, reviewAnchorId, reviewMode, todayReviewItems])
   const reviewIndex = reviewItems.findIndex((item) => item.comment.id === reviewItemId)
   const reviewItem = reviewIndex >= 0 ? reviewItems[reviewIndex] : undefined
+  const todayReviewIndex = reviewMode === 'today' && reviewItem
+    ? todayReviewItems.findIndex((item) => item.comment.id === reviewItem.comment.id)
+    : -1
   const targetContext = target ? okrContextIndex[commentTargetKey(target)] : undefined
+
+  useEffect(() => {
+    if (!open || reviewMode || !target || selectedCommentId || visibleComments.length === 0) return
+    setSelectedCommentId(visibleComments[0].id)
+  }, [open, reviewMode, selectedCommentId, target, visibleComments])
 
   useEffect(() => {
     if (!reviewMode || !open) {
       setReviewItemId('')
+      setReviewAnchorId('')
       return
     }
     if (loading || reviewItems.length === 0) return
@@ -619,6 +663,16 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewMode, quarter
     if (result === 'missing') setNavigationNotice('原文已删除，或不在当前页面中')
   }
 
+  const startReview = (mode: CommentReviewMode) => {
+    // Keep the exact message independently from target: the parent clears its
+    // target when switching modes, and today's projection may not contain an
+    // older message without this explicit anchor.
+    const requestedId = selectedCommentId || target?.commentId || focusCommentId || ''
+    setReviewAnchorId(requestedId)
+    setReviewItemId(requestedId)
+    onStartReview(mode)
+  }
+
   const renderThread = (comment: PageComment, showSource: boolean, activeCommentId?: string, markActiveAsToday = false) => (
     <CommentThread
       key={comment.id}
@@ -630,6 +684,7 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewMode, quarter
       todoEnabled={todoEnabled}
       focusCommentId={activeCommentId}
       markFocusAsToday={markActiveAsToday}
+      onSelect={setSelectedCommentId}
       onNavigateToSource={navigateToCommentSource}
       onReply={addReply}
       onEdit={editExistingComment}
@@ -645,10 +700,12 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewMode, quarter
         <header className="shrink-0 border-b border-slate-200 px-4 py-2.5">
           <div className="flex min-h-8 items-center gap-2">
             <div className="min-w-0 flex-1">
-              <h2 className="truncate text-[14px] font-semibold text-slate-800">{reviewMode === 'today' ? '今日评论' : reviewMode === 'all' ? '逐条浏览' : target ? `${targetLabel(target.type)}评论` : '全部评论'}</h2>
+              <h2 className="truncate text-[14px] font-semibold text-slate-800">{reviewMode === 'today' ? '今日评论' : reviewMode === 'all' ? '逐条浏览' : target ? `${targetLabel(target.type)}评论` : relatedOnly ? '与我相关' : '全部评论'}</h2>
               <p className="text-[10px] text-slate-400">{reviewMode && reviewItem
                 ? reviewMode === 'today'
-                  ? `第 ${reviewIndex + 1}/${reviewItems.length} 条今日新增评论`
+                  ? todayReviewIndex >= 0
+                    ? `第 ${todayReviewIndex + 1}/${todayReviewItems.length} 条今日新增评论`
+                    : `当前评论 · 今日新增 ${todayReviewItems.length} 条`
                   : `第 ${reviewIndex + 1}/${reviewItems.length} 个讨论串`
                 : reviewMode === 'today'
                   ? `${reviewItems.length} 条今日新增评论`
@@ -659,9 +716,10 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewMode, quarter
             {(reviewMode || target) && <button type="button" onClick={onShowAll} className="shrink-0 rounded-md px-2 py-1 text-[11px] text-indigo-600 hover:bg-indigo-50">查看全部</button>}
             <button type="button" onClick={onClose} aria-label="关闭评论" className="flex size-8 shrink-0 items-center justify-center rounded-lg text-xl text-slate-400 hover:bg-slate-100 hover:text-slate-700">×</button>
           </div>
-          {((!reviewMode && !target) || (reviewMode !== 'today' && (resolvedCount > 0 || showHistory))) && <div className="mt-1.5 flex flex-wrap items-center gap-1">
-            {!reviewMode && !target && reviewEnabled && reviewComments.length > 0 && <button type="button" onClick={() => onStartReview('all')} className="shrink-0 rounded-md px-2 py-1 text-[11px] text-indigo-600 hover:bg-indigo-50">逐条浏览</button>}
-            {!reviewMode && !target && reviewEnabled && <button type="button" onClick={() => onStartReview('today')} className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] text-indigo-600 hover:bg-indigo-50">只浏览今日评论 <span className="rounded-full bg-indigo-100 px-1.5 text-[9px] font-semibold text-indigo-700">{todayReviewItems.length}</span></button>}
+          {(!reviewMode || (reviewMode !== 'today' && (resolvedCount > 0 || showHistory))) && <div className="mt-1.5 flex flex-wrap items-center justify-end gap-1">
+            {!reviewMode && !target && <button type="button" disabled={!authLoaded || !currentUser} aria-pressed={relatedOnly} title={!authLoaded ? '正在读取当前用户' : !currentUser ? '无法识别当前登录用户' : '筛选我发言或被 @ 的讨论'} onClick={() => setRelatedOnly((value) => !value)} className={`shrink-0 rounded-md px-2 py-1 text-[11px] disabled:cursor-not-allowed disabled:opacity-40 ${relatedOnly ? 'bg-indigo-100 font-medium text-indigo-700' : 'text-indigo-600 hover:bg-indigo-50'}`}>{relatedOnly ? '查看全部' : '与我相关'}</button>}
+            {!reviewMode && reviewEnabled && reviewComments.length > 0 && <button type="button" onClick={() => startReview('all')} className="shrink-0 rounded-md px-2 py-1 text-[11px] text-indigo-600 hover:bg-indigo-50">逐条浏览</button>}
+            {!reviewMode && reviewEnabled && <button type="button" onClick={() => startReview('today')} className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] text-indigo-600 hover:bg-indigo-50">只浏览今日评论 <span className="rounded-full bg-indigo-100 px-1.5 text-[9px] font-semibold text-indigo-700">{todayReviewItems.length}</span></button>}
             {!reviewMode && !target && <button type="button" onClick={() => void load()} className="shrink-0 rounded-md px-2 py-1 text-[11px] text-slate-400 hover:bg-slate-100 hover:text-slate-600">刷新</button>}
             {(resolvedCount > 0 || showHistory) && <button type="button" aria-pressed={showHistory} onClick={() => setShowHistory((value) => !value)} className={`shrink-0 rounded-md px-2 py-1 text-[11px] ${showHistory ? 'bg-slate-100 text-slate-700' : 'text-indigo-600 hover:bg-indigo-50'}`}>{showHistory ? '隐藏历史评论' : `显示历史评论${resolvedCount > 0 ? ` ${resolvedCount}` : ''}`}</button>}
           </div>}
@@ -684,33 +742,27 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewMode, quarter
 
         <div className="min-h-0 flex-1 overflow-y-auto">
           {loading ? <div className="px-4 py-10 text-center text-xs text-slate-400">正在读取评论…</div> : (reviewMode ? reviewItems : visibleComments).length === 0 ? (
-            <div className="px-8 py-16 text-center"><div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-full bg-slate-100 text-lg text-slate-400">💬</div><p className="text-[13px] font-medium text-slate-600">{reviewMode === 'today' ? '今天暂无新增评论' : resolvedCount > 0 && !showHistory ? '当前没有未解决评论' : target ? '这段内容还没有评论' : '还没有评论'}</p><p className="mt-1 text-[11px] text-slate-400">{reviewMode === 'today' ? '按当前设备所在时区统计今天新发布的评论与回复' : resolvedCount > 0 && !showHistory ? '点击右上角「显示历史评论」查看已解决讨论' : '提出问题、补充背景或回复讨论'}</p></div>
+            <div className="px-8 py-16 text-center"><div className="mx-auto mb-3 flex size-10 items-center justify-center rounded-full bg-slate-100 text-lg text-slate-400">💬</div><p className="text-[13px] font-medium text-slate-600">{reviewMode === 'today' ? '今天暂无新增评论' : relatedOnly ? '当前没有与你相关的评论' : resolvedCount > 0 && !showHistory ? '当前没有未解决评论' : target ? '这段内容还没有评论' : '还没有评论'}</p><p className="mt-1 text-[11px] text-slate-400">{reviewMode === 'today' ? '按当前设备所在时区统计今天新发布的评论与回复' : relatedOnly ? '这里会显示你发言或被明确 @ 的讨论串' : resolvedCount > 0 && !showHistory ? '点击右上角「显示历史评论」查看已解决讨论' : '提出问题、补充背景或回复讨论'}</p></div>
           ) : reviewMode ? reviewItem ? (
-            renderThread(reviewItem.thread, true, reviewItem.comment.id, reviewMode === 'today')
+            renderThread(reviewItem.thread, true, reviewItem.comment.id, reviewMode === 'today' && todayReviewIndex >= 0)
           ) : <div className="px-4 py-10 text-center text-xs text-slate-400">正在定位第一条评论…</div>
-          : target ? visibleComments.map((comment) => renderThread(comment, false))
+          : target ? visibleComments.map((comment) => renderThread(comment, false, selectedCommentId))
           : visibleGroups.map((group) => (
             <section key={group.key} className="border-b-4 border-slate-100 last:border-b-0">
               <div className="px-3 pt-3">
                 <CommentSourceCard source={group.comments[0]} context={commentOKRContext(group.comments[0], okrContextIndex)} onNavigate={() => navigateToCommentSource(group.comments[0])} />
                 <div className="px-1 pt-1.5 text-[10px] text-slate-400">{group.comments.length} 个讨论串 · {group.messageCount} 条评论</div>
               </div>
-              {group.comments.map((comment) => renderThread(comment, false))}
+              {group.comments.map((comment) => renderThread(comment, false, selectedCommentId))}
             </section>
           ))}
         </div>
         {reviewMode && reviewItem && <footer className="shrink-0 border-t border-slate-200 bg-white p-3">
-          {reviewIndex < reviewItems.length - 1 ? (
-            <div className="grid grid-cols-2 gap-2">
-              <button type="button" disabled={reviewIndex === 0} onClick={() => setReviewItemId(reviewItems[reviewIndex - 1].comment.id)} className="h-10 rounded-lg border border-slate-200 bg-white text-[13px] font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">上一个</button>
-              <button type="button" onClick={() => setReviewItemId(reviewItems[reviewIndex + 1].comment.id)} className="h-10 rounded-lg bg-indigo-600 text-[13px] font-semibold text-white hover:bg-indigo-700">下一个</button>
-            </div>
-          ) : (
-            <div className="rounded-xl bg-emerald-50 p-3 text-center">
-              <div className="text-[13px] font-semibold text-emerald-700">{reviewMode === 'today' ? '已浏览完今日新增评论' : '已浏览完所有讨论串'}</div>
-              <button type="button" disabled={reviewIndex === 0} onClick={() => setReviewItemId(reviewItems[reviewIndex - 1].comment.id)} className="mt-2 h-9 w-full rounded-lg border border-emerald-200 bg-white text-[12px] font-medium text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-40">上一个</button>
-            </div>
-          )}
+          {reviewIndex === reviewItems.length - 1 && <div className="mb-2 rounded-lg bg-emerald-50 px-3 py-2 text-center text-[12px] font-semibold text-emerald-700">{reviewMode === 'today' ? '已浏览完今日新增评论' : '已浏览完所有讨论串'}</div>}
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" disabled={reviewIndex === 0} onClick={() => setReviewItemId(reviewItems[reviewIndex - 1].comment.id)} className="h-10 rounded-lg border border-slate-200 bg-white text-[13px] font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40">上一条</button>
+            <button type="button" disabled={reviewIndex === reviewItems.length - 1} onClick={() => setReviewItemId(reviewItems[reviewIndex + 1].comment.id)} className="h-10 rounded-lg bg-indigo-600 text-[13px] font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300">下一条</button>
+          </div>
         </footer>}
       </aside>
     </>

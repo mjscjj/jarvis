@@ -655,11 +655,17 @@ function AuthenticatedApp() {
   const { name } = useAgentIdentity()
   return (
     <AuthGate agentName={name}>
-      <OnboardingGate>
-        <PageContextProvider initialKey={DEFAULT_KEY}>
-          <AppShell />
-        </PageContextProvider>
-      </OnboardingGate>
+      <PageContextProvider initialKey={DEFAULT_KEY}>
+        <WorkspaceEntry />
+      </PageContextProvider>
     </AuthGate>
   )
+}
+
+function WorkspaceEntry() {
+  const { context } = usePageContext()
+  // Modules own visitor setup. Personal installation and world modeling only
+  // run on the principal's workbench, including when navigating within the SPA.
+  if (appModuleRegistry.some(module => module.key === context.active_key)) return <AppShell />
+  return <OnboardingGate><AppShell /></OnboardingGate>
 }

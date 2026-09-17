@@ -2,6 +2,7 @@ import { Modal } from 'antd'
 import { useEffect, useState } from 'react'
 import { ManagementView } from './components/ManagementView'
 import { QuarterSelect } from './components/QuarterSelect'
+import { ProductFeedbackTrigger } from './components/ProductFeedbackCenter'
 import { useBoard } from './board'
 
 export default function CoreApp() {
@@ -26,6 +27,7 @@ export default function CoreApp() {
           <div className="ml-auto flex items-center gap-2">
             <QuarterSelect />
             <button type="button" onClick={reset} className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-[10px] text-slate-500 hover:bg-slate-50">重新载入</button>
+            <ProductFeedbackTrigger />
           </div>
         </div>
       </header>

@@ -1,4 +1,4 @@
-import type { CommentTarget, Kr, Objective, PageComment, Point } from './types'
+import type { AuthUser, CommentTarget, Kr, Objective, PageComment, Point } from './types'
 import { KINDS } from './rows.ts'
 
 export interface CommentOKRContext {
@@ -15,6 +15,24 @@ export function commentTargetKey(target: Pick<CommentTarget, 'type' | 'id'> | Pi
 
 export function commentMessageCount(comments: PageComment[]) {
   return comments.reduce((sum, comment) => sum + 1 + comment.replies.length, 0)
+}
+
+function commentMentionsUser(comment: PageComment, user: AuthUser) {
+  const email = user.email?.trim().toLocaleLowerCase()
+  return comment.mentions.some((mention) => (
+    Boolean(user.unionId && mention.unionId === user.unionId) ||
+    Boolean(email && mention.email.trim().toLocaleLowerCase() === email)
+  ))
+}
+
+/**
+ * “与我相关”按整条讨论串筛选：本人发言或被明确 @ 的任一消息命中，
+ * 整个串都保留，这样别人随后回复本人参与过的讨论时不会丢掉上下文。
+ */
+export function commentThreadRelatedToUser(comment: PageComment, user: AuthUser) {
+  return [comment, ...comment.replies].some((message) => (
+    message.authorOpenId === user.openId || commentMentionsUser(message, user)
+  ))
 }
 
 export interface CommentTargetGroup {
@@ -52,6 +70,32 @@ export type CommentDocumentOrder = ReadonlyMap<string, number>
 export interface CommentReviewItem {
   thread: PageComment
   comment: PageComment
+}
+
+// Entering review from one concrete comment must keep that exact message in
+// view even when the normal mode projection would omit it: ordinary review is
+// thread-based, while today's review excludes older messages. The anchor only
+// changes the projection; the persisted discussion and its ordering stay
+// untouched.
+export function anchorCommentReviewItems(
+  items: readonly CommentReviewItem[],
+  comments: readonly PageComment[],
+  commentId: string,
+  mode: 'all' | 'today',
+): CommentReviewItem[] {
+  if (!commentId) return [...items]
+  const thread = comments.find((candidate) => candidate.id === commentId || candidate.replies.some((reply) => reply.id === commentId))
+  if (!thread) return [...items]
+  const comment = thread.id === commentId ? thread : thread.replies.find((reply) => reply.id === commentId)
+  if (!comment) return [...items]
+  const anchored = { thread, comment }
+
+  if (mode === 'today') {
+    return items.some((item) => item.comment.id === commentId) ? [...items] : [anchored, ...items]
+  }
+  const threadIndex = items.findIndex((item) => item.thread.id === thread.id)
+  if (threadIndex < 0) return [anchored, ...items]
+  return items.map((item, index) => index === threadIndex ? anchored : item)
 }
 
 export interface CommentTargetLocation {

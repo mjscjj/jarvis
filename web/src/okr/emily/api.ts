@@ -1,7 +1,7 @@
 import { appPath } from '../../appPath.ts'
 import { normalizeKRTitle } from './krTitle'
 import { createPeopleSearchCache } from './peopleSearchCache'
-import type { AuthStatus, CommentDelivery, CommentMention, Entry, EnumValues, FeishuDeviceLogin, FeishuDeviceLoginPoll, FeishuDocumentResult, FollowUpItem, FollowUpList, FollowUpStatus, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, OKRActivityEntry, OKRPlan, OKRPlanList, PageComment, PageCommentList, PersonAvatarItem, PointKind, RegionalAlignmentBoard, RegionalCode, RegionalDemand, RegionalPlanDecisionItem, RegionalRecapOverlay, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
+import type { AuthStatus, CommentDelivery, CommentMention, Entry, EnumValues, FeishuDeviceLogin, FeishuDeviceLoginPoll, FeishuDocumentResult, FollowUpItem, FollowUpList, FollowUpStatus, ImageRef, Kr, KrOwner, KrPriority, KrTag, Light, MeegoBatchPreview, MeegoPreview, Objective, OKRActivityEntry, OKRPlan, OKRPlanList, PageComment, PageCommentList, PersonAvatarItem, PointKind, ProductFeedback, ProductFeedbackList, RegionalAlignmentBoard, RegionalCode, RegionalDemand, RegionalPlanDecisionItem, RegionalRecapOverlay, ReminderBatch, ReminderBatchList, ReminderPreview, Status, WeekTemplateKey, WeeklyScore } from './types'
 
 interface Envelope<T> {
   code: number
@@ -45,7 +45,7 @@ interface APIBoard {
   previous_week?: string
   available_quarters: string[]
   available_weeks: string[]
-  objectives: Array<{ id: string; title: string; version: number; krs: APIKr[] }>
+  objectives: Array<{ id: string; title: string; version: number; owners?: Array<{ email: string; name: string; union_id?: string }>; krs: APIKr[] }>
 }
 
 interface APIPlanObjective {
@@ -53,6 +53,7 @@ interface APIPlanObjective {
   title: string
   version?: number
 	structure_token?: string
+	owners?: Array<{ email: string; name: string; union_id?: string }>
   krs: Array<{
     id: string
     title: string
@@ -289,6 +290,36 @@ interface APIAuthStatus {
   }
 }
 
+interface APIProductFeedbackPerson {
+  name: string
+  email?: string
+  avatar_url?: string
+}
+
+interface APIProductFeedback {
+  id: string
+  version: number
+  title: string
+  content: string
+  images?: ImageRef[]
+  source_context?: Record<string, unknown>
+  author: APIProductFeedbackPerson
+  resolved: boolean
+  resolved_by?: APIProductFeedbackPerson
+  resolved_at?: string
+  created_at: string
+  updated_at: string
+  replies?: Array<{ id: string; content: string; author: APIProductFeedbackPerson; created_at: string }>
+  plus_ones?: APIProductFeedbackPerson[]
+  my_plus_one: boolean
+  can_resolve: boolean
+}
+
+interface APIProductFeedbackList {
+  total: number
+  items: APIProductFeedback[]
+}
+
 interface APIFeishuDeviceLogin {
   login_id: string
   verification_url: string
@@ -513,6 +544,7 @@ function fromAPIPlanObjectives(value: APIPlanObjective[]): Objective[] {
       title: objective.title,
       version: objective.version ?? 0,
 		structureToken: objective.structure_token ?? '',
+		owners: (objective.owners ?? []).map((owner): KrOwner => ({ email: owner.email, name: owner.name, unionId: owner.union_id })),
       krs: (objective.krs ?? []).map((kr) => ({
         id: kr.id,
         title: normalizeKRTitle(kr.title),
@@ -572,6 +604,7 @@ function toAPIPlanObjective(objective: Objective): APIPlanObjective {
     title: objective.title,
     version: objective.version ?? 0,
 		structure_token: objective.structureToken,
+		owners: (objective.owners ?? []).map((owner) => ({ email: owner.email, name: owner.name, union_id: owner.unionId })),
     krs: objective.krs.map(toAPIPlanKR),
   }
 }
@@ -688,7 +721,7 @@ export async function getBoard(quarter: string, week: string, surface: BoardSurf
     previousWeek: board.previous_week,
     availableQuarters: board.available_quarters,
     availableWeeks: board.available_weeks,
-    objectives: board.objectives.map((objective) => ({ id: objective.id, title: objective.title, version: objective.version, krs: objective.krs.map(fromAPIKr) })),
+    objectives: board.objectives.map((objective) => ({ id: objective.id, title: objective.title, version: objective.version, owners: (objective.owners ?? []).map((owner) => ({ email: owner.email, name: owner.name, unionId: owner.union_id })), krs: objective.krs.map(fromAPIKr) })),
   }
 }
 
@@ -703,7 +736,7 @@ export async function getGenericOKRBoard(quarter = '', signal?: AbortSignal): Pr
     previousWeek: board.previous_week,
     availableQuarters: board.available_quarters,
     availableWeeks: board.available_weeks,
-    objectives: board.objectives.map((objective) => ({ id: objective.id, title: objective.title, version: objective.version, krs: objective.krs.map(fromAPIKr) })),
+    objectives: board.objectives.map((objective) => ({ id: objective.id, title: objective.title, version: objective.version, owners: (objective.owners ?? []).map((owner) => ({ email: owner.email, name: owner.name, unionId: owner.union_id })), krs: objective.krs.map(fromAPIKr) })),
   }
 }
 
@@ -717,7 +750,7 @@ export async function getGenericOKRProgressBoard(quarter: string, week: string):
     previousWeek: board.previous_week,
     availableQuarters: board.available_quarters,
     availableWeeks: board.available_weeks,
-    objectives: board.objectives.map((objective) => ({ id: objective.id, title: objective.title, version: objective.version, krs: objective.krs.map(fromAPIKr) })),
+    objectives: board.objectives.map((objective) => ({ id: objective.id, title: objective.title, version: objective.version, owners: (objective.owners ?? []).map((owner) => ({ email: owner.email, name: owner.name, unionId: owner.union_id })), krs: objective.krs.map(fromAPIKr) })),
   }
 }
 
@@ -755,7 +788,7 @@ function fromAPIRegionalBoard(value: APIRegionalBoard): RegionalAlignmentBoard {
     alignment: { id: value.alignment.id, quarter: value.alignment.quarter, planId: value.alignment.plan_id, recapQuarter: value.alignment.recap_quarter, version: value.alignment.version },
     region: { regionCode: value.region.region_code, version: value.region.version, categoryOrder: value.region.category_order ?? [] },
     plan: fromAPIPlan(value.plan),
-    recap: { quarter: value.recap.quarter, objectives: value.recap.objectives.map((objective) => ({ id: objective.id, title: objective.title, version: objective.version, krs: objective.krs.map(fromAPIKr) })) },
+		recap: { quarter: value.recap.quarter, objectives: value.recap.objectives.map((objective) => ({ id: objective.id, title: objective.title, version: objective.version, owners: (objective.owners ?? []).map((owner) => ({ email: owner.email, name: owner.name, unionId: owner.union_id })), krs: objective.krs.map(fromAPIKr) })) },
     demands: (value.demands ?? []).map(fromAPIRegionalDemand),
     decisions: (value.decisions ?? []).map(fromAPIRegionalDecision),
     recapOverlays: (value.recap_overlays ?? []).map(fromAPIRegionalOverlay),
@@ -1209,6 +1242,66 @@ export async function createRegionalAlignmentComment(quarter: string, region: Re
   return fromAPIComment(value)
 }
 
+function fromAPIProductFeedbackPerson(value: APIProductFeedbackPerson) {
+  return { name: value.name, email: value.email, avatarUrl: value.avatar_url }
+}
+
+function fromAPIProductFeedback(value: APIProductFeedback): ProductFeedback {
+  return {
+    id: value.id,
+    version: value.version,
+    title: value.title,
+    content: value.content,
+    images: value.images ?? [],
+    sourceContext: value.source_context ?? {},
+    author: fromAPIProductFeedbackPerson(value.author),
+    resolved: value.resolved,
+    resolvedBy: value.resolved_by ? fromAPIProductFeedbackPerson(value.resolved_by) : undefined,
+    resolvedAt: value.resolved_at,
+    createdAt: value.created_at,
+    updatedAt: value.updated_at,
+    replies: (value.replies ?? []).map((reply) => ({ id: reply.id, content: reply.content, author: fromAPIProductFeedbackPerson(reply.author), createdAt: reply.created_at })),
+    plusOnes: (value.plus_ones ?? []).map(fromAPIProductFeedbackPerson),
+    myPlusOne: value.my_plus_one,
+    canResolve: value.can_resolve,
+  }
+}
+
+export async function getProductFeedback(input: { resolved: boolean; sort: 'latest' | 'popular' }): Promise<ProductFeedbackList> {
+  const params = new URLSearchParams({ resolved: String(input.resolved), sort: input.sort })
+  const value = await request<APIProductFeedbackList>(`/api/biz-okr/feedback?${params}`)
+  return { total: value.total, items: value.items.map(fromAPIProductFeedback) }
+}
+
+export async function createProductFeedback(input: { title: string; content: string; images: ImageRef[]; sourceContext: Record<string, unknown> }): Promise<ProductFeedback> {
+  const value = await request<APIProductFeedback>('/api/biz-okr/feedback', {
+    method: 'POST',
+    body: JSON.stringify({ title: input.title, content: input.content, images: input.images, source_context: input.sourceContext }),
+  })
+  return fromAPIProductFeedback(value)
+}
+
+export async function replyProductFeedback(feedbackId: string, content: string): Promise<ProductFeedback> {
+  const value = await request<APIProductFeedback>(`/api/biz-okr/feedback/${encodeURIComponent(feedbackId)}/replies`, {
+    method: 'POST', body: JSON.stringify({ content }),
+  })
+  return fromAPIProductFeedback(value)
+}
+
+export async function setProductFeedbackPlusOne(feedbackId: string, enabled: boolean): Promise<ProductFeedback> {
+  const value = await request<APIProductFeedback>(`/api/biz-okr/feedback/${encodeURIComponent(feedbackId)}/plus-one`, {
+    method: enabled ? 'PUT' : 'DELETE',
+  })
+  return fromAPIProductFeedback(value)
+}
+
+export async function setProductFeedbackResolved(feedback: Pick<ProductFeedback, 'id' | 'version'>, resolved: boolean): Promise<ProductFeedback> {
+  const value = await request<APIProductFeedback>(`/api/biz-okr/feedback/${encodeURIComponent(feedback.id)}/status`, {
+    method: 'PATCH', body: JSON.stringify({ expected_version: feedback.version, resolved }),
+  })
+  return fromAPIProductFeedback(value)
+}
+
 export async function getAuthStatus(): Promise<AuthStatus> {
   const value = await request<APIAuthStatus>('/api/biz-okr/me')
   return {
@@ -1611,25 +1704,25 @@ export async function getPeopleAvatars(emails: string[], signal?: AbortSignal): 
   }
 }
 
-export async function createObjective(input: { quarter: string; title: string }): Promise<Objective> {
-  const value = await request<{ id: string; title: string; version: number; krs: APIKr[] }>('/api/okr/objectives', {
+export async function createObjective(input: { quarter: string; title: string; owners?: KrOwner[] }): Promise<Objective> {
+	const value = await request<{ id: string; title: string; version: number; owners?: Array<{ email: string; name: string; union_id?: string }>; krs: APIKr[] }>('/api/okr/objectives', {
     method: 'POST',
-    body: JSON.stringify(input),
+		body: JSON.stringify({ ...input, owners: (input.owners ?? []).map((owner) => ({ email: owner.email, name: owner.name, union_id: owner.unionId })) }),
   })
-  return { id: value.id, title: value.title, version: value.version, krs: value.krs.map(fromAPIKr) }
+	return { id: value.id, title: value.title, version: value.version, owners: (value.owners ?? []).map((owner) => ({ email: owner.email, name: owner.name, unionId: owner.union_id })), krs: value.krs.map(fromAPIKr) }
 }
 
-export async function updateObjective(objective: Pick<Objective, 'id' | 'version'>, title: string): Promise<Objective> {
+export async function updateObjective(objective: Pick<Objective, 'id' | 'version'>, title: string, owners?: KrOwner[]): Promise<Objective> {
   try {
-    const value = await request<{ id: string; title: string; version: number; krs: APIKr[] }>(`/api/okr/objectives/${encodeURIComponent(objective.id)}`, {
+		const value = await request<{ id: string; title: string; version: number; owners?: Array<{ email: string; name: string; union_id?: string }>; krs: APIKr[] }>(`/api/okr/objectives/${encodeURIComponent(objective.id)}`, {
       method: 'PUT',
-      body: JSON.stringify({ expected_version: objective.version ?? 0, title }),
+			body: JSON.stringify({ expected_version: objective.version ?? 0, title, ...(owners ? { owners: owners.map((owner) => ({ email: owner.email, name: owner.name, union_id: owner.unionId })) } : {}) }),
     })
-    return { id: value.id, title: value.title, version: value.version, krs: value.krs.map(fromAPIKr) }
+		return { id: value.id, title: value.title, version: value.version, owners: (value.owners ?? []).map((owner) => ({ email: owner.email, name: owner.name, unionId: owner.union_id })), krs: value.krs.map(fromAPIKr) }
   } catch (error) {
     if (error instanceof APIError && error.status === 409 && error.data) {
-      const current = error.data as { id: string; title: string; version: number; krs: APIKr[] }
-      throw new APIError(error.message, error.status, error.code, { id: current.id, title: current.title, version: current.version, krs: current.krs.map(fromAPIKr) }, error.logid)
+			const current = error.data as { id: string; title: string; version: number; owners?: Array<{ email: string; name: string; union_id?: string }>; krs: APIKr[] }
+			throw new APIError(error.message, error.status, error.code, { id: current.id, title: current.title, version: current.version, owners: (current.owners ?? []).map((owner) => ({ email: owner.email, name: owner.name, unionId: owner.union_id })), krs: current.krs.map(fromAPIKr) }, error.logid)
     }
     throw error
   }
@@ -1698,6 +1791,6 @@ const cachedOKRPeopleSearch = createPeopleSearchCache<OKRDirectoryCandidate>(asy
 export async function searchOKRPeople(query: string, signal?: AbortSignal): Promise<{ candidates: OKRDirectoryCandidate[]; has_more: boolean }> {
  return cachedOKRPeopleSearch(query, signal)
 }
-export async function retryCommentNotifications(id: string, email: string): Promise<CommentDelivery[]> {
- return request<CommentDelivery[]>(`/api/biz-okr/comments/${encodeURIComponent(id)}/notifications/retry`, { method:'POST', body:JSON.stringify({email}) })
+export async function retryCommentNotifications(id: string, email: string, resendUnknown = false): Promise<CommentDelivery[]> {
+	return request<CommentDelivery[]>(`/api/biz-okr/comments/${encodeURIComponent(id)}/notifications/retry`, { method:'POST', body:JSON.stringify({email, resend_unknown: resendUnknown}) })
 }

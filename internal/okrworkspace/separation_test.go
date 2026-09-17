@@ -843,7 +843,10 @@ func TestObjectiveCanBeRenamedAndOnlyDeletedWhenEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	objective, err := service.CreateObjective(t.Context(), CreateObjectiveInput{Quarter: "2026-Q3", Title: "旧方向"})
+	objective, err := service.CreateObjective(t.Context(), CreateObjectiveInput{
+		Quarter: "2026-Q3", Title: "旧方向",
+		Owners: []OwnerView{{Email: "owner@example.test", Name: "负责人"}},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -856,6 +859,16 @@ func TestObjectiveCanBeRenamedAndOnlyDeletedWhenEmpty(t *testing.T) {
 	}
 	if _, err := service.UpdateObjective(t.Context(), objective.ID, UpdateObjectiveInput{ExpectedVersion: objective.Version, Title: "旧页面覆盖"}); !errors.Is(err, ErrConflict) {
 		t.Fatalf("stale objective rename error = %v, want ErrConflict", err)
+	}
+	if err := service.DeleteObjective(t.Context(), objective.ID, DeleteObjectiveInput{ExpectedVersion: objective.Version}); !errors.Is(err, ErrConflict) {
+		t.Fatalf("stale objective delete error = %v, want ErrConflict", err)
+	}
+	owners, err := service.objectiveOwners(t.Context(), objective.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(owners) != 1 || owners[0].Email != "owner@example.test" {
+		t.Fatalf("stale objective delete changed owners: %+v", owners)
 	}
 	kr, err := service.CreateKR(t.Context(), objective.ID, CreateKRInput{Title: "仍有关联 KR"})
 	if err != nil {

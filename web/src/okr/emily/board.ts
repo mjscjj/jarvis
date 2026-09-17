@@ -29,8 +29,8 @@ export interface BoardApi {
 	setKrOwner: (krId: string, ownerName: string, ownerEmail?: string, owners?: KrOwner[]) => void
 	setKrBusinessCategory: (krId: string, category: string) => void
 	setKrPriority: (krId: string, priority: KrPriority | '') => void
-	createObjective: (input: { quarter: string; title: string }) => Promise<void>
-	updateObjective: (id: string, title: string) => Promise<void>
+	createObjective: (input: { quarter: string; title: string; owners?: KrOwner[] }) => Promise<void>
+	updateObjective: (id: string, title: string, owners?: KrOwner[]) => Promise<void>
 	deleteObjective: (id: string) => Promise<void>
 	// 交换相邻两行的位置；targetId 是调用方看得见的那一行。
 	swapObjectives: (id: string, targetId: string) => Promise<void>

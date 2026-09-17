@@ -47,7 +47,9 @@ func TestInstallAuthorizationRequestsAndChecksSameCapabilities(t *testing.T) {
 		}
 		seen[scope] = true
 		if strings.HasPrefix(scope, "okr:") || strings.HasPrefix(scope, "mail:") || strings.HasPrefix(scope, "approval:") ||
-			strings.HasPrefix(scope, "contact:user.department") || scope == "contact:user.employee:readonly" {
+			strings.HasPrefix(scope, "task:") || strings.HasPrefix(scope, "contact:user.department") ||
+			scope == "contact:user.employee:readonly" || scope == "contact:user:search" ||
+			scope == "im:message.group_msg:get_as_user" || scope == "im:message.p2p_msg:get_as_user" {
 			t.Fatalf("unneeded or unsupported permission requested: %s", scope)
 		}
 	}
@@ -55,7 +57,7 @@ func TestInstallAuthorizationRequestsAndChecksSameCapabilities(t *testing.T) {
 		"im:message:readonly", "search:message", "search:docs:read", "docs:document.content:read",
 		"calendar:calendar.event:read", "vc:meeting.search:read", "vc:record:readonly", "vc:note:read",
 		"minutes:minutes.basic:read", "minutes:minutes.artifacts:read", "minutes:minutes.search:read",
-		"task:task:read", "sheets:spreadsheet:read", "base:record:read", "wiki:node:read",
+		"sheets:spreadsheet:read", "base:record:read", "wiki:node:read",
 	} {
 		if !seen[scope] {
 			t.Errorf("built-in capability missing: %s", scope)

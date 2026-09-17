@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { buildCommentDocumentOrder, buildCommentOKRContextIndex, commentCountsByTarget, commentMatchesTarget, commentOKRContext, commentTargetFromThread, commentTargetKey, findCommentTargetLocation, groupCommentsByTarget, sortCommentsByDocumentOrder, todayCommentReviewItems } from '../src/okr/emily/comments.ts'
+import { anchorCommentReviewItems, buildCommentDocumentOrder, buildCommentOKRContextIndex, commentCountsByTarget, commentMatchesTarget, commentOKRContext, commentTargetFromThread, commentTargetKey, commentThreadRelatedToUser, findCommentTargetLocation, groupCommentsByTarget, sortCommentsByDocumentOrder, todayCommentReviewItems } from '../src/okr/emily/comments.ts'
 import { insertCommentMention, mentionQueryAtCaret, mentionsPresentInContent } from '../src/okr/emily/mentions.ts'
 import type { Objective, PageComment } from '../src/okr/emily/types.ts'
 
@@ -97,6 +97,21 @@ test('follow-up comments do not match another item', () => {
   assert.equal(commentMatchesTarget(followUpComment, {
     type: 'follow_up', id: 'followup-2', title: '另一条事项',
   }), false)
+})
+
+test('related comments include authored, mentioned and participated threads', () => {
+  const user = { openId: 'ou_me', unionId: 'on_me', email: 'ME@example.com', name: '我' }
+  const authored = { ...comment('kr', 'authored'), authorOpenId: 'ou_me' }
+  const mentioned = { ...comment('kr', 'mentioned'), mentions: [{ unionId: 'on_me', email: 'other@example.com', name: '我' }] }
+  const mentionedByEmail = { ...comment('kr', 'mentioned-email'), mentions: [{ email: 'me@EXAMPLE.com', name: '我' }] }
+  const replied = { ...comment('kr', 'replied'), replies: [{ ...comment('kr', 'replied'), id: 'reply-me', parentId: 'comment-replied', authorOpenId: 'ou_me' }] }
+  const unrelated = comment('kr', 'unrelated')
+
+  assert.equal(commentThreadRelatedToUser(authored, user), true)
+  assert.equal(commentThreadRelatedToUser(mentioned, user), true)
+  assert.equal(commentThreadRelatedToUser(mentionedByEmail, user), true)
+  assert.equal(commentThreadRelatedToUser(replied, user), true)
+  assert.equal(commentThreadRelatedToUser(unrelated, user), false)
 })
 
 test('comment targets project to their current O and KR without another data source', () => {
@@ -262,6 +277,34 @@ test('today review uses local calendar boundaries and ignores invalid timestamps
   )
 
   assert.deepEqual(items.map((item) => item.comment.id), ['start', 'end'])
+})
+
+test('review keeps the clicked comment as its anchor in both modes', () => {
+  const reply = placedComment('clicked-reply', 'kr', 'kr-1', '2026-09-15T08:00:00')
+  const thread = { ...placedComment('thread', 'kr', 'kr-1', '2026-09-14T08:00:00'), replies: [reply] }
+  const other = placedComment('other', 'objective', 'o-1', '2026-09-16T08:00:00')
+
+  const ordinary = anchorCommentReviewItems(
+    [{ thread: other, comment: other }, { thread, comment: thread }],
+    [thread, other],
+    reply.id,
+    'all',
+  )
+  assert.deepEqual(ordinary.map((item) => [item.thread.id, item.comment.id]), [
+    ['other', 'other'],
+    ['thread', 'clicked-reply'],
+  ])
+
+  const today = anchorCommentReviewItems(
+    [{ thread: other, comment: other }],
+    [thread, other],
+    reply.id,
+    'today',
+  )
+  assert.deepEqual(today.map((item) => [item.thread.id, item.comment.id]), [
+    ['thread', 'clicked-reply'],
+    ['other', 'other'],
+  ])
 })
 
 test('mention query follows the active at token at the caret', () => {

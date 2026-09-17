@@ -4,7 +4,7 @@ import { useBoard } from './board'
 import { MeetingView } from './components/MeetingView'
 import { KrTable } from './components/Table'
 import { CommentDrawer, type CommentReviewMode } from './components/CommentDrawer'
-import { HelpFab } from './components/HelpFab'
+import { UsageGuideButton, type UsageGuideScene } from './components/UsageGuide'
 import { WeeklyFocus } from './components/WeeklyFocus'
 import { WeeklyTools } from './components/WeeklyTools'
 import { QuarterSelect } from './components/QuarterSelect'
@@ -20,6 +20,7 @@ import { WeeklyShareNav } from './components/WeeklyShareNav'
 import { templateKeyForDataset } from './weekCatalog'
 import { ActivityLogButton } from './components/ActivityLogButton'
 import { SaveToast } from './components/SaveToast'
+import { ProductFeedbackTrigger } from './components/ProductFeedbackCenter'
 
 function weekLabel(week: string): string {
   const matched = /^(\d{4})-W(\d{2})$/.exec(week)
@@ -93,6 +94,7 @@ export default function App({
 	const lifecycleName = weeklyDatasetLabel(dataset)
 	const pageTitle = reviewDataset ? 'Emily · OKR Review' : 'Emily · OKR 周报协作台'
 	const shareLabel = `${lifecycleName}${weeklyViewLabel(view)}`
+	const guideScene: UsageGuideScene = view === 'meeting' ? 'meetings' : reviewDataset ? 'review-fill' : 'weekly-fill'
 
   const submitWeek = async () => {
     const target = newWeek.trim()
@@ -234,7 +236,7 @@ export default function App({
 			    it onto one line instead breaks the button labels mid-word. */}
 			<div className={`mx-auto flex min-h-14 max-w-[1320px] flex-wrap items-center gap-2.5 px-4 py-2 transition-[padding] sm:px-6 ${commentsOpen ? 'lg:pr-[420px]' : ''}`}>
           <div className="mr-1 flex min-w-fit items-center gap-2">
-					<span className="flex size-7 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-violet-600 text-[11px] font-bold text-white shadow-sm">E</span>
+					<span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-violet-600 text-[11px] font-bold text-white shadow-sm">E</span>
 						<h1 className="text-[14px] font-semibold tracking-tight text-slate-900">{pageTitle}</h1>
           </div>
 
@@ -273,6 +275,8 @@ export default function App({
                 <span>评论</span>
                 {commentCount > 0 && <span className="min-w-4 rounded-full bg-indigo-600 px-1 text-center text-[9px] leading-4 text-white">{commentCount}</span>}
               </button>
+              <UsageGuideButton initialScene={guideScene} className="h-9 text-[11px]" />
+              <ProductFeedbackTrigger className="h-9 text-[11px]" />
           </div>
         </div>
       </header>
@@ -330,7 +334,6 @@ export default function App({
 			</> : <section className="rounded-2xl border border-dashed border-slate-300 bg-white px-6 py-12 text-center"><div className="text-sm font-semibold text-slate-700">当前季度暂无{lifecycleName}</div><div className="mt-1 text-xs text-slate-400">{managesWeeks ? `点击顶部“新建${lifecycleName}”创建一个空周。` : `请先在“${lifecycleName}填写”中新建一个空周。`}</div></section>}
 		</main>
 			{week && <CommentDrawer open={commentsOpen} reviewEnabled reviewMode={commentReviewMode} quarter={quarter} week={week} sourceTab={okrTabForWeeklyWorkspace(workspace)} objectives={objectives} followUpOrder={followUpCommentOrder} target={commentTarget} focusCommentId={initialCommentId} todoEnabled={meetingLike} onStartReview={(mode) => { setCommentTarget(undefined); setCommentReviewMode(mode) }} onShowAll={() => { setCommentReviewMode(undefined); setFocusedComment(undefined); setCommentTarget(undefined) }} onClose={() => { setCommentsOpen(false); setCommentReviewMode(undefined); setFocusedComment(undefined) }} onFocusCommentChange={setFocusedComment} onCountChange={setCommentCount} onCountsChange={setCommentCounts} onCommentsChange={setComments} />}
-			<HelpFab />
     </div>
   )
 }

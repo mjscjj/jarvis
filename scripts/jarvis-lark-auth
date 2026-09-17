@@ -8,14 +8,10 @@ scopes=(
   # Identity, messages, groups and Bot interaction.
   auth:user.id:read
   contact:user.basic_profile:readonly
-  contact:user:search
   im:chat:read
   im:chat.members:read
   im:message:readonly
-  im:message.group_msg:get_as_user
-  im:message.p2p_msg:get_as_user
   search:message
-  im:resource
   im:message
   im:message.reactions:read
   im:message.reactions:write_only
@@ -59,14 +55,9 @@ scopes=(
   vc:meeting.search:read
   vc:record:readonly
   vc:note:read
-  minutes:minutes:readonly
   minutes:minutes.basic:read
   minutes:minutes.artifacts:read
   minutes:minutes.search:read
-  task:task:read
-  task:task:write
-  task:tasklist:read
-  task:tasklist:write
 )
 
 # Bot transport, attachments, reactions and document-comment replies.

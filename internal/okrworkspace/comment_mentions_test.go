@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"jarvis/internal/okrworkspace/domain"
 )
 
 type commentBroadcastSenderStub struct {
@@ -119,5 +121,26 @@ func TestBotCommentMentionNotificationBuildsPlanDeepLink(t *testing.T) {
 		if !strings.Contains(sender.card, expected) {
 			t.Fatalf("card %q does not contain %q", sender.card, expected)
 		}
+	}
+}
+
+func TestBotCommentOwnerNotificationUsesOwnerCopy(t *testing.T) {
+	sender := &commentBroadcastSenderStub{}
+	notifier, err := NewBotCommentMentionNotifier(sender, "https://emily.example.com/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := CommentMentionNotification{
+		Recipient: CommentMention{Email: "owner@example.test", Name: "负责人"},
+		Reason:    commentNotificationReasonOwner, OwnerLevel: "point", PointKind: domain.PointKindProduct,
+		CommentID: "comment-owner", AuthorName: "张若怡", Quarter: "2026-Q4", Week: "2026-W40",
+		ObjectiveTitle: "O 原文", KRTitle: "KR 原文", PointTitle: "产品具体 KR",
+		OriginalText: "产品原文", Content: "请确认", Tab: commentSourceTabReviewMeeting,
+	}
+	if _, err := notifier.NotifyCommentMention(t.Context(), input); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(sender.card, "张若怡 评论了你负责的产品具体 KR") || strings.Contains(sender.card, "张若怡 @ 了你") {
+		t.Fatalf("owner card = %s", sender.card)
 	}
 }

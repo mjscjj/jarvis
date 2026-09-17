@@ -12,7 +12,7 @@ import (
 )
 
 func TestEventChecksPreserveAllFailuresAndDistinguishMalformedOutput(t *testing.T) {
-	s := &Service{runner: commandFunc(func(_ context.Context, _ string, args []string, _ string) ([]byte, error) {
+	s := &Service{options: Options{Desktop: true}, runner: commandFunc(func(_ context.Context, _ string, args []string, _ string) ([]byte, error) {
 		if args[2] == "im.message.receive_v1" {
 			return []byte(`{"ok":true,"data":{"decision":{"status":"blocked","preconditions":[{"name":"console_event_published","status":"missing"}]}}}`), nil
 		}
@@ -35,7 +35,7 @@ func TestEventChecksParseStdoutWithoutHumanDiagnostics(t *testing.T) {
 	if err := os.WriteFile(binary, []byte("#!/bin/sh\necho 'using current application' >&2\necho '{\"ok\":true,\"data\":{\"decision\":{\"status\":\"ready\"}}}'\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	s := &Service{options: Options{LarkCLIBin: binary}, runner: execRunner{}}
+	s := &Service{options: Options{Desktop: true, LarkCLIBin: binary}, runner: execRunner{}}
 	if err := s.checkBotEvents(t.Context()); err != nil {
 		t.Fatal(err)
 	}

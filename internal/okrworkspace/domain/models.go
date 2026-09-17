@@ -360,6 +360,22 @@ type PointOwner struct {
 
 func (PointOwner) TableName() string { return "okr_workspace_point_owner" }
 
+// ObjectiveOwner is the persisted owner of one Objective. It completes the
+// same ownership chain used by PointOwner and KROwner so deterministic
+// comment routing can stop at the nearest populated level.
+type ObjectiveOwner struct {
+	ObjectiveID  string `gorm:"primaryKey;size:64"`
+	PersonID     uint64 `gorm:"primaryKey;index:idx_okr_workspace_objective_owner_person_id"`
+	OwnerKey     string `gorm:"not null;default:'';size:64;index:idx_okr_workspace_objective_owner_key"`
+	Email        string `gorm:"not null;default:'';index:idx_okr_workspace_objective_owner_email"`
+	Name         string `gorm:"not null"`
+	SortOrder    int    `gorm:"not null;default:0"`
+	UnionID      string `gorm:"not null;default:''"`
+	LegacyOpenID string `gorm:"column:open_id;not null;default:''" json:"-"`
+}
+
+func (ObjectiveOwner) TableName() string { return "okr_workspace_objective_owner" }
+
 // KROwner is the only persisted owner source. PersonID is a stable local key;
 // Email stays empty until a human or Agent resolves a real Feishu identity.
 type KROwner struct {
@@ -409,8 +425,9 @@ type PageComment struct {
 	Content         string           `gorm:"not null;type:text"`
 	Mentions        []CommentMention `gorm:"serializer:json;type:text"`
 	Images          []ImageRef       `gorm:"serializer:json;type:text"`
-	// Todo promotes a meeting comment into the weekly follow-up summary. It
-	// remains a comment attribute so there is only one source of truth.
+	// Todo is the action marker for a top-level discussion. Weekly meeting views
+	// may project it into their follow-up summary, but the comment remains the
+	// only source of truth across weekly, Plan, and regional alignment scopes.
 	Todo      bool      `gorm:"not null;default:false"`
 	Resolved  bool      `gorm:"not null;default:false"`
 	CreatedAt time.Time `gorm:"not null;index"`
@@ -418,6 +435,61 @@ type PageComment struct {
 }
 
 func (PageComment) TableName() string { return "okr_workspace_comment" }
+
+// ProductFeedback is the Emily-wide product feedback thread. Unlike
+// PageComment it is not owned by an OKR quarter, week or Plan; SourceContext
+// only preserves the page on which the report was created.
+type ProductFeedback struct {
+	ID                  string         `gorm:"primaryKey;size:64"`
+	Version             int32          `gorm:"not null;default:1"`
+	Title               string         `gorm:"not null;size:200"`
+	Content             string         `gorm:"not null;type:text"`
+	Images              []ImageRef     `gorm:"serializer:json;type:text"`
+	SourceContext       datatypes.JSON `gorm:"not null;type:text"`
+	AuthorKey           string         `gorm:"not null;size:256;index"`
+	AuthorOpenID        string         `gorm:"not null;default:'';size:128"`
+	AuthorUnionID       string         `gorm:"not null;default:'';size:128"`
+	AuthorEmail         string         `gorm:"not null;default:'';size:256"`
+	AuthorName          string         `gorm:"not null;size:256"`
+	AuthorAvatarURL     string         `gorm:"not null;default:'';type:text"`
+	Resolved            bool           `gorm:"not null;default:false;index"`
+	ResolvedByKey       string         `gorm:"not null;default:'';size:256"`
+	ResolvedByName      string         `gorm:"not null;default:'';size:256"`
+	ResolvedByAvatarURL string         `gorm:"not null;default:'';type:text"`
+	ResolvedAt          *time.Time     `gorm:"index"`
+	CreatedAt           time.Time      `gorm:"not null;index"`
+	UpdatedAt           time.Time      `gorm:"not null"`
+}
+
+func (ProductFeedback) TableName() string { return "okr_product_feedback" }
+
+type ProductFeedbackReply struct {
+	ID              string    `gorm:"primaryKey;size:64"`
+	FeedbackID      string    `gorm:"not null;size:64;index"`
+	Content         string    `gorm:"not null;type:text"`
+	AuthorKey       string    `gorm:"not null;size:256;index"`
+	AuthorOpenID    string    `gorm:"not null;default:'';size:128"`
+	AuthorUnionID   string    `gorm:"not null;default:'';size:128"`
+	AuthorEmail     string    `gorm:"not null;default:'';size:256"`
+	AuthorName      string    `gorm:"not null;size:256"`
+	AuthorAvatarURL string    `gorm:"not null;default:'';type:text"`
+	CreatedAt       time.Time `gorm:"not null;index"`
+}
+
+func (ProductFeedbackReply) TableName() string { return "okr_product_feedback_reply" }
+
+type ProductFeedbackPlusOne struct {
+	FeedbackID     string    `gorm:"primaryKey;size:64"`
+	ActorKey       string    `gorm:"primaryKey;size:256"`
+	ActorOpenID    string    `gorm:"not null;default:'';size:128"`
+	ActorUnionID   string    `gorm:"not null;default:'';size:128"`
+	ActorEmail     string    `gorm:"not null;default:'';size:256"`
+	ActorName      string    `gorm:"not null;size:256"`
+	ActorAvatarURL string    `gorm:"not null;default:'';type:text"`
+	CreatedAt      time.Time `gorm:"not null;index"`
+}
+
+func (ProductFeedbackPlusOne) TableName() string { return "okr_product_feedback_plus_one" }
 
 // RegionalAlignment is the quarterly collaboration document. It points at one
 // Biz OKR Plan and one recap quarter; both OKR trees remain owned by their
@@ -565,7 +637,7 @@ func Models() []any {
 // CoreModels are owned by the reusable OKR module. Existing table names stay
 // unchanged: splitting module ownership must not copy or rewrite user data.
 func CoreModels() []any {
-	return []any{&Objective{}, &KR{}, &KRMetric{}, &KRPoint{}, &KROwner{}, &PointOwner{}, &WeeklyReportWeek{}, &WeeklyKRCore{}, &KRProgress{}}
+	return []any{&Objective{}, &KR{}, &KRMetric{}, &KRPoint{}, &ObjectiveOwner{}, &KROwner{}, &PointOwner{}, &WeeklyReportWeek{}, &WeeklyKRCore{}, &KRProgress{}}
 }
 
 // IdentityModels are machine-local browser sessions. Pending device grants stay
@@ -579,5 +651,5 @@ func IdentityModels() []any {
 // domain. Existing table names are intentionally preserved so enabling the
 // split never rewrites or loses historical data.
 func BizModels() []any {
-	return []any{&OKRPlan{}, &KRTag{}, &PointTag{}, &FollowUpItem{}, &WeeklyScore{}, &PageComment{}, &CommentDelivery{}, &RegionalAlignment{}, &RegionalAlignmentRegion{}, &RegionalDemand{}, &RegionalPlanDecision{}, &RegionalRecapOverlay{}, &OKRTranslation{}, &MeegoSyncSnapshot{}, &ReminderBatch{}}
+	return []any{&OKRPlan{}, &KRTag{}, &PointTag{}, &FollowUpItem{}, &WeeklyScore{}, &PageComment{}, &CommentDelivery{}, &ProductFeedback{}, &ProductFeedbackReply{}, &ProductFeedbackPlusOne{}, &RegionalAlignment{}, &RegionalAlignmentRegion{}, &RegionalDemand{}, &RegionalPlanDecision{}, &RegionalRecapOverlay{}, &OKRTranslation{}, &MeegoSyncSnapshot{}, &ReminderBatch{}}
 }
