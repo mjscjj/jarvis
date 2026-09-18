@@ -35,6 +35,7 @@ const (
 	OKRAgentPrinciplesKey           = "okr_agent_principles"
 	OKRAgentQuarterlyDraftKey       = "okr_agent_quarterly_draft"
 	OKRAgentRegionAlignmentKey      = "okr_agent_region_alignment"
+	OKRAgentRegionalAutoMatchKey    = "okr_agent_regional_auto_match"
 	OKRAgentMeegoAlignmentKey       = "okr_agent_meego_alignment"
 	OKRAgentReportAKey              = "okr_agent_report_a"
 	OKRAgentReportBKey              = "okr_agent_report_b"
@@ -133,6 +134,11 @@ func definitions() []definition {
 		{
 			key: OKRAgentRegionAlignmentKey, name: "区域对齐与 OKR C", filename: "okr-agent-region-alignment.md",
 			description: "对齐平台 OKR A 与各区域 OKR B，给出证据化匹配和 P0/P1/P2 建议。",
+			kind:        "agent_prompt", stage: "okr_agent",
+		},
+		{
+			key: OKRAgentRegionalAutoMatchKey, name: "区域需求自动匹配", filename: "okr-agent-regional-auto-match.md",
+			description: "基于一次冻结的 Part 0 快照，重算区域需求与 Platform KR 的稳定关系。",
 			kind:        "agent_prompt", stage: "okr_agent",
 		},
 		{

@@ -1293,6 +1293,8 @@ func main() {
 			DocumentAppID:  okrModuleConfig.Identity.AppID, People: resolveService, Directory: okrDirectory,
 			Enabled:       func(ctx context.Context) (bool, error) { return appModuleService.Enabled(ctx, "biz-okr") },
 			PreviewReview: previewReviewService,
+			TaskSubmitter: taskSubmitter,
+			Executor:      agentExecutor,
 		}
 	}
 	if err := api.Register(h, api.Dependencies{

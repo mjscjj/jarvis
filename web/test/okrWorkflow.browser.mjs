@@ -45,6 +45,11 @@ await context.route('**/api/**', async route => {
     if (avatarRequests === 1) return route.fulfill({ status: 502, json: { code: 50272, message: 'transient avatar failure' } })
     return ok({ people: url.searchParams.get('emails').split(',').filter(Boolean).map(email => ({ email, name: 'Regression Owner', avatar_url: 'https://example.test/avatar.png' })), failed_emails: [] })
   }
+  if (/^\/api\/biz-okr\/regional-alignments\/[^/]+\/auto-match$/.test(path) && method === 'POST') {
+    const task = { id: nextID++, status: 'done', version: 1, execution_result: { summary: 'Isolated regional auto-match completed' }, summary: 'Isolated regional auto-match completed' }
+    tasks.set(task.id, task)
+    return route.fulfill({ status: 202, json: { code: 0, data: { task_id: task.id, status: 'executing', match_version: 'sha256:browser-snapshot' } } })
+  }
   if (/^\/api\/(okr|biz-okr)\//.test(path) || path === '/api/people/search') {
     const backendPath = path === '/api/biz-okr/people/search' ? '/api/people/search' : path
     const response = await fetch(backend + backendPath + url.search, { method, headers: { 'content-type': request.headers()['content-type'] || 'application/json' }, body: method === 'GET' ? undefined : request.postDataBuffer() })
@@ -305,10 +310,14 @@ try {
   page.once('dialog', dialog => dialog.accept())
   await write(`${demandPath}/${demand.id}`, () => page.getByRole('button', { name: '删除 / Delete', exact: true }).last().click())
   assert(!(await api('/api/biz-okr/regional-alignments/eu/board?quarter=2026-Q4')).demands.some(item => item.id === demand.id))
+  const autoMatchPath = '/api/biz-okr/regional-alignments/eu/auto-match'
+  await write(autoMatchPath, () => page.getByRole('button', { name: /自动匹配/ }).click(), 202)
+  await page.getByText(/自动匹配已完成.*Isolated regional auto-match completed/).waitFor()
+  assert(requests.some(item => item.method === 'GET' && /^\/api\/tasks\/\d+$/.test(item.path)))
   await page.getByRole('button', { name: '分享页面 / Share', exact: true }).click()
   await page.getByText('区域 OKR 对齐页链接已复制 / Link copied', { exact: true }).waitFor()
   assert((await page.evaluate(() => navigator.clipboard.readText())).includes('tab=regional-alignment'))
-  pass('Regional alignment region switch, demand create/edit/delete, scoped comment and share link')
+  pass('Regional alignment region switch, demand create/edit/delete, auto-match Task polling, scoped comment and share link')
 
   await go('/biz-okr?tab=review-fill&quarter=2026-Q3&week=2026-W36')
   await page.getByLabel('周次', { exact: true }).waitFor()

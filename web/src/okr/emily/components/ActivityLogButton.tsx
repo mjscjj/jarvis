@@ -23,7 +23,7 @@ export function ActivityLogButton({
   planId,
   disabled = false,
 }: {
-  surface: 'plan' | 'weekly'
+  surface: 'plan' | 'weekly' | 'regional_alignment'
   quarter?: string
   week?: string
   planId?: string

@@ -6,10 +6,12 @@ import (
 
 	"jarvis/internal/authn"
 	"jarvis/internal/background"
+	"jarvis/internal/execute"
 	"jarvis/internal/larkcli"
 	"jarvis/internal/okrreview"
 	"jarvis/internal/okrworkspace"
 	okrAuth "jarvis/internal/okrworkspace/auth"
+	"jarvis/internal/taskcreate"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
@@ -43,6 +45,8 @@ type BizOKRModuleDependencies struct {
 	Enabled        func(context.Context) (bool, error)
 	// PreviewReview runs the advisory OKR Plan and progress review agent.
 	PreviewReview *okrreview.Service
+	TaskSubmitter *taskcreate.Submitter
+	Executor      *execute.AgentExecutor
 }
 
 func RegisterOKRModuleRoutes(h *server.Hertz, deps OKRModuleDependencies) error {
@@ -161,6 +165,10 @@ func RegisterBizOKRModuleRoutes(h *server.Hertz, deps BizOKRModuleDependencies) 
 	h.POST("/api/biz-okr/preview-review", requireEnabled, RunPreviewReview(deps.PreviewReview))
 	h.GET("/api/biz-okr/regional-alignments/:region/board", requireEnabled, GetRegionalAlignmentBoard(deps.Workspace))
 	h.POST("/api/biz-okr/regional-alignments/:region/refresh", requireEnabled, requireIdentity, RefreshRegionalAlignmentBoard(deps.Workspace))
+	if deps.TaskSubmitter != nil && deps.Executor != nil {
+		h.POST("/api/biz-okr/regional-alignments/:region/auto-match", requireEnabled, requireIdentity, StartRegionalAutoMatch(deps.Workspace, deps.TaskSubmitter, deps.Executor, deps.Identity))
+	}
+	h.PUT("/api/biz-okr/regional-alignments/:region/matches", requireEnabled, ReplaceRegionalMatches(deps.Workspace, deps.Activity, deps.Identity.Enabled()))
 	h.GET("/api/biz-okr/regional-alignments/:region/refresh-status", requireEnabled, requireIdentity, GetRegionalAlignmentRefreshStatus(deps.Workspace))
 	h.POST("/api/biz-okr/regional-alignments/:region/demands", requireEnabled, requireIdentity, CreateRegionalDemand(deps.Workspace))
 	h.PUT("/api/biz-okr/regional-alignments/:region/demands/:demand_id", requireEnabled, requireIdentity, UpdateRegionalDemand(deps.Workspace))

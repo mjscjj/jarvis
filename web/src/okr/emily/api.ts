@@ -164,6 +164,7 @@ interface APIRegionalRecapOverlay {
 interface APIRegionalBoard {
   alignment: { id: string; quarter: string; plan_id: string; recap_quarter: string; version: number }
   region: { region_code: RegionalCode; version: number; category_order: string[] }
+  match_version: string
   plan: APIPlan
   recap: APIBoard
   demands: APIRegionalDemand[]
@@ -181,7 +182,7 @@ interface APIActivityEntry {
   at: string
   actor_id: string
   actor_name: string
-  surface: 'plan' | 'weekly'
+  surface: 'plan' | 'weekly' | 'regional_alignment'
   quarter?: string
   week?: string
   plan_id?: string
@@ -787,6 +788,7 @@ function fromAPIRegionalBoard(value: APIRegionalBoard): RegionalAlignmentBoard {
   return {
     alignment: { id: value.alignment.id, quarter: value.alignment.quarter, planId: value.alignment.plan_id, recapQuarter: value.alignment.recap_quarter, version: value.alignment.version },
     region: { regionCode: value.region.region_code, version: value.region.version, categoryOrder: value.region.category_order ?? [] },
+    matchVersion: value.match_version,
     plan: fromAPIPlan(value.plan),
 		recap: { quarter: value.recap.quarter, objectives: value.recap.objectives.map((objective) => ({ id: objective.id, title: objective.title, version: objective.version, owners: (objective.owners ?? []).map((owner) => ({ email: owner.email, name: owner.name, unionId: owner.union_id })), krs: objective.krs.map(fromAPIKr) })) },
     demands: (value.demands ?? []).map(fromAPIRegionalDemand),
@@ -798,6 +800,11 @@ function fromAPIRegionalBoard(value: APIRegionalBoard): RegionalAlignmentBoard {
 
 export async function getRegionalAlignmentBoard(quarter: string, region: RegionalCode): Promise<RegionalAlignmentBoard> {
   return fromAPIRegionalBoard(await request<APIRegionalBoard>(`/api/biz-okr/regional-alignments/${encodeURIComponent(region)}/board?quarter=${encodeURIComponent(quarter)}`))
+}
+
+export async function startRegionalAutoMatch(quarter: string, region: RegionalCode): Promise<{ taskId: number; status: string; matchVersion: string }> {
+  const value = await request<{ task_id: number; status: string; match_version: string }>(`/api/biz-okr/regional-alignments/${encodeURIComponent(region)}/auto-match?quarter=${encodeURIComponent(quarter)}`, { method: 'POST' })
+  return { taskId: value.task_id, status: value.status, matchVersion: value.match_version }
 }
 
 export async function refreshRegionalAlignmentBoard(quarter: string, region: RegionalCode): Promise<RegionalAlignmentBoard> {
@@ -975,7 +982,7 @@ export async function deleteOKRPlan(id: string, deleteToken: string): Promise<vo
 }
 
 export async function getOKRActivities(input: {
-  surface: 'plan' | 'weekly'
+  surface: 'plan' | 'weekly' | 'regional_alignment'
   quarter?: string
   week?: string
   planId?: string

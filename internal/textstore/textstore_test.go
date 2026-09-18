@@ -155,6 +155,7 @@ func TestOKRAgentDefinitionsAreEditableMarkdown(t *testing.T) {
 		OKRAgentPrinciplesKey,
 		OKRAgentQuarterlyDraftKey,
 		OKRAgentRegionAlignmentKey,
+		OKRAgentRegionalAutoMatchKey,
 		OKRAgentMeegoAlignmentKey,
 		OKRAgentReportAKey,
 		OKRAgentReportBKey,

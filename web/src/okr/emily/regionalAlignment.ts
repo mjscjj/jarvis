@@ -1,5 +1,6 @@
 import { priorityOf } from './hierarchy.ts'
-import type { Kr, KrPriority, RegionalCode, RegionalPlanDecisionItem } from './types.ts'
+import type { CommentDocumentOrder } from './comments.ts'
+import type { Kr, KrPriority, RegionalAlignmentBoard, RegionalCode, RegionalPlanDecisionItem } from './types.ts'
 
 export type RegionalPriorityFilter = 'all' | KrPriority
 
@@ -44,4 +45,46 @@ export function regionalDecisionSignature(value: RegionalPlanDecisionItem): stri
     regionalOkr: value.regionalOkr,
     hidden: value.hidden,
   })
+}
+
+/** The regional comment drawer follows the complete page, not active filters. */
+export function buildRegionalCommentDocumentOrder(board: RegionalAlignmentBoard): CommentDocumentOrder {
+  const order = new Map<string, number>()
+  let position = 1
+  const add = (type: string, id: string) => {
+    const key = `${type}:${id}`
+    if (!order.has(key)) order.set(key, position++)
+  }
+  const addOKR = (objectives: RegionalAlignmentBoard['plan']['objectives']) => {
+    for (const objective of objectives) {
+      add('objective', objective.id)
+      for (const kr of objective.krs) {
+        add('kr', kr.id)
+        add('alignment_item', `kr:${kr.id}:owners`)
+        for (const point of kr.points) {
+          add('point', point.id)
+          add('alignment_item', `point:${point.id}:owners`)
+          for (const entry of [...point.entries, ...(point.previousEntries ?? [])]) add('entry', entry.id)
+        }
+      }
+    }
+  }
+
+  add('alignment_item', 'section:part0')
+  add('alignment_item', 'section:demands')
+  add('alignment_item', 'section:demands:guide')
+  for (const demand of [...board.demands].sort((left, right) => left.sortOrder - right.sortOrder)) {
+    add('alignment_item', `demand:${demand.id}`)
+    for (const field of ['regional_okr', 'requirement', 'assets', 'priority', 'regional_poc', 'acceptance', 'platform_poc', 'plan_kr', 'deliverable']) add('alignment_item', `d:${demand.id}:${field}`)
+  }
+  add('alignment_item', 'section:platform')
+  addOKR(board.plan.objectives)
+  for (const objective of board.plan.objectives) for (const kr of objective.krs) {
+    add('alignment_item', `plan:${kr.id}`)
+    for (const field of ['onboard', 'launch_regions', 'regional_poc', 'regional_okr']) add('alignment_item', `pd:${kr.id}:${field}`)
+  }
+  add('alignment_item', 'section:part1')
+  add('alignment_item', 'section:part2')
+  addOKR(board.recap.objectives)
+  return order
 }

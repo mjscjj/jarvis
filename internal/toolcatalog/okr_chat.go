@@ -31,6 +31,7 @@ func OKRChatRoutes() []string {
 		"PATCH /api/biz-okr/plans/{id}/objectives/{objective}", "DELETE /api/biz-okr/plans/{id}/objectives/{objective}",
 		"PATCH /api/biz-okr/plans/{id}/krs/{kr}",
 		"PUT /api/biz-okr/plans/{id}/objectives/order", "PATCH /api/biz-okr/plans/{id}/points/{point}/definition",
+		"GET /api/biz-okr/regional-alignments/{region}/board", "PUT /api/biz-okr/regional-alignments/{region}/matches",
 		"GET /api/biz-okr/comments", "GET /api/biz-okr/meego-preview", "GET /api/biz-okr/points/{id}/meego-preview",
 		"GET /api/biz-okr/follow-ups", "POST /api/biz-okr/follow-ups",
 		"GET /api/biz-okr/follow-ups/{id}", "PUT /api/biz-okr/follow-ups/{id}", "DELETE /api/biz-okr/follow-ups/{id}",
@@ -64,7 +65,7 @@ func OKRChatAllowed(method, resource string) bool {
 		}
 	}
 	if method == http.MethodGet {
-		for _, key := range []string{"okr_agent_principles", "okr_agent_quarterly_draft", "okr_agent_region_alignment", "okr_agent_meego_alignment", "okr_agent_report_a", "okr_agent_report_b", "okr_agent_report_c", "okr_agent_weekly_reminder", "okr_agent_progress_sync", "okr_agent_plan_review", "okr_agent_progress_review"} {
+		for _, key := range []string{"okr_agent_principles", "okr_agent_quarterly_draft", "okr_agent_region_alignment", "okr_agent_regional_auto_match", "okr_agent_meego_alignment", "okr_agent_report_a", "okr_agent_report_b", "okr_agent_report_c", "okr_agent_weekly_reminder", "okr_agent_progress_sync", "okr_agent_plan_review", "okr_agent_progress_review"} {
 			if resource == "/api/text-files/"+key {
 				return true
 			}

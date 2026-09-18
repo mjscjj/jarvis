@@ -102,7 +102,7 @@ func TestOKRBrowserWorkflow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	addOKRIdentitySession(t, db, "Jarvis", okrPlanEditorUnionID, "")
+	addOKRIdentitySession(t, db, "Jarvis", "on_833914b05fbbe2eb6623865af52d984f", "")
 	images, err := okrworkspace.NewImageStore(t.TempDir(), 1024*1024)
 	if err != nil {
 		t.Fatal(err)

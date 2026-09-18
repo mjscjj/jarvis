@@ -283,7 +283,7 @@ export interface OKRActivityEntry {
   at: string
   actorId: string
   actorName: string
-  surface: 'plan' | 'weekly'
+  surface: 'plan' | 'weekly' | 'regional_alignment'
   quarter?: string
   week?: string
   planId?: string
@@ -380,6 +380,7 @@ export interface RegionalRecapOverlay {
 export interface RegionalAlignmentBoard {
   alignment: { id: string; quarter: string; planId: string; recapQuarter: string; version: number }
   region: { regionCode: RegionalCode; version: number; categoryOrder: string[] }
+  matchVersion: string
   plan: OKRPlan
   recap: { quarter: string; objectives: Objective[] }
   demands: RegionalDemand[]

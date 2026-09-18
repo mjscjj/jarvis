@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { anchorCommentReviewItems, buildCommentDocumentOrder, buildCommentOKRContextIndex, commentCountsByTarget, commentMatchesTarget, commentOKRContext, commentTargetFromThread, commentTargetKey, commentThreadRelatedToUser, findCommentTargetLocation, groupCommentsByTarget, sortCommentsByDocumentOrder, todayCommentReviewItems } from '../src/okr/emily/comments.ts'
+import { anchorCommentReviewItems, buildCommentDocumentOrder, buildCommentOKRContextIndex, commentCountsByTarget, commentMatchesTarget, commentOKRContext, commentTargetFromThread, commentTargetKey, commentThreadRelatedToUser, findCommentTargetLocation, groupCommentsByTarget, resolveCommentSelection, sortCommentsByDocumentOrder, todayCommentReviewItems } from '../src/okr/emily/comments.ts'
 import { insertCommentMention, mentionQueryAtCaret, mentionsPresentInContent } from '../src/okr/emily/mentions.ts'
 import type { Objective, PageComment } from '../src/okr/emily/types.ts'
 
@@ -97,6 +97,19 @@ test('follow-up comments do not match another item', () => {
   assert.equal(commentMatchesTarget(followUpComment, {
     type: 'follow_up', id: 'followup-2', title: '另一条事项',
   }), false)
+})
+
+test('saved selections re-anchor after nearby edits without guessing ambiguous text', () => {
+  const selection = {
+    selectedText: '区域需求',
+    selectionStart: 2,
+    selectionEnd: 6,
+    selectionPrefix: '确认',
+    selectionSuffix: '的交付时间',
+  }
+  assert.deepEqual(resolveCommentSelection('确认区域需求的交付时间', selection), { start: 2, end: 6, exact: true })
+  assert.deepEqual(resolveCommentSelection('请确认区域需求的交付时间', selection), { start: 3, end: 7, exact: false })
+  assert.equal(resolveCommentSelection('区域需求与区域需求', { ...selection, selectionPrefix: '', selectionSuffix: '' }), undefined)
 })
 
 test('related comments include authored, mentioned and participated threads', () => {

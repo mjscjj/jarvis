@@ -3,7 +3,7 @@ import type { ReactNode, RefObject } from 'react'
 import { createComment, createPlanComment, createRegionalAlignmentComment, deleteComment, getAuthStatus, getComments, getPlanComments, getRegionalAlignmentComments, updateComment } from '../api'
 import { scrollToCommentSource, scrollToCommentTarget } from '../commenting'
 import { anchorCommentReviewItems, buildCommentDocumentOrder, buildCommentOKRContextIndex, commentCountsByTarget, commentMatchesTarget, commentMessageCount, commentOKRContext, commentTargetKey, commentThreadRelatedToUser, groupCommentsByTarget, sortCommentsByDocumentOrder, todayCommentReviewItems } from '../comments'
-import type { CommentOKRContext } from '../comments'
+import type { CommentDocumentOrder, CommentOKRContext } from '../comments'
 import type { AuthUser, CommentMention, CommentTarget, ImageRef, Objective, PageComment, RegionalCode } from '../types'
 import { CommentContent, CommentMentionInput } from './CommentMentionInput'
 import type { CommentDraft } from './CommentMentionInput'
@@ -312,6 +312,7 @@ interface CommentDrawerProps {
   scopeLabel?: string
   objectives: Objective[]
   followUpOrder?: readonly string[]
+  targetOrder?: CommentDocumentOrder
   target?: CommentTarget
   focusCommentId?: string
   todoEnabled?: boolean
@@ -324,7 +325,7 @@ interface CommentDrawerProps {
   onCommentsChange: (comments: PageComment[]) => void
 }
 
-export function CommentDrawer({ open, reviewEnabled = false, reviewMode, quarter, week = '', planId, alignmentId, alignmentRegion, sourceTab, scopeLabel, objectives, followUpOrder = EMPTY_FOLLOW_UP_ORDER, target, focusCommentId, todoEnabled = false, onStartReview, onShowAll, onClose, onFocusCommentChange, onCountChange, onCountsChange, onCommentsChange }: CommentDrawerProps) {
+export function CommentDrawer({ open, reviewEnabled = false, reviewMode, quarter, week = '', planId, alignmentId, alignmentRegion, sourceTab, scopeLabel, objectives, followUpOrder = EMPTY_FOLLOW_UP_ORDER, targetOrder, target, focusCommentId, todoEnabled = false, onStartReview, onShowAll, onClose, onFocusCommentChange, onCountChange, onCountsChange, onCommentsChange }: CommentDrawerProps) {
   const [comments, setComments] = useState<PageComment[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -346,6 +347,7 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewMode, quarter
   const inFlightLoadVersion = useRef<number | null>(null)
   const mergeStaleLoadVersion = useRef<number | null>(null)
   const [submittedId, setSubmittedId] = useState('')
+  const rootEditorRef = useRef<HTMLTextAreaElement>(null)
   const scopeKey = `${alignmentRegion ?? ''}:${alignmentId ?? ''}:${planId ?? ''}:${quarter}:${week}`
   const scopeRef = useRef(scopeKey)
   scopeRef.current = scopeKey
@@ -482,6 +484,19 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewMode, quarter
   }, [submittedId, loading, open])
 
   useEffect(() => {
+    if (!open || reviewMode || loading || !focusCommentId) return
+    const thread = comments.find((comment) => comment.id === focusCommentId || comment.replies.some((reply) => reply.id === focusCommentId))
+    if (!thread) return
+    onFocusCommentChange(thread.id === focusCommentId ? thread : thread.replies.find((reply) => reply.id === focusCommentId))
+  }, [comments, focusCommentId, loading, onFocusCommentChange, open, reviewMode])
+
+  useEffect(() => {
+    if (!open || reviewMode || !target) return
+    const frame = window.requestAnimationFrame(() => rootEditorRef.current?.focus())
+    return () => window.cancelAnimationFrame(frame)
+  }, [open, reviewMode, target?.id, target?.selection?.end, target?.selection?.start, target?.type])
+
+  useEffect(() => {
     const pending = comments.some(c => [c, ...c.replies].some(x => x.notifications?.some(n => n.status === 'pending' || n.status === 'sending')))
     if (!open || loading || saving || !pending) return
     const version = loadVersion.current
@@ -498,7 +513,7 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewMode, quarter
     return () => window.clearTimeout(timer)
   }, [alignmentRegion, comments, loading, open, planId, quarter, saving, week])
 
-  const documentOrder = useMemo(() => buildCommentDocumentOrder(objectives, followUpOrder), [followUpOrder, objectives])
+  const documentOrder = useMemo(() => targetOrder ?? buildCommentDocumentOrder(objectives, followUpOrder), [followUpOrder, objectives, targetOrder])
   const scopedComments = useMemo(() => target ? comments.filter((comment) => commentMatchesTarget(comment, target)) : comments, [comments, target])
   const filteredComments = useMemo(() => relatedOnly && currentUser
     ? scopedComments.filter((comment) => commentThreadRelatedToUser(comment, currentUser))
@@ -728,7 +743,7 @@ export function CommentDrawer({ open, reviewEnabled = false, reviewMode, quarter
         {!reviewMode && <div className="shrink-0 border-b border-slate-100 bg-slate-50/60 p-3">
           {target && <div className="mb-2"><CommentSourceCard source={target} context={targetContext} onNavigate={navigateToTargetSource} /></div>}
           <div className="rounded-xl border border-slate-200 bg-white p-2.5 shadow-[0_1px_2px_rgba(15,23,42,0.03)]">
-            <CommentEditorFields value={draft} images={draftImages} objectives={objectives} onChange={setDraft} onImagesChange={setDraftImages} onUploadingChange={setDraftImageUploading} onSubmitShortcut={() => void addRoot()} placeholder={target ? '针对这段内容发表评论，输入 @ 选择提醒人…' : alignmentId ? '对当前区域对齐页发表评论，输入 @ 选择提醒人…' : planId ? '对当前 Plan 发表评论，输入 @ 选择提醒人…' : '对本周页面发表评论，输入 @ 选择提醒人…'} rows={3} />
+            <CommentEditorFields value={draft} images={draftImages} objectives={objectives} inputRef={rootEditorRef} onChange={setDraft} onImagesChange={setDraftImages} onUploadingChange={setDraftImageUploading} onSubmitShortcut={() => void addRoot()} placeholder={target ? '针对这段内容发表评论，输入 @ 选择提醒人…' : alignmentId ? '对当前区域对齐页发表评论，输入 @ 选择提醒人…' : planId ? '对当前 Plan 发表评论，输入 @ 选择提醒人…' : '对本周页面发表评论，输入 @ 选择提醒人…'} rows={3} />
             <div className="mt-1 flex items-center gap-2">
               <span className="text-[10px] text-slate-300">Enter 发布 · Shift+Enter 换行</span>
               <button type="button" onClick={() => void addRoot()} disabled={(!draft.content.trim() && draftImages.length === 0) || saving || draftImageUploading} className="ml-auto rounded-md bg-indigo-600 px-3 py-1.5 text-[11px] font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:bg-slate-300">{saving ? '发布中…' : draftImageUploading ? '图片上传中…' : '发布评论'}</button>

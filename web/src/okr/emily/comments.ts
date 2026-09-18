@@ -227,6 +227,42 @@ export function commentTargetFromThread(comment: PageComment): CommentTarget {
   }
 }
 
+export interface ResolvedCommentSelection {
+  start: number
+  end: number
+  exact: boolean
+}
+
+/**
+ * Re-anchor a saved text selection against the current field value. Offsets are
+ * the fast path; the surrounding quote keeps a comment attached after nearby
+ * edits, while a unique selected-text match is the final honest fallback.
+ */
+export function resolveCommentSelection(text: string, comment: Pick<PageComment, 'selectedText' | 'selectionStart' | 'selectionEnd' | 'selectionPrefix' | 'selectionSuffix'>): ResolvedCommentSelection | undefined {
+  const selected = comment.selectedText ?? ''
+  if (!selected) return undefined
+  const start = comment.selectionStart ?? -1
+  const end = comment.selectionEnd ?? -1
+  if (start >= 0 && end > start && text.slice(start, end) === selected) return { start, end, exact: true }
+
+  const prefix = comment.selectionPrefix ?? ''
+  const suffix = comment.selectionSuffix ?? ''
+  if (prefix || suffix) {
+    const quote = `${prefix}${selected}${suffix}`
+    const quoteStart = text.indexOf(quote)
+    if (quoteStart >= 0 && text.indexOf(quote, quoteStart + 1) < 0) {
+      const nextStart = quoteStart + prefix.length
+      return { start: nextStart, end: nextStart + selected.length, exact: false }
+    }
+  }
+
+  const uniqueStart = text.indexOf(selected)
+  if (uniqueStart >= 0 && text.indexOf(selected, uniqueStart + 1) < 0) {
+    return { start: uniqueStart, end: uniqueStart + selected.length, exact: false }
+  }
+  return undefined
+}
+
 // Comments keep one exact content target. The O/KR path is a read projection
 // from the already loaded OKR tree, so the hierarchy keeps a single source of
 // truth and opening the drawer never causes one request per comment.

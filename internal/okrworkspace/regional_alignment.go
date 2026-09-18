@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
+	"sort"
 	"strings"
 	"time"
 
@@ -73,6 +75,7 @@ type RegionalRecapOverlayView struct {
 type RegionalAlignmentBoard struct {
 	Alignment    RegionalAlignmentView       `json:"alignment"`
 	Region       RegionalAlignmentRegionView `json:"region"`
+	MatchVersion string                      `json:"match_version"`
 	Plan         PlanView                    `json:"plan"`
 	Recap        Board                       `json:"recap"`
 	Demands      []RegionalDemandView        `json:"demands"`
@@ -104,6 +107,24 @@ type RegionalPlanDecisionInput struct {
 	RegionalPOCs    []domain.FollowUpOwner `json:"regional_pocs"`
 	RegionalOKR     string                 `json:"regional_okr"`
 	Hidden          bool                   `json:"hidden"`
+}
+
+type RegionalMatchItem struct {
+	DemandID  string   `json:"demand_id"`
+	PlanKRIDs []string `json:"plan_kr_ids"`
+}
+
+type ReplaceRegionalMatchesInput struct {
+	ExpectedMatchVersion string              `json:"expected_match_version"`
+	Items                []RegionalMatchItem `json:"items"`
+}
+
+type ReplaceRegionalMatchesResult struct {
+	MatchVersion     string `json:"match_version"`
+	ChangedDemands   int    `json:"changed_demands"`
+	UnchangedDemands int    `json:"unchanged_demands"`
+	AddedLinks       int    `json:"added_links"`
+	RemovedLinks     int    `json:"removed_links"`
 }
 
 func normalizeRegionalScope(quarter, region string) (string, string, error) {
@@ -256,10 +277,148 @@ func (s *Service) RegionalAlignmentBoard(ctx context.Context, quarter, region, a
 	for _, row := range overlayRows {
 		result.Overlays = append(result.Overlays, RegionalRecapOverlayView{BucketKey: row.BucketKey, ObjectiveID: row.ObjectiveID, Version: row.Version, SortOrder: row.SortOrder, Hidden: row.Hidden})
 	}
+	result.MatchVersion, err = regionalMatchVersion(plan, result.Demands, result.Decisions)
+	if err != nil {
+		return RegionalAlignmentBoard{}, err
+	}
 	if err := s.attachRegionalTranslations(ctx, &result); err != nil {
 		return RegionalAlignmentBoard{}, err
 	}
 	return result, nil
+}
+
+func regionalMatchVersion(plan PlanView, demands []RegionalDemandView, decisions []RegionalPlanDecisionView) (string, error) {
+	plan.DeleteToken = ""
+	orderedDecisions := append([]RegionalPlanDecisionView(nil), decisions...)
+	sort.Slice(orderedDecisions, func(i, j int) bool { return orderedDecisions[i].PlanKRID < orderedDecisions[j].PlanKRID })
+	payload, err := json.Marshal(struct {
+		Plan      PlanView                   `json:"plan"`
+		Demands   []RegionalDemandView       `json:"demands"`
+		Decisions []RegionalPlanDecisionView `json:"decisions"`
+	}{Plan: plan, Demands: demands, Decisions: orderedDecisions})
+	if err != nil {
+		return "", fmt.Errorf("encode regional match snapshot: %w", err)
+	}
+	digest := sha256.Sum256(payload)
+	return fmt.Sprintf("sha256:%x", digest[:]), nil
+}
+
+func (s *Service) ReplaceRegionalMatches(ctx context.Context, quarter, region, actor string, input ReplaceRegionalMatchesInput) (ReplaceRegionalMatchesResult, error) {
+	alignment, settings, err := s.ensureRegionalAlignment(ctx, quarter, region, actor)
+	if err != nil {
+		return ReplaceRegionalMatchesResult{}, err
+	}
+	input.ExpectedMatchVersion = strings.TrimSpace(input.ExpectedMatchVersion)
+	if input.ExpectedMatchVersion == "" {
+		return ReplaceRegionalMatchesResult{}, fmt.Errorf("expected_match_version is required")
+	}
+	result := ReplaceRegionalMatchesResult{}
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		txService := &Service{db: tx, regionalRefreshJobs: make(map[string]regionalRefreshJob)}
+		plan, err := txService.GetPlan(ctx, alignment.PlanID)
+		if err != nil {
+			return err
+		}
+		var demandRows []domain.RegionalDemand
+		if err := tx.WithContext(ctx).Where("alignment_id = ? AND region_code = ?", alignment.ID, settings.RegionCode).Order("sort_order, created_at, id").Find(&demandRows).Error; err != nil {
+			return fmt.Errorf("list regional demands for match replacement: %w", err)
+		}
+		var decisionRows []domain.RegionalPlanDecision
+		if err := tx.WithContext(ctx).Where("alignment_id = ? AND region_code = ?", alignment.ID, settings.RegionCode).Order("plan_kr_id").Find(&decisionRows).Error; err != nil {
+			return fmt.Errorf("list regional decisions for match replacement: %w", err)
+		}
+		demands := make([]RegionalDemandView, 0, len(demandRows))
+		for _, row := range demandRows {
+			demands = append(demands, regionalDemandView(row))
+		}
+		decisions := make([]RegionalPlanDecisionView, 0, len(decisionRows))
+		for _, row := range decisionRows {
+			decisions = append(decisions, regionalDecisionView(row))
+		}
+		currentVersion, err := regionalMatchVersion(plan, demands, decisions)
+		if err != nil {
+			return err
+		}
+		if currentVersion != input.ExpectedMatchVersion {
+			return ErrConflict
+		}
+		if len(input.Items) != len(demandRows) {
+			return fmt.Errorf("items must contain every current regional demand exactly once")
+		}
+		allowedKRs := planKRIDs(plan)
+		items := make(map[string][]string, len(input.Items))
+		for _, item := range input.Items {
+			demandID := strings.TrimSpace(item.DemandID)
+			if demandID == "" {
+				return fmt.Errorf("demand_id is required")
+			}
+			if _, duplicate := items[demandID]; duplicate {
+				return fmt.Errorf("demand %q appears more than once", demandID)
+			}
+			ids := uniqueCleanStrings(item.PlanKRIDs)
+			sort.Strings(ids)
+			for _, id := range ids {
+				if _, ok := allowedKRs[id]; !ok {
+					return fmt.Errorf("plan KR %q does not belong to alignment plan", id)
+				}
+			}
+			items[demandID] = ids
+		}
+		now := time.Now().UTC()
+		for _, row := range demandRows {
+			desired, ok := items[row.ID]
+			if !ok {
+				return fmt.Errorf("items must contain current demand %q", row.ID)
+			}
+			current := uniqueCleanStrings(row.PlanKRIDs)
+			sort.Strings(current)
+			if slices.Equal(current, desired) {
+				result.UnchangedDemands++
+				continue
+			}
+			currentSet := make(map[string]struct{}, len(current))
+			for _, id := range current {
+				currentSet[id] = struct{}{}
+			}
+			desiredSet := make(map[string]struct{}, len(desired))
+			for _, id := range desired {
+				desiredSet[id] = struct{}{}
+				if _, exists := currentSet[id]; !exists {
+					result.AddedLinks++
+				}
+			}
+			for _, id := range current {
+				if _, exists := desiredSet[id]; !exists {
+					result.RemovedLinks++
+				}
+			}
+			encoded, err := regionalJSON(desired)
+			if err != nil {
+				return err
+			}
+			updated := tx.WithContext(ctx).Model(&domain.RegionalDemand{}).
+				Where("id = ? AND alignment_id = ? AND region_code = ? AND version = ?", row.ID, alignment.ID, settings.RegionCode, row.Version).
+				Updates(map[string]any{"plan_kr_ids": encoded, "updated_by": actor, "updated_at": now, "version": gorm.Expr("version + 1")})
+			if updated.Error != nil {
+				return updated.Error
+			}
+			if updated.RowsAffected != 1 {
+				return ErrConflict
+			}
+			result.ChangedDemands++
+		}
+		var updatedRows []domain.RegionalDemand
+		if err := tx.WithContext(ctx).Where("alignment_id = ? AND region_code = ?", alignment.ID, settings.RegionCode).Order("sort_order, created_at, id").Find(&updatedRows).Error; err != nil {
+			return err
+		}
+		updatedDemands := make([]RegionalDemandView, 0, len(updatedRows))
+		for _, row := range updatedRows {
+			updatedDemands = append(updatedDemands, regionalDemandView(row))
+		}
+		result.MatchVersion, err = regionalMatchVersion(plan, updatedDemands, decisions)
+		return err
+	})
+	return result, err
 }
 
 // regionalRecapBoard projects the latest opened Review week, including its

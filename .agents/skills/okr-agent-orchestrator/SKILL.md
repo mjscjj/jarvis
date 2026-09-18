@@ -31,6 +31,7 @@ ScheduledTask 触发时，`action_key` 只标识产品里的固定行动，`prom
 按本次目标选择最小工具集合，不要求固定顺序：
 
 - 通用 OKR 定义查询：`scripts/okr-module-tools scope|board|find-krs|get-kr`；已知关键词时先用 `find-krs` 缩小范围，不为查一个 KR 把整个季度 board 灌进上下文；图片材料可用 `upload-image` 保存；
+- 区域对齐自动匹配：`scripts/biz-okr-tools regional-board --quarter Q --region REGION` 读取完整 Part 0 和 `match_version`；只在绑定 Prompt 要求重算关系时，用 `replace-regional-matches --quarter Q --region REGION --payload JSON|-` 一次提交覆盖全部当前需求的关系；
 - Biz 人员与标签：人员用 `scripts/biz-okr-tools people-search`；打标前用它的 `get-kr` 读取最新 `version` 与全部 `tags`。整条 KR 用 `replace-kr-tags --id KR_ID --payload JSON|-`，具体要点用 `replace-point-tags --point-id POINT_ID --payload JSON|-`；`tags` 是所选层级的完整替换列表；
 - 正式周次与 Progress：`scripts/okr-module-tools progress-scope|weeks|open-week|progress-board|get-weekly-kr|replace-weekly-core|create-progress|update-progress|delete-progress`。正式进展归通用 OKR；写前回读版本，写后回读；
 - Biz 周报组合视图：`scripts/biz-okr-tools scope|board|get-weekly-kr`；删除整周及 Biz 附属记录使用它的 `delete-week`；
@@ -48,6 +49,7 @@ ScheduledTask 触发时，`action_key` 只标识产品里的固定行动，`prom
 
 - 读取 API 响应后验证成功字段；失败时保留原始错误并停止依赖该事实的动作。
 - 先回读再写入；关系和外部对象使用稳定来源 ID，重复执行不得制造副本。
+- 区域自动匹配必须使用 Task 冻结快照中的 `match_version`，提交项覆盖全部当前需求；原子替换冲突后停止并报告现场已变化，不改为逐条需求写入，也不自行换用新快照重试。
 - OKR 定义的可写范围遵循共用原则。标签写入使用父 KR 的最新 `version`，409 后重新读取并重新判断，不机械覆盖；批量打标逐个目标层级调用，写后回读核对 KR 或要点标签和版本。周度核心数据使用独立的 `weekly_core_version`，不能拿 KR 定义版本代替。
 - 周报工具是可组合能力，不是必须按帮助顺序执行的 workflow。是否开周、填写进展、评论、确认 Meego、催填或生成材料，只服从本次 Prompt 和实时事实。
 - 创建周进展时使用稳定、可重跑的进展 ID 和 `expected_version=0`；更新和删除必须使用该条进展自己的最新 `expected_version`，不能使用 KR 定义版本。409 后重新读取并重新判断，不机械覆盖。
